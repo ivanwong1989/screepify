@@ -10,7 +10,7 @@ var roleHarvester = {
             if (creep.memory.random_source_target == "NA") {
                 creep.memory.random_source_target = sources[Math.floor(Math.random() * creep.memory.sources.length)];
             }
-            if(creep.harvest(sources[0]) == ERR_NOT_IN_RANGE) {
+            if(creep.harvest(Game.getObjectById(creep.memory.sources[creep.memory.random_source_target].id)) == ERR_NOT_IN_RANGE) {
                 creep.say('🔄 harvest');
                 creep.moveTo(sources[0]);
             }
