@@ -18,20 +18,23 @@ module.exports.loop = function () {
         });
     }
 
-    if(upgraders.length < 2) {
-        var newName = 'Upgrader' + Game.time;
-        console.log('Spawning new upgrader: ' + newName);
-        Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
-            memory: {role: 'upgrader'}
-        });
-    }
-    
-    if(builders.length < 1) {
-        var newName = 'Builder' + Game.time;
-        console.log('Spawning new Builder: ' + newName);
-        Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
-            memory: {role: 'builder'}
-        });
+    // ensure that only enable below spawns when at least there are 2 harvesters minimum
+    if(harvesters.length > 2) {
+        if(upgraders.length < 2) {
+            var newName = 'Upgrader' + Game.time;
+            console.log('Spawning new upgrader: ' + newName);
+            Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
+                memory: {role: 'upgrader'}
+            });
+        }
+        
+        if(builders.length < 1) {
+            var newName = 'Builder' + Game.time;
+            console.log('Spawning new Builder: ' + newName);
+            Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
+                memory: {role: 'builder'}
+            });
+        }
     }
     // --- END SPAWNING LOGIC ---
 
