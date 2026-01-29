@@ -15,22 +15,30 @@ var roleHarvester = {
                 var enemies = source.pos.findInRange(FIND_HOSTILE_CREEPS,5);
                 // also how about how congested it is around the source
                 var congestion = source.pos.findInRange(FIND_CREEPS,2)
-                if(enemies.length == 0 && congestion.length < 3) {
-                    if(creep.harvest(source) == ERR_NOT_IN_RANGE) {
-                        //creep.say('🔄 harvest');
-                        creep.moveTo(source);
+                if(enemies.length == 0) {
+                    if(congestion.length < 3) {
+                        if(creep.harvest(source) == ERR_NOT_IN_RANGE) {
+                            //creep.say('🔄 harvest');
+                            creep.moveTo(source);
+                        }
+                        else {
+                            //harvesting
+                            creep.memory.harvesting_wip = 1;
+                        }
                     }
                 }
                 else {
-                    // enemies/congestion around the source, reset the source selection
+                    // enemies/congestion around the source, reset the source selection and harvesting status
                     creep.memory.random_source_target_id = "NA";
+                    creep.memory.harvesting_wip = 0;
                 }
             }
         }
         else {
             //creep.say('🔄 going back');
-            // free the random target source memory
+            // free the random target source memory and also harvesting wip status
             creep.memory.random_source_target_id = "NA";
+            creep.memory.harvesting_wip = 0;
             if(creep.transfer(Game.spawns['Spawn1'], RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
                 creep.moveTo(Game.spawns['Spawn1']);
             }
