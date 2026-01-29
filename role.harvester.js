@@ -12,7 +12,7 @@ var roleHarvester = {
             var source = Game.getObjectById(creep.memory.random_source_target_id);
             if(source) {
                 // since chosen a source, let's see if the source is dangerous around it. 
-                var enemies = source.findInRange(FIND_HOSTILE_CREEPS,5);
+                var enemies = source.pos.findInRange(FIND_HOSTILE_CREEPS,5);
                 if(enemies.length == 0) {
                     if(creep.harvest(source) == ERR_NOT_IN_RANGE) {
                         creep.say('🔄 harvest');
