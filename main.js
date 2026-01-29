@@ -46,7 +46,7 @@ module.exports.loop = function () {
     // --- END SPAWNING LOGIC ---
 
     // --- GET TOWER LOGIC ---
-    var towers = _.filter(Game.structures, (structure) = structure.structureType == STRUCTURE_TOWER);
+    var towers = _.filter(Game.structures, (structure) => structure.structureType == STRUCTURE_TOWER);
 
     // --- CREEP RUN LOGIC ---
     for(var name in Game.creeps) {
