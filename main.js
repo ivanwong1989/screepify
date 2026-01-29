@@ -4,13 +4,19 @@ var roleBuilder = require('role.builder');
 
 module.exports.loop = function () {
 
-
+    // --- Memory name garbage clearing ---
+    for(var name in Memory.creeps) {
+        if(!Game.creeps[name]) {
+            delete Memory.creeps[name];
+            console.log('Clearing non-existing creep memory:', name);
+        }
+    }
     // --- SPAWNING LOGIC ---
     var harvesters = _.filter(Game.creeps, (creep) => creep.memory.role == 'harvester');
     var upgraders = _.filter(Game.creeps, (creep) => creep.memory.role == 'upgrader');
     var builders = _.filter(Game.creeps, (creep) => creep.memory.role == 'builder');
 
-    if(harvesters.length < 10) {
+    if(harvesters.length < 6) {
         var newName = 'Harvester' + Game.time;
         //console.log('Spawning new harvester: ' + newName);
         Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
