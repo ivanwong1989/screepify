@@ -15,7 +15,7 @@ var roleHarvester = {
                 var enemies = source.pos.findInRange(FIND_HOSTILE_CREEPS,5);
                 if(enemies.length == 0) {
                     if(creep.harvest(source) == ERR_NOT_IN_RANGE) {
-                        creep.say('🔄 harvest');
+                        //creep.say('🔄 harvest');
                         creep.moveTo(source);
                     }
                 }
@@ -26,7 +26,7 @@ var roleHarvester = {
             }
         }
         else {
-            creep.say('🔄 going back');
+            //creep.say('🔄 going back');
             // free the random target source memory
             creep.memory.random_source_target_id = "NA";
             if(creep.transfer(Game.spawns['Spawn1'], RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {

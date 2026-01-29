@@ -1,6 +1,7 @@
 var roleHarvester = require('role.harvester');
 var roleUpgrader = require('role.upgrader');
 var roleBuilder = require('role.builder');
+var roleTower = require('role.tower')
 
 module.exports.loop = function () {
 
@@ -44,6 +45,9 @@ module.exports.loop = function () {
     }
     // --- END SPAWNING LOGIC ---
 
+    // --- GET TOWER LOGIC ---
+    var towers = _.filter(Game.structures, (structure) = structure.structureType == STRUCTURE_TOWER);
+
     // --- CREEP RUN LOGIC ---
     for(var name in Game.creeps) {
         var creep = Game.creeps[name];
@@ -58,4 +62,8 @@ module.exports.loop = function () {
         }
     }
     // --- END CREEP RUN LOGIC ---
+
+    // --- TOWER RUN LOGIC ---
+    // --- END TOWER RUN LOGIC ---
+
 }
