@@ -25,4 +25,4 @@ var roleTower = {
 	}
 };
 
-module.exports = roleUpgrader;
+module.exports = roleTower;
