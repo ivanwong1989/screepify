@@ -21,7 +21,7 @@ var roleHarvester = {
                     var congestion = [0];
                 }
                 if(enemies.length == 0) {
-                    if(congestion.length < 3) {
+                    if(congestion.length < 4) {
                         if(creep.harvest(source) == ERR_NOT_IN_RANGE) {
                             //creep.say('🔄 harvest');
                             creep.moveTo(source);
