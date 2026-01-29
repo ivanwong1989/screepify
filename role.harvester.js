@@ -31,6 +31,11 @@ var roleHarvester = {
                             creep.memory.harvesting_wip = 1;
                         }
                     }
+                    else {
+                        //choose other sources
+                        creep.memory.random_source_target_id = "NA";
+                        creep.memory.harvesting_wip = 0;
+                    }
                 }
                 else {
                     // enemies/congestion around the source, reset the source selection and harvesting status
