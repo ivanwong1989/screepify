@@ -4,7 +4,7 @@ var roleUpgrader = {
     run: function(creep) {
 	    if(creep.store.getFreeCapacity() > 0 &&  creep.memory.unloading == 0) {
             var sources = creep.room.find(FIND_MY_SPAWNS);
-            if(creep.withdraw(sources[0]) == ERR_NOT_IN_RANGE) {
+            if(creep.withdraw(sources[0],RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
                 creep.moveTo(sources[0]);
             }
         }
