@@ -24,7 +24,7 @@ var roleHarvester = {
         else {
             creep.say('🔄 going back');
             // free the random target source memory
-            creep.memory.random_source_target = "NA";
+            creep.memory.random_source_target_id = "NA";
             if(creep.transfer(Game.spawns['Spawn1'], RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
                 creep.moveTo(Game.spawns['Spawn1']);
             }
