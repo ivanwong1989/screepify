@@ -17,6 +17,9 @@ var roleHarvester = {
                 if(creep.memory.harvesting_wip == 0 || !creep.memory.harvesting_wip) {
                     var congestion = source.pos.findInRange(FIND_CREEPS,2)
                 }
+                else {
+                    var congestion = 0;
+                }
                 if(enemies.length == 0) {
                     if(congestion.length < 3) {
                         if(creep.harvest(source) == ERR_NOT_IN_RANGE) {
