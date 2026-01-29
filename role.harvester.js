@@ -3,7 +3,7 @@ var roleHarvester = {
     /** @param {Creep} creep **/
     run: function(creep) {
 	    if(creep.store.getFreeCapacity() > 0) {
-            if (creep.memory.random_source_target == "NA" || !creep.memory.random_source_target) {
+            if (creep.memory.random_source_target_id == "NA" || !creep.memory.random_source_target_id) {
                 var sources = creep.room.find(FIND_SOURCES);
                 creep.memory.random_source_target_id = sources[Math.floor(Math.random() * sources.length)].id;
             }
