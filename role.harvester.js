@@ -19,6 +19,10 @@ var roleHarvester = {
                         creep.moveTo(source);
                     }
                 }
+                else {
+                    // enemies around the source, reset the source selection
+                    creep.memory.random_source_target_id = "NA";
+                }
             }
         }
         else {
