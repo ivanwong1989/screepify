@@ -5,11 +5,11 @@ var roleHarvester = {
 	    if(creep.store.getFreeCapacity() > 0) {
             var sources = creep.room.find(FIND_SOURCES);
             if (creep.memory.random_source_target == "NA") {
-                var random_source_target = sources[Math.floor(Math.random() * sources.length)];
+                creep.memory.random_source_target = sources[Math.floor(Math.random() * sources.length)];
             }
-            if(creep.harvest(random_source_target) == ERR_NOT_IN_RANGE) {
+            if(creep.harvest(creep.memory.random_source_target) == ERR_NOT_IN_RANGE) {
                 creep.say('🔄 harvest');
-                creep.moveTo(random_source_target);
+                creep.moveTo(creep.memory.random_source_target);
             }
         }
         else {
