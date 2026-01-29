@@ -35,7 +35,7 @@ module.exports.loop = function () {
             });
         }
         
-        if(builders.length < 2) {
+        if(builders.length < 1) {
             var newName = 'Builder' + Game.time;
             console.log('Spawning new Builder: ' + newName);
             Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
