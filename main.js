@@ -17,7 +17,7 @@ module.exports.loop = function () {
     var upgraders = _.filter(Game.creeps, (creep) => creep.memory.role == 'upgrader');
     var builders = _.filter(Game.creeps, (creep) => creep.memory.role == 'builder');
 
-    if(harvesters.length < 7) {
+    if(harvesters.length < 10) {
         var newName = 'Harvester' + Game.time;
         //console.log('Spawning new harvester: ' + newName);
         Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
@@ -27,7 +27,7 @@ module.exports.loop = function () {
 
     // ensure that only enable below spawns when at least there are 2 harvesters minimum
     if(harvesters.length > 2) {
-        if(upgraders.length < 5) {
+        if(upgraders.length < 2) {
             var newName = 'Upgrader' + Game.time;
             console.log('Spawning new upgrader: ' + newName);
             Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
