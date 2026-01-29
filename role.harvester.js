@@ -14,7 +14,9 @@ var roleHarvester = {
                 // since chosen a source, let's see if the source is dangerous around it. 
                 var enemies = source.pos.findInRange(FIND_HOSTILE_CREEPS,5);
                 // also how about how congested it is around the source
-                var congestion = source.pos.findInRange(FIND_CREEPS,2)
+                if(creep.memory.harvesting_wip == 0 || !creep.memory.harvesting_wip) {
+                    var congestion = source.pos.findInRange(FIND_CREEPS,2)
+                }
                 if(enemies.length == 0) {
                     if(congestion.length < 3) {
                         if(creep.harvest(source) == ERR_NOT_IN_RANGE) {
