@@ -26,7 +26,7 @@ module.exports.loop = function () {
     }
 
     // ensure that only enable below spawns when at least there are 2 harvesters minimum
-    if(harvesters.length > 2) {
+    if(harvesters.length > 5) {
         if(upgraders.length < 2) {
             var newName = 'Upgrader' + Game.time;
             console.log('Spawning new upgrader: ' + newName);
