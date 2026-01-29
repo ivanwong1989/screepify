@@ -12,4 +12,5 @@ module.exports.loop = function () {
             roleUpgrader.run(creep);
         }
     }
+    // test commenting
 }
