@@ -2,8 +2,6 @@ var roleUpgrader = {
     
     /** @param {Creep} creep **/
     run: function(creep) {
-        console.log("unloading = ", creep.memory.unloading)
-        console.log("used capacity = ", creep.store.getUsedCapacity())
 	    if(creep.store.getFreeCapacity() > 0 &&  creep.memory.unloading == 0) {
             var sources = creep.room.find(FIND_SOURCES);
             if(creep.harvest(sources[0]) == ERR_NOT_IN_RANGE) {
@@ -20,7 +18,6 @@ var roleUpgrader = {
                 // in range , so set a flag so that it unloads all energy
                 if(creep.store.getUsedCapacity() == 0)
                 {
-                    console.log("unloading = meow")
                     creep.memory.unloading = 0;
                 }
             }
