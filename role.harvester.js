@@ -23,7 +23,7 @@ var roleHarvester = {
                             //creep.say('🔄 harvest');
                             creep.moveTo(source);
                         }
-                        else if (creep.harvest(source) == OK)
+                        else if (creep.harvest(source) == OK) {
                             //harvesting
                             creep.memory.harvesting_wip = 1;
                         }
