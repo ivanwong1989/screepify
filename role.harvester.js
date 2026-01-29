@@ -13,14 +13,16 @@ var roleHarvester = {
             if(source) {
                 // since chosen a source, let's see if the source is dangerous around it. 
                 var enemies = source.pos.findInRange(FIND_HOSTILE_CREEPS,5);
-                if(enemies.length == 0) {
+                // also how about how congested it is around the source
+                var congestion = source.pos.findInRange(FIND_CREEPS,2)
+                if(enemies.length == 0 && congestion.length < 3) {
                     if(creep.harvest(source) == ERR_NOT_IN_RANGE) {
                         //creep.say('🔄 harvest');
                         creep.moveTo(source);
                     }
                 }
                 else {
-                    // enemies around the source, reset the source selection
+                    // enemies/congestion around the source, reset the source selection
                     creep.memory.random_source_target_id = "NA";
                 }
             }
