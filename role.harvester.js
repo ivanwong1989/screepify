@@ -18,7 +18,7 @@ var roleHarvester = {
                     var congestion = source.pos.findInRange(FIND_CREEPS,2)
                 }
                 else {
-                    var congestion = 0;
+                    var congestion = [0];
                 }
                 if(enemies.length == 0) {
                     if(congestion.length < 3) {
