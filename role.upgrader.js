@@ -3,8 +3,8 @@ var roleUpgrader = {
     /** @param {Creep} creep **/
     run: function(creep) {
 	    if(creep.store.getFreeCapacity() > 0 &&  creep.memory.unloading == 0) {
-            var sources = creep.room.find(FIND_SOURCES);
-            if(creep.harvest(sources[0]) == ERR_NOT_IN_RANGE) {
+            var sources = creep.room.find(FIND_MY_SPAWNS);
+            if(creep.withdraw(sources[0]) == ERR_NOT_IN_RANGE) {
                 creep.moveTo(sources[0]);
             }
         }
