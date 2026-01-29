@@ -22,7 +22,7 @@ var roleBuilder = {
 	    }
 	    else {
 	        var sources = creep.room.find(FIND_MY_SPAWNS);
-            if(sources[0].store(RESOURCE_ENERGY) > 200) {
+            if(sources[0].store.getUsedCapacity(RESOURCE_ENERGY) > 200) {
                 if(creep.withdraw(sources[0],RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
                     creep.moveTo(sources[0], {visualizePathStyle: {stroke: '#ffaa00'}});
                 }
