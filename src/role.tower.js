@@ -1,0 +1,28 @@
+var roleTower = {
+    
+    /** @param {StructureTower} tower **/
+    run: function(tower) {
+	    if(creep.store.getFreeCapacity() > 0 &&  creep.memory.unloading == 0) {
+            var sources = creep.room.find(FIND_SOURCES);
+            if(creep.harvest(sources[0]) == ERR_NOT_IN_RANGE) {
+                creep.moveTo(sources[0]);
+            }
+        }
+        else {
+            if(creep.upgradeController(creep.room.controller) == ERR_NOT_IN_RANGE) {
+                creep.moveTo(creep.room.controller);
+            }
+            else
+            {
+                 creep.memory.unloading = 1;
+                // in range , so set a flag so that it unloads all energy
+                if(creep.store.getUsedCapacity() == 0)
+                {
+                    creep.memory.unloading = 0;
+                }
+            }
+        }
+	}
+};
+
+module.exports = roleTower;
