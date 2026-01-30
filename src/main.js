@@ -17,16 +17,35 @@ module.exports.loop = function () {
     var upgraders = _.filter(Game.creeps, (creep) => creep.memory.role == 'upgrader');
     var builders = _.filter(Game.creeps, (creep) => creep.memory.role == 'builder');
 
-    if(harvesters.length < 10) {
-        var newName = 'Harvester' + Game.time;
-        //console.log('Spawning new harvester: ' + newName);
-        Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
-            memory: {role: 'harvester', random_source_target_id: 'NA'}
-        });
+    // Small vs Big Harvester logic, when extension buildings are less than 2, use small harvesters
+    // when extension buildings are more than 2, use big harvesters
+    var room_extensions = Game.spawns['Spawn1'].room.find(FIND_STRUCTURES, {
+            filter: (structure) => {
+                return (structure.structureType == STRUCTURE_EXTENSION);
+            }
+    });
+
+    if(room_extensions.length < 4) {
+        if(harvesters.length < 10) {
+            var newName = 'Harvester' + Game.time;
+            //console.log('Spawning new harvester: ' + newName);
+            Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
+                memory: {role: 'harvester', random_source_target_id: 'NA'}
+            });
+        }
+    } else {
+        if(harvesters.length < 5) {
+            var newName = 'BigHarvester' + Game.time;
+            //console.log('Spawning new harvester: ' + newName);
+            Game.spawns['Spawn1'].spawnCreep([WORK,WORK,CARRY,MOVE,MOVE], newName, {
+                memory: {role: 'harvester', random_source_target_id: 'NA'}
+            });
+        }
     }
 
+
     // ensure that only enable below spawns when at least there are 2 harvesters minimum
-    if(harvesters.length > 5) {
+    if(harvesters.length > 4) {
         if(upgraders.length < 5) {
             var newName = 'Upgrader' + Game.time;
             console.log('Spawning new upgrader: ' + newName);
