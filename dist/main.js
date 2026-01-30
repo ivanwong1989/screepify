@@ -27,7 +27,7 @@ module.exports.loop = function () {
 
     // ensure that only enable below spawns when at least there are 2 harvesters minimum
     if(harvesters.length > 5) {
-        if(upgraders.length < 4) {
+        if(upgraders.length < 5) {
             var newName = 'Upgrader' + Game.time;
             console.log('Spawning new upgrader: ' + newName);
             Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
@@ -35,7 +35,7 @@ module.exports.loop = function () {
             });
         }
         
-        if(builders.length < 1) {
+        if(builders.length < 2) {
             var newName = 'Builder' + Game.time;
             console.log('Spawning new Builder: ' + newName);
             Game.spawns['Spawn1'].spawnCreep([WORK,CARRY,MOVE], newName, {
