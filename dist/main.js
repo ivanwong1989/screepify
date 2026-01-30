@@ -19,15 +19,12 @@ module.exports.loop = function () {
     var upgraders = _.filter(Game.creeps, (creep) => creep.memory.role == 'upgrader');
     var builders = _.filter(Game.creeps, (creep) => creep.memory.role == 'builder');
 
-    // Small vs Big Harvester logic, when extension buildings are less than 2, use small harvesters
-    // when extension buildings are more than 2, use big harvesters
-    var room_extensions = Game.spawns['Spawn1'].room.find(FIND_STRUCTURES, {
-            filter: (structure) => {
-                return (structure.structureType == STRUCTURE_EXTENSION);
-            }
-    });
-
-    if(room_extensions.length < 4) {
+    // Small vs Big Harvester logic, based on the room's energy capacity.
+    const bigHarvesterCost = 350;
+    const roomEnergyCapacity = Game.spawns['Spawn1'].room.energyCapacityAvailable;
+    
+    if(roomEnergyCapacity < bigHarvesterCost) {
+        // Not enough capacity for big harvesters, spawn small ones.
         if(harvesters.length < 10) {
             var newName = 'Harvester' + Game.time;
             //console.log('Spawning new harvester: ' + newName);
@@ -36,6 +33,7 @@ module.exports.loop = function () {
             });
         }
     } else {
+        // We have enough capacity for big harvesters.
         if(harvesters.length < 5) {
             var newName = 'BigHarvester' + Game.time;
             //console.log('Spawning new harvester: ' + newName);
