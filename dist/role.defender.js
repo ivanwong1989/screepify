@@ -16,10 +16,9 @@ var roleDefender = {
                     creep.moveTo(hostileStructure, {visualizePathStyle: {stroke: '#ff0000'}});
                 }
             } else {
-                // if no hostiles, move to a rally point near spawn
-                var spawn = creep.room.find(FIND_MY_SPAWNS)[0];
-                if (spawn && creep.pos.getRangeTo(spawn) > 5) {
-                    creep.moveTo(spawn, {visualizePathStyle: {stroke: '#00ff00'}});
+                // if no hostiles, move to the rally point Flag2
+                if (Game.flags.Flag2) {
+                    creep.moveTo(Game.flags.Flag2, {visualizePathStyle: {stroke: '#0000ff'}});
                 }
             }
         }

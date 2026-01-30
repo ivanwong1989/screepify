@@ -17,16 +17,30 @@ var roleBuilder = {
 	    if(creep.memory.have_energy) {
 	        var targets = creep.room.find(FIND_CONSTRUCTION_SITES);
             if(targets.length) {
+                creep.memory.idling = false;
                 if(creep.build(targets[0]) == ERR_NOT_IN_RANGE) {
                     creep.moveTo(targets[0], {visualizePathStyle: {stroke: '#ffffff'}});
                 }
             } else {
-                creep.memory.idling = true;
+                const repairTargets = creep.room.find(FIND_STRUCTURES, {
+                    filter: structure => structure.hits < structure.hitsMax
+                });
+
+                if (repairTargets.length > 0) {
+                    creep.memory.idling = false;
+                    repairTargets.sort((a,b) => (a.hits / a.hitsMax) - (b.hits / b.hitsMax));
+                    if(creep.repair(repairTargets[0]) == ERR_NOT_IN_RANGE) {
+                        creep.moveTo(repairTargets[0], {visualizePathStyle: {stroke: '#00ff00'}});
+                    }
+                } else {
+                    creep.memory.idling = true;
+                }
             }
 	    }
 	    else {
 	        var sources = creep.room.find(FIND_MY_SPAWNS);
             if(sources.length > 0 && sources[0].store.getUsedCapacity(RESOURCE_ENERGY) > 150) {
+                creep.memory.idling = false;
                 if(creep.withdraw(sources[0],RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
                     creep.moveTo(sources[0], {visualizePathStyle: {stroke: '#ffaa00'}});
                 }
@@ -37,23 +51,8 @@ var roleBuilder = {
 	    }
 
         if (creep.memory.idling) {
-            var spawns = creep.room.find(FIND_MY_SPAWNS);
-            if (spawns.length > 0) {
-                const spawn = spawns[0];
-                // If the creep is too close to the spawn, move it away.
-                if (creep.pos.getRangeTo(spawn) <= 2) {
-                    // We'll use PathFinder with the flee option to find a path away from the spawn
-                    // until we are at least 2 tiles away.
-                    const path = PathFinder.search(
-                        creep.pos,
-                        { pos: spawn.pos, range: 2 },
-                        { flee: true }
-                    );
-                    creep.moveByPath(path.path);
-                } else {
-                    // Otherwise, move to be within range 2. This handles moving closer if too far.
-                    creep.moveTo(spawn, {visualizePathStyle: {stroke: '#ffaa00'}, range: 2});
-                }
+            if (Game.flags.Flag1) {
+                creep.moveTo(Game.flags.Flag1, {visualizePathStyle: {stroke: '#cc00cc'}});
             }
         }
 	}
