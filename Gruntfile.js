@@ -5,11 +5,14 @@ module.exports = function(grunt) {
     var email = grunt.option('email') || config.email;
     var password = grunt.option('password') || config.password;
     var token = grunt.option('token') || config.token;
-    var ptr = grunt.option('ptr') ? true : config.ptr
+    var ptr = grunt.option('ptr') ? true : config.ptr;
+    //var private_directory = grunt.option('private_directory') || config.private_directory;
+    var private_directory = 'C:/Users/ivanw/AppData/Local/Screeps/scripts/127_0_0_1___21025/default/';
 
     grunt.loadNpmTasks('grunt-screeps')
     grunt.loadNpmTasks('grunt-contrib-clean')
     grunt.loadNpmTasks('grunt-contrib-copy')
+    grunt.loadNpmTasks('grunt-rsync')
 
     grunt.initConfig({
         screeps: {
@@ -44,9 +47,24 @@ module.exports = function(grunt) {
                 return dest + src.replace(/\//g,'_');
               }
             }],
+          },
+          private: {
+            files: [{
+              expand: true,
+              cwd: 'src/',
+              src: '**',
+              dest: private_directory,
+              filter: 'isFile',
+              rename: function (dest, src) {
+                // Change the path name utilize underscores for folders
+                return dest + src.replace(/\//g,'_');
+              }
+            }],
           }
         },
     })
 
     grunt.registerTask('default',  ['clean', 'copy:screeps', 'screeps']);
+    grunt.registerTask('private',  ['clean', 'copy:screeps', 'copy:private']);
+
 }
