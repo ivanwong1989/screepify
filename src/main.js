@@ -2,6 +2,7 @@ var roleHarvester = require('role.harvester');
 var roleUpgrader = require('role.upgrader');
 var roleBuilder = require('role.builder');
 var roleTower = require('role.tower');
+const { forEach } = require('lodash');
 
 module.exports.loop = function () {
 
@@ -12,6 +13,7 @@ module.exports.loop = function () {
             console.log('Clearing non-existing creep memory:', name);
         }
     }
+
     // --- SPAWNING LOGIC ---
     var harvesters = _.filter(Game.creeps, (creep) => creep.memory.role == 'harvester');
     var upgraders = _.filter(Game.creeps, (creep) => creep.memory.role == 'upgrader');
@@ -64,9 +66,6 @@ module.exports.loop = function () {
     }
     // --- END SPAWNING LOGIC ---
 
-    // --- GET TOWER LOGIC ---
-    var towers = _.filter(Game.structures, (structure) => structure.structureType == STRUCTURE_TOWER);
-
     // --- CREEP RUN LOGIC ---
     for(var name in Game.creeps) {
         var creep = Game.creeps[name];
@@ -83,6 +82,17 @@ module.exports.loop = function () {
     // --- END CREEP RUN LOGIC ---
 
     // --- TOWER RUN LOGIC ---
-    // --- END TOWER RUN LOGIC ---
+        // --- Tower Search Logic ---
+    var towers = Game.spawns['Spawn1'].room.find(FIND_STRUCTURES, {
+            filter: (structure) => {
+                return (structure.structureType == STRUCTURE_TOWER);
+            }
+    });
 
+    if(towers) {
+        forEach(towers, tower => {
+            roleTower.run(tower);
+        });
+    }
+    // --- END Tower Search Logic ---
 }
