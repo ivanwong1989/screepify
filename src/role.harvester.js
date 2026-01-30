@@ -15,7 +15,7 @@ var roleHarvester = {
                 var enemies = source.pos.findInRange(FIND_HOSTILE_CREEPS,5);
                 // also how about how congested it is around the source
                 if(creep.memory.harvesting_wip == 0 || !creep.memory.harvesting_wip) {
-                    var congestion = source.pos.findInRange(FIND_CREEPS,1)
+                    var congestion = source.pos.findInRange(FIND_CREEPS,2)
                 }
                 else {
                     var congestion = [0];
