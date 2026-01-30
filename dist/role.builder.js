@@ -27,6 +27,10 @@ var roleBuilder = {
                     creep.moveTo(sources[0], {visualizePathStyle: {stroke: '#ffaa00'}});
                 }
             }
+            else {
+                // since not doing anything, have the builder be two range away from spawn to not clog up the area. 
+                creep.moveTo(sources[0], {visualizePathStyle: {stroke: '#ffaa00'}, range: 2});
+            }
 
 	    }
 	}
