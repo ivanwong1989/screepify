@@ -1,4 +1,15 @@
+const { execSync } = require('child_process');
+
 module.exports = function(grunt) {
+
+    // Helper function to get current git branch
+    function getCurrentBranch() {
+        try {
+            return execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
+        } catch (e) {
+            return 'unknown';
+        }
+    }
 
     var config = require('./.screeps.json')
     var branch = grunt.option('branch') || config.branch;
@@ -6,7 +17,6 @@ module.exports = function(grunt) {
     var password = grunt.option('password') || config.password;
     var token = grunt.option('token') || config.token;
     var ptr = grunt.option('ptr') ? true : config.ptr;
-    //var private_directory = grunt.option('private_directory') || config.private_directory;
     var private_directory = 'C:/Users/ivanw/AppData/Local/Screeps/scripts/127_0_0_1___21025/default/';
 
     grunt.loadNpmTasks('grunt-screeps')
@@ -63,7 +73,26 @@ module.exports = function(grunt) {
         },
     })
 
-    grunt.registerTask('default',  ['clean', 'copy:screeps', 'screeps']);
-    grunt.registerTask('private',  ['clean', 'copy:screeps', 'copy:private']);
+
+    // Custom Task: Check if on Master branch
+    grunt.registerTask('check-master', function() {
+        var currentBranch = getCurrentBranch();
+        if (currentBranch !== 'master') {
+            grunt.fail.fatal('Safety Check: You are on "' + currentBranch + '". You must be on "master" to push to the main server!');
+        }
+        grunt.log.ok('Branch verified: master');
+    });
+
+    // Custom Task: Check if on Dev branch
+    grunt.registerTask('check-dev', function() {
+        var currentBranch = getCurrentBranch();
+        if (currentBranch !== 'dev') {
+            grunt.fail.fatal('Safety Check: You are on "' + currentBranch + '". You must be on "dev" to push to private server!');
+        }
+        grunt.log.ok('Branch verified: dev');
+    });
+
+    grunt.registerTask('default',  ['check-master', 'clean', 'copy:screeps', 'screeps']);
+    grunt.registerTask('private',  ['check-dev', 'clean', 'copy:screeps', 'copy:private']);
 
 }
