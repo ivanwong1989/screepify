@@ -2,6 +2,7 @@ var roleHarvester = require('role.harvester');
 var roleUpgrader = require('role.upgrader');
 var roleBuilder = require('role.builder');
 var roleTower = require('role.tower');
+var roleDefender = require('role.defender');
 const { forEach } = require('lodash');
 
 module.exports.loop = function () {
@@ -18,6 +19,7 @@ module.exports.loop = function () {
     var harvesters = _.filter(Game.creeps, (creep) => creep.memory.role == 'harvester');
     var upgraders = _.filter(Game.creeps, (creep) => creep.memory.role == 'upgrader');
     var builders = _.filter(Game.creeps, (creep) => creep.memory.role == 'builder');
+    var defenders = _.filter(Game.creeps, (creep) => creep.memory.role == 'defender');
 
     // Small vs Big Harvester logic, based on the room's energy capacity.
     const bigHarvesterCost = 350;
@@ -61,6 +63,14 @@ module.exports.loop = function () {
                 memory: {role: 'builder'}
             });
         }
+
+        if(defenders.length < 2) {
+            var newName = 'Defender' + Game.time;
+            console.log('Spawning new Defender: ' + newName);
+            Game.spawns['Spawn1'].spawnCreep([ATTACK,MOVE], newName, {
+                memory: {role: 'defender'}
+            });
+        }
     }
     // --- END SPAWNING LOGIC ---
 
@@ -76,6 +86,9 @@ module.exports.loop = function () {
         if(creep.memory.role == 'builder') {
             roleBuilder.run(creep);
         }
+        if(creep.memory.role == 'defender') {
+            roleDefender.run(creep);
+        }
     }
     // --- END CREEP RUN LOGIC ---
 
@@ -87,10 +100,10 @@ module.exports.loop = function () {
             }
     });
 
-    if(towers) {
-        forEach(towers, tower => {
-            roleTower.run(tower);
-        });
-    }
+    //if(towers) {
+    //   forEach(towers, tower => {
+    //      roleTower.run(tower);
+    //    });
+    //}
     // --- END Tower Search Logic ---
 }
