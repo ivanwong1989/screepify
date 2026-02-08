@@ -78,35 +78,11 @@ module.exports.loop = function() {
         }
     
         // --- Run Mission Manager ---
-        managerMission.run();
-        managerRoomVisualizer.run();
-        //libPathing.run();
 
         // --- CREEP RUN LOGIC ---
         // Run creep logic globally, as they may be in any room
         for(var name in Game.creeps) {
             var creep = Game.creeps[name];
-            if(creep.memory.role == 'harvester') roleHarvester.run(creep);
-            if(creep.memory.role == 'harvester_big') roleHarvesterBig.run(creep);
-            if(creep.memory.role == 'hauler') roleHauler.run(creep);
-            if(creep.memory.role == 'hauler_controller_special') roleHaulerControllerSpecial.run(creep);
-            if(creep.memory.role == 'upgrader') roleUpgrader.run(creep);
-            if(creep.memory.role == 'builder') roleBuilder.run(creep);
-            if(creep.memory.role == 'defender') roleDefender.run(creep);
-            if(creep.memory.role == 'scout') roleScout.run(creep);
-            if(creep.memory.role == 'remote_harvester') roleRemoteHarvester.run(creep);
-            if(creep.memory.role == 'mission_defender_range') roleMissionDefenderRange.run(creep);
-            if(creep.memory.role == 'mission_decoy') roleMissionDecoy.run(creep);
-            if(creep.memory.role == 'mission_range_healer') roleMissionRangeHealer.run(creep);
-            if(creep.memory.role == 'mission_defender_tank') roleMissionDefenderTank.run(creep);
-            if(creep.memory.role == 'mission_reserver') roleMissionReserver.run(creep);
-            if(creep.memory.role == 'mission_claimer') roleMissionClaimer.run(creep);
-            if(creep.memory.role == 'mission_dismantler') roleMissionDismantler.run(creep);
-            if(creep.memory.role == 'mission_bootstrap') roleMissionBootstrap.run(creep);
-            if(creep.memory.role == 'mission_hauler_interroom') roleMissionHaulerInterRoom.run(creep);
-            if(creep.memory.role == 'mission_remote_harvester') roleMissionRemoteHarvester.run(creep);
-            if(creep.memory.role == 'mission_remote_hauler') roleMissionRemoteHauler.run(creep);
-            if(creep.memory.role == 'drainer') roleDrainer.run(creep);
             if(creep.memory.role == 'universal') roleUniversal.run(creep);
         }
 
