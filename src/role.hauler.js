@@ -245,12 +245,20 @@ var roleHauler = {
                 var storages = cache.structuresByType[STRUCTURE_STORAGE] || [];
                 var containers = cache.structuresByType[STRUCTURE_CONTAINER] || [];
 
-                const structures = [...storages, ...containers].filter(s => {
-                    if (s.structureType == STRUCTURE_STORAGE) {
-                            // Only pull from storage if room needs energy (to fill spawn/ext)
-                            return creep.room.energyAvailable < creep.room.energyCapacityAvailable && 
-                                s.store.getUsedCapacity(RESOURCE_ENERGY) > 0 && isTargetValid(s);
-                    }
+				const structures = [...storages, ...containers].filter(s => {
+				    if (s.structureType == STRUCTURE_STORAGE) {
+				        // 1. Calculate how much energy is currently needed by the whole room
+				        let totalRoomNeeded = creep.room.energyCapacityAvailable - creep.room.energyAvailable;
+				        
+				        // 2. Subtract energy already being carried by other haulers to Spawns/Extensions
+				        let energySuitsInTransit = cache.myCreeps
+				            .filter(c => c.memory.role == 'hauler' && c.memory.working && c.id !== creep.id)
+				            .reduce((sum, c) => sum + c.store.getUsedCapacity(RESOURCE_ENERGY), 0);
+				
+				        // Only pull from storage if the room actually needs more than what is already in transit
+				        return (totalRoomNeeded > energySuitsInTransit) && 
+				               s.store.getUsedCapacity(RESOURCE_ENERGY) > 0 && isTargetValid(s);
+				    }
                     if (s.structureType == STRUCTURE_CONTAINER) {
                         // If container is full, we consider it except for controller's container
                         if ((s.store.getFreeCapacity(RESOURCE_ENERGY) === 0) && !(creep.room.controller && s.pos.inRangeTo(creep.room.controller, 2))) {
