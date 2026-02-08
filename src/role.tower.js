@@ -33,7 +33,7 @@ var roleTower = {
         // Find new target if needed
         if (!currentTarget) {
             var hostiles = (cache.hostiles || []).filter(
-                t => c.owner.username !== 'QuanLe' && 
+                c => c.owner.username !== 'QuanLe' && 
                                c.pos.x > 0 && c.pos.x < 49 && c.pos.y > 0 && c.pos.y < 49
             );
 
