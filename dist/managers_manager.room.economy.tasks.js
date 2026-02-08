@@ -20,16 +20,26 @@ module.exports = {
         const creeps = global.getRoomCache(room).myCreeps || [];
         
         creeps.forEach(creep => {
+            // State Hysteresis: Update working state before checking assignments
+            const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+            const isFull = creep.store.getFreeCapacity() === 0;
+            
+            if (isFull) creep.memory.working = true;
+            if (!hasEnergy) creep.memory.working = false;
+            const working = creep.memory.working;
+
             // If creep has a valid mission, skip
             if (creep.memory.missionId) {
                 const existingTask = tasks.find(t => t.id === creep.memory.missionId);
-                // Check if task is still valid and not fully assigned (optional: allow over-assignment if needed)
-                if (existingTask) {
+                // Check if task is still valid AND compatible with current state (Work vs Gather)
+                const isCompatible = existingTask && (working ? existingTask.type === 'work' : existingTask.type === 'gather');
+                
+                if (existingTask && isCompatible) {
                     existingTask.assigned = (existingTask.assigned || 0) + 1;
                     creep.memory.taskData = existingTask.data;
                     return;
                 } else {
-                    console.log(`[Tasks] Creep ${creep.name} mission ${creep.memory.missionId} no longer valid.`);
+                    console.log(`[Tasks] Creep ${creep.name} mission ${creep.memory.missionId} invalid or incompatible.`);
                 }
             }
 
@@ -341,17 +351,7 @@ module.exports = {
 
     findTaskForCreep: function(creep, tasks) {
         const role = creep.memory.role;
-        const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
-        const isFull = creep.store.getFreeCapacity() === 0;
-        
-        // State Hysteresis
-        const wasWorking = creep.memory.working; 
-        let working = wasWorking;
-        
-        if (isFull) working = true;
-        if (!hasEnergy) working = false;
-        
-        creep.memory.working = working;
+        const working = creep.memory.working;
         console.log(`[Tasks] Finding task for ${creep.name}. Role: ${role}, Working: ${working}, Energy: ${creep.store.getUsedCapacity(RESOURCE_ENERGY)}`);
 
         // Filter tasks by Role and Type (Gather vs Work)
