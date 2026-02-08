@@ -83,7 +83,9 @@ module.exports.loop = function() {
         // Run creep logic globally, as they may be in any room
         for(var name in Game.creeps) {
             var creep = Game.creeps[name];
-            if(creep.memory.role == 'universal') roleUniversal.run(creep);
+            if(['universal', 'miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'defender'].includes(creep.memory.role)) {
+                roleUniversal.run(creep);
+            }
         }
 
         // --- COLONY LOOP ---
@@ -98,7 +100,7 @@ module.exports.loop = function() {
                 // Run towers per room to avoid iterating Game.structures (performance)
                 const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } });
                 for (const tower of towers) {
-                    roleTower.run(tower);
+                    // roleTower.run(tower);
                 }
 
                 const spawns = room.find(FIND_MY_SPAWNS);

@@ -44,16 +44,27 @@ module.exports = {
         if (topRequest) {
             const spawn = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning)[0];
             if (spawn) {
-                this.executeSpawn(spawn, topRequest.role, room, state);
+                this.executeSpawn(spawn, topRequest, room, state);
             }
         }
     },
 
-    executeSpawn: function(spawn, role, room, state) {
+    executeSpawn: function(spawn, request, room, state) {
+        const role = request.role;
         // Body Definitions
-        const tiers = this.getBodyTiers(role);
+        let body = request.body;
+        
+        // Calculate Budget
         const budget = state === 'EMERGENCY' ? Math.max(room.energyAvailable, 300) : room.energyCapacityAvailable;
-        const body = getTieredBody(budget, tiers);
+
+        if (!body) {
+            if (request.requirements) {
+                body = this.generateBody(request.requirements, budget);
+            } else {
+                const tiers = this.getBodyTiers(role);
+                body = getTieredBody(budget, tiers);
+            }
+        }
         
         // Check Limits set by Overseer
         const brain = room.memory.brain;
@@ -84,6 +95,80 @@ module.exports = {
         }
     },
 
+    generateBody: function(requirements, budget) {
+        let totalCost = 0;
+        const counts = {};
+        
+        // 1. Initial Cost Calculation
+        for (const part in requirements) {
+            const count = requirements[part];
+            counts[part] = count;
+            totalCost += BODYPART_COST[part] * count;
+        }
+
+        // 2. Scale Down if needed
+        if (totalCost > budget) {
+            const scale = budget / totalCost;
+            totalCost = 0; // Recalculate
+            for (const part in counts) {
+                let count = Math.floor(requirements[part] * scale);
+                // Ensure at least 1 if required (soft limit), unless budget is extremely low
+                if (count < 1 && requirements[part] > 0) count = 1;
+                counts[part] = count;
+                totalCost += count * BODYPART_COST[part];
+            }
+        }
+
+        // 3. Hard Budget Cap (Trim parts if still over due to soft limits)
+        // Priority for REMOVAL: CLAIM > ATTACK > RANGED > WORK > CARRY > TOUGH > MOVE
+        const removalOrder = [CLAIM, ATTACK, RANGED_ATTACK, WORK, CARRY, TOUGH, MOVE];
+        
+        while (totalCost > budget) {
+            let removed = false;
+            for (const part of removalOrder) {
+                if (counts[part] > 0) {
+                    // Optimization: Prefer removing from types that have > 1 part first
+                    if (counts[part] > 1) {
+                        counts[part]--;
+                        totalCost -= BODYPART_COST[part];
+                        removed = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!removed) {
+                // If we couldn't remove any "excess" parts, remove single parts
+                for (const part of removalOrder) {
+                    if (counts[part] > 0) {
+                        counts[part]--;
+                        totalCost -= BODYPART_COST[part];
+                        removed = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!removed) break; // Should not happen unless empty
+        }
+
+        return this.formatBody(counts);
+    },
+
+    formatBody: function(counts) {
+        const body = [];
+        // Standard spawn order: TOUGH -> WORK -> CARRY -> ATTACK -> MOVE
+        const spawnOrder = [TOUGH, WORK, CARRY, ATTACK, RANGED_ATTACK, HEAL, CLAIM, MOVE];
+        
+        for (const part of spawnOrder) {
+            const count = counts[part] || 0;
+            for (let i = 0; i < count; i++) {
+                body.push(part);
+            }
+        }
+        return body;
+    },
+
     getBodyTiers: function(role) {
         // Simplified tier definitions for the example
         if (role === 'universal') return [
@@ -91,7 +176,7 @@ module.exports = {
             [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
             [WORK, WORK, WORK, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE]
         ];
-        if (role === 'harvester_big') return [
+        if (role === 'miner') return [
             [WORK, WORK, CARRY, MOVE],
             [WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE],
             [WORK, WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE]
@@ -109,7 +194,7 @@ module.exports = {
             [TOUGH, ATTACK, MOVE],
             [TOUGH, TOUGH, ATTACK, ATTACK, MOVE, MOVE]
         ];
-        // Fallback/Bootstrap harvester
+        // Fallback/Bootstrap miner
         return [[WORK, CARRY, MOVE]];
     }
 };

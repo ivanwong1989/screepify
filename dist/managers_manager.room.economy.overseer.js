@@ -58,12 +58,19 @@ module.exports = {
         const hasConstruction = sites.length > 0;
         const needsRepair = decayingStructures.length > 0;
 
+        // Starvation Check:
+        // If we have no storage, and energy is low (< 50%), disable construction to prevent
+        // builders from stealing energy needed for spawning harvesters/haulers.
+        const energyRatio = room.energyAvailable / room.energyCapacityAvailable;
+        const isStarving = !room.storage && energyRatio < 0.5;
+
         // 3. Determine State
         // Priority: Emergency > Defense > Growth > Stable
         let state = 'STABLE';
         if (isEmergency) state = 'EMERGENCY';
         else if (underAttack) state = 'DEFENSE';
-        else if (hasConstruction) state = 'GROWTH';
+        else if (hasConstruction && !isStarving) state = 'GROWTH';
+        console.log(`[Overseer] Room ${room.name} State: ${state}`);
 
         // 4. Determine Strategies (Mining, etc.)
         this.determineStrategies(room, brain);
@@ -72,10 +79,15 @@ module.exports = {
         brain.state = state;
         brain.needs = {
             repair: needsRepair,
-            build: hasConstruction,
+            build: hasConstruction && !isStarving,
             hostiles: underAttack
         };
         
+        // 6. Generate Missions & Population
+        this.generateMissions(room);
+        console.log(`[Overseer] Missions generated: ${brain.missions ? brain.missions.length : 0}`);
+        this.managePopulation(room);
+
         // Visual Debug
         new RoomVisual(room.name).text(`Brain: ${state}`, 1, 1, {align: 'left', opacity: 0.5});
         this.visualizeStrategies(room);
@@ -205,5 +217,189 @@ module.exports = {
                 );
             }
         }
+    },
+
+    generateMissions: function(room) {
+        const brain = room.memory.brain;
+        const missions = [];
+        const cache = global.getRoomCache(room);
+        
+        // 1. Economy & Logistics Missions
+        // Mining: Check strategies and current saturation
+        const miningStrategies = brain.strategies.mining || {};
+        for (const sourceId in miningStrategies) {
+            const strategy = miningStrategies[sourceId];
+            const source = Game.getObjectById(sourceId);
+            // Only create mission if source exists and has energy
+            if (source && source.energy > 0) {
+                // Monitor WORK parts assigned to this source
+                const assignedMiners = (cache.myCreeps || []).filter(c => 
+                    c.memory.taskData && 
+                    c.memory.taskData.targetId === sourceId && 
+                    c.memory.taskData.action === 'harvest'
+                );
+                const currentWork = assignedMiners.reduce((sum, c) => sum + c.getActiveBodyparts(WORK), 0);
+                
+                missions.push({
+                    type: 'MINING',
+                    priority: 10,
+                    data: {
+                        sourceId: sourceId,
+                        mode: strategy.mode,
+                        containerId: strategy.containerId,
+                        currentWork: currentWork,
+                        targetWork: 5 // Standard saturation
+                    }
+                });
+            }
+        }
+
+        // Refill: High priority if energy is needed
+        if (room.energyAvailable < room.energyCapacityAvailable) {
+            missions.push({
+                type: 'REFILL',
+                priority: 100,
+                data: {
+                    amount: room.energyCapacityAvailable - room.energyAvailable
+                }
+            });
+        }
+
+        // Logistics: Check containers > 50% or dropped energy
+        const containers = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getUsedCapacity(RESOURCE_ENERGY) > s.store.getCapacity(RESOURCE_ENERGY) * 0.5
+        });
+        const dropped = room.find(FIND_DROPPED_RESOURCES, { filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 100 });
+        
+        if (containers.length > 0 || dropped.length > 0) {
+            missions.push({
+                type: 'LOGISTICS',
+                priority: 50,
+                data: {
+                    containerIds: containers.map(c => c.id),
+                    droppedIds: dropped.map(d => d.id)
+                }
+            });
+        }
+
+        // 2. Infrastructure & Progress Missions
+        // Upgrade: Check downgrade timer or surplus
+        const storageSurplus = room.storage && room.storage.store[RESOURCE_ENERGY] > 50000;
+        const downgradeCritical = room.controller.ticksToDowngrade < 5000;
+        
+        if (downgradeCritical || storageSurplus) {
+            missions.push({
+                type: 'UPGRADE',
+                priority: downgradeCritical ? 90 : 20,
+                data: {
+                    targetId: room.controller.id,
+                    intensity: storageSurplus ? 'high' : 'maintenance'
+                }
+            });
+        }
+
+        // Build: If sites exist
+        if (brain.needs.build) {
+            missions.push({
+                type: 'BUILD',
+                priority: 30,
+                data: {}
+            });
+        }
+
+        // Repair: If structures are decaying
+        if (brain.needs.repair) {
+            missions.push({
+                type: 'REPAIR',
+                priority: 40,
+                data: {}
+            });
+        }
+
+        brain.missions = missions;
+    },
+
+    managePopulation: function(room) {
+        const brain = room.memory.brain;
+        const creeps = global.getRoomCache(room).myCreeps || [];
+        // Filter out creeps about to die (TTL < 100) to trigger pre-spawning
+        const validCreeps = creeps.filter(c => (c.ticksToLive || 1500) > 100);
+        
+        const roleCounts = {};
+        validCreeps.forEach(c => {
+            const role = c.memory.role || 'unknown';
+            roleCounts[role] = (roleCounts[role] || 0) + 1;
+        });
+
+        const missions = brain.missions || [];
+        const spawnRequests = [];
+
+        // Map Missions to Roles and Desired Counts
+        const miningMissions = missions.filter(m => m.type === 'MINING');
+        const staticMinersNeeded = miningMissions.filter(m => m.data.mode === 'static').length;
+        
+        // Calculate mobile miners based on expected body size (RCL1 = 1 WORK, RCL2+ = 2 WORK)
+        // We cap mobile miner requirements at 2 WORK parts in the switch below, so max 2 WORK per creep.
+        const workPerMobileMiner = room.energyCapacityAvailable <= 300 ? 1 : 2;
+        const mobileMinersPerSource = Math.ceil(5 / workPerMobileMiner);
+        const mobileMinersNeeded = miningMissions.filter(m => m.data.mode === 'mobile').length * mobileMinersPerSource;
+
+        const desired = {
+            miner: staticMinersNeeded,
+            mobile_miner: mobileMinersNeeded,
+            hauler: missions.some(m => m.type === 'LOGISTICS' || m.type === 'REFILL') ? 2 : 0,
+            upgrader: missions.some(m => m.type === 'UPGRADE') ? (missions.find(m => m.type === 'UPGRADE').data.intensity === 'high' ? 3 : 1) : 0,
+            builder: missions.some(m => m.type === 'BUILD') ? Math.min(3, Math.ceil((global.getRoomCache(room).constructionSites || []).length / 2)) : 0,
+            repairer: missions.some(m => m.type === 'REPAIR') ? 1 : 0
+        };
+
+        // Generate Spawn Requests
+        for (const role in desired) {
+            if ((roleCounts[role] || 0) < desired[role]) {
+                let requirements = {};
+                let priority = 10;
+
+                switch (role) {
+                    case 'miner':
+                        // 5 WORK, 1 CARRY, 3 MOVE (Standard static miner)
+                        requirements = { [WORK]: 5, [CARRY]: 1, [MOVE]: 3 };
+                        priority = 100;
+                        break;
+                    case 'mobile_miner':
+                        // Balanced for mining and carrying
+                        requirements = { [WORK]: 2, [CARRY]: 2, [MOVE]: 2 };
+                        priority = 90;
+                        break;
+                    case 'hauler':
+                        // 10 CARRY, 5 MOVE (Standard hauler)
+                        requirements = { [CARRY]: 10, [MOVE]: 5 };
+                        priority = 50;
+                        break;
+                    case 'upgrader':
+                        const highIntensity = missions.some(m => m.type === 'UPGRADE' && m.data.intensity === 'high');
+                        requirements = highIntensity ? { [WORK]: 10, [CARRY]: 2, [MOVE]: 6 } : { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 };
+                        priority = 20;
+                        break;
+                    case 'builder':
+                        requirements = { [WORK]: 4, [CARRY]: 4, [MOVE]: 4 };
+                        priority = 30;
+                        break;
+                    case 'repairer':
+                        requirements = { [WORK]: 2, [CARRY]: 2, [MOVE]: 2 };
+                        priority = 40;
+                        break;
+                    default:
+                        requirements = { [WORK]: 1, [CARRY]: 1, [MOVE]: 1 };
+                        break;
+                }
+
+                spawnRequests.push({
+                    role: role,
+                    priority: priority,
+                    requirements: requirements
+                });
+            }
+        }
+        brain.spawnRequests = spawnRequests;
     }
 };
