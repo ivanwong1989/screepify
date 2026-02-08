@@ -31,6 +31,11 @@ module.exports = {
 
         if (spawnRequests.length === 0) return;
 
+        if (Memory.debug) {
+            const reqString = spawnRequests.map(r => `${r.role}(x${r.count}, p:${r.priority})`).join(', ');
+            console.log(`[Spawner] Queue: ${reqString}`);
+        }
+
         // 1. Sort requests by priority
         spawnRequests.sort((a, b) => b.priority - a.priority);
         const topRequest = spawnRequests[0];
@@ -50,6 +55,26 @@ module.exports = {
         const budget = state === 'EMERGENCY' ? Math.max(room.energyAvailable, 300) : room.energyCapacityAvailable;
         const body = getTieredBody(budget, tiers);
         
+        // Check Limits set by Overseer
+        const brain = room.memory.brain;
+        if (brain && brain.limits && brain.census) {
+            // Check Creep Cap
+            if (brain.census.total >= brain.limits.maxCreeps) {
+                console.log(`[Spawner] Denied ${role}: Max Creeps reached (${brain.census.total}/${brain.limits.maxCreeps})`);
+                return;
+            }
+            
+            // Check WORK Saturation
+            const newWorkParts = body.filter(p => p === WORK).length;
+            if (newWorkParts > 0) {
+                const currentWork = brain.census.bodyParts[WORK] || 0;
+                if (currentWork + newWorkParts > brain.limits.maxWorkParts) {
+                    console.log(`[Spawner] Denied ${role}: Max WORK Saturation (${currentWork}/${brain.limits.maxWorkParts})`);
+                    return;
+                }
+            }
+        }
+
         const name = `${role}_${Game.time}`;
         const memory = { role: role, room: room.name };
         

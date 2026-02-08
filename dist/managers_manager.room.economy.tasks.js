@@ -18,10 +18,14 @@ module.exports = {
         
         creeps.forEach(creep => {
             // If creep has a valid mission, skip
-            if (creep.memory.missionId && this.isMissionValid(creep.memory.missionId, missions)) {
-                return;
+            if (creep.memory.missionId) {
+                const existingMission = missions.find(m => m.id === creep.memory.missionId);
+                if (existingMission) {
+                    existingMission.assigned = (existingMission.assigned || 0) + 1;
+                    return;
+                }
             }
-            
+
             // Find suitable mission
             const mission = this.findMissionForCreep(creep, missions);
             if (mission) {
@@ -35,6 +39,23 @@ module.exports = {
             }
         });
 
+        // Debug: Mission Summary
+        if (Memory.debug) {
+            const assignedCount = missions.reduce((acc, m) => acc + (m.assigned || 0), 0);
+            const totalSlots = missions.reduce((acc, m) => acc + (m.limit || 1), 0);
+            console.log(`[Tasks] Missions: ${missions.length} types, ${assignedCount}/${totalSlots} slots filled.`);
+            
+            const byType = _.groupBy(missions, m => m.id.split('_')[0]);
+            const summary = Object.keys(byType).map(type => {
+                const ms = byType[type];
+                const assigned = ms.reduce((acc, m) => acc + (m.assigned || 0), 0);
+                const limit = ms.reduce((acc, m) => acc + (m.limit || 1), 0);
+                const prio = ms[0].priority;
+                return `${type}: ${assigned}/${limit} (P:${prio})`;
+            }).join(', ');
+            console.log(`[Tasks] Breakdown: ${summary}`);
+        }
+
         // 3. Generate Spawn Requests for Unassigned Missions
         const unassignedMissions = missions.filter(m => !m.assigned || m.assigned < (m.limit || 1));
         const spawnRequests = [];
@@ -44,7 +65,11 @@ module.exports = {
         
         for (let role in counts) {
             // Find a representative mission to inherit priority
-            const topMission = unassignedMissions.find(m => m.role === role);
+            // Fix: Find the HIGHEST priority unassigned mission for this role
+            const roleMissions = unassignedMissions.filter(m => m.role === role);
+            roleMissions.sort((a, b) => b.priority - a.priority);
+            const topMission = roleMissions[0];
+            
             spawnRequests.push({
                 role: role,
                 count: counts[role],
@@ -60,18 +85,43 @@ module.exports = {
         const missions = [];
         const brain = room.memory.brain;
         const cache = global.getRoomCache(room);
+        const myCreeps = cache.myCreeps || [];
+        const terrain = room.getTerrain();
         
         // Harvest Missions (Always needed)
         // Type: 'gather'
         room.find(FIND_SOURCES).forEach(source => {
-            missions.push({
-                id: `harvest_${source.id}`,
-                role: 'universal',
-                priority: 100,
-                data: { targetId: source.id, action: 'harvest' },
-                limit: 3, // Allow multiple harvesters per source for universal creeps
-                type: 'gather'
-            });
+            // Calculate open spots around the source
+            let openSpots = 0;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    if (terrain.get(source.pos.x + dx, source.pos.y + dy) !== TERRAIN_MASK_WALL) {
+                        openSpots++;
+                    }
+                }
+            }
+
+            // Count dedicated miners (harvester_big) targeting this source
+            const dedicatedMiners = myCreeps.filter(c => 
+                c.memory.role === 'harvester_big' && 
+                c.memory.target_source_id === source.id
+            ).length;
+
+            // If we have dedicated miners, they saturate the source (5 WORK parts).
+            // Universal creeps should only harvest if there are spots LEFT over.
+            const limit = Math.max(0, openSpots - dedicatedMiners);
+
+            if (limit > 0) {
+                missions.push({
+                    id: `harvest_${source.id}`,
+                    role: 'universal',
+                    priority: 100,
+                    data: { targetId: source.id, action: 'harvest' },
+                    limit: limit,
+                    type: 'gather'
+                });
+            }
         });
 
         // Logistics: Fill Spawns & Extensions
@@ -82,11 +132,16 @@ module.exports = {
             s.my && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         );
         
+        // Check if we have dedicated haulers
+        const haulersCount = myCreeps.filter(c => c.memory.role === 'hauler').length;
+        // If we have plenty of haulers, reduce priority/necessity for universal creeps to fill
+        const fillPriority = haulersCount > 2 ? 50 : 200;
+
         energyStructures.forEach(s => {
             missions.push({
                 id: `fill_${s.id}`,
                 role: 'universal',
-                priority: 200, // Higher priority than harvesting to keep spawning active
+                priority: fillPriority, 
                 data: { targetId: s.id, action: 'transfer' },
                 limit: 1,
                 type: 'work'
@@ -152,6 +207,11 @@ module.exports = {
         const role = creep.memory.role;
         const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
         const isFull = creep.store.getFreeCapacity() === 0;
+        // Hysteresis: If we have energy and were previously working, keep working until empty.
+        // If we have no energy, we must gather.
+        // If we are full, we must work.
+        // If we are partially full, prefer to finish filling up unless we were already working.
+        const wasWorking = creep.memory.working; 
 
         // Filter by role compatibility
         let candidates = missions.filter(m => {
@@ -159,20 +219,12 @@ module.exports = {
         });
         
         // Filter by State (Gather vs Work)
-        if (hasEnergy) {
-            // If full, MUST work. If partial, prefer work but can gather if needed? 
-            // For simplicity: If not empty, prefer Work. If empty, MUST Gather.
-            // To avoid flip-flopping with partial energy, we stick to 'work' if we have any energy,
-            // unless we are explicitly empty.
-            // However, if we are not full, we *could* gather.
-            // Let's enforce: Full -> Work. Empty -> Gather. Partial -> Gather (fill up).
-            if (isFull) {
-                candidates = candidates.filter(m => m.type === 'work');
-            } else {
-                candidates = candidates.filter(m => m.type === 'gather');
-            }
+        if (isFull || (hasEnergy && wasWorking)) {
+            candidates = candidates.filter(m => m.type === 'work');
+            creep.memory.working = true;
         } else {
             candidates = candidates.filter(m => m.type === 'gather');
+            creep.memory.working = false;
         }
 
         // Sort by priority then assignment count
