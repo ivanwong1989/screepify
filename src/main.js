@@ -1,29 +1,5 @@
-var roleHarvester = require('role.harvester');
-var roleHauler = require('role.hauler');
-var roleHaulerControllerSpecial = require('role.hauler_controller_special');
-var roleHarvesterBig = require('role.harvester_big');
-var roleUpgrader = require('role.upgrader');
-var roleBuilder = require('role.builder');
-var roleTower = require('role.tower');
-var roleDefender = require('role.defender');
-var roleScout = require('role.scout');
-var roleRemoteHarvester = require('role.remote_harvester');
-var roleMissionDefenderRange = require('role.mission_defender_range');
-var roleMissionDefenderTank = require('role.mission_defender_tank');
-var roleMissionDecoy = require('role.mission_defender_decoy');
-var roleMissionRangeHealer = require('role.mission_range_healer');
-var roleMissionReserver = require('role.mission_reserver');
-var roleMissionClaimer = require('role.mission_claimer');
-var roleMissionDismantler = require('role.mission_dismantler');
-var roleMissionBootstrap = require('role.mission_room_bootstrap_builder_harvester');
-var roleMissionHaulerInterRoom = require('role.mission_hauler_interroom');
-var roleMissionRemoteHarvester = require('role.mission_remote_harvester');
-var roleMissionRemoteHauler = require('role.mission_remote_haulers');
-var roleDrainer = require('role.drainer');
-var managerMission = require('managers_manager.mission');
-var managerRoomVisualizer = require('managers_manager.room.visualizer');
+var roleUniversal = require('role.universal');
 var runColony = require('runColony');
-var libPathing = require('lib.pathing');
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
 //const profiler = require('screeps-profiler');
@@ -53,36 +29,6 @@ Object.defineProperty(global, 'debugoff', {
         return 'Debug mode DISABLED';
     },
     configurable: true
-});
-
-
-// Console help
-Object.defineProperty(global, 'helpme', {
-    get: function() {
-        const text = `
-=== Supported Mission Flags ===
-[Combat]
-- FlagRallyDefender : Rally point for defenders
-- FlagAssembly      : Assembly point for squads
-- FlagRallyCoy      : Rally point for decoys
-
-[Economy/Expansion]
-- FlagReserver*     : Starts reserver mission (e.g. FlagReserver1)
-- FlagClaimer       : Starts claimer mission
-- FlagBootstrap     : Starts bootstrap mission
-- FlagRMining*      : Starts remote mining mission (e.g. FlagRMining1)
-
-[Utility]
-- FlagDismantle     : Target for dismantlers
-- FlagBank          : Source room for MovingHouse
-- FlagSink          : Destination room for MovingHouse
-- FlagDrainer       : Target for drainers
-- FlagVisual        : Enables room visuals
-===============================
-`;
-        console.log(text);
-        return 'Check console output.';
-    }
 });
 
 
@@ -161,6 +107,7 @@ module.exports.loop = function() {
             if(creep.memory.role == 'mission_remote_harvester') roleMissionRemoteHarvester.run(creep);
             if(creep.memory.role == 'mission_remote_hauler') roleMissionRemoteHauler.run(creep);
             if(creep.memory.role == 'drainer') roleDrainer.run(creep);
+            if(creep.memory.role == 'universal') roleUniversal.run(creep);
         }
 
         // --- COLONY LOOP ---

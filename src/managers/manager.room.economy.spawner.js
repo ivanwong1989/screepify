@@ -27,67 +27,21 @@ module.exports = {
         if (!room.memory.brain) return;
         const brain = room.memory.brain;
         const state = brain.state;
-        const currentCounts = brain.counts || {};
+        const spawnRequests = brain.spawnRequests || [];
 
-        // 1. Determine Quotas based on State
-        const quotas = this.getQuotas(room, state);
+        if (spawnRequests.length === 0) return;
 
-        // 2. Check for Deficits
-        let spawnRequest = null;
-        
-        // Priority Order
-        const priority = ['harvester', 'harvester_big', 'hauler', 'defender', 'upgrader', 'builder'];
-        
-        for (let role of priority) {
-            const current = (currentCounts[role] || 0);
-            const target = (quotas[role] || 0);
-            if (current < target) {
-                spawnRequest = role;
-                break;
-            }
-        }
+        // 1. Sort requests by priority
+        spawnRequests.sort((a, b) => b.priority - a.priority);
+        const topRequest = spawnRequests[0];
 
-        // 3. Execute Spawn
-        if (spawnRequest) {
+        // 2. Execute Spawn
+        if (topRequest) {
             const spawn = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning)[0];
             if (spawn) {
-                this.executeSpawn(spawn, spawnRequest, room, state);
+                this.executeSpawn(spawn, topRequest.role, room, state);
             }
         }
-    },
-
-    getQuotas: function(room, state) {
-        const quotas = {
-            harvester_big: 0,
-            harvester: 0,
-            hauler: 0,
-            upgrader: 0,
-            builder: 0,
-            defender: 0
-        };
-
-        const numSources = room.find(FIND_SOURCES).length;
-
-        if (state === 'EMERGENCY') {
-            quotas.harvester = 2;
-            quotas.hauler = 1;
-        } else {
-            quotas.harvester_big = numSources;
-            quotas.hauler = numSources + 1; // Base baseline
-            quotas.upgrader = 1;
-
-            if (state === 'GROWTH') {
-                quotas.builder = 2;
-            } else if (state === 'DEFENSE') {
-                quotas.defender = 2;
-                quotas.upgrader = 0; // Divert energy to defense
-            } else if (state === 'STABLE') {
-                if (room.storage && room.storage.store[RESOURCE_ENERGY] > 100000) {
-                    quotas.upgrader = 2;
-                }
-            }
-        }
-        return quotas;
     },
 
     executeSpawn: function(spawn, role, room, state) {
@@ -107,6 +61,11 @@ module.exports = {
 
     getBodyTiers: function(role) {
         // Simplified tier definitions for the example
+        if (role === 'universal') return [
+            [WORK, CARRY, MOVE],
+            [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
+            [WORK, WORK, WORK, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE]
+        ];
         if (role === 'harvester_big') return [
             [WORK, WORK, CARRY, MOVE],
             [WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE],
