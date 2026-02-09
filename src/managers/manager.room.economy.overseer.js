@@ -26,14 +26,17 @@ var managerOverseer = {
      * @param {Room} room
      */
     run: function(room) {
+        if (!room.memory.overseer) room.memory.overseer = {};
+
         // 1. Gather Intel
         const intel = this.gatherIntel(room);
 
         // 2. Determine Room State
         const state = this.determineState(room, intel);
+        const economyState = this.determineEconomyState(room, intel);
 
         // 3. Generate Missions
-        const missions = this.generateMissions(room, intel, state);
+        const missions = this.generateMissions(room, intel, state, economyState);
 
         // 4. Analyze Census (Match Creeps to Missions)
         this.analyzeCensus(missions, intel.myCreeps);
@@ -47,14 +50,15 @@ var managerOverseer = {
         // Spawner will read this to queue creeps.
         room._missions = missions;
         room._state = state;
+        room._economyState = economyState;
 
         // Publish to Memory
-        if (!room.memory.overseer) room.memory.overseer = {};
         room.memory.overseer.missions = missions;
         room.memory.overseer.state = state;
+        room.memory.overseer.economyState = economyState;
 
         if (Memory.debug) {
-            this.visualize(room, missions, state);
+            this.visualize(room, missions, state, economyState);
         }
     },
 
@@ -65,6 +69,14 @@ var managerOverseer = {
     gatherIntel: function(room) {
         const cache = global.getRoomCache(room);
         const terrain = room.getTerrain();
+        
+        const containers = cache.structuresByType[STRUCTURE_CONTAINER] || [];
+        const storage = room.storage;
+        
+        const containerEnergy = containers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
+        const containerCapacity = containers.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
+        const storageEnergy = storage ? storage.store[RESOURCE_ENERGY] : 0;
+        const storageCapacity = storage ? storage.store.getCapacity(RESOURCE_ENERGY) : 0;
         
         // Analyze Sources
         const sources = room.find(FIND_SOURCES).map(source => {
@@ -111,12 +123,17 @@ var managerOverseer = {
         return {
             sources: sources,
             myCreeps: cache.myCreeps || [],
+            hostiles: cache.hostiles || [],
             constructionSites: cache.constructionSites || [],
             structures: cache.structuresByType || {},
             controller: room.controller,
             availableControllerSpaces: controllerSpaces,
             energyAvailable: room.energyAvailable,
-            energyCapacityAvailable: room.energyCapacityAvailable
+            energyCapacityAvailable: room.energyCapacityAvailable,
+            containerEnergy,
+            containerCapacity,
+            storageEnergy,
+            storageCapacity
         };
     },
 
@@ -140,12 +157,42 @@ var managerOverseer = {
     },
 
     /**
+     * Determines the economy state (Stockpiling vs Upgrading).
+     * @param {Room} room
+     * @param {Object} intel
+     */
+    determineEconomyState: function(room, intel) {
+        let current = room.memory.overseer.economyState || 'STOCKPILING';
+        
+        const totalStored = intel.containerEnergy + intel.storageEnergy;
+        const totalCapacity = intel.containerCapacity + intel.storageCapacity;
+        
+        // If no infrastructure, default to UPGRADING
+        if (totalCapacity < 500) return 'UPGRADING';
+
+        if (room.storage) {
+            const UPGRADE_START = 50000;
+            const UPGRADE_STOP = 10000;
+            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START) current = 'UPGRADING';
+            else if (current === 'UPGRADING' && totalStored <= UPGRADE_STOP) current = 'STOCKPILING';
+        } else {
+            const UPGRADE_START = totalCapacity * 0.8;
+            const UPGRADE_STOP = totalCapacity * 0.2;
+            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START) current = 'UPGRADING';
+            else if (current === 'UPGRADING' && totalStored <= UPGRADE_STOP) current = 'STOCKPILING';
+        }
+        
+        return current;
+    },
+
+    /**
      * Generates a list of missions based on intel and state.
      * @param {Room} room 
      * @param {Object} intel 
      * @param {String} state 
+     * @param {String} economyState
      */
-    generateMissions: function(room, intel, state) {
+    generateMissions: function(room, intel, state, economyState) {
         const missions = [];
         
         // Define budget for body part calculation
@@ -155,7 +202,12 @@ var managerOverseer = {
         }
         
         // Group creeps by mission for census feedback
-        const creepsByMission = _.groupBy(intel.myCreeps, c => c.memory.missionName);
+        const creepsByMission = intel.myCreeps.reduce((acc, c) => {
+            const key = c.memory.missionName;
+            acc[key] = acc[key] || [];
+            acc[key].push(c);
+            return acc;
+        }, {});
         
         const getMissionCensus = (name) => {
             const creeps = creepsByMission[name] || [];
@@ -165,6 +217,51 @@ var managerOverseer = {
                 carry: creeps.reduce((sum, c) => sum + c.getActiveBodyparts(CARRY), 0)
             };
         };
+
+        // --- Priority 0: Defense (Towers) ---
+        if (intel.hostiles.length > 0) {
+            missions.push({
+                name: 'tower:defense',
+                type: 'tower_attack',
+                targetIds: intel.hostiles.map(c => c.id),
+                priority: 1000
+            });
+        }
+
+        // --- Priority 0.5: Heal (Towers) ---
+        const damagedCreeps = intel.myCreeps.filter(c => c.hits < c.hitsMax);
+        if (damagedCreeps.length > 0) {
+            missions.push({
+                name: 'tower:heal',
+                type: 'tower_heal',
+                targetIds: damagedCreeps.map(c => c.id),
+                priority: 950
+            });
+        }
+
+        // --- Priority 4.5: Repair (Towers) ---
+        // Only if we have reasonable energy
+        if (intel.energyAvailable > intel.energyCapacityAvailable * 0.5) {
+            const allStructures = [].concat(...Object.values(intel.structures));
+            const damagedStructures = allStructures.filter(s => 
+                s.hits < s.hitsMax && 
+                s.structureType !== STRUCTURE_WALL && 
+                s.structureType !== STRUCTURE_RAMPART
+            );
+            const criticalForts = allStructures.filter(s => 
+                (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && 
+                s.hits < 5000
+            );
+            const allRepair = [...criticalForts, ...damagedStructures];
+            if (allRepair.length > 0) {
+                missions.push({
+                    name: 'tower:repair',
+                    type: 'tower_repair',
+                    targetIds: allRepair.map(s => s.id),
+                    priority: 40
+                });
+            }
+        }
 
         // --- Priority 1: Survival (Emergency) ---
         // If emergency, we might want to suppress other missions or boost priority of harvesting
@@ -272,10 +369,36 @@ var managerOverseer = {
             });
         });
 
-        // --- Priority 3: Logistics (Hauling/Refilling) ---
-        // Always maintain a logistics fleet to ensure energy flow.
+        // --- Priority 3: Logistics (Refill Towers) ---
         // Only enable if we have determined haulers are needed (efficiency met)
-        if (enableHaulers) {
+        // Scale down: Only generate if there is actually capacity to fill
+        const towers = intel.structures[STRUCTURE_TOWER] || [];
+        const hungryTowers = towers.filter(t => t.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+
+        if (enableHaulers && hungryTowers.length > 0) {
+            missions.push({
+                name: 'logistics:refill_towers',
+                type: 'transfer',
+                archetype: 'hauler',
+                targetType: 'transfer_list',
+                data: {
+                    targetIds: hungryTowers.map(t => t.id)
+                },
+                requirements: {
+                    archetype: 'hauler',
+                    count: 1
+                },
+                priority: isEmergency ? 950 : 95
+            });
+        }
+
+        // --- Priority 3.1: Logistics (Hauling/Refilling) ---
+        const refillTargets = [
+            ...(intel.structures[STRUCTURE_SPAWN] || []),
+            ...(intel.structures[STRUCTURE_EXTENSION] || [])
+        ].filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+
+        if (enableHaulers && refillTargets.length > 0) {
             const logisticsName = 'logistics:refill';
             const logCensus = getMissionCensus(logisticsName);
             const logArch = 'hauler';
@@ -293,7 +416,10 @@ var managerOverseer = {
                 name: logisticsName,
                 type: 'transfer',
                 archetype: logArch,
-                targetType: 'spawn_extension',
+                targetType: 'transfer_list',
+                data: {
+                    targetIds: refillTargets.map(s => s.id)
+                },
                 requirements: {
                     archetype: logArch,
                     count: logCensus.count + logNeeded
@@ -302,7 +428,7 @@ var managerOverseer = {
             });
         }
 
-        // --- Priority 3.1: Logistics (Refill Containers) ---
+        // --- Priority 3.2: Logistics (Refill Containers) ---
         const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
         const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
         
@@ -316,7 +442,7 @@ var managerOverseer = {
                 name: 'logistics:refill_containers',
                 type: 'transfer',
                 archetype: 'hauler',
-                targetType: 'logical_containers',
+                targetType: 'transfer_list',
                 data: {
                     targetIds: logicalContainers.map(c => c.id)
                 },
@@ -334,9 +460,17 @@ var managerOverseer = {
             let upgradePriority = 50;
             let desiredWork = 5;
 
-            if (intel.energyAvailable === intel.energyCapacityAvailable) {
-                upgradePriority = 80; // Surplus energy, boost upgrade
-                desiredWork = 15;
+            if (economyState === 'STOCKPILING') {
+                desiredWork = 1;
+                upgradePriority = 10;
+                if (intel.controller.ticksToDowngrade < 5000) {
+                    upgradePriority = 100; // Critical
+                }
+            } else {
+                if (intel.energyAvailable === intel.energyCapacityAvailable) {
+                    upgradePriority = 80;
+                    desiredWork = 15;
+                }
             }
 
             // If we have construction sites, throttle upgrading to prioritize building
@@ -399,11 +533,43 @@ var managerOverseer = {
         return missions;
     },
 
-    visualize: function(room, missions, state) {
-        room.visual.text(`State: ${state}`, 1, 1, {align: 'left', color: state === 'EMERGENCY' ? 'red' : 'green'});
-        let y = 2;
-        missions.forEach(m => {
-            room.visual.text(`[${m.priority}] ${m.name}`, 1, y++, {align: 'left', font: 0.4});
+    visualize: function(room, missions, state, economyState) {
+        room.visual.text(`State: ${state} | Eco: ${economyState}`, 1, 1, {align: 'left', color: state === 'EMERGENCY' ? 'red' : '#00ff00', font: 0.7});
+        
+        let y = 2.5;
+        const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
+
+        sortedMissions.forEach(m => {
+            const assigned = m.census ? m.census.count : 0;
+            const required = m.requirements ? m.requirements.count : 0;
+            const filled = assigned >= required;
+            const color = filled ? '#aaffaa' : '#ffaaaa';
+
+            room.visual.text(`[${m.priority}] ${m.name} (${assigned}/${required})`, 1, y, {align: 'left', font: 0.4, color: color});
+            y += 0.6;
+
+            if (m.pos) {
+                let label = `${m.type}`;
+                if (m.type === 'harvest' && m.data && m.data.mode) {
+                    label += ` (${m.data.mode})`;
+                }
+                label += `\n${assigned}/${required}`;
+
+                room.visual.text(
+                    label,
+                    m.pos.x,
+                    m.pos.y - 0.5,
+                    { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15, align: 'center' }
+                );
+                if (m.type === 'harvest') {
+                    room.visual.circle(m.pos, {fill: 'transparent', radius: 0.7, stroke: color, strokeWidth: 0.1, lineStyle: 'dashed'});
+                }
+            } else if (m.type === 'build' && m.targetIds && m.targetIds.length > 0) {
+                const target = Game.getObjectById(m.targetIds[0]);
+                if (target) {
+                    room.visual.text(`🔨 ${assigned}/${required}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
+                }
+            }
         });
     },
 
@@ -415,6 +581,28 @@ var managerOverseer = {
      * @param {Object} intel
      */
     reassignWorkers: function(room, missions, intel) {
+        // Helper to move creeps between missions
+        const moveCreeps = (fromMissionName, toMission, count) => {
+            if (!toMission || count <= 0) return;
+            const fromCreeps = intel.myCreeps.filter(c => c.memory.missionName === fromMissionName);
+            
+            let moved = 0;
+            for (let creep of fromCreeps) {
+                if (moved >= count) break;
+                
+                creep.memory.missionName = toMission.name;
+                delete creep.memory.task;
+                creep.memory.taskState = 'init';
+                
+                // Update Census
+                const fromMission = missions.find(m => m.name === fromMissionName);
+                if (fromMission && fromMission.census) fromMission.census.count--;
+                if (toMission.census) toMission.census.count++;
+                
+                moved++;
+            }
+        };
+
         // Strategy: Construction Blitz
         // If we have construction sites, steal upgraders to build.
         if (intel.constructionSites.length > 0) {
@@ -422,28 +610,42 @@ var managerOverseer = {
             const upgradeMission = missions.find(m => m.name === 'upgrade:controller');
 
             if (buildMission && upgradeMission) {
-                // Identify upgraders
                 const upgraders = intel.myCreeps.filter(c => c.memory.missionName === 'upgrade:controller');
-                
-                // Keep a minimum number of upgraders (e.g. 1) to prevent downgrade or maintain minimal progress
                 const minUpgraders = 1;
+                const available = upgraders.length - minUpgraders;
                 
-                if (upgraders.length > minUpgraders) {
-                    // Take the excess
-                    const availableToMove = upgraders.slice(minUpgraders);
-                    
-                    availableToMove.forEach(creep => {
-                        // Switch mission
-                        creep.memory.missionName = buildMission.name;
-                        // Clear task state to force re-evaluation by Tasker
-                        delete creep.memory.task;
-                        creep.memory.taskState = 'init';
-                        
-                        // Update Census Data on the mission objects so Spawner sees the correct counts for this tick
-                        if (upgradeMission.census) upgradeMission.census.count--;
-                        if (buildMission.census) buildMission.census.count++;
-                    });
+                if (available > 0) {
+                    moveCreeps('upgrade:controller', buildMission, available);
                 }
+            }
+        }
+
+        // Strategy: Logistics Balancing
+        // Priority: Towers > Spawns > Containers
+        const towerMission = missions.find(m => m.name === 'logistics:refill_towers');
+        const spawnMission = missions.find(m => m.name === 'logistics:refill');
+        
+        // 1. Towers need help?
+        if (towerMission && towerMission.census && towerMission.requirements) {
+            let deficit = towerMission.requirements.count - towerMission.census.count;
+            if (deficit > 0) {
+                // Steal from Containers
+                moveCreeps('logistics:refill_containers', towerMission, deficit);
+                
+                // Still need? Steal from Spawns
+                deficit = towerMission.requirements.count - towerMission.census.count;
+                if (deficit > 0) {
+                    moveCreeps('logistics:refill', towerMission, deficit);
+                }
+            }
+        }
+
+        // 2. Spawns need help?
+        if (spawnMission && spawnMission.census && spawnMission.requirements) {
+            const deficit = spawnMission.requirements.count - spawnMission.census.count;
+            if (deficit > 0) {
+                // Steal from Containers
+                moveCreeps('logistics:refill_containers', spawnMission, deficit);
             }
         }
     },

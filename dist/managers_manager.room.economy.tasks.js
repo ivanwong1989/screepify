@@ -17,6 +17,10 @@ var managerTasks = {
     run: function(room) {
         // 1. Read the Contract (Missions)
         // If no missions are published by Overseer, we have nothing to direct.
+        
+        // Initialize reservation table for this tick to prevent multiple creeps from targeting the same limited resource
+        room._reservedEnergy = {};
+        
         if (!room._missions) return;
         
         const missions = room._missions;
@@ -77,6 +81,17 @@ var managerTasks = {
             }
         });
 
+        // Sync Tasker's real-time census back to the mission object for the Spawner
+        // This prevents the Spawner from queuing creeps for missions we just filled with idle creeps
+        for (const name in missionStatus) {
+            const status = missionStatus[name];
+            if (status.mission.census) {
+                status.mission.census.count = status.assignedCount;
+                status.mission.census.workParts = status.assignedWork;
+                status.mission.census.carryParts = status.assignedCarry;
+            }
+        }
+
         // 5. Assign Actions
         creeps.forEach(creep => {
             if (!creep.spawning && creep.memory.missionName) {
@@ -84,6 +99,16 @@ var managerTasks = {
                 if (status) {
                     this.assignAction(creep, status.mission, room);
                 }
+            }
+        });
+
+        // 6. Assign Towers
+        room._towerTasks = {}; // Initialize ephemeral task list for this tick
+        const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } });
+        towers.forEach(tower => {
+            const bestMission = this.findBestTowerMission(tower, missions);
+            if (bestMission) {
+                this.assignTowerAction(tower, bestMission, room);
             }
         });
     },
@@ -94,6 +119,9 @@ var managerTasks = {
     findBestMission: function(creep, missions, missionStatus) {
         // Filter missions that are not fully staffed
         const candidates = missions.filter(m => {
+            // Exclude tower missions
+            if (m.type.startsWith('tower')) return false;
+
             const status = missionStatus[m.name];
             const req = m.requirements || {};
 
@@ -116,6 +144,15 @@ var managerTasks = {
         if (candidates.length === 0) return null;
         candidates.sort((a, b) => b.priority - a.priority);
 
+        return candidates[0];
+    },
+
+    findBestTowerMission: function(tower, missions) {
+        const candidates = missions.filter(m => {
+            if (m.type === 'tower_attack' || m.type === 'tower_heal' || m.type === 'tower_repair') return true;
+            return false;
+        });
+        candidates.sort((a, b) => b.priority - a.priority);
         return candidates[0];
     },
 
@@ -143,6 +180,33 @@ var managerTasks = {
         }
     },
 
+    assignTowerAction: function(tower, mission, room) {
+        let action = null;
+        let targetId = null;
+
+        if (mission.type === 'tower_attack') {
+            action = 'attack';
+            targetId = this.findBestTarget(tower, mission.targetIds);
+        } else if (mission.type === 'tower_heal') {
+            action = 'heal';
+            targetId = this.findBestTarget(tower, mission.targetIds);
+        } else if (mission.type === 'tower_repair') {
+            action = 'repair';
+            targetId = this.findBestTarget(tower, mission.targetIds);
+        }
+
+        if (action && targetId) {
+            room._towerTasks[tower.id] = { action, targetId };
+        }
+    },
+
+    findBestTarget: function(tower, targetIds) {
+        if (!targetIds || targetIds.length === 0) return null;
+        const targets = targetIds.map(id => Game.getObjectById(id)).filter(t => t);
+        const target = tower.pos.findClosestByRange(targets);
+        return target ? target.id : null;
+    },
+
     // --- Task Generators ---
 
     getHarvestTask: function(creep, mission) {
@@ -168,26 +232,43 @@ var managerTasks = {
             }
             
             // If there is a container/link nearby (even if full), we treat it as static mining and drop.
-            if (nearby.length > 0) {
+            if (nearby.length > 0 && (!mission.data || mission.data.mode !== 'mobile')) {
                 return { action: 'drop', resourceType: RESOURCE_ENERGY };
             }
             
             // If mission is explicitly static (drop mining), do not attempt delivery
             if (mission.data && mission.data.mode === 'static') {
-                return { action: 'drop', resourceType: RESOURCE_ENERGY };
+                // Only drop if we are near the source (range 1) to avoid dropping energy 
+                // in the middle of nowhere if the mission mode switched while traveling.
+                const source = Game.getObjectById(mission.sourceId);
+                if (source && creep.pos.inRangeTo(source, 1)) {
+                    return { action: 'drop', resourceType: RESOURCE_ENERGY };
+                }
             }
 
             // No container nearby: Mobile Mining behavior. Deliver to Spawn/Extension.
-            const deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
+            let deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
                 filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
                              s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
             });
+
+            if (!deliveryTarget) {
+                deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
+                    filter: s => (s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 50) ||
+                                 (s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+                });
+            }
 
             if (deliveryTarget) {
                 return { action: 'transfer', targetId: deliveryTarget.id, resourceType: RESOURCE_ENERGY };
             }
 
-            return { action: 'drop', resourceType: RESOURCE_ENERGY };
+            // Fallback to upgrading controller if everything is full
+            if (creep.room.controller && creep.room.controller.my) {
+                return { action: 'upgrade', targetId: creep.room.controller.id };
+            }
+
+            return null;
         }
 
         // 3. Harvest
@@ -198,12 +279,8 @@ var managerTasks = {
         this.updateState(creep);
         if (creep.memory.taskState === 'working') {
             let target = null;
-            if (mission.targetType === 'spawn_extension') {
-                target = creep.pos.findClosestByRange(FIND_STRUCTURES, {
-                    filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
-                                 s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                });
-            } else if (mission.targetType === 'logical_containers' && mission.data && mission.data.targetIds) {
+            
+            if (mission.targetType === 'transfer_list' && mission.data && mission.data.targetIds) {
                 const targets = mission.data.targetIds
                     .map(id => Game.getObjectById(id))
                     .filter(t => t && t.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
@@ -213,8 +290,33 @@ var managerTasks = {
             if (target) {
                 return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
             }
+
+            // Fallback: If primary targets are full, try Storage, Towers, or any other Refillable
+            if (room.storage && room.storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+                return { action: 'transfer', targetId: room.storage.id, resourceType: RESOURCE_ENERGY };
+            }
+
+            const cache = global.getRoomCache(room);
+            const towers = (cache.structuresByType[STRUCTURE_TOWER] || [])
+                .filter(s => s.my && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+            
+            if (towers.length > 0) {
+                const tower = creep.pos.findClosestByRange(towers);
+                if (tower) return { action: 'transfer', targetId: tower.id, resourceType: RESOURCE_ENERGY };
+            }
+
+            const refillables = [
+                ...(cache.structuresByType[STRUCTURE_SPAWN] || []),
+                ...(cache.structuresByType[STRUCTURE_EXTENSION] || [])
+            ].filter(s => s.my && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+            
+            if (refillables.length > 0) {
+                const target = creep.pos.findClosestByRange(refillables);
+                if (target) return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
+            }
         } else {
-            return this.getGatherTask(creep, room);
+            const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : [];
+            return this.getGatherTask(creep, room, excludeIds);
         }
         return null;
     },
@@ -252,21 +354,37 @@ var managerTasks = {
         }
     },
 
-    getGatherTask: function(creep, room) {
+    getGatherTask: function(creep, room, excludeIds = []) {
+        // Ensure reservation table exists (safety check)
+        if (!room._reservedEnergy) room._reservedEnergy = {};
+
         // 1. Pickup Dropped
         const dropped = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
-            filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+            filter: r => {
+                if (r.resourceType !== RESOURCE_ENERGY || r.amount <= 50) return false;
+                const reserved = room._reservedEnergy[r.id] || 0;
+                // Only target if there is enough energy remaining after other creeps take their share
+                return (r.amount - reserved) >= 50;
+            }
         });
         if (dropped) {
+            // Reserve the amount this creep will take (up to its capacity)
+            room._reservedEnergy[dropped.id] = (room._reservedEnergy[dropped.id] || 0) + creep.store.getFreeCapacity();
             return { action: 'pickup', targetId: dropped.id };
         }
 
         // 2. Withdraw from Container/Storage
         const structure = creep.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s => (s.structureType === STRUCTURE_CONTAINER || s.structureType === STRUCTURE_STORAGE) &&
-                         s.store[RESOURCE_ENERGY] > 50
+            filter: s => {
+                if (excludeIds.includes(s.id)) return false;
+                if ((s.structureType !== STRUCTURE_CONTAINER && s.structureType !== STRUCTURE_STORAGE)) return false;
+                const energy = s.store[RESOURCE_ENERGY];
+                const reserved = room._reservedEnergy[s.id] || 0;
+                return (energy - reserved) >= 50;
+            }
         });
         if (structure) {
+            room._reservedEnergy[structure.id] = (room._reservedEnergy[structure.id] || 0) + creep.store.getFreeCapacity();
             return { action: 'withdraw', targetId: structure.id, resourceType: RESOURCE_ENERGY };
         }
 

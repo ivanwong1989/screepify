@@ -1,4 +1,5 @@
 var roleUniversal = require('role.universal');
+var roleTower = require('role.tower');
 var runColony = require('runColony');
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
@@ -37,7 +38,11 @@ global.getRoomCache = function(room) {
     if (!room) return {};
     if (!room._cache || (room._cache && room._cache.time !== Game.time)) {
         const structures = room.find(FIND_STRUCTURES);
-        const structuresByType = _.groupBy(structures, 'structureType');
+        const structuresByType = structures.reduce((acc, s) => {
+            acc[s.structureType] = acc[s.structureType] || [];
+            acc[s.structureType].push(s);
+            return acc;
+        }, {});
         const dropped = room.find(FIND_DROPPED_RESOURCES);
         const ruins = room.find(FIND_RUINS);
         const myCreeps = room.find(FIND_MY_CREEPS);
@@ -97,16 +102,16 @@ module.exports.loop = function() {
             // Check if this is a valid colony (Owned controller + Spawns)
             if (room.controller && room.controller.my) {
                 // --- TOWER RUN LOGIC ---
-                // Run towers per room to avoid iterating Game.structures (performance)
-                const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } });
-                for (const tower of towers) {
-                    // roleTower.run(tower);
-                }
-
                 const spawns = room.find(FIND_MY_SPAWNS);
                 if (spawns.length > 0) {
                     // Run Colony Logic for this room
                     runColony.run(room, spawns[0], allCreeps);
+                }
+
+                // Run towers after Colony Logic (so Tasker has assigned tasks)
+                const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } });
+                for (const tower of towers) {
+                    roleTower.run(tower);
                 }
             }
         }
