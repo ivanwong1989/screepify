@@ -85,6 +85,9 @@ var managerTasks = {
         // This prevents the Spawner from queuing creeps for missions we just filled with idle creeps
         for (const name in missionStatus) {
             const status = missionStatus[name];
+            // Do not overwrite census for missions that track by role (e.g. fleet), as Tasker only tracks active assignments
+            if (status.mission.roleCensus) continue;
+
             if (status.mission.census) {
                 status.mission.census.count = status.assignedCount;
                 status.mission.census.workParts = status.assignedWork;
@@ -121,6 +124,9 @@ var managerTasks = {
         const candidates = missions.filter(m => {
             // Exclude tower missions
             if (m.type.startsWith('tower')) return false;
+            
+            // Exclude fleet missions (they are for spawning only)
+            if (m.type === 'hauler_fleet') return false;
 
             const status = missionStatus[m.name];
             const req = m.requirements || {};
@@ -131,7 +137,7 @@ var managerTasks = {
             // Check if creep is capable for this mission type
             if (m.type === 'harvest') {
                 if (creep.getActiveBodyparts(WORK) === 0) return false;
-            } else if (m.type === 'upgrade' || m.type === 'build') {
+            } else if (m.type === 'upgrade' || m.type === 'build' || m.type === 'repair') {
                 if (creep.getActiveBodyparts(WORK) === 0 || creep.getActiveBodyparts(CARRY) === 0) return false;
             } else if (m.type === 'transfer') {
                 if (creep.getActiveBodyparts(CARRY) === 0) return false;
@@ -159,6 +165,11 @@ var managerTasks = {
     assignAction: function(creep, mission, room) {
         let task = null;
         switch (mission.type) {
+            case 'hauler_fleet':
+                // Release creep from fleet mission so it can pick up real work
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                break;
             case 'harvest':
                 task = this.getHarvestTask(creep, mission);
                 break;
@@ -170,6 +181,12 @@ var managerTasks = {
                 break;
             case 'build':
                 task = this.getBuildTask(creep, mission, room);
+                break;
+            case 'repair':
+                task = this.getRepairTask(creep, mission, room);
+                break;
+            case 'decongest':
+                task = this.getDecongestTask(creep, mission);
                 break;
         }
 
@@ -205,6 +222,24 @@ var managerTasks = {
         const targets = targetIds.map(id => Game.getObjectById(id)).filter(t => t);
         const target = tower.pos.findClosestByRange(targets);
         return target ? target.id : null;
+    },
+
+    getDecongestTask: function(creep, mission) {
+        const targets = (mission.targetIds || []).map(id => Game.getObjectById(id)).filter(t => t);
+        if (targets.length > 0) {
+            const target = creep.pos.findClosestByRange(targets);
+            if (target) {
+                // If we are already parked near a flag, release the creep to be idle
+                if (creep.pos.inRangeTo(target.pos, 1)) {
+                    delete creep.memory.missionName;
+                    delete creep.memory.taskState;
+                    creep.say('parked');
+                    return null;
+                }
+                return { action: 'move', targetId: target.id };
+            }
+        }
+        return null;
     },
 
     // --- Task Generators ---
@@ -292,6 +327,11 @@ var managerTasks = {
             }
 
             if (target) {
+                if (target.store && target.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                    delete creep.memory.missionName;
+                    delete creep.memory.taskState;
+                    return null;
+                }
                 return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
             }
 
@@ -320,13 +360,21 @@ var managerTasks = {
             }
         } else {
             // If specific source is defined in mission data, use it
+            let task = null;
             if (mission.data && mission.data.sourceId) {
-                return this.getGatherTask(creep, room, { allowedIds: [mission.data.sourceId] });
+                task = this.getGatherTask(creep, room, { allowedIds: [mission.data.sourceId] });
+            } else {
+                const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
+                const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
+                task = this.getGatherTask(creep, room, { allowedIds, excludeIds });
             }
 
-            const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
-            const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
-            return this.getGatherTask(creep, room, { allowedIds, excludeIds });
+            if (!task) {
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                return null;
+            }
+            return task;
         }
         return null;
     },
@@ -337,7 +385,13 @@ var managerTasks = {
             return { action: 'upgrade', targetId: mission.targetId };
         } else {
             const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
-            return this.getGatherTask(creep, room, { allowedIds });
+            const task = this.getGatherTask(creep, room, { allowedIds });
+            if (!task) {
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                return null;
+            }
+            return task;
         }
     },
 
@@ -351,13 +405,50 @@ var managerTasks = {
             }
         } else {
             // If specific source is defined in mission data, use it
+            let task = null;
             if (mission.data && mission.data.sourceId) {
-                return this.getGatherTask(creep, room, { allowedIds: [mission.data.sourceId] });
+                task = this.getGatherTask(creep, room, { allowedIds: [mission.data.sourceId] });
+            } else {
+                const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
+                const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
+                task = this.getGatherTask(creep, room, { allowedIds, excludeIds });
             }
 
-            const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
-            const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
-            return this.getGatherTask(creep, room, { allowedIds, excludeIds });
+            if (!task) {
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                return null;
+            }
+            return task;
+        }
+        return null;
+    },
+
+    getRepairTask: function(creep, mission, room) {
+        this.updateState(creep);
+        if (creep.memory.taskState === 'working') {
+            const targets = (mission.targetIds || []).map(id => Game.getObjectById(id)).filter(t => t && t.hits < t.hitsMax);
+            const target = creep.pos.findClosestByRange(targets);
+            if (target) {
+                return { action: 'repair', targetId: target.id };
+            }
+        } else {
+            // If specific source is defined in mission data, use it
+            let task = null;
+            if (mission.data && mission.data.sourceId) {
+                task = this.getGatherTask(creep, room, { allowedIds: [mission.data.sourceId] });
+            } else {
+                const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
+                const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
+                task = this.getGatherTask(creep, room, { allowedIds, excludeIds });
+            }
+
+            if (!task) {
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                return null;
+            }
+            return task;
         }
         return null;
     },
@@ -412,7 +503,7 @@ var managerTasks = {
                 
                 // Reserve check
                 const reserved = room._reservedEnergy[t.id] || 0;
-                return (amount - reserved) >= 50;
+                return (amount - reserved) > 0;
             });
 
             const target = creep.pos.findClosestByRange(valid);
@@ -421,6 +512,11 @@ var managerTasks = {
                 if (target instanceof Resource) return { action: 'pickup', targetId: target.id };
                 return { action: 'withdraw', targetId: target.id, resourceType: RESOURCE_ENERGY };
             }
+            
+            if (creep.store[RESOURCE_ENERGY] > 0) {
+                creep.memory.taskState = 'working';
+            }
+            
             // If restricted to specific sources and none are available, return null (idle)
             return null;
         }

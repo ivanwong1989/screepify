@@ -19,7 +19,7 @@ var managerSpawner = {
             const req = mission.requirements || {};
             const current = mission.census;
 
-            if (req.count && current.count < req.count) {
+            if (req.count && current.count < req.count && req.spawn !== false) {
                 spawnQueue.push(mission);
             }
         });
@@ -35,7 +35,8 @@ var managerSpawner = {
         if (spawnQueue.length > 0) {
             const spawns = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning);
             if (spawns.length > 0) {
-                this.spawnCreep(spawns[0], spawnQueue[0], room);
+                const mission = this.selectMission(room, spawnQueue);
+                this.spawnCreep(spawns[0], mission, room);
             }
         }
     },
@@ -50,8 +51,13 @@ var managerSpawner = {
         }
         // If we have 0 creeps for this mission (bootstrapping), use current energy
         // to ensure we get at least one creep out to start working.
-        else if (mission.census.count === 0 && room.energyAvailable < budget) {
-            budget = Math.max(room.energyAvailable, 100);
+        else if (mission.census.count === 0) {
+            budget = Math.max(room.energyAvailable, 200);
+        }
+        // PREVENT DEADLOCK: If we are trying to spawn a critical economy creep (miner/hauler)
+        // and we are unable to reach full capacity (waiting), downgrade to available energy.
+        else if (['miner', 'hauler'].includes(mission.archetype) && room.energyAvailable < budget) {
+            budget = Math.max(room.energyAvailable, 200);
         }
 
         const body = this.generateBody(mission, budget);
@@ -69,12 +75,43 @@ var managerSpawner = {
             const result = spawn.spawnCreep(body, name, { memory: memory });
             if (result === OK) {
                 log(`[Spawner] Spawning ${name} for ${mission.name} (Cost: ${cost})`);
+
+                if (!room.memory.spawnHistory) room.memory.spawnHistory = [];
+                room.memory.spawnHistory.push(mission.archetype);
+                if (room.memory.spawnHistory.length > 5) room.memory.spawnHistory.shift();
             } else {
                 log(`[Spawner] Failed to spawn ${name}: ${result}`);
             }
         } else {
             log(`[Spawner] Waiting for energy: ${mission.name} (Cost: ${cost}/${room.energyAvailable}) [Budget: ${budget}, State: ${state}]`);
         }
+    },
+
+    selectMission: function(room, spawnQueue) {
+        const history = room.memory.spawnHistory || [];
+        const MAX_CONSECUTIVE = 2;
+
+        if (history.length >= MAX_CONSECUTIVE) {
+            const lastArchetype = history[history.length - 1];
+            let consecutive = 0;
+            
+            // Check history for consecutive spawns of the same archetype
+            for (let i = history.length - 1; i >= 0; i--) {
+                if (history[i] === lastArchetype) consecutive++;
+                else break;
+            }
+
+            if (consecutive >= MAX_CONSECUTIVE) {
+                // Congestion detected: Try to find a mission with a different archetype
+                const alternative = spawnQueue.find(m => m.archetype !== lastArchetype);
+                if (alternative) {
+                    return alternative;
+                }
+            }
+        }
+
+        // Default to the highest priority mission
+        return spawnQueue[0];
     },
 
     checkBody: function(type, budget) {

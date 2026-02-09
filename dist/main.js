@@ -50,6 +50,7 @@ global.getRoomCache = function(room) {
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
         const hostiles = room.find(FIND_HOSTILE_CREEPS);
         const hostileStructures = room.find(FIND_HOSTILE_STRUCTURES);
+        const flags = room.find(FIND_FLAGS);
         
         room._cache = {
             structuresByType: structuresByType,
@@ -60,6 +61,7 @@ global.getRoomCache = function(room) {
             constructionSites: constructionSites,
             hostiles: hostiles,
             hostileStructures: hostileStructures,
+            flags: flags,
             time: Game.time
         };
     }
