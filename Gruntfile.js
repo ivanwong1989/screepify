@@ -43,6 +43,7 @@ module.exports = function(grunt) {
                         port: 21025,
                         http: true
                     },
+                    email: '555TheBoss',
                     password: password,
                     branch: 'default',
                     ptr: false
