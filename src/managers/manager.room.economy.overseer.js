@@ -164,8 +164,21 @@ var managerOverseer = {
     determineEconomyState: function(room, intel) {
         let current = room.memory.overseer.economyState || 'STOCKPILING';
         
-        const totalStored = intel.containerEnergy + intel.storageEnergy;
-        const totalCapacity = intel.containerCapacity + intel.storageCapacity;
+        // Identify mining containers to exclude from economy calculations
+        const miningContainerIds = new Set();
+        intel.sources.forEach(s => {
+            if (s.containerId) miningContainerIds.add(s.containerId);
+        });
+
+        // Calculate logistics energy (excluding mining containers)
+        const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
+        const logisticsContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
+        
+        const logisticsEnergy = logisticsContainers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
+        const logisticsCapacity = logisticsContainers.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
+
+        const totalStored = logisticsEnergy + intel.storageEnergy;
+        const totalCapacity = logisticsCapacity + intel.storageCapacity;
         
         // If no infrastructure, default to UPGRADING
         if (totalCapacity < 500) return 'UPGRADING';
