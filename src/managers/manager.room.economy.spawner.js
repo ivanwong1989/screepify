@@ -71,7 +71,11 @@ var managerSpawner = {
             const result = spawn.spawnCreep(body, name, { memory: memory });
             if (result === OK) {
                 console.log(`[Spawner] Spawning ${name} for ${mission.name} (Cost: ${cost})`);
+            } else {
+                console.log(`[Spawner] Failed to spawn ${name}: ${result}`);
             }
+        } else {
+            console.log(`[Spawner] Waiting for energy: ${mission.name} (Cost: ${cost}/${room.energyAvailable}) [Budget: ${budget}, State: ${state}]`);
         }
     },
 

@@ -26,12 +26,27 @@ module.exports = function(grunt) {
     grunt.initConfig({
         screeps: {
             options: {
-                email: email,
-                token: token,
-                branch: branch,
-                ptr: ptr
+                email: email
             },
             dist: {
+                options: {
+                    token: token,
+                    branch: branch,
+                    ptr: ptr
+                },
+                src: ['dist/*.js']
+            },
+            local: {
+                options: {
+                    server: {
+                        host: '127.0.0.1',
+                        port: 21025,
+                        http: true
+                    },
+                    password: password,
+                    branch: 'default',
+                    ptr: false
+                },
                 src: ['dist/*.js']
             }
         },
@@ -92,7 +107,8 @@ module.exports = function(grunt) {
         grunt.log.ok('Branch verified: dev');
     });
 
-    grunt.registerTask('default',  ['check-master', 'clean', 'copy:screeps', 'screeps']);
+    grunt.registerTask('default',  ['check-master', 'clean', 'copy:screeps', 'screeps:dist']);
+    grunt.registerTask('local',    ['check-dev', 'clean', 'copy:screeps', 'screeps:local']);
     grunt.registerTask('private',  ['check-dev', 'clean', 'copy:screeps', 'copy:private']);
 
 }
