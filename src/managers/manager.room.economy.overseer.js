@@ -69,14 +69,49 @@ var managerOverseer = {
     gatherIntel: function(room) {
         const cache = global.getRoomCache(room);
         const terrain = room.getTerrain();
+        const myCreeps = cache.myCreeps || [];
+        const structures = cache.structuresByType || {};
+        const dropped = cache.dropped || [];
+        const ruins = cache.ruins || [];
+        const tombstones = (cache.tombstones || []).filter(t => t.store[RESOURCE_ENERGY] > 0);
         
-        const containers = cache.structuresByType[STRUCTURE_CONTAINER] || [];
+        const containers = structures[STRUCTURE_CONTAINER] || [];
         const storage = room.storage;
         
         const containerEnergy = containers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
         const containerCapacity = containers.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
         const storageEnergy = storage ? storage.store[RESOURCE_ENERGY] : 0;
         const storageCapacity = storage ? storage.store.getCapacity(RESOURCE_ENERGY) : 0;
+
+        // Hauler Capacity
+        const logisticsCreeps = myCreeps.filter(c => 
+            c.memory.missionName && c.memory.missionName.includes('logistics')
+        );
+        const haulerCapacity = logisticsCreeps.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
+
+        // Aggregate Energy Sources (Logistics)
+        const allEnergySources = [];
+        if (storageEnergy > 0 && storage) {
+            allEnergySources.push({ id: storage.id, pos: storage.pos, amount: storageEnergy, type: 'storage' });
+        }
+        containers.forEach(c => {
+            if (c.store[RESOURCE_ENERGY] > 0) {
+                allEnergySources.push({ id: c.id, pos: c.pos, amount: c.store[RESOURCE_ENERGY], type: 'container' });
+            }
+        });
+        dropped.forEach(r => {
+            if (r.resourceType === RESOURCE_ENERGY && r.amount > 50) {
+                allEnergySources.push({ id: r.id, pos: r.pos, amount: r.amount, type: 'dropped' });
+            }
+        });
+        ruins.forEach(r => {
+            if (r.store[RESOURCE_ENERGY] > 0) {
+                allEnergySources.push({ id: r.id, pos: r.pos, amount: r.store[RESOURCE_ENERGY], type: 'ruin' });
+            }
+        });
+        tombstones.forEach(t => {
+            allEnergySources.push({ id: t.id, pos: t.pos, amount: t.store[RESOURCE_ENERGY], type: 'tombstone' });
+        });
         
         // Analyze Sources
         const sources = room.find(FIND_SOURCES).map(source => {
@@ -122,10 +157,13 @@ var managerOverseer = {
 
         return {
             sources: sources,
-            myCreeps: cache.myCreeps || [],
+            myCreeps: myCreeps,
             hostiles: cache.hostiles || [],
             constructionSites: cache.constructionSites || [],
-            structures: cache.structuresByType || {},
+            structures: structures,
+            dropped: dropped,
+            ruins: ruins,
+            tombstones: tombstones,
             controller: room.controller,
             availableControllerSpaces: controllerSpaces,
             energyAvailable: room.energyAvailable,
@@ -133,7 +171,9 @@ var managerOverseer = {
             containerEnergy,
             containerCapacity,
             storageEnergy,
-            storageCapacity
+            storageCapacity,
+            haulerCapacity,
+            allEnergySources
         };
     },
 
@@ -281,46 +321,42 @@ var managerOverseer = {
         const isEmergency = state === 'EMERGENCY';
 
         // Check for sufficient haulers to enable drop mining
-        // We consider creeps with 'logistics' in their mission name or just general haulers
-        const logisticsCreeps = intel.myCreeps.filter(c => 
-            c.memory.missionName && c.memory.missionName.includes('logistics')
-        );
-        const haulerCapacity = logisticsCreeps.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
-        
         // Track available capacity for enabling drop mining per source
-        let availableHaulerCapacity = haulerCapacity;
+        let availableHaulerCapacity = intel.haulerCapacity;
 
-        if (Memory.debug) {
-            console.log(`[Overseer Debug] Hauler check: capacity=${haulerCapacity}`);
-        }
+        log(`[Overseer Debug] Hauler check: capacity=${intel.haulerCapacity}`);
 
         // Check if we should enable haulers based on harvester efficiency
         // Haulers are needed only when harvesters are leveled up enough so that their count needs are less than available spaces.
         const potentialHarvester = managerSpawner.checkBody('miner', budget);
         const potentialWork = potentialHarvester.work || 1;
-        if (Memory.debug) {
-            console.log(`[Overseer Debug] Harvester efficiency check: potentialWork=${potentialWork} (budget: ${budget})`);
-        }
+        log(`[Overseer Debug] Harvester efficiency check: potentialWork=${potentialWork} (budget: ${budget})`);
         
         const efficientSources = new Set();
         intel.sources.forEach(s => {
             const needed = Math.ceil(5 / potentialWork);
             // We enable haulers if we have the tech (budget > 300), or a container exists, 
             // or if we somehow already have a fleet (e.g. from previous state)
-            const isEfficientCheck = needed <= s.availableSpaces && (budget > 300 || s.hasContainer || haulerCapacity > 0);
+            const isEfficientCheck = needed <= s.availableSpaces && (budget > 300 || s.hasContainer || intel.haulerCapacity > 0);
             // Only enable haulers if we have a container or better than basic RCL1 tech (budget > 300)
             if (isEfficientCheck) {
                 efficientSources.add(s.id);
             }
-            if (Memory.debug) {
-                console.log(`[Overseer Debug] Source ${s.id}: needed=${needed}, availableSpaces=${s.availableSpaces}, hasContainer=${s.hasContainer}, budget=${budget}`);
-                console.log(`[Overseer Debug] Source ${s.id}: isEfficientCheck=${isEfficientCheck}`);
-            }
+            log(`[Overseer Debug] Source ${s.id}: needed=${needed}, availableSpaces=${s.availableSpaces}, hasContainer=${s.hasContainer}, budget=${budget}`);
+            log(`[Overseer Debug] Source ${s.id}: isEfficientCheck=${isEfficientCheck}`);
         });
         const enableHaulers = efficientSources.size > 0;
-        if (Memory.debug) {
-            console.log(`[Overseer Debug] enableHaulers=${enableHaulers} (efficientSources: ${efficientSources.size})`);
-        }
+        log(`[Overseer Debug] enableHaulers=${enableHaulers} (efficientSources: ${efficientSources.size})`);
+        
+        const allSourceIds = intel.allEnergySources.map(s => s.id);
+
+        // Helper to find best source for a specific target
+        const findBestSource = (targetPos) => {
+            // Filter sources that have enough energy (e.g. > 50)
+            const valid = intel.allEnergySources.filter(s => s.amount >= 50);
+            if (valid.length === 0) return null;
+            return targetPos.findClosestByRange(valid);
+        };
 
         // --- Priority 2: Economy (Harvesting) ---
         intel.sources.forEach(source => {
@@ -343,9 +379,7 @@ var managerOverseer = {
                 availableHaulerCapacity -= neededCap;
             }
 
-            if (Memory.debug) {
-                console.log(`[Overseer Debug] Harvest mission for ${source.id}: isEfficient=${isEfficient}, canDropMine=${canDropMine} (hasContainer: ${source.hasContainer}, hasCap: ${hasCap})`);
-            }
+            log(`[Overseer Debug] Harvest mission for ${source.id}: isEfficient=${isEfficient}, canDropMine=${canDropMine} (hasContainer: ${source.hasContainer}, hasCap: ${hasCap})`);
             const missionName = `harvest:${source.id}`;
             const archetype = 'miner';
             
@@ -382,89 +416,9 @@ var managerOverseer = {
             });
         });
 
-        // --- Priority 3: Logistics (Refill Towers) ---
-        // Only enable if we have determined haulers are needed (efficiency met)
-        // Scale down: Only generate if there is actually capacity to fill
-        const towers = intel.structures[STRUCTURE_TOWER] || [];
-        const hungryTowers = towers.filter(t => t.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-
-        if (enableHaulers && hungryTowers.length > 0) {
-            missions.push({
-                name: 'logistics:refill_towers',
-                type: 'transfer',
-                archetype: 'hauler',
-                targetType: 'transfer_list',
-                data: {
-                    targetIds: hungryTowers.map(t => t.id)
-                },
-                requirements: {
-                    archetype: 'hauler',
-                    count: 1
-                },
-                priority: isEmergency ? 950 : 95
-            });
-        }
-
-        // --- Priority 3.1: Logistics (Hauling/Refilling) ---
-        const refillTargets = [
-            ...(intel.structures[STRUCTURE_SPAWN] || []),
-            ...(intel.structures[STRUCTURE_EXTENSION] || [])
-        ].filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-
-        if (enableHaulers && refillTargets.length > 0) {
-            const logisticsName = 'logistics:refill';
-            const logCensus = getMissionCensus(logisticsName);
-            const logArch = 'hauler';
-            const logStats = managerSpawner.checkBody('hauler', budget);
-            
-            // Dynamic target: 300 cap (6 parts) per source + 200 cap (4 parts) base buffer
-            const partsPerSource = 6;
-            const baseParts = 4;
-            const targetCarry = (intel.sources.length * partsPerSource) + baseParts;
-            
-            const logDeficit = Math.max(0, targetCarry - logCensus.carry);
-            const logNeeded = Math.ceil(logDeficit / (logStats.carry || 1));
-            
-            missions.push({
-                name: logisticsName,
-                type: 'transfer',
-                archetype: logArch,
-                targetType: 'transfer_list',
-                data: {
-                    targetIds: refillTargets.map(s => s.id)
-                },
-                requirements: {
-                    archetype: logArch,
-                    count: logCensus.count + logNeeded
-                },
-                priority: isEmergency ? 900 : 90
-            });
-        }
-
-        // --- Priority 3.2: Logistics (Refill Containers) ---
-        const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
-        const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
-        
-        const logicalContainers = allContainers.filter(c => 
-            !miningContainerIds.has(c.id) && 
-            c.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        );
-
-        if (enableHaulers && logicalContainers.length > 0) {
-            missions.push({
-                name: 'logistics:refill_containers',
-                type: 'transfer',
-                archetype: 'hauler',
-                targetType: 'transfer_list',
-                data: {
-                    targetIds: logicalContainers.map(c => c.id)
-                },
-                requirements: {
-                    archetype: 'hauler',
-                    count: 1
-                },
-                priority: 50
-            });
+        // --- Priority 3: Logistics ---
+        if (enableHaulers) {
+            this.generateLogisticsMissions(room, intel, missions, isEmergency);
         }
 
         // --- Priority 4: Upgrading ---
@@ -511,6 +465,7 @@ var managerOverseer = {
                 type: 'upgrade',
                 archetype: upArch,
                 targetId: intel.controller.id,
+                data: { sourceIds: allSourceIds  },
                 pos: intel.controller.pos,
                 requirements: {
                     archetype: upArch,
@@ -535,6 +490,7 @@ var managerOverseer = {
                 type: 'build',
                 archetype: buildArch,
                 targetIds: intel.constructionSites.map(s => s.id),
+                data: { sourceIds: allSourceIds  },
                 requirements: {
                     archetype: buildArch,
                     count: buildCensus.count + buildNeeded
@@ -578,10 +534,12 @@ var managerOverseer = {
                     room.visual.circle(m.pos, {fill: 'transparent', radius: 0.7, stroke: color, strokeWidth: 0.1, lineStyle: 'dashed'});
                 }
             } else if (m.type === 'build' && m.targetIds && m.targetIds.length > 0) {
-                const target = Game.getObjectById(m.targetIds[0]);
-                if (target) {
-                    room.visual.text(`🔨 ${assigned}/${required}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
-                }
+                m.targetIds.forEach(id => {
+                    const target = Game.getObjectById(id);
+                    if (target) {
+                        room.visual.text(`🔨 ${assigned}/${required}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
+                    }
+                });
             }
         });
     },
@@ -632,35 +590,6 @@ var managerOverseer = {
                 }
             }
         }
-
-        // Strategy: Logistics Balancing
-        // Priority: Towers > Spawns > Containers
-        const towerMission = missions.find(m => m.name === 'logistics:refill_towers');
-        const spawnMission = missions.find(m => m.name === 'logistics:refill');
-        
-        // 1. Towers need help?
-        if (towerMission && towerMission.census && towerMission.requirements) {
-            let deficit = towerMission.requirements.count - towerMission.census.count;
-            if (deficit > 0) {
-                // Steal from Containers
-                moveCreeps('logistics:refill_containers', towerMission, deficit);
-                
-                // Still need? Steal from Spawns
-                deficit = towerMission.requirements.count - towerMission.census.count;
-                if (deficit > 0) {
-                    moveCreeps('logistics:refill', towerMission, deficit);
-                }
-            }
-        }
-
-        // 2. Spawns need help?
-        if (spawnMission && spawnMission.census && spawnMission.requirements) {
-            const deficit = spawnMission.requirements.count - spawnMission.census.count;
-            if (deficit > 0) {
-                // Steal from Containers
-                moveCreeps('logistics:refill_containers', spawnMission, deficit);
-            }
-        }
     },
 
     /**
@@ -683,6 +612,124 @@ var managerOverseer = {
                 m.census.carryParts += c.getActiveBodyparts(CARRY);
             }
         });
+    },
+
+    generateLogisticsMissions: function(room, intel, missions, isEmergency) {
+        const activeMissions = new Map();
+        
+        // 1. Identify active hauling missions to prevent thrashing
+        intel.myCreeps.forEach(c => {
+            if (c.memory.missionName && c.memory.missionName.startsWith('haul:')) {
+                const parts = c.memory.missionName.split(':');
+                // Format: haul:sourceId:targetId
+                if (parts.length === 3) {
+                    const sourceId = parts[1];
+                    const targetId = parts[2];
+                    const source = Game.getObjectById(sourceId);
+                    const target = Game.getObjectById(targetId);
+                    
+                    // Check validity
+                    const creepHasEnergy = c.store[RESOURCE_ENERGY] > 0;
+                    const sourceHasEnergy = source && (
+                        (source.store && source.store[RESOURCE_ENERGY] > 0) || 
+                        (source.amount && source.amount > 0)
+                    );
+                    
+                    const isSourceValid = source && (creepHasEnergy || sourceHasEnergy);
+                    const isTargetValid = target && target.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+                    
+                    if (isSourceValid && isTargetValid) {
+                        const mission = {
+                            name: c.memory.missionName,
+                            type: 'transfer',
+                            archetype: 'hauler',
+                            targetId: targetId,
+                            data: { sourceId: sourceId },
+                            requirements: { archetype: 'hauler', count: 1 },
+                            priority: this.getLogisticsPriority(target, isEmergency)
+                        };
+                        activeMissions.set(c.memory.missionName, mission);
+                    }
+                }
+            }
+        });
+
+        // 2. Identify Needs (Requestors)
+        const requestors = [];
+        
+        // Towers
+        (intel.structures[STRUCTURE_TOWER] || []).forEach(t => {
+            if (t.store.getFreeCapacity(RESOURCE_ENERGY) > 0) requestors.push(t);
+        });
+        
+        // Spawns & Extensions
+        (intel.structures[STRUCTURE_SPAWN] || []).forEach(s => {
+            if (s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) requestors.push(s);
+        });
+        (intel.structures[STRUCTURE_EXTENSION] || []).forEach(e => {
+            if (e.store.getFreeCapacity(RESOURCE_ENERGY) > 0) requestors.push(e);
+        });
+        
+        // Containers (Controller & others, excluding mining)
+        const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
+        (intel.structures[STRUCTURE_CONTAINER] || []).forEach(c => {
+            if (!miningContainerIds.has(c.id) && c.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+                requestors.push(c);
+            }
+        });
+
+        // 3. Generate Missions for Needs
+        requestors.forEach(target => {
+            // Check if already covered by an active mission
+            let covered = false;
+            for (const [name, m] of activeMissions) {
+                if (m.targetId === target.id) {
+                    covered = true;
+                    break;
+                }
+            }
+            
+            if (!covered) {
+                const bestSource = this.findBestSource(target.pos, intel.allEnergySources);
+                if (bestSource) {
+                    const missionName = `haul:${bestSource.id}:${target.id}`;
+                    const priority = this.getLogisticsPriority(target, isEmergency);
+                    
+                    const mission = {
+                        name: missionName,
+                        type: 'transfer',
+                        archetype: 'hauler',
+                        targetId: target.id,
+                        data: { sourceId: bestSource.id },
+                        requirements: { archetype: 'hauler', count: 1 },
+                        priority: priority
+                    };
+                    activeMissions.set(missionName, mission);
+                }
+            }
+        });
+
+        // 4. Push to main list
+        for (const m of activeMissions.values()) {
+            missions.push(m);
+        }
+    },
+
+    findBestSource: function(targetPos, sources) {
+        const valid = sources.filter(s => s.amount >= 50);
+        if (valid.length === 0) return null;
+        return targetPos.findClosestByRange(valid);
+    },
+
+    getLogisticsPriority: function(target, isEmergency) {
+        switch(target.structureType) {
+            case STRUCTURE_TOWER: return isEmergency ? 950 : 95;
+            case STRUCTURE_SPAWN: return isEmergency ? 900 : 90;
+            case STRUCTURE_EXTENSION: return isEmergency ? 900 : 90;
+            case STRUCTURE_CONTAINER: return 50;
+            case STRUCTURE_STORAGE: return 10;
+            default: return 10;
+        }
     }
 };
 

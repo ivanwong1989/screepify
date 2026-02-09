@@ -28,9 +28,7 @@ var managerSpawner = {
         spawnQueue.sort((a, b) => b.priority - a.priority);
 
         if (spawnQueue.length > 0) {
-            console.log(`[Spawner] Queue: ${spawnQueue.map(m => m.name).join(', ')}`);
-        } else {
-            console.log(`[Spawner] Queue: Empty`);
+            log(`[Spawner] Queue: ${spawnQueue.map(m => m.name).join(', ')}`);
         }
 
         // 3. Execute Spawn
@@ -70,12 +68,12 @@ var managerSpawner = {
             
             const result = spawn.spawnCreep(body, name, { memory: memory });
             if (result === OK) {
-                console.log(`[Spawner] Spawning ${name} for ${mission.name} (Cost: ${cost})`);
+                log(`[Spawner] Spawning ${name} for ${mission.name} (Cost: ${cost})`);
             } else {
-                console.log(`[Spawner] Failed to spawn ${name}: ${result}`);
+                log(`[Spawner] Failed to spawn ${name}: ${result}`);
             }
         } else {
-            console.log(`[Spawner] Waiting for energy: ${mission.name} (Cost: ${cost}/${room.energyAvailable}) [Budget: ${budget}, State: ${state}]`);
+            log(`[Spawner] Waiting for energy: ${mission.name} (Cost: ${cost}/${room.energyAvailable}) [Budget: ${budget}, State: ${state}]`);
         }
     },
 

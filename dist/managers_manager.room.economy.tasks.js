@@ -287,6 +287,10 @@ var managerTasks = {
                 target = creep.pos.findClosestByRange(targets);
             }
 
+            if (!target && mission.targetId) {
+                target = Game.getObjectById(mission.targetId);
+            }
+
             if (target) {
                 return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
             }
@@ -315,8 +319,14 @@ var managerTasks = {
                 if (target) return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
             }
         } else {
-            const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : [];
-            return this.getGatherTask(creep, room, excludeIds);
+            // If specific source is defined in mission data, use it
+            if (mission.data && mission.data.sourceId) {
+                return this.getGatherTask(creep, room, { allowedIds: [mission.data.sourceId] });
+            }
+
+            const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
+            const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
+            return this.getGatherTask(creep, room, { allowedIds, excludeIds });
         }
         return null;
     },
@@ -326,7 +336,8 @@ var managerTasks = {
         if (creep.memory.taskState === 'working') {
             return { action: 'upgrade', targetId: mission.targetId };
         } else {
-            return this.getGatherTask(creep, room);
+            const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
+            return this.getGatherTask(creep, room, { allowedIds });
         }
     },
 
@@ -339,24 +350,80 @@ var managerTasks = {
                 return { action: 'build', targetId: target.id };
             }
         } else {
-            return this.getGatherTask(creep, room);
+            // If specific source is defined in mission data, use it
+            if (mission.data && mission.data.sourceId) {
+                return this.getGatherTask(creep, room, { allowedIds: [mission.data.sourceId] });
+            }
+
+            const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
+            const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
+            return this.getGatherTask(creep, room, { allowedIds, excludeIds });
         }
         return null;
     },
 
     updateState: function(creep) {
-        if (creep.memory.taskState !== 'working' && creep.store.getFreeCapacity() === 0) {
-            creep.memory.taskState = 'working';
-            creep.say('work');
-        } else if (creep.memory.taskState !== 'gathering' && creep.store[RESOURCE_ENERGY] === 0) {
-            creep.memory.taskState = 'gathering';
-            creep.say('gather');
+        // State Machine: working <-> idle <-> gathering
+        
+        // Transition from Working to Idle
+        if (creep.memory.taskState === 'working' && creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.taskState = 'idle';
+            creep.say('idle');
+            return;
+        }
+        
+        // Transition from Gathering to Idle
+        if (creep.memory.taskState === 'gathering' && creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.taskState = 'idle';
+            creep.say('idle');
+            return;
+        }
+
+        // Transition from Idle/Init to Working or Gathering
+        if (creep.memory.taskState === 'idle' || creep.memory.taskState === 'init' || !creep.memory.taskState) {
+            if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+                creep.memory.taskState = 'working';
+                creep.say('work');
+            } else {
+                creep.memory.taskState = 'gathering';
+                creep.say('gather');
+            }
         }
     },
 
-    getGatherTask: function(creep, room, excludeIds = []) {
+    getGatherTask: function(creep, room, options = {}) {
         // Ensure reservation table exists (safety check)
         if (!room._reservedEnergy) room._reservedEnergy = {};
+
+        const allowedIds = options.allowedIds || null;
+        const excludeIds = options.excludeIds || [];
+
+        // 0. Specific Allowed Sources (Tight Logistics)
+        if (allowedIds && allowedIds.length > 0) {
+            const targets = allowedIds.map(id => Game.getObjectById(id)).filter(t => t);
+            // Find closest valid target from the allowed list
+            const valid = targets.filter(t => {
+                if (excludeIds.includes(t.id)) return false;
+                
+                // Check energy availability
+                let amount = 0;
+                if (t instanceof Resource) amount = t.amount;
+                else if (t.store) amount = t.store[RESOURCE_ENERGY];
+                
+                // Reserve check
+                const reserved = room._reservedEnergy[t.id] || 0;
+                return (amount - reserved) >= 50;
+            });
+
+            const target = creep.pos.findClosestByRange(valid);
+            if (target) {
+                room._reservedEnergy[target.id] = (room._reservedEnergy[target.id] || 0) + creep.store.getFreeCapacity();
+                if (target instanceof Resource) return { action: 'pickup', targetId: target.id };
+                return { action: 'withdraw', targetId: target.id, resourceType: RESOURCE_ENERGY };
+            }
+            // If restricted to specific sources and none are available, return null (idle)
+            return null;
+        }
 
         // 1. Pickup Dropped
         const dropped = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
@@ -376,6 +443,7 @@ var managerTasks = {
         // 2. Withdraw from Container/Storage
         const structure = creep.pos.findClosestByRange(FIND_STRUCTURES, {
             filter: s => {
+                if (allowedIds && !allowedIds.includes(s.id)) return false;
                 if (excludeIds.includes(s.id)) return false;
                 if ((s.structureType !== STRUCTURE_CONTAINER && s.structureType !== STRUCTURE_STORAGE)) return false;
                 const energy = s.store[RESOURCE_ENERGY];

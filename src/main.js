@@ -45,6 +45,7 @@ global.getRoomCache = function(room) {
         }, {});
         const dropped = room.find(FIND_DROPPED_RESOURCES);
         const ruins = room.find(FIND_RUINS);
+        const tombstones = room.find(FIND_TOMBSTONES);
         const myCreeps = room.find(FIND_MY_CREEPS);
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
         const hostiles = room.find(FIND_HOSTILE_CREEPS);
@@ -54,6 +55,7 @@ global.getRoomCache = function(room) {
             structuresByType: structuresByType,
             dropped: dropped,
             ruins: ruins,
+            tombstones: tombstones,
             myCreeps: myCreeps,
             constructionSites: constructionSites,
             hostiles: hostiles,
