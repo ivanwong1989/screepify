@@ -83,7 +83,7 @@ module.exports.loop = function() {
         // Run creep logic globally, as they may be in any room
         for(var name in Game.creeps) {
             var creep = Game.creeps[name];
-            if(['universal', 'miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'defender'].includes(creep.memory.role)) {
+            if(['universal', 'miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'defender', 'worker'].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }
         }

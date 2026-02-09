@@ -1,200 +1,159 @@
-// Helper to calculate body cost
-const getBodyCost = (body) => body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
-
-// Helper to select the best body tier based on a budget
-const getTieredBody = function(budget, tiers) {
-    let bestBody = tiers[0];
-    for (let i = 0; i < tiers.length; i++) {
-        let body = tiers[i];
-        let cost = getBodyCost(body);
-        if (cost <= budget) {
-            bestBody = body;
-        } else {
-            break;
-        }
-    }
-    return bestBody;
-};
-
-module.exports = {
-    /**
-     * The Spawner Manager reads the Overseer's State and calculates the required workforce.
-     * It then checks the census and spawns creeps to meet the quotas.
-     * 
-     * @param {Room} room
-     */
+/**
+ * The Spawner Manager reads the Overseer's contract (Missions).
+ * It identifies missions with workforce deficits and spawns creeps to fulfill them.
+ * 
+ * @param {Room} room
+ */
+var managerSpawner = {
     run: function(room) {
-        if (!room.memory.brain) return;
-        const brain = room.memory.brain;
-        const state = brain.state;
-        const spawnRequests = brain.spawnRequests || [];
+        const missions = room._missions;
+        if (!missions) return;
 
-        if (spawnRequests.length === 0) return;
-
-        if (Memory.debug) {
-            const reqString = spawnRequests.map(r => `${r.role}(x${r.count}, p:${r.priority})`).join(', ');
-            console.log(`[Spawner] Queue: ${reqString}`);
-        }
-
-        // 1. Sort requests by priority
-        spawnRequests.sort((a, b) => b.priority - a.priority);
-        const topRequest = spawnRequests[0];
-
-        // 2. Execute Spawn
-        if (topRequest) {
-            const spawn = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning)[0];
-            if (spawn) {
-                this.executeSpawn(spawn, topRequest, room, state);
-            }
-        }
-    },
-
-    executeSpawn: function(spawn, request, room, state) {
-        const role = request.role;
-        // Body Definitions
-        let body = request.body;
+        // 1. Identify Deficits
+        const spawnQueue = [];
         
-        // Calculate Budget
-        const budget = state === 'EMERGENCY' ? Math.max(room.energyAvailable, 300) : room.energyCapacityAvailable;
-
-        if (!body) {
-            if (request.requirements) {
-                body = this.generateBody(request.requirements, budget);
-            } else {
-                const tiers = this.getBodyTiers(role);
-                body = getTieredBody(budget, tiers);
-            }
-        }
-        
-        // Check Limits set by Overseer
-        const brain = room.memory.brain;
-        if (brain && brain.limits && brain.census) {
-            // Check Creep Cap
-            if (brain.census.total >= brain.limits.maxCreeps) {
-                console.log(`[Spawner] Denied ${role}: Max Creeps reached (${brain.census.total}/${brain.limits.maxCreeps})`);
-                return;
-            }
+        missions.forEach(mission => {
+            // Census data provided by Overseer
+            if (!mission.census) return;
             
-            // Check WORK Saturation
-            const newWorkParts = body.filter(p => p === WORK).length;
-            if (newWorkParts > 0) {
-                const currentWork = brain.census.bodyParts[WORK] || 0;
-                if (currentWork + newWorkParts > brain.limits.maxWorkParts) {
-                    console.log(`[Spawner] Denied ${role}: Max WORK Saturation (${currentWork}/${brain.limits.maxWorkParts})`);
-                    return;
-                }
+            const req = mission.requirements || {};
+            const current = mission.census;
+
+            if (req.count && current.count < req.count) {
+                spawnQueue.push(mission);
             }
+        });
+
+        // 2. Sort by Priority
+        spawnQueue.sort((a, b) => b.priority - a.priority);
+
+        if (spawnQueue.length > 0) {
+            console.log(`[Spawner] Queue: ${spawnQueue.map(m => m.name).join(', ')}`);
+        } else {
+            console.log(`[Spawner] Queue: Empty`);
         }
 
-        const name = `${role}_${Game.time}`;
-        const memory = { role: role, room: room.name };
-        
-        const result = spawn.spawnCreep(body, name, { memory: memory });
-        if (result === OK) {
-            console.log(`[Spawner] Spawning ${name} (${state})`);
+        // 3. Execute Spawn
+        if (spawnQueue.length > 0) {
+            const spawns = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning);
+            if (spawns.length > 0) {
+                this.spawnCreep(spawns[0], spawnQueue[0], room);
+            }
         }
     },
 
-    generateBody: function(requirements, budget) {
-        let totalCost = 0;
-        const counts = {};
+    spawnCreep: function(spawn, mission, room) {
+        const state = room._state;
+        let budget = room.energyCapacityAvailable;
         
-        // 1. Initial Cost Calculation
-        for (const part in requirements) {
-            const count = requirements[part];
-            counts[part] = count;
-            totalCost += BODYPART_COST[part] * count;
+        // In EMERGENCY, spawn as soon as we have min energy (300).
+        if (state === 'EMERGENCY') {
+            budget = Math.max(room.energyAvailable, 200);
+        }
+        // If we have 0 creeps for this mission (bootstrapping), use current energy
+        // to ensure we get at least one creep out to start working.
+        else if (mission.census.count === 0 && room.energyAvailable < budget) {
+            budget = Math.max(room.energyAvailable, 100);
         }
 
-        // 2. Scale Down if needed
-        if (totalCost > budget) {
-            const scale = budget / totalCost;
-            totalCost = 0; // Recalculate
-            for (const part in counts) {
-                let count = Math.floor(requirements[part] * scale);
-                // Ensure at least 1 if required (soft limit), unless budget is extremely low
-                if (count < 1 && requirements[part] > 0) count = 1;
-                counts[part] = count;
-                totalCost += count * BODYPART_COST[part];
-            }
-        }
+        const body = this.generateBody(mission, budget);
+        const cost = this.calculateBodyCost(body);
 
-        // 3. Hard Budget Cap (Trim parts if still over due to soft limits)
-        // Priority for REMOVAL: CLAIM > ATTACK > RANGED > WORK > CARRY > TOUGH > MOVE
-        const removalOrder = [CLAIM, ATTACK, RANGED_ATTACK, WORK, CARRY, TOUGH, MOVE];
-        
-        while (totalCost > budget) {
-            let removed = false;
-            for (const part of removalOrder) {
-                if (counts[part] > 0) {
-                    // Optimization: Prefer removing from types that have > 1 part first
-                    if (counts[part] > 1) {
-                        counts[part]--;
-                        totalCost -= BODYPART_COST[part];
-                        removed = true;
-                        break;
-                    }
-                }
-            }
+        if (room.energyAvailable >= cost) {
+            const name = `${mission.archetype}_${Game.time.toString(36)}`;
+            const memory = {
+                role: mission.archetype,
+                missionName: mission.name,
+                room: room.name,
+                taskState: 'init'
+            };
             
-            if (!removed) {
-                // If we couldn't remove any "excess" parts, remove single parts
-                for (const part of removalOrder) {
-                    if (counts[part] > 0) {
-                        counts[part]--;
-                        totalCost -= BODYPART_COST[part];
-                        removed = true;
-                        break;
-                    }
-                }
+            const result = spawn.spawnCreep(body, name, { memory: memory });
+            if (result === OK) {
+                console.log(`[Spawner] Spawning ${name} for ${mission.name} (Cost: ${cost})`);
             }
-            
-            if (!removed) break; // Should not happen unless empty
         }
-
-        return this.formatBody(counts);
     },
 
-    formatBody: function(counts) {
-        const body = [];
-        // Standard spawn order: TOUGH -> WORK -> CARRY -> ATTACK -> MOVE
-        const spawnOrder = [TOUGH, WORK, CARRY, ATTACK, RANGED_ATTACK, HEAL, CLAIM, MOVE];
+    checkBody: function(type, budget) {
+        let archetype = type;
+
+        const mission = { archetype: archetype };
+        const body = this.generateBody(mission, budget);
+        const cost = this.calculateBodyCost(body);
         
-        for (const part of spawnOrder) {
-            const count = counts[part] || 0;
-            for (let i = 0; i < count; i++) {
-                body.push(part);
-            }
-        }
-        return body;
+        return {
+            body: body,
+            cost: cost,
+            work: body.filter(p => p === WORK).length,
+            carry: body.filter(p => p === CARRY).length,
+            move: body.filter(p => p === MOVE).length
+        };
     },
 
-    getBodyTiers: function(role) {
-        // Simplified tier definitions for the example
-        if (role === 'universal') return [
-            [WORK, CARRY, MOVE],
-            [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
-            [WORK, WORK, WORK, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE]
-        ];
-        if (role === 'miner') return [
-            [WORK, WORK, CARRY, MOVE],
-            [WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE],
-            [WORK, WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE]
-        ];
-        if (role === 'hauler') return [
-            [CARRY, MOVE],
-            [CARRY, CARRY, MOVE, MOVE],
-            [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE, MOVE]
-        ];
-        if (role === 'upgrader' || role === 'builder') return [
-            [WORK, CARRY, MOVE],
-            [WORK, WORK, CARRY, CARRY, MOVE, MOVE]
-        ];
-        if (role === 'defender') return [
-            [TOUGH, ATTACK, MOVE],
-            [TOUGH, TOUGH, ATTACK, ATTACK, MOVE, MOVE]
-        ];
-        // Fallback/Bootstrap miner
-        return [[WORK, CARRY, MOVE]];
+    generateBody: function(mission, budget) {
+        if (mission.archetype === 'miner') {
+            return this.generateMinerBody(budget);
+        } else if (mission.archetype === 'hauler') {
+            return this.generateHaulerBody(budget);
+        } else {
+            return this.generateWorkerBody(budget);
+        }
+    },
+
+    generateMinerBody: function(budget) {
+        // Base: WORK, CARRY, MOVE (200)
+        let body = [WORK, CARRY, MOVE];
+        let cost = 200;
+        
+        // Max WORK for a standard source is 5
+        while (cost + 100 <= budget && body.filter(p => p === WORK).length < 5) {
+            body.push(WORK);
+            cost += 100;
+        }
+        
+        return this.sortBody(body);
+    },
+
+    generateHaulerBody: function(budget) {
+        // CARRY, MOVE (100)
+        let body = [];
+        let cost = 0;
+        
+        while (cost + 100 <= budget && body.length + 2 <= 50) {
+            body.push(CARRY);
+            body.push(MOVE);
+            cost += 100;
+        }
+        
+        return this.sortBody(body);
+    },
+
+    generateWorkerBody: function(budget) {
+        // WORK, CARRY, MOVE (200)
+        let body = [];
+        let cost = 0;
+        
+        while (cost + 200 <= budget && body.length + 3 <= 50) {
+            body.push(WORK);
+            body.push(CARRY);
+            body.push(MOVE);
+            cost += 200;
+        }
+        
+        if (body.length === 0) return [WORK, CARRY, MOVE];
+
+        return this.sortBody(body);
+    },
+
+    sortBody: function(body) {
+        const sortOrder = { [TOUGH]: 0, [WORK]: 1, [CARRY]: 2, [MOVE]: 3 };
+        return body.sort((a, b) => sortOrder[a] - sortOrder[b]);
+    },
+
+    calculateBodyCost: function(body) {
+        return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
     }
 };
+
+module.exports = managerSpawner;

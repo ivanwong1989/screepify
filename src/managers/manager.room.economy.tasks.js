@@ -1,382 +1,284 @@
-module.exports = {
-    /**
-     * The Task Manager reads the Overseer's State and generates specific Missions.
-     * It then assigns these missions to available creeps.
-     * 
-     * @param {Room} room
-     */
+/**
+ * The Task Manager reads the Overseer's demands and missions.
+ * With the known mission types, it is able to break it down to small tasks that it can
+ * track for the room. These small tasks for example are harvest, pickup, upgrade, repair, moveto, transfer, repair.
+ * Combat related tasks should not be in this economy.tasks. This tasker should wholly focus on room economy and
+ * day to day menial missions that are composed of tasks.
+ * It then assigns these missions to available creeps. The creeps are not locked into roles. Tasker is able to 
+ * know from the room, what creep and body parts are there, are the creeps idle, is it doing work. Tasker is able to 
+ * freely decide which idle creep to take the tasks, which chained together would complete the mission assigned by overseer. 
+ * It needs to decide which creep would be best suited for the task at hand, and also availability. 
+ * Tasker would read the contract from overseer and handle the missions accordingly. Missions need to persist over multiple ticks
+ * as it's individual tasks may only be complete over multiple ticks. 
+ * 
+ * @param {Room} room
+ */
+var managerTasks = {
     run: function(room) {
-        if (!room.memory.brain) return;
-        const state = room.memory.brain.state;
-        const brainMissions = room.memory.brain.missions || [];
-        console.log(`[Tasks] Running for ${room.name}. Brain Missions: ${brainMissions.length}`);
+        // 1. Read the Contract (Missions)
+        // If no missions are published by Overseer, we have nothing to direct.
+        if (!room._missions) return;
         
-        // 1. Generate Missions based on State/Reality
-        // Translate Brain Missions (Strategy) into Actionable Tasks (Tactics)
-        const tasks = this.resolveTasks(room, brainMissions);
-        console.log(`[Tasks] Resolved actionable tasks: ${tasks.length}`);
-        
-        // 2. Assign Missions to Creeps
-        const creeps = global.getRoomCache(room).myCreeps || [];
-        
+        const missions = room._missions;
+        const creeps = room.find(FIND_MY_CREEPS);
+
+        // 2. Track Mission Assignments
+        // We need to know how many resources (creeps/parts) are currently assigned to each mission
+        // to decide if we need to assign more.
+        const missionStatus = {};
+        missions.forEach(m => {
+            missionStatus[m.name] = {
+                mission: m,
+                assignedCount: 0,
+                assignedWork: 0,
+                assignedCarry: 0
+            };
+        });
+
+        // 3. Validate and Count Existing Assignments
         creeps.forEach(creep => {
-            // State Hysteresis: Update working state before checking assignments
-            const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
-            const isFull = creep.store.getFreeCapacity() === 0;
-            
-            if (isFull) creep.memory.working = true;
-            if (!hasEnergy) creep.memory.working = false;
-            const working = creep.memory.working;
+            // We count spawning creeps to prevent overcrowding (double assignment)
+            if (creep.spawning) return;
 
-            // If creep has a valid mission, skip
-            if (creep.memory.missionId) {
-                const existingTask = tasks.find(t => t.id === creep.memory.missionId);
-                // Check if task is still valid AND compatible with current state (Work vs Gather)
-                const isCompatible = existingTask && (working ? existingTask.type === 'work' : existingTask.type === 'gather');
-                
-                if (existingTask && isCompatible) {
-                    existingTask.assigned = (existingTask.assigned || 0) + 1;
-                    creep.memory.taskData = existingTask.data;
-                    return;
+            // Check if creep has a mission
+            const missionName = creep.memory.missionName;
+            if (missionName) {
+                // Check if mission still exists in the contract
+                if (missionStatus[missionName]) {
+                    // Update status
+                    missionStatus[missionName].assignedCount++;
+                    missionStatus[missionName].assignedWork += creep.getActiveBodyparts(WORK);
+                    missionStatus[missionName].assignedCarry += creep.getActiveBodyparts(CARRY);
                 } else {
-                    console.log(`[Tasks] Creep ${creep.name} mission ${creep.memory.missionId} invalid or incompatible.`);
+                    // Mission was removed by Overseer (completed or strategy changed)
+                    // Release the creep
+                    delete creep.memory.missionName;
+                    delete creep.memory.taskState;
+                    creep.say('?');
                 }
-            }
-
-            // Find suitable mission
-            const task = this.findTaskForCreep(creep, tasks);
-            if (task) {
-                console.log(`[Tasks] Assigning ${task.id} to ${creep.name}`);
-                creep.memory.missionId = task.id;
-                creep.memory.taskData = task.data; // The "Mission Sheet" for the dumb creep
-                // Mark mission as assigned (simple round-robin prevention)
-                task.assigned = (task.assigned || 0) + 1;
-            } else {
-                console.log(`[Tasks] No task found for ${creep.name} (Role: ${creep.memory.role})`);
-                delete creep.memory.missionId;
-                delete creep.memory.taskData;
             }
         });
 
-        // Debug: Task Summary
-        if (Memory.debug) {
-            console.log(`[Tasks] Generated ${tasks.length} tasks from ${brainMissions.length} strategies.`);
+        // 4. Assign Idle Creeps
+        const idleCreeps = creeps.filter(c => !c.spawning && !c.memory.missionName);
+        
+        idleCreeps.forEach(creep => {
+            const bestMission = this.findBestMission(creep, missions, missionStatus);
+            if (bestMission) {
+                creep.memory.missionName = bestMission.name;
+                creep.memory.taskState = 'init'; // Initialize state
+                
+                // Update status immediately so next creep in this loop sees updated counts
+                missionStatus[bestMission.name].assignedCount++;
+                missionStatus[bestMission.name].assignedWork += creep.getActiveBodyparts(WORK);
+                missionStatus[bestMission.name].assignedCarry += creep.getActiveBodyparts(CARRY);
+                
+                creep.say(bestMission.type);
+            }
+        });
+
+        // 5. Assign Actions
+        creeps.forEach(creep => {
+            if (!creep.spawning && creep.memory.missionName) {
+                const status = missionStatus[creep.memory.missionName];
+                if (status) {
+                    this.assignAction(creep, status.mission, room);
+                }
+            }
+        });
+    },
+
+    /**
+     * Finds the most suitable mission for a creep based on priority and requirements.
+     */
+    findBestMission: function(creep, missions, missionStatus) {
+        // Filter missions that are not fully staffed
+        const candidates = missions.filter(m => {
+            const status = missionStatus[m.name];
+            const req = m.requirements || {};
+
+            // Check if requirements are met (Saturation check)
+            if (req.count && status.assignedCount >= req.count) return false;
+
+            // Check if creep is capable for this mission type
+            if (m.type === 'harvest') {
+                if (creep.getActiveBodyparts(WORK) === 0) return false;
+            } else if (m.type === 'upgrade' || m.type === 'build') {
+                if (creep.getActiveBodyparts(WORK) === 0 || creep.getActiveBodyparts(CARRY) === 0) return false;
+            } else if (m.type === 'transfer') {
+                if (creep.getActiveBodyparts(CARRY) === 0) return false;
+            }
+
+            return true;
+        });
+
+        // Sort by Priority (High to Low)
+        if (candidates.length === 0) return null;
+        candidates.sort((a, b) => b.priority - a.priority);
+
+        return candidates[0];
+    },
+
+    assignAction: function(creep, mission, room) {
+        let task = null;
+        switch (mission.type) {
+            case 'harvest':
+                task = this.getHarvestTask(creep, mission);
+                break;
+            case 'transfer':
+                task = this.getTransferTask(creep, mission, room);
+                break;
+            case 'upgrade':
+                task = this.getUpgradeTask(creep, mission, room);
+                break;
+            case 'build':
+                task = this.getBuildTask(creep, mission, room);
+                break;
+        }
+
+        if (task) {
+            creep.memory.task = task;
+        } else {
+            delete creep.memory.task;
         }
     },
 
-    /**
-     * Translates high-level Brain Missions into specific Actionable Tasks.
-     * Returns an array of task objects.
-     */
-    resolveTasks: function(room, brainMissions) {
-        const tasks = [];
-        const brain = room.memory.brain;
-        const cache = global.getRoomCache(room);
+    // --- Task Generators ---
 
-        brainMissions.forEach(mission => {
-            // 1. MINING -> Harvest Tasks
-            if (mission.type === 'MINING') {
-                const isMobile = mission.data.mode === 'mobile';
-                tasks.push({
-                    id: `mine_${mission.data.sourceId}`,
-                    type: 'gather',
-                    priority: mission.priority,
-                    role: isMobile ? 'mobile_miner' : 'miner', // Preferred role
-                    limit: isMobile ? 5 : 3, // Max miners per source (usually 1 if static, more if mobile)
-                    data: {
-                        action: 'harvest',
-                        targetId: mission.data.sourceId,
-                        containerId: mission.data.containerId // Optional: stand here
-                    }
-                });
+    getHarvestTask: function(creep, mission) {
+        // 1. Static Mining Positioning
+        if (mission.data && mission.data.containerId) {
+            const container = Game.getObjectById(mission.data.containerId);
+            if (container && !creep.pos.isEqualTo(container.pos)) {
+                return { action: 'move', targetId: mission.data.containerId };
+            }
+        }
+
+        // 2. Check Capacity (Mobile Mining / Link Transfer)
+        this.updateState(creep);
+        if (creep.memory.taskState === 'working' && creep.getActiveBodyparts(CARRY) > 0) {
+            const nearby = creep.pos.findInRange(FIND_STRUCTURES, 1, {
+                filter: s => (s.structureType === STRUCTURE_CONTAINER || s.structureType === STRUCTURE_LINK)
+            });
+            
+            const transferTarget = nearby.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+
+            if (transferTarget) {
+                return { action: 'transfer', targetId: transferTarget.id, resourceType: RESOURCE_ENERGY };
+            }
+            
+            // If there is a container/link nearby (even if full), we treat it as static mining and drop.
+            if (nearby.length > 0) {
+                return { action: 'drop', resourceType: RESOURCE_ENERGY };
+            }
+            
+            // If mission is explicitly static (drop mining), do not attempt delivery
+            if (mission.data && mission.data.mode === 'static') {
+                return { action: 'drop', resourceType: RESOURCE_ENERGY };
             }
 
-            // 2. REFILL -> Transfer Tasks (Spawns/Extensions)
-            if (mission.type === 'REFILL') {
-                const targets = [...(cache.structuresByType[STRUCTURE_SPAWN] || []), ...(cache.structuresByType[STRUCTURE_EXTENSION] || [])]
-                    .filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-                
-                targets.forEach(t => {
-                    // Hauler Task
-                    tasks.push({
-                        id: `refill_${t.id}`,
-                        type: 'work',
-                        priority: mission.priority,
-                        role: 'hauler',
-                        limit: 1,
-                        data: {
-                            action: 'transfer',
-                            targetId: t.id,
-                            resourceType: RESOURCE_ENERGY
-                        }
-                    });
+            // No container nearby: Mobile Mining behavior. Deliver to Spawn/Extension.
+            const deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
+                filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+                             s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            });
 
-                    // Mobile Miner Task
-                    tasks.push({
-                        id: `refill_mobile_${t.id}`,
-                        type: 'work',
-                        priority: mission.priority,
-                        role: 'mobile_miner',
-                        limit: 1,
-                        data: {
-                            action: 'transfer',
-                            targetId: t.id,
-                            resourceType: RESOURCE_ENERGY
-                        }
-                    });
-                });
+            if (deliveryTarget) {
+                return { action: 'transfer', targetId: deliveryTarget.id, resourceType: RESOURCE_ENERGY };
             }
 
-            // 3. LOGISTICS -> Withdraw/Pickup Tasks AND Transfer to Storage
-            if (mission.type === 'LOGISTICS') {
-                // Gather from Containers
-                (mission.data.containerIds || []).forEach(id => {
-                    tasks.push({
-                        id: `withdraw_${id}`,
-                        type: 'gather',
-                        priority: mission.priority,
-                        role: 'hauler',
-                        limit: 2,
-                        data: {
-                            action: 'withdraw',
-                            targetId: id,
-                            resourceType: RESOURCE_ENERGY
-                        }
-                    });
-                });
+            return { action: 'drop', resourceType: RESOURCE_ENERGY };
+        }
 
-                // Pickup Dropped
-                (mission.data.droppedIds || []).forEach(id => {
-                    tasks.push({
-                        id: `pickup_${id}`,
-                        type: 'gather',
-                        priority: mission.priority + 5, // Slightly higher than withdraw
-                        role: 'hauler',
-                        limit: 1,
-                        data: {
-                            action: 'pickup',
-                            targetId: id
-                        }
-                    });
-                });
-
-                // Implicit: If we have logistics, we likely want to dump into Storage if not Refilling
-                if (room.storage && room.storage.store.getFreeCapacity() > 0) {
-                    tasks.push({
-                        id: `store_${room.storage.id}`,
-                        type: 'work',
-                        priority: mission.priority - 10, // Lower than Refill
-                        role: 'hauler',
-                        limit: 5,
-                        data: {
-                            action: 'transfer',
-                            targetId: room.storage.id,
-                            resourceType: RESOURCE_ENERGY
-                        }
-                    });
-                }
-            }
-
-            // 4. UPGRADE -> Upgrade Task
-            if (mission.type === 'UPGRADE') {
-                tasks.push({
-                    id: `upgrade_${mission.data.targetId}`,
-                    type: 'work',
-                    priority: mission.priority,
-                    role: 'upgrader',
-                    limit: mission.data.intensity === 'high' ? 5 : 1,
-                    data: {
-                        action: 'upgrade',
-                        targetId: mission.data.targetId
-                    }
-                });
-
-                // Mobile Miner Upgrade Task (Fallback if no refill needed)
-                tasks.push({
-                    id: `upgrade_mobile_${mission.data.targetId}`,
-                    type: 'work',
-                    priority: mission.priority - 5,
-                    role: 'mobile_miner',
-                    limit: 5,
-                    data: {
-                        action: 'upgrade',
-                        targetId: mission.data.targetId
-                    }
-                });
-            }
-
-            // 5. BUILD -> Build Tasks
-            if (mission.type === 'BUILD') {
-                const sites = room.find(FIND_CONSTRUCTION_SITES);
-                sites.forEach(site => {
-                    tasks.push({
-                        id: `build_${site.id}`,
-                        type: 'work',
-                        priority: mission.priority,
-                        role: 'builder',
-                        limit: 3,
-                        data: {
-                            action: 'build',
-                            targetId: site.id
-                        }
-                    });
-                });
-
-                // Generate gather tasks for builders if there is work to do
-                if (sites.length > 0) {
-                    // 1. Withdraw from Storage
-                    if (room.storage && room.storage.store[RESOURCE_ENERGY] > 0) {
-                        tasks.push({
-                            id: `build_withdraw_storage`,
-                            type: 'gather',
-                            priority: mission.priority,
-                            role: 'builder',
-                            limit: 10,
-                            data: {
-                                action: 'withdraw',
-                                targetId: room.storage.id,
-                                resourceType: RESOURCE_ENERGY
-                            }
-                        });
-                    }
-
-                    // 2. Withdraw from Containers
-                    const containers = (cache.structuresByType[STRUCTURE_CONTAINER] || [])
-                        .filter(c => c.store[RESOURCE_ENERGY] > 0);
-                    
-                    containers.forEach(c => {
-                        tasks.push({
-                            id: `build_withdraw_${c.id}`,
-                            type: 'gather',
-                            priority: mission.priority,
-                            role: 'builder',
-                            limit: 3,
-                            data: {
-                                action: 'withdraw',
-                                targetId: c.id,
-                                resourceType: RESOURCE_ENERGY
-                            }
-                        });
-                    });
-
-                    // 3. Withdraw from Spawn (Fallback if no storage/containers)
-                    const hasStorage = !!room.storage;
-                    const hasContainers = (cache.structuresByType[STRUCTURE_CONTAINER] || []).length > 0;
-
-                    if (!hasStorage && !hasContainers) {
-                        const spawns = (cache.structuresByType[STRUCTURE_SPAWN] || [])
-                            .filter(s => s.store[RESOURCE_ENERGY] > 0);
-
-                        spawns.forEach(s => {
-                            tasks.push({
-                                id: `build_withdraw_${s.id}`,
-                                type: 'gather',
-                                priority: mission.priority,
-                                role: 'builder',
-                                limit: 3,
-                                data: {
-                                    action: 'withdraw',
-                                    targetId: s.id,
-                                    resourceType: RESOURCE_ENERGY
-                                }
-                            });
-                        });
-                    }
-                }
-            }
-
-            // 6. REPAIR -> Repair Tasks
-            if (mission.type === 'REPAIR') {
-                // Re-scan for damaged structures (or use cached/intel if available)
-                // For simplicity, we scan here or rely on what triggered the mission
-                const damaged = room.find(FIND_STRUCTURES, {
-                    filter: s => s.hits < s.hitsMax * 0.8 && s.structureType !== STRUCTURE_WALL
-                });
-                damaged.forEach(s => {
-                    tasks.push({
-                        id: `repair_${s.id}`,
-                        type: 'work',
-                        priority: mission.priority,
-                        role: 'repairer',
-                        limit: 1,
-                        data: {
-                            action: 'repair',
-                            targetId: s.id
-                        }
-                    });
-                });
-
-                // Generate gather tasks for repairers if there is work to do
-                if (damaged.length > 0) {
-                    // 1. Withdraw from Storage
-                    if (room.storage && room.storage.store[RESOURCE_ENERGY] > 0) {
-                        tasks.push({
-                            id: `repair_withdraw_storage`,
-                            type: 'gather',
-                            priority: mission.priority,
-                            role: 'repairer',
-                            limit: 10,
-                            data: {
-                                action: 'withdraw',
-                                targetId: room.storage.id,
-                                resourceType: RESOURCE_ENERGY
-                            }
-                        });
-                    }
-
-                    // 2. Withdraw from Containers
-                    const containers = (cache.structuresByType[STRUCTURE_CONTAINER] || [])
-                        .filter(c => c.store[RESOURCE_ENERGY] > 0);
-                    
-                    containers.forEach(c => {
-                        tasks.push({
-                            id: `repair_withdraw_${c.id}`,
-                            type: 'gather',
-                            priority: mission.priority,
-                            role: 'repairer',
-                            limit: 3,
-                            data: {
-                                action: 'withdraw',
-                                targetId: c.id,
-                                resourceType: RESOURCE_ENERGY
-                            }
-                        });
-                    });
-                }
-            }
-        });
-
-        return tasks;
+        // 3. Harvest
+        return { action: 'harvest', targetId: mission.sourceId };
     },
 
-    findTaskForCreep: function(creep, tasks) {
-        const role = creep.memory.role;
-        const working = creep.memory.working;
-        console.log(`[Tasks] Finding task for ${creep.name}. Role: ${role}, Working: ${working}, Energy: ${creep.store.getUsedCapacity(RESOURCE_ENERGY)}`);
+    getTransferTask: function(creep, mission, room) {
+        this.updateState(creep);
+        if (creep.memory.taskState === 'working') {
+            let target = null;
+            if (mission.targetType === 'spawn_extension') {
+                target = creep.pos.findClosestByRange(FIND_STRUCTURES, {
+                    filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+                                 s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                });
+            } else if (mission.targetType === 'logical_containers' && mission.data && mission.data.targetIds) {
+                const targets = mission.data.targetIds
+                    .map(id => Game.getObjectById(id))
+                    .filter(t => t && t.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+                target = creep.pos.findClosestByRange(targets);
+            }
 
-        // Filter tasks by Role and Type (Gather vs Work)
-        let candidates = tasks.filter(t => {
-            // Role Check: Exact match OR Universal fallback
-            const roleMatch = t.role === role || role === 'universal';
-            
-            // Type Check
-            const typeMatch = working ? t.type === 'work' : t.type === 'gather';
-            
-            return roleMatch && typeMatch;
+            if (target) {
+                return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
+            }
+        } else {
+            return this.getGatherTask(creep, room);
+        }
+        return null;
+    },
+
+    getUpgradeTask: function(creep, mission, room) {
+        this.updateState(creep);
+        if (creep.memory.taskState === 'working') {
+            return { action: 'upgrade', targetId: mission.targetId };
+        } else {
+            return this.getGatherTask(creep, room);
+        }
+    },
+
+    getBuildTask: function(creep, mission, room) {
+        this.updateState(creep);
+        if (creep.memory.taskState === 'working') {
+            const targets = (mission.targetIds || []).map(id => Game.getObjectById(id)).filter(t => t);
+            const target = creep.pos.findClosestByRange(targets);
+            if (target) {
+                return { action: 'build', targetId: target.id };
+            }
+        } else {
+            return this.getGatherTask(creep, room);
+        }
+        return null;
+    },
+
+    updateState: function(creep) {
+        if (creep.memory.taskState !== 'working' && creep.store.getFreeCapacity() === 0) {
+            creep.memory.taskState = 'working';
+            creep.say('work');
+        } else if (creep.memory.taskState !== 'gathering' && creep.store[RESOURCE_ENERGY] === 0) {
+            creep.memory.taskState = 'gathering';
+            creep.say('gather');
+        }
+    },
+
+    getGatherTask: function(creep, room) {
+        // 1. Pickup Dropped
+        const dropped = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
+            filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 50
         });
-        console.log(`[Tasks] Candidates for ${creep.name}: ${candidates.length}`);
-        
-        // Sort by Priority (descending) then Assignment Count (ascending)
-        candidates.sort((a, b) => {
-            if (b.priority !== a.priority) return b.priority - a.priority;
-            return (a.assigned || 0) - (b.assigned || 0); 
+        if (dropped) {
+            return { action: 'pickup', targetId: dropped.id };
+        }
+
+        // 2. Withdraw from Container/Storage
+        const structure = creep.pos.findClosestByRange(FIND_STRUCTURES, {
+            filter: s => (s.structureType === STRUCTURE_CONTAINER || s.structureType === STRUCTURE_STORAGE) &&
+                         s.store[RESOURCE_ENERGY] > 50
         });
-        
-        // Return best available task
-        const best = candidates[0];
-        if (best && (best.assigned || 0) < (best.limit || 1)) {
-            return best;
+        if (structure) {
+            return { action: 'withdraw', targetId: structure.id, resourceType: RESOURCE_ENERGY };
+        }
+
+        // 3. Harvest (if capable)
+        if (creep.getActiveBodyparts(WORK) > 0) {
+            const source = creep.pos.findClosestByRange(FIND_SOURCES_ACTIVE);
+            if (source) {
+                return { action: 'harvest', targetId: source.id };
+            }
         }
         return null;
     }
 };
+
+module.exports = managerTasks;
