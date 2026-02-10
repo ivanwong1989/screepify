@@ -54,10 +54,6 @@ var managerOverseer = {
         room.memory.overseer.missions = missions;
         room.memory.overseer.state = state;
         room.memory.overseer.economyState = economyState;
-
-        if (Memory.debug) {
-            overseerUtils.visualize(room, missions, state, economyState);
-        }
     }
 };
 

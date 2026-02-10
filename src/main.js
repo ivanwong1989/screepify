@@ -1,4 +1,5 @@
 var roleUniversal = require('role.universal');
+var roleDefender = require('role.defender');
 var roleTower = require('role.tower');
 var runColony = require('runColony');
 // Any modules that you use that modify the game's prototypes should be require'd
@@ -92,7 +93,9 @@ module.exports.loop = function() {
         // Run creep logic globally, as they may be in any room
         for(var name in Game.creeps) {
             var creep = Game.creeps[name];
-            if(['universal', 'miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'defender', 'worker'].includes(creep.memory.role)) {
+            if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
+                roleDefender.run(creep);
+            } else if(['universal', 'miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'worker'].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }
         }

@@ -131,13 +131,61 @@ var managerSpawner = {
     },
 
     generateBody: function(mission, budget) {
+        if (mission.requirements && mission.requirements.body) {
+            return this.generateCustomBody(mission.requirements.body, budget);
+        }
+
         if (mission.archetype === 'miner') {
             return this.generateMinerBody(budget);
         } else if (mission.archetype === 'hauler') {
             return this.generateHaulerBody(budget);
+        } else if (mission.archetype === 'defender') {
+            return this.generateDefenderBody(budget);
+        } else if (mission.archetype === 'brawler') {
+            return this.generateBrawlerBody(budget);
         } else {
             return this.generateWorkerBody(budget);
         }
+    },
+
+    generateCustomBody: function(pattern, budget) {
+        let body = [];
+        let cost = 0;
+        const patternCost = this.calculateBodyCost(pattern);
+        
+        while (cost + patternCost <= budget && body.length + pattern.length <= 50) {
+            body = body.concat(pattern);
+            cost += patternCost;
+        }
+        
+        return body.length > 0 ? this.sortBody(body) : this.sortBody(pattern);
+    },
+
+    generateBrawlerBody: function(budget) {
+        // Fast Melee: ATTACK, MOVE (130)
+        let body = [];
+        let cost = 0;
+        while (cost + 130 <= budget && body.length + 2 <= 50) {
+            body.push(ATTACK, MOVE);
+            cost += 130;
+        }
+        return this.sortBody(body);
+    },
+
+    generateDefenderBody: function(budget) {
+        // Balanced Ranged/Heal/Move defender
+        let body = [];
+        let cost = 0;
+        // RANGED_ATTACK (150), MOVE (50), HEAL (250) = 450 per segment
+        while (cost + 450 <= budget && body.length + 3 <= 50) {
+            body.push(RANGED_ATTACK, MOVE, HEAL);
+            cost += 450;
+        }
+        // Fallback for low energy
+        if (body.length === 0) {
+            return [RANGED_ATTACK, MOVE];
+        }
+        return this.sortBody(body);
     },
 
     generateMinerBody: function(budget) {
