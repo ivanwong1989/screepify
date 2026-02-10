@@ -8,7 +8,13 @@ var roleUniversal = {
         const task = creep.memory.task;
         if (!task) return;
 
-        const target = Game.getObjectById(task.targetId);
+        let target;
+        // Targets can be ID or Names
+        if (task.targetId) {
+            target = Game.getObjectById(task.targetId);
+        } else if (task.targetName) {
+            target = Game.flags[task.targetName];
+        }
 
         // If the target is no longer valid (despawned, destroyed), clear the task.
         if (!target && task.action !== 'drop') {

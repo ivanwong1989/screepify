@@ -226,20 +226,40 @@ var managerTasks = {
 
     getDecongestTask: function(creep, mission) {
         // Stick to current target to prevent thrashing
-        if (creep.memory.task && creep.memory.task.targetId && creep.memory.task.action === 'move') {
-            const currentTarget = Game.getObjectById(creep.memory.task.targetId);
-            if (currentTarget && (mission.targetIds || []).includes(currentTarget.id)) {
-                if (creep.pos.inRangeTo(currentTarget.pos, 1)) {
-                    delete creep.memory.missionName;
-                    delete creep.memory.taskState;
-                    creep.say('parked');
-                    return null;
+        if (creep.memory.task && creep.memory.task.action === 'move') {
+            if (creep.memory.task.targetId) {
+                const currentTarget = Game.getObjectById(creep.memory.task.targetId);
+                if (currentTarget && (mission.targetIds || []).includes(currentTarget.id)) {
+                    if (creep.pos.inRangeTo(currentTarget.pos, 1)) {
+                        delete creep.memory.missionName;
+                        delete creep.memory.taskState;
+                        creep.say('parked');
+                        return null;
+                    }
+                    return { action: 'move', targetId: currentTarget.id };
                 }
-                return { action: 'move', targetId: currentTarget.id };
+            }
+            if (creep.memory.task.targetName) {
+                const currentTarget = Game.flags[creep.memory.task.targetName];
+                if (currentTarget && (mission.targetNames || []).includes(currentTarget.name)) {
+                    if (creep.pos.inRangeTo(currentTarget.pos, 1)) {
+                        delete creep.memory.missionName;
+                        delete creep.memory.taskState;
+                        creep.say('parked');
+                        return null;
+                    }
+                    return { action: 'move', targetName: currentTarget.name };
+                }
             }
         }
 
-        const targets = (mission.targetIds || []).map(id => Game.getObjectById(id)).filter(t => t);
+        let targets = [];
+        if (mission.targetIds) {
+            targets = (mission.targetIds || []).map(id => Game.getObjectById(id)).filter(t => t);
+        } else if (mission.targetNames) {
+            targets = (mission.targetNames || []).map(name => Game.flags[name]).filter(t => t);
+        }
+
         if (targets.length > 0) {
             const target = creep.pos.findClosestByRange(targets);
             if (target) {
@@ -249,6 +269,9 @@ var managerTasks = {
                     delete creep.memory.taskState;
                     creep.say('parked');
                     return null;
+                }
+                if (target instanceof Flag) {
+                    return { action: 'move', targetName: target.name };
                 }
                 return { action: 'move', targetId: target.id };
             }
@@ -263,7 +286,11 @@ var managerTasks = {
         if (mission.data && mission.data.containerId) {
             const container = Game.getObjectById(mission.data.containerId);
             if (container && !creep.pos.isEqualTo(container.pos)) {
-                return { action: 'move', targetId: mission.data.containerId };
+                // Only move to container if it is not occupied by another creep
+                const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS);
+                if (creepsOnContainer.length === 0) {
+                    return { action: 'move', targetId: mission.data.containerId };
+                }
             }
         }
 

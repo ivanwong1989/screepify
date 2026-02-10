@@ -577,7 +577,7 @@ var managerOverseer = {
             missions.push({
                 name: 'decongest:parking',
                 type: 'decongest',
-                targetIds: parkingFlags.map(f => f.id),
+                targetNames: parkingFlags.map(f => f.name),
                 // No requirements, so no spawning
                 priority: 1 // Very low priority
             });
@@ -624,13 +624,23 @@ var managerOverseer = {
                         room.visual.text(`🔨 ${assigned}/${required}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
                     }
                 });
-            } else if (m.type === 'decongest' && m.targetIds && m.targetIds.length > 0) {
-                m.targetIds.forEach(id => {
-                    const target = Game.getObjectById(id);
-                    if (target) {
-                        room.visual.text(`🅿️`, target.pos.x, target.pos.y, { font: 0.5, color: '#ffffff', stroke: '#000000', strokeWidth: 0.15 });
-                    }
-                });
+            } else if (m.type === 'decongest') {
+                if (m.targetIds && m.targetIds.length > 0) {
+                    m.targetIds.forEach(id => {
+                        const target = Game.getObjectById(id);
+                        if (target) {
+                            room.visual.text(`🅿️`, target.pos.x, target.pos.y, { font: 0.5, color: '#ffffff', stroke: '#000000', strokeWidth: 0.15 });
+                        }
+                    });
+                }
+                if (m.targetNames && m.targetNames.length > 0) {
+                    m.targetNames.forEach(name => {
+                        const target = Game.flags[name];
+                        if (target && target.pos.roomName === room.name) {
+                            room.visual.text(`🅿️`, target.pos.x, target.pos.y, { font: 0.5, color: '#ffffff', stroke: '#000000', strokeWidth: 0.15 });
+                        }
+                    });
+                }
             }
         });
     },
@@ -681,6 +691,54 @@ var managerOverseer = {
                 }
             }
         }
+
+        // Strategy: Reassign Parked Creeps
+        // Parked creeps are effectively idle reserves. If any mission has a deficit, pull from parking.
+        const parkingMissionName = 'decongest:parking';
+        const parkingMission = missions.find(m => m.name === parkingMissionName);
+        
+        if (parkingMission && parkingMission.census && parkingMission.census.count > 0) {
+             const parkedCreeps = intel.myCreeps.filter(c => c.memory.missionName === parkingMissionName);
+             
+             // Sort missions by priority to fill most important first
+             const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
+
+             for (const mission of sortedMissions) {
+                 if (parkedCreeps.length === 0) break;
+                 if (mission.name === parkingMissionName) continue;
+
+                 // Check deficit
+                 if (!mission.requirements || !mission.requirements.count) continue;
+                 const currentCount = mission.census ? mission.census.count : 0;
+                 const deficit = mission.requirements.count - currentCount;
+
+                 if (deficit > 0) {
+                     const reqArchetype = mission.requirements.archetype;
+                     
+                     // Filter parked creeps that match the archetype
+                     const candidates = parkedCreeps.filter(c => c.memory.role === reqArchetype);
+                     
+                     let movedCount = 0;
+                     for (const creep of candidates) {
+                         if (movedCount >= deficit) break;
+                         
+                         creep.memory.missionName = mission.name;
+                         delete creep.memory.task;
+                         creep.memory.taskState = 'init';
+                         
+                         // Update Census
+                         if (parkingMission.census) parkingMission.census.count--;
+                         if (mission.census) mission.census.count++;
+                         
+                         // Remove from parkedCreeps list
+                         const idx = parkedCreeps.indexOf(creep);
+                         if (idx > -1) parkedCreeps.splice(idx, 1);
+                         
+                         movedCount++;
+                     }
+                 }
+             }
+        }
     },
 
     /**
@@ -726,8 +784,17 @@ var managerOverseer = {
         const coveredTargets = new Set();
 
         // 0. Generate Fleet Mission (Decoupled Spawning)
-        // We want roughly 2 haulers per source, or at least 2.
-        const desiredHaulers = Math.max(2, intel.sources.length * 2);
+        // We want roughly 2 haulers per source, or at least 2. Scale down as the hauler bodies get bigger
+        let budget = intel.energyCapacityAvailable;
+        if (isEmergency) {
+            budget = Math.max(intel.energyAvailable, 300);
+        }
+        const haulerStats = managerSpawner.checkBody('hauler', budget);
+        const carryParts = haulerStats.carry || 1;
+        const partsPerSource = 10; // Target 500 capacity per source
+        const totalNeededParts = intel.sources.length * partsPerSource;
+        const desiredHaulers = Math.max(2, Math.ceil(totalNeededParts / carryParts));
+
         missions.push({
             name: 'logistics:fleet',
             type: 'hauler_fleet',
