@@ -15,7 +15,7 @@ module.exports = {
         // 0. Generate Fleet Mission
         const haulerStats = managerSpawner.checkBody('hauler', budget);
         const carryParts = haulerStats.carry || 1;
-        const partsPerSource = 10; 
+        const partsPerSource = 14; 
         const totalNeededParts = intel.sources.length * partsPerSource;
         const desiredHaulers = Math.max(2, Math.ceil(totalNeededParts / carryParts));
 

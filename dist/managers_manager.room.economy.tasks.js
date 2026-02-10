@@ -131,6 +131,9 @@ var managerTasks = {
             const status = missionStatus[m.name];
             const req = m.requirements || {};
 
+            // Check archetype match if specified
+            if (req.archetype && req.archetype !== creep.memory.role) return false;
+
             // Check if requirements are met (Saturation check)
             if (req.count && status.assignedCount >= req.count) return false;
 
@@ -163,6 +166,8 @@ var managerTasks = {
     },
 
     assignAction: function(creep, mission, room) {
+        if (mission.type === 'defend') return;
+
         let task = null;
         switch (mission.type) {
             case 'hauler_fleet':

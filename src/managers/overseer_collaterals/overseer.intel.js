@@ -104,11 +104,17 @@ const overseerIntel = {
     },
 
     determineState: function(room, intel) {
-        if (intel.myCreeps.length === 0 || (intel.energyAvailable < 300 && intel.myCreeps.length < 2)) {
+        if (intel.myCreeps.length === 0) {
+            log(`[Overseer] ${room.name} State: EMERGENCY (Zero Population)`);
+            return 'EMERGENCY';
+        }
+        if (intel.energyAvailable < 300 && intel.myCreeps.length < 2) {
+            log(`[Overseer] ${room.name} State: EMERGENCY (Low Energy: ${intel.energyAvailable}, Low Pop: ${intel.myCreeps.length})`);
             return 'EMERGENCY';
         }
         const miners = intel.myCreeps.filter(c => c.memory.role === 'miner');
         if (miners.length === 0 && intel.sources.length > 0) {
+            log(`[Overseer] ${room.name} State: EMERGENCY (No Miners)`);
             return 'EMERGENCY';
         }
         if (room.find(FIND_HOSTILE_CREEPS).length > 0) {

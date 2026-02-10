@@ -22,11 +22,12 @@ module.exports = {
         }
 
         // --- Priority 4.5: Repair ---
-        // Only if we have reasonable energy
+        // Only if we have reasonable energy and normal repair creep missions fail to keep up, meaning very lot HP
         if (intel.energyAvailable > intel.energyCapacityAvailable * 0.5) {
             const allStructures = [].concat(...Object.values(intel.structures));
             const damagedStructures = allStructures.filter(s => 
-                s.hits < s.hitsMax && 
+                s.hits < s.hitsMax &&
+                (s.hits / s.hitsMax) < 0.6 && 
                 s.structureType !== STRUCTURE_WALL && 
                 s.structureType !== STRUCTURE_RAMPART
             );

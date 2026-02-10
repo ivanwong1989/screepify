@@ -118,7 +118,7 @@ module.exports.loop = function() {
                 // Run towers after Colony Logic (so Tasker has assigned tasks)
                 const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } });
                 for (const tower of towers) {
-                    roleTower.run(tower);
+                    //roleTower.run(tower);
                 }
             }
         }

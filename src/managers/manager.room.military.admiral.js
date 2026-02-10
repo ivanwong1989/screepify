@@ -1,6 +1,6 @@
 /**
  * The Admiral is the military counterpart to the Overseer.
- * It monitors threats and manages combat missions.
+ * It monitors threats and manages combat missions with advanced assessment.
  */
 var managerAdmiral = {
     run: function(room) {
@@ -14,33 +14,41 @@ var managerAdmiral = {
         // 2. Determine Combat State
         let state = 'PEACE';
         if (hostiles.length > 0) {
-            const isDangerous = threat.attack > 0 || threat.ranged > 0 || threat.work > 0;
-            state = isDangerous ? 'DEFEND' : 'CAUTION';
+            // A "Dangerous" threat is any creep with offensive parts or high EHP/work power
+            const isDangerous = threat.attack > 0 || threat.ranged > 0 || threat.work > 10 || threat.ehp > 2000;
+            
+            // Trigger SIEGE state if enemy work parts are high (structure destruction threat)
+            if (threat.work > 20) {
+                state = 'SIEGE';
+            } else {
+                state = isDangerous ? 'DEFEND' : 'CAUTION';
+            }
         }
 
         // 3. Generate Missions
         const missions = [];
 
-        if (state === 'DEFEND') {
+        if (state === 'DEFEND' || state === 'SIEGE' || state === 'CAUTION') {
             const response = this.calculateResponse(threat, budget, room);
             missions.push({
                 name: `defend_${room.name}`,
                 type: 'defend',
                 archetype: response.archetype,
-                priority: 95, // Very high priority
+                priority: state === 'SIEGE' ? 99 : (state === 'DEFEND' ? 95 : 80), // Max priority during siege
                 requirements: { 
                     count: response.count,
                     body: response.bodyPattern 
                 },
                 data: { 
                     targetIds: hostiles.map(h => h.id),
-                    strategy: response.strategy
+                    strategy: response.strategy,
+                    formation: response.formation // Specifies if creeps should move as DUO/QUAD
                 },
                 census: { count: 0 }
             });
         }
 
-        // 4. Maintenance Missions (e.g., keeping ramparts up)
+        // 4. Maintenance Missions (Fortify walls/ramparts)
         const structures = room.find(FIND_MY_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_RAMPART || s.structureType === STRUCTURE_WALL
         });
@@ -57,8 +65,7 @@ var managerAdmiral = {
             });
         }
 
-        // 5. Publish to the shared mission pool
-        // We append to existing missions created by Overseer
+        // 5. Publish to shared mission pool
         if (!room._missions) room._missions = [];
         room._missions = room._missions.concat(missions);
         
@@ -67,76 +74,95 @@ var managerAdmiral = {
 
         if (Memory.debug && state !== 'PEACE' && missions.length > 0) {
             const m = missions[0];
-            log(`[Admiral] Room ${room.name} state: ${state}, Strategy: ${m.data.strategy}, Req: ${m.requirements.count}x ${m.archetype}`);
+            console.log(`[Admiral] Room ${room.name} state: ${state}, Strat: ${m.data.strategy}, Formation: ${m.data.formation}`);
         }
     },
 
     /**
-     * Detailed breakdown of enemy body parts to understand their composition.
+     * Enhanced Threat Assessment: Breakdown of enemy body parts with Boost Multipliers.
+     * T1: 2x, T2: 3x, T3: 4x effectiveness.
      */
     analyzeThreat: function(hostiles) {
-        const stats = { attack: 0, ranged: 0, heal: 0, tough: 0, work: 0, move: 0, count: hostiles.length };
-        hostiles.forEach(c => {
-            stats.attack += c.getActiveBodyparts(ATTACK);
-            stats.ranged += c.getActiveBodyparts(RANGED_ATTACK);
-            stats.heal += c.getActiveBodyparts(HEAL);
-            stats.tough += c.getActiveBodyparts(TOUGH);
-            stats.work += c.getActiveBodyparts(WORK);
-            stats.move += c.getActiveBodyparts(MOVE);
+        const stats = { 
+            attack: 0, ranged: 0, heal: 0, tough: 0, work: 0, move: 0, 
+            count: hostiles.length, ehp: 0 
+        };
+
+        hostiles.forEach(creep => {
+            let creepEHP = creep.hits;
+            
+            creep.body.forEach(part => {
+                if (part.hits > 0) {
+                    let multiplier = 1;
+                    
+                    if (part.boost) {
+                        const boost = part.boost;
+                        // HEAL, ATTACK, RANGED multipliers
+                        if ([HEAL, ATTACK, RANGED_ATTACK].includes(part.type)) {
+                            multiplier = boost.includes('X') ? 4 : (boost.includes('2') ? 3 : 2);
+                        }
+                        // TOUGH damage reduction (GHO2 = 0.5, XGHO2 = 0.3)
+                        if (part.type === TOUGH) {
+                            const reduction = boost.includes('XGHO2') ? 0.3 : (boost.includes('GHO2') ? 0.5 : 0.7);
+                            creepEHP += (100 / reduction) - 100;
+                        }
+                    }
+                    stats[part.type] += (1 * multiplier);
+                }
+            });
+            stats.ehp += creepEHP;
         });
         return stats;
     },
 
     /**
-     * Tactical decision making: what to build and how many, based on threat vs budget.
+     * Tactical Spawning: Uses weighted threat and EHP to determine composition.
      */
     calculateResponse: function(threat, budget, room) {
         let archetype = 'defender';
         let strategy = 'BALANCED';
-        let bodyPattern = [RANGED_ATTACK, MOVE, HEAL]; // Default segment (450)
+        let bodyPattern = [RANGED_ATTACK, MOVE, HEAL]; 
+        let formation = 'SOLO';
 
         const isMeleeHeavy = threat.attack > threat.ranged * 1.5;
         const isHealHeavy = threat.heal > (threat.attack + threat.ranged);
-        const isFast = threat.move >= (threat.attack + threat.ranged + threat.heal + threat.tough + threat.work);
+        const isTanky = threat.ehp > (threat.count * 2000);
 
-        // 1. Strategy Selection
-        if (isHealHeavy) {
-            // Need high burst to overcome healing. Melee brawlers have higher DPS per energy.
+        // 1. Strategy & Archetype Selection
+        if (isHealHeavy || isTanky) {
+            // High EHP/Heal requires melee burst
             strategy = 'BURST_FOCUS';
-            bodyPattern = [ATTACK, ATTACK, MOVE]; // 210 cost, 60 dmg
+            bodyPattern = [ATTACK, ATTACK, MOVE]; 
             archetype = 'brawler';
-        } else if (isMeleeHeavy && !isFast) {
-            // Kite slow melee enemies with pure ranged.
+            formation = 'DUO'; // Use pairs to ensure one creep can heal while the other attacks
+        } else if (isMeleeHeavy && threat.move <= threat.count * 10) {
+            // Kite slow melee enemies
             strategy = 'KITE';
-            bodyPattern = [RANGED_ATTACK, MOVE]; // 200 cost, 10 dmg
-            archetype = 'defender';
-        } else if (isFast && !isMeleeHeavy) {
-            // Fast harassers. Need sustain and ranged to trade.
-            strategy = 'INTERCEPT';
-            bodyPattern = [RANGED_ATTACK, MOVE, MOVE, HEAL]; // 500 cost
+            bodyPattern = [RANGED_ATTACK, MOVE];
             archetype = 'defender';
         }
 
-        // 2. Budget Analysis & Count Calculation
+        // 2. Count Calculation based on Enemy Heal Power
         const patternCost = bodyPattern.reduce((sum, part) => sum + BODYPART_COST[part], 0);
         const segmentsPerCreep = Math.floor(budget / patternCost);
         
+        // Enemy heal power (Heal parts * 12 or boosted equivalent)
         const enemyHealPower = threat.heal * 12;
         const ourDmgPerSegment = bodyPattern.includes(ATTACK) ? 30 : 10;
         
-        // Aim for 2x enemy heal power in damage to ensure kills
-        const requiredSegments = Math.ceil((enemyHealPower * 2) / ourDmgPerSegment) || 1;
+        // Aim for 3x enemy heal power to ensure breakthrough
+        const requiredSegments = Math.ceil((enemyHealPower * 3) / ourDmgPerSegment) || 1;
         let count = Math.ceil(requiredSegments / Math.max(1, segmentsPerCreep));
 
-        // Scaling & Safety: Don't get outnumbered, and use duos for mutual healing if threat is real.
-        count = Math.max(count, Math.ceil(threat.count / 1.5));
-        if (threat.attack > 10 || threat.ranged > 10) count = Math.max(count, 2);
-        
+        // Use even numbers for DUO formations
+        if (formation === 'DUO') count = Math.ceil(count / 2) * 2;
+
         return {
-            count: Math.min(count, 4), // Cap to prevent economic collapse
+            count: Math.min(Math.max(count, 1), 6),
             archetype,
             strategy,
-            bodyPattern
+            bodyPattern,
+            formation
         };
     }
 };

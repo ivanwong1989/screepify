@@ -132,59 +132,27 @@ var managerSpawner = {
 
     generateBody: function(mission, budget) {
         if (mission.requirements && mission.requirements.body) {
-            return this.generateCustomBody(mission.requirements.body, budget);
+            return this.generateMilitaryBody(budget, mission.requirements.body);
         }
-
         if (mission.archetype === 'miner') {
             return this.generateMinerBody(budget);
         } else if (mission.archetype === 'hauler') {
             return this.generateHaulerBody(budget);
-        } else if (mission.archetype === 'defender') {
-            return this.generateDefenderBody(budget);
-        } else if (mission.archetype === 'brawler') {
-            return this.generateBrawlerBody(budget);
         } else {
             return this.generateWorkerBody(budget);
         }
     },
 
-    generateCustomBody: function(pattern, budget) {
-        let body = [];
-        let cost = 0;
-        const patternCost = this.calculateBodyCost(pattern);
+    generateMilitaryBody: function(budget, pattern) {
+        const cost = this.calculateBodyCost(pattern);
+        const maxSegments = Math.floor(budget / cost);
+        const count = Math.min(maxSegments, Math.floor(50 / pattern.length));
         
-        while (cost + patternCost <= budget && body.length + pattern.length <= 50) {
+        let body = [];
+        for (let i = 0; i < count; i++) {
             body = body.concat(pattern);
-            cost += patternCost;
         }
         
-        return body.length > 0 ? this.sortBody(body) : this.sortBody(pattern);
-    },
-
-    generateBrawlerBody: function(budget) {
-        // Fast Melee: ATTACK, MOVE (130)
-        let body = [];
-        let cost = 0;
-        while (cost + 130 <= budget && body.length + 2 <= 50) {
-            body.push(ATTACK, MOVE);
-            cost += 130;
-        }
-        return this.sortBody(body);
-    },
-
-    generateDefenderBody: function(budget) {
-        // Balanced Ranged/Heal/Move defender
-        let body = [];
-        let cost = 0;
-        // RANGED_ATTACK (150), MOVE (50), HEAL (250) = 450 per segment
-        while (cost + 450 <= budget && body.length + 3 <= 50) {
-            body.push(RANGED_ATTACK, MOVE, HEAL);
-            cost += 450;
-        }
-        // Fallback for low energy
-        if (body.length === 0) {
-            return [RANGED_ATTACK, MOVE];
-        }
         return this.sortBody(body);
     },
 
@@ -234,8 +202,14 @@ var managerSpawner = {
     },
 
     sortBody: function(body) {
-        const sortOrder = { [TOUGH]: 0, [WORK]: 1, [CARRY]: 2, [MOVE]: 3 };
-        return body.sort((a, b) => sortOrder[a] - sortOrder[b]);
+        const sortOrder = { 
+            [TOUGH]: 0, 
+            [ATTACK]: 1, [RANGED_ATTACK]: 1, [WORK]: 1, 
+            [CARRY]: 2, 
+            [MOVE]: 3, 
+            [HEAL]: 4 
+        };
+        return body.sort((a, b) => (sortOrder[a] || 99) - (sortOrder[b] || 99));
     },
 
     calculateBodyCost: function(body) {
