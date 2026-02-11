@@ -4,7 +4,7 @@ var roleTower = require('role.tower');
 var runColony = require('runColony');
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
-//const profiler = require('screeps-profiler');
+const profiler = require('screeps-profiler');
 
 
 // A simple, reliable custom logger
@@ -58,10 +58,65 @@ Object.defineProperty(global, 'debugoffcombat', {
     configurable: true
 });
 
+// Console helpers
+function normalizeAllyName(name) {
+    if (name === undefined || name === null) return '';
+    return ('' + name).trim();
+}
+
+function ensureAllies() {
+    if (!Array.isArray(Memory.allies)) Memory.allies = [];
+    return Memory.allies;
+}
+
+global.allyAdd = function(name) {
+    const raw = normalizeAllyName(name);
+    if (!raw) return 'Usage: allyAdd(\"PlayerName\")';
+    const allies = ensureAllies();
+    const exists = allies.some(a => ('' + a).toLowerCase() === raw.toLowerCase());
+    if (!exists) allies.push(raw);
+    return `Allies: ${JSON.stringify(allies)}`;
+};
+
+global.allyRemove = function(name) {
+    const raw = normalizeAllyName(name);
+    if (!raw) return 'Usage: allyRemove(\"PlayerName\")';
+    const allies = ensureAllies();
+    const filtered = allies.filter(a => ('' + a).toLowerCase() !== raw.toLowerCase());
+    Memory.allies = filtered;
+    return `Allies: ${JSON.stringify(Memory.allies)}`;
+};
+
+global.allyList = function() {
+    const allies = ensureAllies();
+    return `Allies: ${JSON.stringify(allies)}`;
+};
+
+Object.defineProperty(global, 'help', {
+    get: function() {
+        const lines = [
+            'Console commands:',
+            'debugon           - enable debug logging',
+            'debugoff          - disable debug logging',
+            'debugoncombat     - enable combat debug logging',
+            'debugoffcombat    - disable combat debug logging',
+            'allyAdd(\"Name\")    - add an ally by player name',
+            'allyRemove(\"Name\") - remove an ally by player name',
+            'allyList()        - show current allies'
+        ];
+        for (const line of lines) console.log(line);
+        return `Done`;
+    },
+    configurable: true
+});
+
 // Global Room Cache heap
 global.getRoomCache = function(room) {
     if (!room) return {};
     if (!room._cache || (room._cache && room._cache.time !== Game.time)) {
+        if (!Array.isArray(Memory.allies)) Memory.allies = [];
+        const allies = Memory.allies.map(a => ('' + a).toLowerCase());
+        const isAlly = (owner) => !!(owner && owner.username && allies.includes(owner.username.toLowerCase()));
         const structures = room.find(FIND_STRUCTURES);
         const structuresByType = structures.reduce((acc, s) => {
             acc[s.structureType] = acc[s.structureType] || [];
@@ -80,8 +135,8 @@ global.getRoomCache = function(room) {
         const creeps = room.find(FIND_CREEPS);
         const myCreeps = creeps.filter(c => c.my);
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
-        const hostiles = creeps.filter(c => !c.my);
-        const hostileStructures = room.find(FIND_HOSTILE_STRUCTURES);
+        const hostiles = creeps.filter(c => !c.my && !isAlly(c.owner));
+        const hostileStructures = room.find(FIND_HOSTILE_STRUCTURES).filter(s => !isAlly(s.owner));
         const flags = room.find(FIND_FLAGS);
         const sources = room.find(FIND_SOURCES);
         const minerals = room.find(FIND_MINERALS);
@@ -110,11 +165,11 @@ global.getRoomCache = function(room) {
     return room._cache;
 };
 
-//module.exports.loop = function () {
+
 // This line monkey patches the global prototypes.
-//profiler.enable();
+profiler.enable();
 module.exports.loop = function() {
-    //profiler.wrap(function() {
+    profiler.wrap(function() {
         // Main.js logic should go here.
 
         // --- Initialize Remote Memory ---
@@ -164,5 +219,5 @@ module.exports.loop = function() {
                 roleUniversal.run(creep);
             }
         }
-    //});
+    });
 }

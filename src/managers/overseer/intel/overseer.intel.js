@@ -147,6 +147,7 @@ const overseerIntel = {
     },
 
     determineEconomyState: function(room, intel) {
+        if (!room.memory.overseer) room.memory.overseer = {};
         let current = (room.memory.overseer && room.memory.overseer.economyState) || 'STOCKPILING';
         const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
         const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
@@ -157,19 +158,52 @@ const overseerIntel = {
 
         const totalStored = logisticsEnergy + intel.storageEnergy;
         const totalCapacity = logisticsCapacity + intel.storageCapacity;
+
+        // Track net energy flow (in/out of logistics + storage) to inform state changes.
+        if (!room.memory.overseer.economyFlow) {
+            room.memory.overseer.economyFlow = {
+                avg: 0,
+                lastTotal: totalStored,
+                lastTick: Game.time,
+                lastLogTotal: totalStored,
+                lastLogTick: Game.time
+            };
+        }
+        const flow = room.memory.overseer.economyFlow;
+        const dt = Math.max(1, Game.time - (flow.lastTick || Game.time));
+        const delta = totalStored - (flow.lastTotal || totalStored);
+        const perTick = delta / dt;
+        const ALPHA = 0.2; // smoothing factor for EMA
+        flow.avg = (flow.avg === undefined || flow.avg === null) ? perTick : ((flow.avg * (1 - ALPHA)) + (perTick * ALPHA));
+        flow.lastTotal = totalStored;
+        flow.lastTick = Game.time;
+        room.memory.overseer.economyFlow = flow;
+
+        const FLOW_POSITIVE = 2;
+        const FLOW_NEGATIVE = -2;
+
+        if (Game.time % 50 === 0) {
+            const logDt = Math.max(1, Game.time - (flow.lastLogTick || Game.time));
+            const logDelta = totalStored - (flow.lastLogTotal || totalStored);
+            const logPerTick = logDelta / logDt;
+            flow.lastLogTotal = totalStored;
+            flow.lastLogTick = Game.time;
+            room.memory.overseer.economyFlow = flow;
+            log(`[Overseer] ${room.name} Flow: total=${totalStored} tickDelta=${delta} tickDt=${dt} tickPerTick=${perTick.toFixed(2)} windowDelta=${logDelta} windowDt=${logDt} windowPerTick=${logPerTick.toFixed(2)} avg=${flow.avg.toFixed(2)}`);
+        }
         
         if (totalCapacity < 500) return 'UPGRADING';
 
         if (room.storage) {
             const UPGRADE_START = 50000;
             const UPGRADE_STOP = 10000;
-            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START) current = 'UPGRADING';
-            else if (current === 'UPGRADING' && totalStored <= UPGRADE_STOP) current = 'STOCKPILING';
+            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START && flow.avg >= FLOW_POSITIVE) current = 'UPGRADING';
+            else if (current === 'UPGRADING' && (totalStored <= UPGRADE_STOP || flow.avg <= FLOW_NEGATIVE)) current = 'STOCKPILING';
         } else {
             const UPGRADE_START = totalCapacity * 0.8;
             const UPGRADE_STOP = totalCapacity * 0.2;
-            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START) current = 'UPGRADING';
-            else if (current === 'UPGRADING' && totalStored <= UPGRADE_STOP) current = 'STOCKPILING';
+            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START && flow.avg >= FLOW_POSITIVE) current = 'UPGRADING';
+            else if (current === 'UPGRADING' && (totalStored <= UPGRADE_STOP || flow.avg <= FLOW_NEGATIVE)) current = 'STOCKPILING';
         }
         
         return current;

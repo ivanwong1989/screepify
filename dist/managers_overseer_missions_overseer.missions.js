@@ -43,7 +43,8 @@ const overseerMissions = {
             }
         });
 
-        const context = { state, economyState, budget, getMissionCensus, efficientSources };
+        const economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || null;
+        const context = { state, economyState, budget, getMissionCensus, efficientSources, economyFlow };
 
         // Run all mission generators
         missionModules.tower.generate(room, intel, context, missions);

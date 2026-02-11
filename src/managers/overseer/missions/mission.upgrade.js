@@ -2,16 +2,30 @@ const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { state, economyState, budget, getMissionCensus } = context;
+        const { state, economyState, budget, getMissionCensus, economyFlow } = context;
         if (!intel.controller || !intel.controller.my || state === 'EMERGENCY') return;
+
+        const ticksToDowngrade = intel.controller.ticksToDowngrade || 0;
+        const CRITICAL_DOWNGRADE_TICKS = 5000;
+        const isCritical = ticksToDowngrade < CRITICAL_DOWNGRADE_TICKS;
+
+        const flowAvg = economyFlow && Number.isFinite(economyFlow.avg) ? economyFlow.avg : 0;
+        const STOCKPILE_PERIOD = 50;
+        const STOCKPILE_WINDOW = 10; // 20% uptime while stockpiling (if flow is non-negative)
+        const allowStockpileWindow = (Game.time % STOCKPILE_PERIOD) < STOCKPILE_WINDOW;
+        const allowStockpileUpgrade = isCritical || (flowAvg >= 0 && allowStockpileWindow);
+
+        if (economyState === 'STOCKPILING' && !allowStockpileUpgrade) return;
 
         let upgradePriority = 50;
         let desiredWork = 5;
+        let spawnAllowed = true;
 
         if (economyState === 'STOCKPILING') {
             desiredWork = 1;
             upgradePriority = 10;
-            if (intel.controller.ticksToDowngrade < 5000) upgradePriority = 100;
+            spawnAllowed = isCritical;
+            if (isCritical) upgradePriority = 100;
         } else if (intel.energyAvailable === intel.energyCapacityAvailable) {
             upgradePriority = 80;
             desiredWork = 15;
@@ -33,6 +47,9 @@ module.exports = {
             upCount = Math.ceil(desiredWork / (upStats.work || 1));
             if (desiredWork > 0 && upCount < 1) upCount = 1;
         }
+        if (economyState === 'STOCKPILING' && !isCritical) {
+            upCount = Math.min(upCount, 1);
+        }
 
         missions.push({
             name: upName,
@@ -41,7 +58,7 @@ module.exports = {
             targetId: intel.controller.id,
             data: { sourceIds: intel.allEnergySources.map(s => s.id) },
             pos: intel.controller.pos,
-            requirements: { archetype: 'worker', count: upCount },
+            requirements: { archetype: 'worker', count: upCount, spawn: spawnAllowed },
             priority: upgradePriority
         });
     }
