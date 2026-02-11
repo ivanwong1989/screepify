@@ -26,6 +26,8 @@ module.exports = {
         const MIN_CARRY_PER_SOURCE = 4;
         const ENERGY_PER_TICK = 10;
         const TRANSFER_BUFFER_TICKS = 2;
+        const DISTANCE_SOFT_CAP = 20;
+        const DISTANCE_SCALE_PER_TILE = 0.05;
 
         const haulerStats = managerSpawner.checkBody('hauler', budget);
         const uncappedCarryParts = haulerStats.carry || 1;
@@ -107,7 +109,8 @@ module.exports = {
                 }
             }
             const roundTrip = (pathLen * 2) + TRANSFER_BUFFER_TICKS;
-            const requiredCarry = Math.ceil((ENERGY_PER_TICK * roundTrip) / 50);
+            const distanceScale = 1 + Math.max(0, pathLen - DISTANCE_SOFT_CAP) * DISTANCE_SCALE_PER_TILE;
+            const requiredCarry = Math.ceil((ENERGY_PER_TICK * roundTrip * distanceScale) / 50);
             totalRequiredCarryParts += Math.max(MIN_CARRY_PER_SOURCE, requiredCarry);
         });
 
