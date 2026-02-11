@@ -31,7 +31,7 @@ var managerAdmiral = {
         if (state === 'DEFEND' || state === 'SIEGE' || state === 'CAUTION') {
             const response = this.calculateResponse(threat, budget, room);
             missions.push({
-                name: `defend_${room.name}`,
+                name: `defend_${room.name}_${response.strategy}`,
                 type: 'defend',
                 archetype: response.archetype,
                 priority: state === 'SIEGE' ? 99 : (state === 'DEFEND' ? 95 : 80), // Max priority during siege
@@ -55,7 +55,7 @@ var managerAdmiral = {
         const weakWalls = structures.filter(s => s.hits < 5000);
         if (weakWalls.length > 0) {
             missions.push({
-                name: `fortify_${room.name}`,
+                name: `fortify_${room.name}_walls`,
                 type: 'repair',
                 archetype: 'worker',
                 priority: 40,
@@ -65,7 +65,25 @@ var managerAdmiral = {
             });
         }
 
-        // 5. Publish to shared mission pool
+        // 5. Patrol Mission
+        // Ensure idle defenders have a mission so they don't drift or get confused
+        const defenderCount = room.find(FIND_MY_CREEPS, { 
+            filter: c => ['defender', 'brawler'].includes(c.memory.role) 
+        }).length;
+
+        if (defenderCount > 0) {
+            missions.push({
+                name: `patrol_${room.name}_perimeter`,
+                type: 'patrol',
+                archetype: 'defender',
+                priority: 10,
+                requirements: { count: defenderCount, spawn: false },
+                data: { },
+                census: { count: 0 }
+            });
+        }
+
+        // 6. Publish to shared mission pool
         if (!room._missions) room._missions = [];
         room._missions = room._missions.concat(missions);
         
@@ -84,7 +102,7 @@ var managerAdmiral = {
      */
     analyzeThreat: function(hostiles) {
         const stats = { 
-            attack: 0, ranged: 0, heal: 0, tough: 0, work: 0, move: 0, 
+            attack: 0, ranged: 0, heal: 0, tough: 0, work: 0, move: 0, carry: 0, claim: 0,
             count: hostiles.length, ehp: 0 
         };
 
@@ -107,7 +125,9 @@ var managerAdmiral = {
                             creepEHP += (100 / reduction) - 100;
                         }
                     }
-                    stats[part.type] += (1 * multiplier);
+                    if (stats[part.type] !== undefined) {
+                        stats[part.type] += (1 * multiplier);
+                    }
                 }
             });
             stats.ehp += creepEHP;
@@ -123,39 +143,121 @@ var managerAdmiral = {
         let strategy = 'BALANCED';
         let bodyPattern = [RANGED_ATTACK, MOVE, HEAL]; 
         let formation = 'SOLO';
+        
+        // 1. Analyze Battlefield Damage & Healing
+        const enemyMeleeDmg = threat.attack * 30;
+        const enemyRangedDmg = threat.ranged * 10;
+        const enemyTotalDmg = enemyMeleeDmg + enemyRangedDmg;
+        const enemyHeal = threat.heal * 12;
 
-        const isMeleeHeavy = threat.attack > threat.ranged * 1.5;
-        const isHealHeavy = threat.heal > (threat.attack + threat.ranged);
-        const isTanky = threat.ehp > (threat.count * 2000);
+        // 2. Analyze Mobility (Fatigue check)
+        // Sum of all parts that generate fatigue vs MOVE parts that reduce it
+        const totalParts = threat.attack + threat.ranged + threat.heal + threat.work + threat.tough + threat.move + threat.carry + threat.claim;
+        // 1 MOVE part counteracts fatigue from 2 body parts on plain. 
+        const isSlow = threat.move < (totalParts / 2);
 
-        // 1. Strategy & Archetype Selection
-        if (isHealHeavy || isTanky) {
-            // High EHP/Heal requires melee burst
-            strategy = 'BURST_FOCUS';
-            bodyPattern = [ATTACK, ATTACK, MOVE]; 
-            archetype = 'brawler';
-            formation = 'DUO'; // Use pairs to ensure one creep can heal while the other attacks
-        } else if (isMeleeHeavy && threat.move <= threat.count * 10) {
-            // Kite slow melee enemies
+        // 3. Strategy Selection
+
+        // KITE: Effective against Melee-heavy enemies that are kiteable (slow or we are faster).
+        if (enemyMeleeDmg > enemyRangedDmg * 2 && isSlow) {
             strategy = 'KITE';
-            bodyPattern = [RANGED_ATTACK, MOVE];
             archetype = 'defender';
+            // Kiting body: Speed and Range. Self-heal is good for stray hits.
+            if (budget >= 500) {
+                bodyPattern = [RANGED_ATTACK, MOVE, MOVE, HEAL];
+            } else {
+                bodyPattern = [RANGED_ATTACK, MOVE];
+            }
+        }
+        // BRAWL (BURST_FOCUS): Enemy has high sustain (Heal) or is very tanky. We need DPS.
+        else if (enemyHeal > 100 || threat.ehp > 5000) {
+            strategy = 'BURST_FOCUS';
+            archetype = 'brawler';
+            formation = 'DUO'; // Group up for focus fire
+            
+            // Brawler Body: Needs to survive closing the gap.
+            if (enemyTotalDmg > 150 && budget >= 500) {
+                // Paladin: Attack with self-sustain
+                bodyPattern = [ATTACK, ATTACK, MOVE, MOVE, HEAL, MOVE];
+            } else {
+                // Standard Brawler
+                bodyPattern = [ATTACK, ATTACK, MOVE, MOVE];
+            }
+        }
+        // SUSTAIN (BALANCED): Default engagement. Trade efficiently.
+        else {
+            strategy = 'BALANCED';
+            archetype = 'defender';
+            
+            // If enemy deals high damage, prioritize tankiness/healing.
+            if (enemyTotalDmg > 150 && budget >= 600) {
+                // Tanky Defender
+                bodyPattern = [RANGED_ATTACK, MOVE, HEAL, HEAL, MOVE];
+            } else {
+                // Standard Defender
+                bodyPattern = [RANGED_ATTACK, MOVE, HEAL, MOVE];
+            }
         }
 
-        // 2. Count Calculation based on Enemy Heal Power
+        // Fallback for very low budget (RCL 1/2)
+        if (budget < 300) {
+             bodyPattern = [ATTACK, MOVE];
+             archetype = 'brawler';
+             strategy = 'BALANCED';
+        }
+
+        // 4. Count Calculation
         const patternCost = bodyPattern.reduce((sum, part) => sum + BODYPART_COST[part], 0);
         const segmentsPerCreep = Math.floor(budget / patternCost);
+        const actualSegments = Math.max(1, Math.min(segmentsPerCreep, Math.floor(50 / bodyPattern.length)));
         
-        // Enemy heal power (Heal parts * 12 or boosted equivalent)
-        const enemyHealPower = threat.heal * 12;
-        const ourDmgPerSegment = bodyPattern.includes(ATTACK) ? 30 : 10;
+        let myDps = 0;
+        let myHps = 0;
+        bodyPattern.forEach(p => {
+            if (p === ATTACK) myDps += 30;
+            if (p === RANGED_ATTACK) myDps += 10;
+            if (p === HEAL) myHps += 12;
+        });
+        myDps *= actualSegments;
+        myHps *= actualSegments;
         
-        // Aim for 3x enemy heal power to ensure breakthrough
-        const requiredSegments = Math.ceil((enemyHealPower * 3) / ourDmgPerSegment) || 1;
-        let count = Math.ceil(requiredSegments / Math.max(1, segmentsPerCreep));
+        let count = 1;
+
+        if (strategy === 'KITE') {
+            // Need enough DPS to overcome enemy heal
+            if (myDps > 0) count = Math.ceil((enemyHeal * 1.1) / myDps);
+        } else {
+            // Need to Out-DPS their Heal OR Out-Heal their Damage
+            const countToKill = (myDps > 0) ? Math.ceil((enemyHeal * 1.3) / myDps) : 10;
+            const countToSurvive = (myHps > 0) ? Math.ceil((enemyTotalDmg * 1.1) / myHps) : 1;
+            
+            // If we are brawling (Burst), we prioritize Killing.
+            // If we are balancing, we prioritize Surviving.
+            if (strategy === 'BURST_FOCUS') {
+                count = countToKill;
+            } else {
+                count = Math.max(countToKill, countToSurvive);
+            }
+        }
 
         // Use even numbers for DUO formations
         if (formation === 'DUO') count = Math.ceil(count / 2) * 2;
+
+        // 5. Attrition Compensation
+        // If existing defenders are heavily damaged, request reinforcements early.
+        const defenders = room.find(FIND_MY_CREEPS, {
+            filter: c => c.memory.role === archetype && c.memory.missionName && c.memory.missionName.startsWith(`defend_${room.name}`)
+        });
+        
+        if (defenders.length > 0) {
+            const totalHits = defenders.reduce((sum, c) => sum + c.hits, 0);
+            const totalMaxHits = defenders.reduce((sum, c) => sum + c.hitsMax, 0);
+            
+            // If fleet health is below 60%, add a replacement to the queue
+            if (totalMaxHits > 0 && (totalHits / totalMaxHits) < 0.6) {
+                count += (formation === 'DUO' ? 2 : 1);
+            }
+        }
 
         return {
             count: Math.min(Math.max(count, 1), 6),

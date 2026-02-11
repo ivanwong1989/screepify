@@ -45,19 +45,52 @@ var managerSpawner = {
         const state = room._state;
         let budget = room.energyCapacityAvailable;
         
-        // In EMERGENCY, spawn as soon as we have min energy (300).
-        if (state === 'EMERGENCY') {
-            budget = Math.max(room.energyAvailable, 200);
+        // --- Contextual Economy Check ---
+        const cache = global.getRoomCache(room);
+        const myCreeps = cache.myCreeps || room.find(FIND_MY_CREEPS);
+        
+        // Check for presence of active economy creeps (not spawning)
+        const hasMiners = myCreeps.some(c => c.memory.role === 'miner' && !c.spawning);
+        const hasHaulers = myCreeps.some(c => c.memory.role === 'hauler' && !c.spawning);
+        
+        if (!room.memory.spawner) room.memory.spawner = {};
+        
+        // Reset wait ticks if we switched missions
+        if (room.memory.spawner.lastMissionName !== mission.name) {
+            room.memory.spawner.lastMissionName = mission.name;
+            room.memory.spawner.waitTicks = 0;
         }
-        // If we have 0 creeps for this mission (bootstrapping), use current energy
-        // to ensure we get at least one creep out to start working.
-        else if (mission.census.count === 0) {
+
+        // --- Budget Logic ---
+
+        // 1. Critical Bootstrap: If we lack fundamental economy roles, spawn immediately with what we have.
+        if (!hasMiners || !hasHaulers) {
             budget = Math.max(room.energyAvailable, 200);
+            room.memory.spawner.waitTicks = 0;
         }
-        // PREVENT DEADLOCK: If we are trying to spawn a critical economy creep (miner/hauler)
-        // and we are unable to reach full capacity (waiting), downgrade to available energy.
-        else if (['miner', 'hauler'].includes(mission.archetype) && room.energyAvailable < budget) {
+        // 2. Emergency State: Hostiles present, etc.
+        else if (state === 'EMERGENCY') {
             budget = Math.max(room.energyAvailable, 200);
+            room.memory.spawner.waitTicks = 0;
+        }
+        // 3. Grace Period Logic: If we have economy but low energy, wait for refill.
+        else if (room.energyAvailable < room.energyCapacityAvailable) {
+            const GRACE_PERIOD = 100; // Ticks to wait for refill
+            room.memory.spawner.waitTicks++;
+            
+            if (room.memory.spawner.waitTicks > GRACE_PERIOD) {
+                budget = Math.max(room.energyAvailable, 200);
+                log(`[Spawner] Grace period expired for ${mission.name} (${room.memory.spawner.waitTicks} ticks). Downgrading budget.`);
+            } else {
+                // Maintain full budget to force waiting for refill
+                budget = room.energyCapacityAvailable;
+                if (room.memory.spawner.waitTicks % 20 === 0) {
+                    log(`[Spawner] Waiting for refill for ${mission.name} (${room.memory.spawner.waitTicks}/${GRACE_PERIOD}).`);
+                }
+            }
+        } else {
+            // Energy is full, proceed with full budget
+            room.memory.spawner.waitTicks = 0;
         }
 
         const body = this.generateBody(mission, budget);
@@ -79,6 +112,7 @@ var managerSpawner = {
                 if (!room.memory.spawnHistory) room.memory.spawnHistory = [];
                 room.memory.spawnHistory.push(mission.archetype);
                 if (room.memory.spawnHistory.length > 5) room.memory.spawnHistory.shift();
+                room.memory.spawner.waitTicks = 0;
             } else {
                 log(`[Spawner] Failed to spawn ${name}: ${result}`);
             }

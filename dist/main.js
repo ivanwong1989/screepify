@@ -14,6 +14,13 @@ global.log = function(...args) {
     }
 };
 
+// Combat logger
+global.logCombat = function(...args) {
+    if (Memory.debugCombat) {
+        console.log(...args);
+    }
+};
+
 // Global debug command object
 Object.defineProperty(global, 'debugon', {
     get: function() {
@@ -33,6 +40,23 @@ Object.defineProperty(global, 'debugoff', {
     configurable: true
 });
 
+Object.defineProperty(global, 'debugoncombat', {
+    get: function() {
+        Memory.debugCombat = true;
+        console.log('Combat Debug mode ENABLED');
+        return 'Combat Debug mode ENABLED';
+    },
+    configurable: true
+});
+
+Object.defineProperty(global, 'debugoffcombat', {
+    get: function() {
+        Memory.debugCombat = false;
+        console.log('Combat Debug mode DISABLED');
+        return 'Combat Debug mode DISABLED';
+    },
+    configurable: true
+});
 
 // Global Room Cache heap
 global.getRoomCache = function(room) {
@@ -89,17 +113,6 @@ module.exports.loop = function() {
     
         // --- Run Mission Manager ---
 
-        // --- CREEP RUN LOGIC ---
-        // Run creep logic globally, as they may be in any room
-        for(var name in Game.creeps) {
-            var creep = Game.creeps[name];
-            if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
-                roleDefender.run(creep);
-            } else if(['universal', 'miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'worker'].includes(creep.memory.role)) {
-                roleUniversal.run(creep);
-            }
-        }
-
         // --- COLONY LOOP ---
         const allCreeps = Object.values(Game.creeps);
 
@@ -118,8 +131,19 @@ module.exports.loop = function() {
                 // Run towers after Colony Logic (so Tasker has assigned tasks)
                 const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } });
                 for (const tower of towers) {
-                    //roleTower.run(tower);
+                    roleTower.run(tower);
                 }
+            }
+        }
+
+        // --- CREEP RUN LOGIC ---
+        // Run creep logic globally, as they may be in any room
+        for(var name in Game.creeps) {
+            var creep = Game.creeps[name];
+            if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
+                roleDefender.run(creep);
+            } else if(['universal', 'miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'worker'].includes(creep.memory.role)) {
+                roleUniversal.run(creep);
             }
         }
     //});

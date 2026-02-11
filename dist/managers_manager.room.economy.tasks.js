@@ -128,6 +128,12 @@ var managerTasks = {
             // Exclude fleet missions (they are for spawning only)
             if (m.type === 'hauler_fleet') return false;
 
+            // Exclude military missions (handled by military manager)
+            if (m.type === 'defend' || m.type === 'patrol') return false;
+
+            // Exclude combatants from economy missions
+            if (['defender', 'brawler'].includes(creep.memory.role)) return false;
+
             const status = missionStatus[m.name];
             const req = m.requirements || {};
 
@@ -312,44 +318,36 @@ var managerTasks = {
                 return { action: 'transfer', targetId: transferTarget.id, resourceType: RESOURCE_ENERGY };
             }
             
-            // If there is a container/link nearby (even if full), we treat it as static mining and drop.
-            if (nearby.length > 0 && (!mission.data || mission.data.mode !== 'mobile')) {
-                return { action: 'drop', resourceType: RESOURCE_ENERGY };
-            }
-            
-            // If mission is explicitly static (drop mining), do not attempt delivery
-            if (mission.data && mission.data.mode === 'static') {
-                // Only drop if we are near the source (range 1) to avoid dropping energy 
-                // in the middle of nowhere if the mission mode switched while traveling.
-                const source = Game.getObjectById(mission.sourceId);
-                if (source && creep.pos.inRangeTo(source, 1)) {
-                    return { action: 'drop', resourceType: RESOURCE_ENERGY };
-                }
-            }
+            // Determine if we should behave as static miner
+            const isStatic = (mission.data && mission.data.mode === 'static') || 
+                             (nearby.length > 0 && (!mission.data || mission.data.mode !== 'mobile'));
 
-            // No container nearby: Mobile Mining behavior. Deliver to Spawn/Extension.
-            let deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
-                filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
-                             s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            });
-
-            if (!deliveryTarget) {
-                deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
-                    filter: s => (s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 50) ||
-                                 (s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+            if (!isStatic) {
+                // No container nearby: Mobile Mining behavior. Deliver to Spawn/Extension.
+                let deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
+                    filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+                                 s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
                 });
-            }
 
-            if (deliveryTarget) {
-                return { action: 'transfer', targetId: deliveryTarget.id, resourceType: RESOURCE_ENERGY };
-            }
+                if (!deliveryTarget) {
+                    deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
+                        filter: s => (s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 50) ||
+                                     (s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+                    });
+                }
 
-            // Fallback to upgrading controller if everything is full
-            if (creep.room.controller && creep.room.controller.my) {
-                return { action: 'upgrade', targetId: creep.room.controller.id };
-            }
+                if (deliveryTarget) {
+                    return { action: 'transfer', targetId: deliveryTarget.id, resourceType: RESOURCE_ENERGY };
+                }
 
-            return null;
+                // Fallback to upgrading controller if everything is full
+                if (creep.room.controller && creep.room.controller.my) {
+                    return { action: 'upgrade', targetId: creep.room.controller.id };
+                }
+                
+                return null;
+            }
+            // If isStatic, fall through to harvest (step 3)
         }
 
         // 3. Harvest
@@ -506,14 +504,12 @@ var managerTasks = {
         if (creep.memory.taskState === 'working' && creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
             creep.memory.taskState = 'idle';
             creep.say('idle');
-            return;
         }
         
         // Transition from Gathering to Idle
         if (creep.memory.taskState === 'gathering' && creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
             creep.memory.taskState = 'idle';
             creep.say('idle');
-            return;
         }
 
         // Transition from Idle/Init to Working or Gathering

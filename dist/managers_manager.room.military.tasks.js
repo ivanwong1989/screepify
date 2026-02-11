@@ -4,16 +4,15 @@
 var militaryTasks = {
     run: function(room) {
         const allMissions = room._missions || [];
-        const missions = allMissions.filter(m => m.type === 'defend');
+        const missions = allMissions.filter(m => m.type === 'defend' || m.type === 'patrol');
         const defenders = room.find(FIND_MY_CREEPS, {
             filter: c => c.memory.role === 'defender' || c.memory.role === 'brawler'
         });
 
         const hostiles = room.find(FIND_HOSTILE_CREEPS);
-        if (hostiles.length === 0) {
-            this.cleanupMissions(defenders, allMissions);
-            return;
-        }
+        
+        // Cleanup invalid missions
+        this.cleanupMissions(defenders, allMissions);
 
         missions.forEach(mission => {
             let assigned = defenders.filter(c => c.memory.missionName === mission.name);
@@ -21,7 +20,13 @@ var militaryTasks = {
             // 1. Assignment Logic
             const needed = (mission.requirements.count || 0) - assigned.length;
             if (needed > 0) {
-                const idleDefenders = defenders.filter(c => (!c.memory.missionName || c.memory.missionName.includes('decongest')) && !c.spawning);
+                // Allow reassignment from patrol to defend
+                const idleDefenders = defenders.filter(c => 
+                    (!c.memory.missionName || 
+                     c.memory.missionName.includes('decongest') || 
+                     (mission.type === 'defend' && c.memory.missionName.includes('patrol'))) 
+                    && !c.spawning
+                );
                 for (let i = 0; i < needed && i < idleDefenders.length; i++) {
                     const idle = idleDefenders[i];
                     idle.memory.missionName = mission.name;
@@ -33,12 +38,20 @@ var militaryTasks = {
             if (mission.census) mission.census.count = assigned.length;
 
             // 2. Tactical Execution
-            const primaryTarget = this.selectPrimaryTarget(hostiles);
-            assigned.forEach(creep => {
-                if (!creep.spawning) {
-                    this.executeTactics(creep, hostiles, assigned, room, primaryTarget);
-                }
-            });
+            if (mission.type === 'defend') {
+                const primaryTarget = this.selectPrimaryTarget(hostiles);
+                assigned.forEach(creep => {
+                    if (!creep.spawning) {
+                        this.executeTactics(creep, hostiles, assigned, room, primaryTarget);
+                    }
+                });
+            } else if (mission.type === 'patrol') {
+                assigned.forEach(creep => {
+                    if (!creep.spawning) {
+                        this.executePatrol(creep, assigned, room);
+                    }
+                });
+            }
         });
     },
 
@@ -91,21 +104,30 @@ var militaryTasks = {
         const hasHeal = creep.getActiveBodyparts(HEAL) > 0;
         const isDangerous = target.getActiveBodyparts(ATTACK) > 0 || target.getActiveBodyparts(RANGED_ATTACK) > 0;
 
-        let action = null;
-        let targetId = null;
         let moveTarget = null;
+        const actions = [];
 
         // --- 1. ACTION LOGIC ---
-        // Prioritize Healing but still allow movement/targeting
-        if (hasHeal && creep.hits < creep.hitsMax) {
-            action = 'heal';
-            targetId = creep.id;
-        } else if (hasRanged && range <= 3) {
-            action = 'rangedAttack';
-            targetId = target.id;
-        } else if (!hasRanged && range <= 1) {
-            action = 'attack';
-            targetId = target.id;
+        // Pre-healing: Always heal self if capable (mitigates incoming damage in same tick)
+        if (hasHeal) {
+            actions.push({ action: 'heal', targetId: creep.id });
+        }
+
+        // Ranged Attack: Can be done simultaneously with Heal
+        if (hasRanged && range <= 3) {
+            actions.push({ action: 'rangedAttack', targetId: target.id });
+        } 
+        // Melee Attack: Mutually exclusive with Melee Heal
+        else if (!hasRanged && range <= 1) {
+            const healAction = actions.find(a => a.action === 'heal');
+            // If we are healthy enough, trade the pre-heal for a melee attack
+            if (healAction && creep.hits > creep.hitsMax * 0.5) {
+                const idx = actions.indexOf(healAction);
+                actions.splice(idx, 1);
+                actions.push({ action: 'attack', targetId: target.id });
+            } else if (!healAction) {
+                actions.push({ action: 'attack', targetId: target.id });
+            }
         }
 
         // --- 2. MOVEMENT LOGIC ---
@@ -135,10 +157,48 @@ var militaryTasks = {
         // --- 3. COMMIT ---
         // Ensure moveTarget is serialized safely for memory
         creep.memory.task = { 
-            action, 
-            targetId, 
+            actions,
             moveTarget: moveTarget ? { x: moveTarget.x, y: moveTarget.y, roomName: moveTarget.roomName || room.name } : null 
         };
+    },
+
+    executePatrol: function(creep, squad, room) {
+        // 1. Self Sustain
+        if (creep.hits < creep.hitsMax && creep.getActiveBodyparts(HEAL) > 0) {
+            creep.heal(creep);
+            return; // Action consumed
+        }
+
+        // 2. Seek Healer
+        if (creep.hits < creep.hitsMax) {
+            const healer = squad.find(c => c.getActiveBodyparts(HEAL) > 0);
+            if (healer) {
+                creep.moveTo(healer);
+                creep.say('🚑');
+                return;
+            }
+        }
+
+        // 3. Provide Support (If Healer)
+        if (creep.getActiveBodyparts(HEAL) > 0) {
+            const wounded = squad.find(c => c.hits < c.hitsMax);
+            if (wounded) {
+                if (creep.pos.isNearTo(wounded)) {
+                    creep.heal(wounded);
+                } else {
+                    creep.moveTo(wounded);
+                    creep.rangedHeal(wounded);
+                }
+                return;
+            }
+        }
+
+        // 4. Patrol / Park
+        // Park near spawn or controller to avoid blocking sources
+        const anchor = room.find(FIND_MY_SPAWNS)[0] || room.controller;
+        if (anchor && !creep.pos.inRangeTo(anchor, 5)) {
+            creep.moveTo(anchor, { range: 5 });
+        }
     },
 
     cleanupMissions: function(defenders, allMissions) {
