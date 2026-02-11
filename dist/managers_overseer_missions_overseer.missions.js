@@ -3,6 +3,7 @@ const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const missionModules = {
     tower: require('managers_overseer_missions_mission.tower'),
     harvest: require('managers_overseer_missions_mission.harvest'),
+    mineral: require('managers_overseer_missions_mission.mineral'),
     logistics: require('managers_overseer_missions_mission.logistics'),
     upgrade: require('managers_overseer_missions_mission.upgrade'),
     build: require('managers_overseer_missions_mission.build'),
@@ -47,6 +48,7 @@ const overseerMissions = {
         // Run all mission generators
         missionModules.tower.generate(room, intel, context, missions);
         missionModules.harvest.generate(room, intel, context, missions);
+        missionModules.mineral.generate(room, intel, context, missions);
         missionModules.logistics.generate(room, intel, context, missions);
         missionModules.repair.generate(room, intel, context, missions);
         missionModules.upgrade.generate(room, intel, context, missions);

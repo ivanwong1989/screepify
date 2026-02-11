@@ -84,6 +84,7 @@ global.getRoomCache = function(room) {
         const hostileStructures = room.find(FIND_HOSTILE_STRUCTURES);
         const flags = room.find(FIND_FLAGS);
         const sources = room.find(FIND_SOURCES);
+        const minerals = room.find(FIND_MINERALS);
         const sourcesActive = sources.filter(s => s.energy > 0);
         
         room._cache = {
@@ -101,6 +102,7 @@ global.getRoomCache = function(room) {
             hostileStructures: hostileStructures,
             flags: flags,
             sources: sources,
+            minerals: minerals,
             sourcesActive: sourcesActive,
             time: Game.time
         };
@@ -158,7 +160,7 @@ module.exports.loop = function() {
             var creep = Game.creeps[name];
             if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
                 roleDefender.run(creep);
-            } else if(['universal', 'miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'worker'].includes(creep.memory.role)) {
+            } else if(['universal', 'miner', 'mineral_miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'worker'].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }
         }

@@ -14,6 +14,7 @@ const overseerIntel = {
         const flags = cache.flags || [];
         
         const containers = structures[STRUCTURE_CONTAINER] || [];
+        const extractors = structures[STRUCTURE_EXTRACTOR] || [];
         const storage = room.storage;
         
         const containerEnergy = containers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
@@ -72,6 +73,32 @@ const overseerIntel = {
             };
         });
 
+        const minerals = (cache.minerals || []).map(mineral => {
+            const nearbyContainers = containers.filter(c => c.pos.inRangeTo(mineral.pos, 1));
+            const extractor = extractors.find(e => e.pos.isEqualTo(mineral.pos));
+
+            let availableSpaces = 0;
+            for (let x = -1; x <= 1; x++) {
+                for (let y = -1; y <= 1; y++) {
+                    if (x === 0 && y === 0) continue;
+                    const t = terrain.get(mineral.pos.x + x, mineral.pos.y + y);
+                    if (t !== TERRAIN_MASK_WALL) availableSpaces++;
+                }
+            }
+
+            return {
+                id: mineral.id,
+                pos: mineral.pos,
+                mineralType: mineral.mineralType,
+                mineralAmount: mineral.mineralAmount,
+                hasExtractor: !!extractor,
+                extractorId: extractor ? extractor.id : null,
+                hasContainer: nearbyContainers.length > 0,
+                containerId: nearbyContainers.length > 0 ? nearbyContainers[0].id : null,
+                availableSpaces: availableSpaces
+            };
+        });
+
         let controllerSpaces = 0;
         let controllerContainerId = null;
         if (room.controller) {
@@ -87,7 +114,7 @@ const overseerIntel = {
         }
 
         return {
-            sources, myCreeps, hostiles: cache.hostiles || [],
+            sources, minerals, myCreeps, hostiles: cache.hostiles || [],
             constructionSites: cache.constructionSites || [],
             structures, dropped, ruins, flags, tombstones,
             controller: room.controller, controllerContainerId,

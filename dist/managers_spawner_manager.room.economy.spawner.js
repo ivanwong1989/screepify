@@ -171,6 +171,8 @@ var managerSpawner = {
         }
         if (mission.archetype === 'miner') {
             return this.generateMinerBody(budget);
+        } else if (mission.archetype === 'mineral_miner') {
+            return this.generateMineralMinerBody(budget);
         } else if (mission.archetype === 'hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             return this.generateHaulerBody(budget, maxCarryParts);
@@ -203,6 +205,21 @@ var managerSpawner = {
             cost += 100;
         }
         
+        return this.sortBody(body);
+    },
+
+    generateMineralMinerBody: function(budget) {
+        // Mobile miner: MOVE count == (WORK + CARRY) count
+        // Base: WORK, CARRY, MOVE, MOVE (300)
+        let body = [WORK, CARRY, MOVE, MOVE];
+        let cost = 300;
+
+        while (cost + 150 <= budget && body.length + 2 <= 50) {
+            body.push(WORK);
+            body.push(MOVE);
+            cost += 150;
+        }
+
         return this.sortBody(body);
     },
 
