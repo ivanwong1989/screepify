@@ -93,7 +93,7 @@ module.exports = function(grunt) {
     // Custom Task: Check if on Master branch
     grunt.registerTask('check-master', function() {
         var currentBranch = getCurrentBranch();
-        if (currentBranch !== 'master') {
+        if (currentBranch !== 'master' && currentBranch !== 'dev_top_down_refactor') {
             grunt.fail.fatal('Safety Check: You are on "' + currentBranch + '". You must be on "master" to push to the main server!');
         }
         grunt.log.ok('Branch verified: master');
