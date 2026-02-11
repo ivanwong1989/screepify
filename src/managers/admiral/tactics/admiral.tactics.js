@@ -106,7 +106,8 @@ var admiralTactics = {
         // Ensure moveTarget is serialized safely for memory
         creep.memory.task = { 
             actions,
-            moveTarget: moveTarget ? { x: moveTarget.x, y: moveTarget.y, roomName: moveTarget.roomName || room.name } : null 
+            moveTarget: moveTarget ? { x: moveTarget.x, y: moveTarget.y, roomName: moveTarget.roomName || room.name } : null,
+            range: 0
         };
     },
 
@@ -121,7 +122,7 @@ var admiralTactics = {
         if (creep.hits < creep.hitsMax) {
             const healer = squad.find(c => c.getActiveBodyparts(HEAL) > 0);
             if (healer) {
-                creep.moveTo(healer);
+                creep.moveTo(healer, { range: 1 });
                 creep.say('ðŸš‘');
                 return;
             }
@@ -134,7 +135,7 @@ var admiralTactics = {
                 if (creep.pos.isNearTo(wounded)) {
                     creep.heal(wounded);
                 } else {
-                    creep.moveTo(wounded);
+                    creep.moveTo(wounded, { range: 1 });
                     creep.rangedHeal(wounded);
                 }
                 return;

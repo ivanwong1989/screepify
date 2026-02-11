@@ -307,7 +307,7 @@ var managerTasks = {
                 // Only move to container if it is not occupied by another creep
                 const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS);
                 if (creepsOnContainer.length === 0) {
-                    return { action: 'move', targetId: mission.data.containerId };
+                    return { action: 'move', targetId: mission.data.containerId, range: 0 };
                 }
             }
         }
@@ -399,7 +399,7 @@ var managerTasks = {
                     if (creep.pos.inRangeTo(container.pos, 1)) {
                         return { action: 'transfer', targetId: container.id, resourceType: depositType };
                     }
-                    return { action: 'move', targetId: container.id };
+                    return { action: 'move', targetId: container.id, range: 0 };
                 }
                 if (room.storage && room.storage.store.getFreeCapacity(depositType) > 0) {
                     return { action: 'transfer', targetId: room.storage.id, resourceType: depositType };
@@ -411,7 +411,7 @@ var managerTasks = {
         if (container && !creep.pos.isEqualTo(container.pos)) {
             const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS);
             if (creepsOnContainer.length === 0) {
-                return { action: 'move', targetId: container.id };
+                return { action: 'move', targetId: container.id, range: 0 };
             }
         }
 

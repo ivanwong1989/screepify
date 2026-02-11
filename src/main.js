@@ -25,6 +25,7 @@ global.logCombat = function(...args) {
 Object.defineProperty(global, 'debugon', {
     get: function() {
         Memory.debug = true;
+        Memory.debugMissions = true;
         console.log('Debug mode ENABLED');
         return 'Debug mode ENABLED';
     },
@@ -33,7 +34,8 @@ Object.defineProperty(global, 'debugon', {
 
 Object.defineProperty(global, 'debugoff', {
     get: function() {
-        Memory.debug = false;
+        delete Memory.debug;
+        delete Memory.debugMissions;
         console.log('Debug mode DISABLED');
         return 'Debug mode DISABLED';
     },
@@ -51,7 +53,7 @@ Object.defineProperty(global, 'debugoncombat', {
 
 Object.defineProperty(global, 'debugoffcombat', {
     get: function() {
-        Memory.debugCombat = false;
+        delete Memory.debugCombat;
         console.log('Combat Debug mode DISABLED');
         return 'Combat Debug mode DISABLED';
     },

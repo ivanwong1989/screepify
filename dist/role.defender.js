@@ -2,6 +2,13 @@
  * Dedicated combat role for defenders.
  * Handles tactical movement and combat actions.
  */
+function moveToTarget(creep, target, range, visualizePathStyle) {
+    const moveRange = Number.isFinite(range) ? range : 1;
+    const opts = { range: moveRange };
+    if (visualizePathStyle) opts.visualizePathStyle = visualizePathStyle;
+    creep.moveTo(target, opts);
+}
+
 var roleDefender = {
     /** @param {Creep} creep **/
     run: function(creep) {
@@ -15,7 +22,7 @@ var roleDefender = {
         if (task.moveTarget) {
             const pos = new RoomPosition(task.moveTarget.x, task.moveTarget.y, task.moveTarget.roomName);
             logCombat(`[Defender] ${creep.name} moving to ${pos}`);
-            creep.moveTo(pos, { visualizePathStyle: { stroke: '#ff0000' } });
+            moveToTarget(creep, pos, task.range, { stroke: '#ff0000' });
         } else if (task.action === 'move') {
             // Handle generic move tasks (e.g. Decongest/Parking)
             let target;
@@ -23,7 +30,7 @@ var roleDefender = {
             else if (task.targetName) target = Game.flags[task.targetName];
 
             if (target) {
-                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+                moveToTarget(creep, target, task.range, { stroke: '#ffffff' });
             }
         }
 

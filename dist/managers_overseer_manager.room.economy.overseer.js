@@ -51,7 +51,13 @@ var managerOverseer = {
         room._state = state;
         room._economyState = economyState;
 
-        room.memory.overseer.missions = missions;
+        // Avoid dumping full mission objects into persistent memory by default.
+        // Enable `Memory.debugMissions = true` to inspect full mission data.
+        if (Memory.debugMissions) {
+            room.memory.overseer.missions = missions;
+        } else {
+            delete room.memory.overseer.missions;
+        }
         room.memory.overseer.state = state;
         room.memory.overseer.economyState = economyState;
     }
