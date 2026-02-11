@@ -9,6 +9,9 @@ var managerSpawner = {
         const missions = room._missions;
         if (!missions) return;
         const cache = global.getRoomCache(room);
+        const myCreeps = cache.myCreeps || [];
+        const PRESPAWN_TTL = 80;
+        const ECONOMY_ROLES = new Set(['miner', 'hauler', 'worker']);
 
         // 1. Identify Deficits
         const spawnQueue = [];
@@ -19,8 +22,25 @@ var managerSpawner = {
             
             const req = mission.requirements || {};
             const current = mission.census;
+            const archetype = mission.archetype || req.archetype;
+            let nearDeathCount = 0;
 
-            if (req.count && current.count < req.count && req.spawn !== false) {
+            if (archetype && ECONOMY_ROLES.has(archetype)) {
+                const roleMatch = mission.roleCensus;
+                for (const creep of myCreeps) {
+                    if (!creep.ticksToLive || creep.ticksToLive > PRESPAWN_TTL) continue;
+                    if (roleMatch) {
+                        if (creep.memory.role !== roleMatch) continue;
+                    } else {
+                        if (creep.memory.missionName !== mission.name) continue;
+                    }
+                    nearDeathCount++;
+                }
+            }
+
+            const effectiveCount = Math.max(0, current.count - nearDeathCount);
+
+            if (req.count && effectiveCount < req.count && req.spawn !== false) {
                 spawnQueue.push(mission);
             }
         });
