@@ -27,7 +27,7 @@ module.exports = {
         const repairStats = managerSpawner.checkBody('worker', budget);
         
         let repairWorkTarget = repairTargets.length > 10 ? 10 : 5;
-        const repairDeficit = Math.max(0, repairWorkTarget - repairCensus.work);
+        const repairDeficit = Math.max(0, repairWorkTarget - repairCensus.workParts);
         const repairNeeded = Math.ceil(repairDeficit / (repairStats.work || 1));
 
         missions.push({

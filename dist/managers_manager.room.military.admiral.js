@@ -44,7 +44,7 @@ var managerAdmiral = {
                     strategy: response.strategy,
                     formation: response.formation // Specifies if creeps should move as DUO/QUAD
                 },
-                census: { count: 0 }
+                census: { count: 0, workParts: 0, carryParts: 0 }
             });
         }
 
@@ -61,7 +61,7 @@ var managerAdmiral = {
                 priority: 40,
                 requirements: { count: 1 },
                 targetIds: weakWalls.map(w => w.id),
-                census: { count: 0 }
+                census: { count: 0, workParts: 0, carryParts: 0 }
             });
         }
 
@@ -79,7 +79,7 @@ var managerAdmiral = {
                 priority: 10,
                 requirements: { count: defenderCount, spawn: false },
                 data: { },
-                census: { count: 0 }
+                census: { count: 0, workParts: 0, carryParts: 0 }
             });
         }
 

@@ -9,7 +9,7 @@ module.exports = {
         const buildCensus = getMissionCensus(buildName);
         const buildStats = managerSpawner.checkBody('worker', budget);
         const buildTarget = 5;
-        const buildDeficit = Math.max(0, buildTarget - buildCensus.work);
+        const buildDeficit = Math.max(0, buildTarget - buildCensus.workParts);
         const buildNeeded = Math.ceil(buildDeficit / (buildStats.work || 1));
 
         missions.push({

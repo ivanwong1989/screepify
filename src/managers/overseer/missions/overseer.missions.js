@@ -27,8 +27,8 @@ const overseerMissions = {
             const creeps = creepsByMission[name] || [];
             return {
                 count: creeps.length,
-                work: creeps.reduce((sum, c) => sum + c.getActiveBodyparts(WORK), 0),
-                carry: creeps.reduce((sum, c) => sum + c.getActiveBodyparts(CARRY), 0)
+                workParts: creeps.reduce((sum, c) => sum + c.getActiveBodyparts(WORK), 0),
+                carryParts: creeps.reduce((sum, c) => sum + c.getActiveBodyparts(CARRY), 0)
             };
         };
 

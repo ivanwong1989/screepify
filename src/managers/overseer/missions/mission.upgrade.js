@@ -25,7 +25,7 @@ module.exports = {
         const upName = 'upgrade:controller';
         const upCensus = getMissionCensus(upName);
         const upStats = managerSpawner.checkBody('worker', budget);
-        const upDeficit = Math.max(0, desiredWork - upCensus.work);
+        const upDeficit = Math.max(0, desiredWork - upCensus.workParts);
         const upNeeded = Math.ceil(upDeficit / (upStats.work || 1));
         let upCount = Math.min(upCensus.count + upNeeded, intel.availableControllerSpaces);
 

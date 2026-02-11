@@ -34,8 +34,8 @@ var managerTasks = {
             missionStatus[m.name] = {
                 mission: m,
                 assignedCount: 0,
-                assignedWork: 0,
-                assignedCarry: 0
+                assignedWorkParts: 0,
+                assignedCarryParts: 0
             };
         });
 
@@ -51,8 +51,8 @@ var managerTasks = {
                 if (missionStatus[missionName]) {
                     // Update status
                     missionStatus[missionName].assignedCount++;
-                    missionStatus[missionName].assignedWork += creep.getActiveBodyparts(WORK);
-                    missionStatus[missionName].assignedCarry += creep.getActiveBodyparts(CARRY);
+                    missionStatus[missionName].assignedWorkParts += creep.getActiveBodyparts(WORK);
+                    missionStatus[missionName].assignedCarryParts += creep.getActiveBodyparts(CARRY);
                 } else {
                     // Mission was removed by Overseer (completed or strategy changed)
                     // Release the creep
@@ -74,8 +74,8 @@ var managerTasks = {
                 
                 // Update status immediately so next creep in this loop sees updated counts
                 missionStatus[bestMission.name].assignedCount++;
-                missionStatus[bestMission.name].assignedWork += creep.getActiveBodyparts(WORK);
-                missionStatus[bestMission.name].assignedCarry += creep.getActiveBodyparts(CARRY);
+                missionStatus[bestMission.name].assignedWorkParts += creep.getActiveBodyparts(WORK);
+                missionStatus[bestMission.name].assignedCarryParts += creep.getActiveBodyparts(CARRY);
                 
                 creep.say(bestMission.type);
             }
@@ -90,8 +90,8 @@ var managerTasks = {
 
             if (status.mission.census) {
                 status.mission.census.count = status.assignedCount;
-                status.mission.census.workParts = status.assignedWork;
-                status.mission.census.carryParts = status.assignedCarry;
+                status.mission.census.workParts = status.assignedWorkParts;
+                status.mission.census.carryParts = status.assignedCarryParts;
             }
         }
 

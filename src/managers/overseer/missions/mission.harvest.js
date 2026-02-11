@@ -18,7 +18,7 @@ module.exports = {
             const archStats = managerSpawner.checkBody('miner', budget);
             
             const targetWork = 5;
-            const deficit = Math.max(0, targetWork - census.work);
+            const deficit = Math.max(0, targetWork - census.workParts);
             const neededNew = Math.ceil(deficit / (archStats.work || 1));
             let reqCount = Math.min(census.count + neededNew, source.availableSpaces);
             if (reqCount === 0 && targetWork > 0) reqCount = 1;
