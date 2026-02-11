@@ -12,27 +12,121 @@ module.exports = {
         const coveredSources = new Set();
         const coveredTargets = new Set();
 
+        const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
+        const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
+        const miningContainers = allContainers.filter(c => miningContainerIds.has(c.id));
+        const nonMiningContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
+        const storage = room.storage;
+        const spawns = intel.structures[STRUCTURE_SPAWN] || [];
+
+        const miningContainersById = new Map(miningContainers.map(c => [c.id, c]));
+
         // 0. Generate Fleet Mission
+        const MAX_HAULER_CARRY_PARTS = 16;
+        const MIN_CARRY_PER_SOURCE = 4;
+        const ENERGY_PER_TICK = 10;
+        const TRANSFER_BUFFER_TICKS = 2;
+
         const haulerStats = managerSpawner.checkBody('hauler', budget);
-        const carryParts = haulerStats.carry || 1;
-        const partsPerSource = 14; 
-        const totalNeededParts = intel.sources.length * partsPerSource;
-        const desiredHaulers = Math.max(2, Math.ceil(totalNeededParts / carryParts));
+        const uncappedCarryParts = haulerStats.carry || 1;
+        const carryParts = Math.min(uncappedCarryParts, MAX_HAULER_CARRY_PARTS);
+
+        const haulTargets = storage ? [storage] : spawns;
+        if (haulTargets.length === 0) return;
+
+        const pathLengthCache = new Map();
+        const getPathLength = (fromPos, toPos) => {
+            const key = `${fromPos.x},${fromPos.y}:${toPos.x},${toPos.y}`;
+            if (pathLengthCache.has(key)) return pathLengthCache.get(key);
+            const result = PathFinder.search(fromPos, { pos: toPos, range: 1 }, {
+                maxOps: 2000,
+                plainCost: 2,
+                swampCost: 10
+            });
+            const length = result.incomplete ? fromPos.getRangeTo(toPos) : result.path.length;
+            pathLengthCache.set(key, length);
+            return length;
+        };
+
+        const getClosestByPath = (fromPos, targets) => {
+            let best = null;
+            let bestLen = Infinity;
+            targets.forEach(t => {
+                const len = getPathLength(fromPos, t.pos);
+                if (len < bestLen) {
+                    bestLen = len;
+                    best = t;
+                }
+            });
+            return best;
+        };
+
+        if (!room.memory.logistics) room.memory.logistics = {};
+        if (!room.memory.logistics.pathCache) {
+            room.memory.logistics.pathCache = { targetSignature: null, paths: {} };
+        }
+        const pathCache = room.memory.logistics.pathCache;
+        const targetSignature = storage
+            ? `storage:${storage.id}`
+            : `spawns:${spawns.map(s => s.id).sort().join(',')}`;
+        if (pathCache.targetSignature !== targetSignature) {
+            pathCache.targetSignature = targetSignature;
+            pathCache.paths = {};
+        }
+
+        const getCachedPath = (pickupId) => pathCache.paths[pickupId];
+        const setCachedPath = (pickupId, entry) => { pathCache.paths[pickupId] = entry; };
+
+        let totalRequiredCarryParts = 0;
+        intel.sources.forEach(source => {
+            if (!efficientSources.has(source.id)) return;
+            const container = source.containerId ? miningContainersById.get(source.containerId) : null;
+            const pickupPos = container ? container.pos : source.pos;
+
+            const pickupId = container ? container.id : source.id;
+            const cached = getCachedPath(pickupId);
+            const cachedTarget = cached ? Game.getObjectById(cached.targetId) : null;
+            const useCached = !!cached &&
+                cached.pickupId === pickupId &&
+                cachedTarget &&
+                cached.targetSignature === targetSignature;
+
+            let pathLen = 1;
+            if (useCached) {
+                pathLen = cached.pathLen;
+            } else {
+                const dropoff = storage ? storage : getClosestByPath(pickupPos, haulTargets);
+                pathLen = dropoff ? getPathLength(pickupPos, dropoff.pos) : 1;
+                if (dropoff) {
+                    setCachedPath(pickupId, {
+                        pickupId,
+                        targetId: dropoff.id,
+                        pathLen,
+                        targetSignature
+                    });
+                }
+            }
+            const roundTrip = (pathLen * 2) + TRANSFER_BUFFER_TICKS;
+            const requiredCarry = Math.ceil((ENERGY_PER_TICK * roundTrip) / 50);
+            totalRequiredCarryParts += Math.max(MIN_CARRY_PER_SOURCE, requiredCarry);
+        });
+
+        const minHaulers = Math.max(2, efficientSources.size);
+        const desiredHaulers = Math.max(minHaulers, Math.ceil(totalRequiredCarryParts / carryParts));
 
         missions.push({
             name: 'logistics:fleet',
             type: 'hauler_fleet',
             archetype: 'hauler',
             roleCensus: 'hauler',
-            requirements: { archetype: 'hauler', count: desiredHaulers, spawn: true },
+            requirements: {
+                archetype: 'hauler',
+                count: desiredHaulers,
+                spawn: true,
+                maxCarryParts: MAX_HAULER_CARRY_PARTS
+            },
             priority: 85
         });
-
-        const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
-        const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
-        const miningContainers = allContainers.filter(c => miningContainerIds.has(c.id));
-        const nonMiningContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
-        const storage = room.storage;
 
         // 1. Identify active hauling missions
         intel.myCreeps.forEach(c => {

@@ -16,7 +16,7 @@ module.exports = {
             s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && s.hits < s.hitsMax
         );
         const forts = allStructures.filter(s => 
-            (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < 100000
+            (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < 50000
         );
 
         repairTargets.push(...decayables, ...others, ...forts);

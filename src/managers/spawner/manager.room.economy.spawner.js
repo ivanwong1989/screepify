@@ -172,7 +172,8 @@ var managerSpawner = {
         if (mission.archetype === 'miner') {
             return this.generateMinerBody(budget);
         } else if (mission.archetype === 'hauler') {
-            return this.generateHaulerBody(budget);
+            const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
+            return this.generateHaulerBody(budget, maxCarryParts);
         } else {
             return this.generateWorkerBody(budget);
         }
@@ -205,17 +206,21 @@ var managerSpawner = {
         return this.sortBody(body);
     },
 
-    generateHaulerBody: function(budget) {
+    generateHaulerBody: function(budget, maxCarryParts) {
         // CARRY, MOVE (100)
         let body = [];
         let cost = 0;
-        
-        while (cost + 100 <= budget && body.length + 2 <= 50) {
+        let carryCount = 0;
+        const carryCap = Number.isFinite(maxCarryParts) && maxCarryParts > 0 ? maxCarryParts : Infinity;
+
+        while (cost + 100 <= budget && body.length + 2 <= 50 && carryCount < carryCap) {
             body.push(CARRY);
             body.push(MOVE);
             cost += 100;
+            carryCount++;
         }
-        
+
+        if (body.length === 0) return [CARRY, MOVE];
         return this.sortBody(body);
     },
 
