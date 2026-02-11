@@ -99,9 +99,13 @@ const overseerUtils = {
             y += 0.6;
 
             if (m.pos) {
-                let label = `${m.type}${m.type === 'harvest' && m.data && m.data.mode ? ` (${m.data.mode})` : ''}\n${assigned}/${required}`;
+                let label = `${m.type}${m.type === 'harvest' && m.data && m.data.mode ? ` (${m.data.mode})` : ''}`;
+                if (m.type === 'mineral' && m.data && m.data.resourceType) {
+                    label += ` (${m.data.resourceType})`;
+                }
+                label += `\n${assigned}/${required}`;
                 room.visual.text(label, m.pos.x, m.pos.y - 0.5, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15, align: 'center' });
-                if (m.type === 'harvest') {
+                if (m.type === 'harvest' || m.type === 'mineral') {
                     room.visual.circle(m.pos, {fill: 'transparent', radius: 0.7, stroke: color, strokeWidth: 0.1, lineStyle: 'dashed'});
                 } 
             } else if ((m.type === 'build' || m.type === 'repair') && m.targetIds) {
