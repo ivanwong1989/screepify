@@ -24,7 +24,8 @@ var managerTasks = {
         if (!room._missions) return;
         
         const missions = room._missions;
-        const creeps = room.find(FIND_MY_CREEPS);
+        const cache = global.getRoomCache(room);
+        const creeps = cache.myCreeps || [];
 
         // 2. Track Mission Assignments
         // We need to know how many resources (creeps/parts) are currently assigned to each mission
@@ -107,7 +108,7 @@ var managerTasks = {
 
         // 6. Assign Towers
         room._towerTasks = {}; // Initialize ephemeral task list for this tick
-        const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } });
+        const towers = cache.myStructuresByType[STRUCTURE_TOWER] || [];
         towers.forEach(tower => {
             const bestMission = this.findBestTowerMission(tower, missions);
             if (bestMission) {
@@ -293,6 +294,7 @@ var managerTasks = {
     // --- Task Generators ---
 
     getHarvestTask: function(creep, mission) {
+        const cache = global.getRoomCache(creep.room);
         // 1. Static Mining Positioning
         if (mission.data && mission.data.containerId) {
             const container = Game.getObjectById(mission.data.containerId);
@@ -308,9 +310,10 @@ var managerTasks = {
         // 2. Check Capacity (Mobile Mining / Link Transfer)
         this.updateState(creep);
         if (creep.memory.taskState === 'working' && creep.getActiveBodyparts(CARRY) > 0) {
-            const nearby = creep.pos.findInRange(FIND_STRUCTURES, 1, {
-                filter: s => (s.structureType === STRUCTURE_CONTAINER || s.structureType === STRUCTURE_LINK)
-            });
+            const nearby = [
+                ...(cache.structuresByType[STRUCTURE_CONTAINER] || []),
+                ...(cache.structuresByType[STRUCTURE_LINK] || [])
+            ].filter(s => creep.pos.inRangeTo(s.pos, 1));
             
             const transferTarget = nearby.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
 
@@ -324,16 +327,18 @@ var managerTasks = {
 
             if (!isStatic) {
                 // No container nearby: Mobile Mining behavior. Deliver to Spawn/Extension.
-                let deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
-                    filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
-                                 s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                });
+                const primaryTargets = [
+                    ...(cache.myStructuresByType[STRUCTURE_SPAWN] || []),
+                    ...(cache.myStructuresByType[STRUCTURE_EXTENSION] || [])
+                ].filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+                let deliveryTarget = creep.pos.findClosestByRange(primaryTargets);
 
                 if (!deliveryTarget) {
-                    deliveryTarget = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
-                        filter: s => (s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 50) ||
-                                     (s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
-                    });
+                    const secondaryTargets = [
+                        ...(cache.myStructuresByType[STRUCTURE_TOWER] || []).filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 50),
+                        ...(cache.myStructuresByType[STRUCTURE_STORAGE] || []).filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+                    ];
+                    deliveryTarget = creep.pos.findClosestByRange(secondaryTargets);
                 }
 
                 if (deliveryTarget) {
@@ -527,6 +532,7 @@ var managerTasks = {
     getGatherTask: function(creep, room, options = {}) {
         // Ensure reservation table exists (safety check)
         if (!room._reservedEnergy) room._reservedEnergy = {};
+        const cache = global.getRoomCache(room);
 
         const allowedIds = options.allowedIds || null;
         const excludeIds = options.excludeIds || [];
@@ -564,7 +570,7 @@ var managerTasks = {
         }
 
         // 1. Pickup Dropped
-        const dropped = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
+        const dropped = creep.pos.findClosestByRange(cache.dropped || [], {
             filter: r => {
                 if (r.resourceType !== RESOURCE_ENERGY || r.amount <= 50) return false;
                 const reserved = room._reservedEnergy[r.id] || 0;
@@ -579,16 +585,18 @@ var managerTasks = {
         }
 
         // 2. Withdraw from Container/Storage
-        const structure = creep.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s => {
-                if (allowedIds && !allowedIds.includes(s.id)) return false;
-                if (excludeIds.includes(s.id)) return false;
-                if ((s.structureType !== STRUCTURE_CONTAINER && s.structureType !== STRUCTURE_STORAGE)) return false;
-                const energy = s.store[RESOURCE_ENERGY];
-                const reserved = room._reservedEnergy[s.id] || 0;
-                return (energy - reserved) >= 50;
-            }
+        const storageAndContainers = [
+            ...(cache.structuresByType[STRUCTURE_CONTAINER] || []),
+            ...(cache.structuresByType[STRUCTURE_STORAGE] || [])
+        ];
+        const validStructures = storageAndContainers.filter(s => {
+            if (allowedIds && !allowedIds.includes(s.id)) return false;
+            if (excludeIds.includes(s.id)) return false;
+            const energy = s.store[RESOURCE_ENERGY];
+            const reserved = room._reservedEnergy[s.id] || 0;
+            return (energy - reserved) >= 50;
         });
+        const structure = creep.pos.findClosestByRange(validStructures);
         if (structure) {
             room._reservedEnergy[structure.id] = (room._reservedEnergy[structure.id] || 0) + creep.store.getFreeCapacity();
             return { action: 'withdraw', targetId: structure.id, resourceType: RESOURCE_ENERGY };
@@ -596,7 +604,7 @@ var managerTasks = {
 
         // 3. Harvest (if capable)
         if (creep.getActiveBodyparts(WORK) > 0) {
-            const source = creep.pos.findClosestByRange(FIND_SOURCES_ACTIVE);
+            const source = creep.pos.findClosestByRange(cache.sourcesActive || []);
             if (source) {
                 return { action: 'harvest', targetId: source.id };
             }

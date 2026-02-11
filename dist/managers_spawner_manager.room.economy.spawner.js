@@ -8,6 +8,7 @@ var managerSpawner = {
     run: function(room) {
         const missions = room._missions;
         if (!missions) return;
+        const cache = global.getRoomCache(room);
 
         // 1. Identify Deficits
         const spawnQueue = [];
@@ -33,7 +34,7 @@ var managerSpawner = {
 
         // 3. Execute Spawn
         if (spawnQueue.length > 0) {
-            const spawns = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning);
+            const spawns = (cache.myStructuresByType[STRUCTURE_SPAWN] || []).filter(s => !s.spawning);
             if (spawns.length > 0) {
                 const mission = this.selectMission(room, spawnQueue);
                 this.spawnCreep(spawns[0], mission, room);
@@ -47,7 +48,7 @@ var managerSpawner = {
         
         // --- Contextual Economy Check ---
         const cache = global.getRoomCache(room);
-        const myCreeps = cache.myCreeps || room.find(FIND_MY_CREEPS);
+        const myCreeps = cache.myCreeps || [];
         
         // Check for presence of active economy creeps (not spawning)
         const hasMiners = myCreeps.some(c => c.memory.role === 'miner' && !c.spawning);

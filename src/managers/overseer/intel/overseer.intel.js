@@ -49,10 +49,8 @@ const overseerIntel = {
             allEnergySources.push({ id: t.id, pos: t.pos, amount: t.store[RESOURCE_ENERGY], type: 'tombstone' });
         });
         
-        const sources = room.find(FIND_SOURCES).map(source => {
-            const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER
-            });
+        const sources = (cache.sources || []).map(source => {
+            const nearbyContainers = containers.filter(c => c.pos.inRangeTo(source.pos, 1));
 
             let availableSpaces = 0;
             for (let x = -1; x <= 1; x++) {
@@ -68,8 +66,8 @@ const overseerIntel = {
                 pos: source.pos,
                 energy: source.energy,
                 energyCapacity: source.energyCapacity,
-                hasContainer: containers.length > 0,
-                containerId: containers.length > 0 ? containers[0].id : null,
+                hasContainer: nearbyContainers.length > 0,
+                containerId: nearbyContainers.length > 0 ? nearbyContainers[0].id : null,
                 availableSpaces: availableSpaces
             };
         });
@@ -84,10 +82,8 @@ const overseerIntel = {
                     if (t !== TERRAIN_MASK_WALL) controllerSpaces++;
                 }
             }
-            const containers = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER
-            });
-            if (containers.length > 0) controllerContainerId = containers[0].id;
+            const controllerContainers = containers.filter(c => room.controller.pos.inRangeTo(c.pos, 3));
+            if (controllerContainers.length > 0) controllerContainerId = controllerContainers[0].id;
         }
 
         return {
@@ -117,7 +113,7 @@ const overseerIntel = {
             log(`[Overseer] ${room.name} State: EMERGENCY (No Miners)`);
             return 'EMERGENCY';
         }
-        if (room.find(FIND_HOSTILE_CREEPS).length > 0) {
+        if ((intel.hostiles || []).length > 0) {
             return 'DEFENSE';
         }
         return 'NORMAL';

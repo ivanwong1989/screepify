@@ -1,60 +1,7 @@
-/**
- * Enhanced Military Tasker for Admiral Missions
+﻿/**
+ * Admiral Tactics: per-creep combat execution helpers.
  */
-var militaryTasks = {
-    run: function(room) {
-        const allMissions = room._missions || [];
-        const missions = allMissions.filter(m => m.type === 'defend' || m.type === 'patrol');
-        const defenders = room.find(FIND_MY_CREEPS, {
-            filter: c => c.memory.role === 'defender' || c.memory.role === 'brawler'
-        });
-
-        const hostiles = room.find(FIND_HOSTILE_CREEPS);
-        
-        // Cleanup invalid missions
-        this.cleanupMissions(defenders, allMissions);
-
-        missions.forEach(mission => {
-            let assigned = defenders.filter(c => c.memory.missionName === mission.name);
-            
-            // 1. Assignment Logic
-            const needed = (mission.requirements.count || 0) - assigned.length;
-            if (needed > 0) {
-                // Allow reassignment from patrol to defend
-                const idleDefenders = defenders.filter(c => 
-                    (!c.memory.missionName || 
-                     c.memory.missionName.includes('decongest') || 
-                     (mission.type === 'defend' && c.memory.missionName.includes('patrol'))) 
-                    && !c.spawning
-                );
-                for (let i = 0; i < needed && i < idleDefenders.length; i++) {
-                    const idle = idleDefenders[i];
-                    idle.memory.missionName = mission.name;
-                    idle.say('🛡️');
-                    assigned.push(idle);
-                }
-            }
-
-            if (mission.census) mission.census.count = assigned.length;
-
-            // 2. Tactical Execution
-            if (mission.type === 'defend') {
-                const primaryTarget = this.selectPrimaryTarget(hostiles);
-                assigned.forEach(creep => {
-                    if (!creep.spawning) {
-                        this.executeTactics(creep, hostiles, assigned, room, primaryTarget);
-                    }
-                });
-            } else if (mission.type === 'patrol') {
-                assigned.forEach(creep => {
-                    if (!creep.spawning) {
-                        this.executePatrol(creep, assigned, room);
-                    }
-                });
-            }
-        });
-    },
-
+var admiralTactics = {
     selectPrimaryTarget: function(hostiles) {
         if (!hostiles.length) return null;
         // Priority: Healers > Ranged > Melee > Lowest HP
@@ -70,6 +17,7 @@ var militaryTasks = {
     getTacticalMatrix: function(room, hostiles) {
         let costs = new PathFinder.CostMatrix();
         const terrain = room.getTerrain();
+        const cache = global.getRoomCache(room);
 
         for (let y = 0; y < 50; y++) {
             for (let x = 0; x < 50; x++) {
@@ -81,12 +29,12 @@ var militaryTasks = {
         }
 
         // Mark all creeps as impassable obstacles
-        room.find(FIND_CREEPS).forEach(c => costs.set(c.pos.x, c.pos.y, 0xff));
-        room.find(FIND_STRUCTURES, { 
-            filter: s => s.structureType !== STRUCTURE_CONTAINER && 
-                         s.structureType !== STRUCTURE_ROAD && 
-                         s.structureType !== STRUCTURE_RAMPART // Added rampart check
-        }).forEach(s => costs.set(s.pos.x, s.pos.y, 0xff));
+        (cache.creeps || []).forEach(c => costs.set(c.pos.x, c.pos.y, 0xff));
+        (cache.structures || []).filter(s => 
+            s.structureType !== STRUCTURE_CONTAINER && 
+            s.structureType !== STRUCTURE_ROAD && 
+            s.structureType !== STRUCTURE_RAMPART // Added rampart check
+        ).forEach(s => costs.set(s.pos.x, s.pos.y, 0xff));
 
         return costs;
     },
@@ -174,7 +122,7 @@ var militaryTasks = {
             const healer = squad.find(c => c.getActiveBodyparts(HEAL) > 0);
             if (healer) {
                 creep.moveTo(healer);
-                creep.say('🚑');
+                creep.say('ðŸš‘');
                 return;
             }
         }
@@ -195,7 +143,8 @@ var militaryTasks = {
 
         // 4. Patrol / Park
         // Park near spawn or controller to avoid blocking sources
-        const anchor = room.find(FIND_MY_SPAWNS)[0] || room.controller;
+        const cache = global.getRoomCache(room);
+        const anchor = (cache.myStructuresByType[STRUCTURE_SPAWN] || [])[0] || room.controller;
         if (anchor && !creep.pos.inRangeTo(anchor, 5)) {
             creep.moveTo(anchor, { range: 5 });
         }
@@ -211,4 +160,4 @@ var militaryTasks = {
     }
 };
 
-module.exports = militaryTasks;
+module.exports = admiralTactics;

@@ -68,25 +68,40 @@ global.getRoomCache = function(room) {
             acc[s.structureType].push(s);
             return acc;
         }, {});
+        const myStructures = structures.filter(s => s.my);
+        const myStructuresByType = myStructures.reduce((acc, s) => {
+            acc[s.structureType] = acc[s.structureType] || [];
+            acc[s.structureType].push(s);
+            return acc;
+        }, {});
         const dropped = room.find(FIND_DROPPED_RESOURCES);
         const ruins = room.find(FIND_RUINS);
         const tombstones = room.find(FIND_TOMBSTONES);
-        const myCreeps = room.find(FIND_MY_CREEPS);
+        const creeps = room.find(FIND_CREEPS);
+        const myCreeps = creeps.filter(c => c.my);
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
-        const hostiles = room.find(FIND_HOSTILE_CREEPS);
+        const hostiles = creeps.filter(c => !c.my);
         const hostileStructures = room.find(FIND_HOSTILE_STRUCTURES);
         const flags = room.find(FIND_FLAGS);
+        const sources = room.find(FIND_SOURCES);
+        const sourcesActive = sources.filter(s => s.energy > 0);
         
         room._cache = {
+            structures: structures,
             structuresByType: structuresByType,
+            myStructures: myStructures,
+            myStructuresByType: myStructuresByType,
             dropped: dropped,
             ruins: ruins,
             tombstones: tombstones,
+            creeps: creeps,
             myCreeps: myCreeps,
             constructionSites: constructionSites,
             hostiles: hostiles,
             hostileStructures: hostileStructures,
             flags: flags,
+            sources: sources,
+            sourcesActive: sourcesActive,
             time: Game.time
         };
     }
@@ -121,15 +136,16 @@ module.exports.loop = function() {
             
             // Check if this is a valid colony (Owned controller + Spawns)
             if (room.controller && room.controller.my) {
+                const cache = global.getRoomCache(room);
                 // --- TOWER RUN LOGIC ---
-                const spawns = room.find(FIND_MY_SPAWNS);
+                const spawns = cache.myStructuresByType[STRUCTURE_SPAWN] || [];
                 if (spawns.length > 0) {
                     // Run Colony Logic for this room
                     runColony.run(room, spawns[0], allCreeps);
                 }
 
                 // Run towers after Colony Logic (so Tasker has assigned tasks)
-                const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } });
+                const towers = cache.myStructuresByType[STRUCTURE_TOWER] || [];
                 for (const tower of towers) {
                     roleTower.run(tower);
                 }

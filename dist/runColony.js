@@ -1,8 +1,8 @@
-var managerOverseer = require('managers_overseer_manager.room.economy.overseer');
+﻿var managerOverseer = require('managers_overseer_manager.room.economy.overseer');
 var managerTasks = require('managers_overseer_manager.room.economy.tasks');
 var managerSpawner = require('managers_spawner_manager.room.economy.spawner');
-const managerMilitaryTasks = require('managers_manager.room.military.tasks');
-const managerAdmiral = require('managers_manager.room.military.admiral');
+const managerMilitaryTasks = require('managers_admiral_manager.room.military.tasks');
+const managerAdmiral = require('managers_admiral_manager.room.military.admiral');
 const overseerUtils = require('managers_overseer_utils_overseer.utils');
 
 module.exports = {
@@ -34,3 +34,4 @@ module.exports = {
         managerSpawner.run(room);
     }
 }
+
