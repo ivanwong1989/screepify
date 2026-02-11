@@ -1,6 +1,6 @@
-const overseerIntel = require('managers_overseer_collaterals_overseer.intel');
-const overseerMissions = require('managers_overseer_collaterals_overseer.missions');
-const overseerUtils = require('managers_overseer_collaterals_overseer.utils');
+const overseerIntel = require('managers_overseer_intel_overseer.intel');
+const overseerMissions = require('managers_overseer_missions_overseer.missions');
+const overseerUtils = require('managers_overseer_utils_overseer.utils');
 
 /**
  * The Overseer acts as the "Brain" of the room.

@@ -1,13 +1,13 @@
-const managerSpawner = require('managers_manager.room.economy.spawner');
+const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 
 const missionModules = {
-    tower: require('managers_overseer_collaterals_mission.tower'),
-    harvest: require('managers_overseer_collaterals_mission.harvest'),
-    logistics: require('managers_overseer_collaterals_mission.logistics'),
-    upgrade: require('managers_overseer_collaterals_mission.upgrade'),
-    build: require('managers_overseer_collaterals_mission.build'),
-    repair: require('managers_overseer_collaterals_mission.repair'),
-    decongest: require('managers_overseer_collaterals_mission.decongest')
+    tower: require('managers_overseer_missions_mission.tower'),
+    harvest: require('managers_overseer_missions_mission.harvest'),
+    logistics: require('managers_overseer_missions_mission.logistics'),
+    upgrade: require('managers_overseer_missions_mission.upgrade'),
+    build: require('managers_overseer_missions_mission.build'),
+    repair: require('managers_overseer_missions_mission.repair'),
+    decongest: require('managers_overseer_missions_mission.decongest')
 };
 
 const overseerMissions = {

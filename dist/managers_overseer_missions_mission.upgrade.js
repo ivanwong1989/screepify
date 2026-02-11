@@ -1,4 +1,4 @@
-const managerSpawner = require('managers_manager.room.economy.spawner');
+const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
