@@ -61,6 +61,7 @@ var managerTasks = {
                     // Release the creep
                     delete creep.memory.missionName;
                     delete creep.memory.taskState;
+                    delete creep.memory.scout;
                     creep.say('?');
                 }
             }
@@ -90,6 +91,7 @@ var managerTasks = {
             const status = missionStatus[name];
             // Do not overwrite census for missions that track by role (e.g. fleet), as Tasker only tracks active assignments
             if (status.mission.roleCensus) continue;
+            if (status.mission.censusLocked) continue;
 
             if (status.mission.census) {
                 status.mission.census.count = status.assignedCount;
@@ -246,6 +248,9 @@ var managerTasks = {
             case 'decongest':
                 task = this.getDecongestTask(creep, mission);
                 break;
+            case 'scout':
+                task = this.getScoutTask(creep, mission, room);
+                break;
         }
 
         if (task) {
@@ -334,6 +339,21 @@ var managerTasks = {
                 return { action: 'move', targetId: target.id };
             }
         }
+        return null;
+    },
+
+    getScoutTask: function(creep, mission, room) {
+        const data = mission.data || {};
+        const sponsorRoom = data.sponsorRoom || room.name;
+        const rooms = Array.isArray(data.rooms) ? data.rooms : [];
+        const interval = Number.isFinite(data.interval) ? data.interval : 1500;
+
+        creep.memory.scout = {
+            sponsorRoom,
+            rooms,
+            interval
+        };
+
         return null;
     },
 

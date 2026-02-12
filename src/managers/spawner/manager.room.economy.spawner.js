@@ -194,6 +194,8 @@ var managerSpawner = {
             return this.generateMinerBody(budget);
         } else if (mission.archetype === 'mineral_miner') {
             return this.generateMineralMinerBody(budget);
+        } else if (mission.archetype === 'scout') {
+            return this.generateScoutBody(budget);
         } else if (mission.archetype === 'hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             return this.generateHaulerBody(budget, maxCarryParts);
@@ -231,14 +233,14 @@ var managerSpawner = {
 
     generateMineralMinerBody: function(budget) {
         // Self-hauling mineral miner: enough CARRY for trips + MOVE for mobility
-        // Segment: WORK, CARRY, CARRY, MOVE, MOVE (350)
-        const segment = [WORK, CARRY, CARRY, MOVE, MOVE];
+        // Segment: WORK, CARRY, MOVE, MOVE (250)
+        const segment = [WORK, CARRY, MOVE, MOVE];
         let body = [];
         let cost = 0;
 
-        while (cost + 350 <= budget && body.length + 5 <= 50) {
+        while (cost + 250 <= budget && body.length + 5 <= 50) {
             body = body.concat(segment);
-            cost += 350;
+            cost += 250;
         }
 
         if (body.length === 0) {
@@ -247,6 +249,11 @@ var managerSpawner = {
         }
 
         return this.sortBody(body);
+    },
+
+    generateScoutBody: function(budget) {
+        if (budget >= 100) return [MOVE, MOVE];
+        return [MOVE];
     },
 
     generateHaulerBody: function(budget, maxCarryParts) {

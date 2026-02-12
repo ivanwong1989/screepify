@@ -144,9 +144,6 @@ const overseerIntel = {
             debug('overseer', `[Overseer] ${room.name} State: EMERGENCY (No Miners)`);
             return 'EMERGENCY';
         }
-        if ((intel.hostiles || []).length > 0) {
-            return 'DEFENSE';
-        }
         return 'NORMAL';
     },
 

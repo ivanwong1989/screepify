@@ -15,6 +15,7 @@ const DEBUG_CATEGORIES = Object.freeze([
     'mission.logistics',
     'mission.mineral',
     'mission.repair',
+    'mission.scout',
     'mission.tower',
     'mission.upgrade',
     'overseer',
@@ -332,7 +333,7 @@ module.exports.loop = function() {
             var creep = Game.creeps[name];
             if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
                 roleDefender.run(creep);
-            } else if(['universal', 'miner', 'mineral_miner', 'mobile_miner', 'hauler', 'upgrader', 'builder', 'repairer', 'worker'].includes(creep.memory.role)) {
+            } else if(['universal', 'miner', 'mineral_miner', 'mobile_miner', 'scout', 'hauler', 'upgrader', 'builder', 'repairer', 'worker'].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }
         }

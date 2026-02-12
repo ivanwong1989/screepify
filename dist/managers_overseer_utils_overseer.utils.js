@@ -8,7 +8,15 @@ const overseerUtils = {
         const roleMissions = {};
 
         missions.forEach(m => {
-            m.census = { count: 0, workParts: 0, carryParts: 0 };
+            if (m.censusLocked && m.census) {
+                m.census = {
+                    count: m.census.count || 0,
+                    workParts: m.census.workParts || 0,
+                    carryParts: m.census.carryParts || 0
+                };
+            } else {
+                m.census = { count: 0, workParts: 0, carryParts: 0 };
+            }
             missionMap[m.name] = m;
             if (m.roleCensus) {
                 if (!roleMissions[m.roleCensus]) roleMissions[m.roleCensus] = [];
@@ -19,12 +27,15 @@ const overseerUtils = {
         creeps.forEach(c => {
             if (c.memory.missionName && missionMap[c.memory.missionName]) {
                 const m = missionMap[c.memory.missionName];
-                m.census.count++;
-                m.census.workParts += c.getActiveBodyparts(WORK);
-                m.census.carryParts += c.getActiveBodyparts(CARRY);
+                if (!m.censusLocked) {
+                    m.census.count++;
+                    m.census.workParts += c.getActiveBodyparts(WORK);
+                    m.census.carryParts += c.getActiveBodyparts(CARRY);
+                }
             }
             if (c.memory.role && roleMissions[c.memory.role]) {
                 roleMissions[c.memory.role].forEach(m => {
+                    if (m.censusLocked) return;
                     m.census.count++;
                     m.census.workParts += c.getActiveBodyparts(WORK);
                     m.census.carryParts += c.getActiveBodyparts(CARRY);
@@ -98,8 +109,24 @@ const overseerUtils = {
         }
     },
 
-    visualize: function(room, missions, state, economyState) {
-        room.visual.text(`State: ${state} | Eco: ${economyState}`, 1, 1, {align: 'left', color: state === 'EMERGENCY' ? 'red' : '#00ff00', font: 0.7});
+    visualize: function(room, missions, roomState) {
+        const opsState = roomState && roomState.ops ? roomState.ops : 'UNKNOWN';
+        const economyState = roomState && roomState.economy ? roomState.economy : 'UNKNOWN';
+        const combatState = roomState && roomState.combat ? roomState.combat : 'UNKNOWN';
+        const overallState = roomState && roomState.overall ? roomState.overall : 'UNKNOWN';
+
+        let color = '#00ff00';
+        if (overallState === 'SIEGE') color = 'red';
+        else if (overallState === 'DEFENSE') color = '#ff6600';
+        else if (overallState === 'WATCH') color = '#ffaa00';
+        else if (opsState === 'EMERGENCY') color = 'red';
+
+        room.visual.text(
+            `State: ${overallState} | Ops: ${opsState} | Combat: ${combatState} | Eco: ${economyState}`,
+            1,
+            1,
+            { align: 'left', color: color, font: 0.7 }
+        );
         let y = 2.5;
         const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
         sortedMissions.forEach(m => {
