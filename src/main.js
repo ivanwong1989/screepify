@@ -18,6 +18,7 @@ const DEBUG_CATEGORIES = Object.freeze([
     'mission.tower',
     'mission.upgrade',
     'overseer',
+    'overseer.ledger',
     'spawner',
     'system'
 ]);

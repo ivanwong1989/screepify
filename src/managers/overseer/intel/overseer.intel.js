@@ -16,11 +16,14 @@ const overseerIntel = {
         const containers = structures[STRUCTURE_CONTAINER] || [];
         const extractors = structures[STRUCTURE_EXTRACTOR] || [];
         const storage = room.storage;
+        const terminal = room.terminal;
         
         const containerEnergy = containers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
         const containerCapacity = containers.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
         const storageEnergy = storage ? storage.store[RESOURCE_ENERGY] : 0;
         const storageCapacity = storage ? storage.store.getCapacity(RESOURCE_ENERGY) : 0;
+        const terminalEnergy = terminal ? terminal.store[RESOURCE_ENERGY] : 0;
+        const terminalCapacity = terminal ? terminal.store.getCapacity(RESOURCE_ENERGY) : 0;
 
         const logisticsCreeps = myCreeps.filter(c => 
             c.memory.missionName && c.memory.missionName.includes('logistics')
@@ -122,6 +125,7 @@ const overseerIntel = {
             energyAvailable: room.energyAvailable,
             energyCapacityAvailable: room.energyCapacityAvailable,
             containerEnergy, containerCapacity, storageEnergy, storageCapacity,
+            terminalEnergy, terminalCapacity, hasTerminal: !!terminal,
             haulerCapacity, allEnergySources
         };
     },

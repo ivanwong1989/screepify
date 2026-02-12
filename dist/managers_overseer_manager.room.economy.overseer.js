@@ -1,4 +1,5 @@
 const overseerIntel = require('managers_overseer_intel_overseer.intel');
+const overseerResourceLedger = require('managers_overseer_intel_overseer.resourceLedger');
 const overseerMissions = require('managers_overseer_missions_overseer.missions');
 const overseerUtils = require('managers_overseer_utils_overseer.utils');
 
@@ -33,20 +34,42 @@ var managerOverseer = {
         // 1. Gather Intel
         const intel = overseerIntel.gather(room);
 
-        // 2. Determine Room State
+        // 2. Build Resource Ledger (room stock snapshot)
+        const ledger = overseerResourceLedger.gather(room, intel);
+        room._resourceLedger = ledger;
+        if (Memory.debugLedger) {
+            room.memory.overseer.resourceLedger = ledger;
+        } else {
+            room.memory.overseer.resourceLedger = {
+                time: ledger.time,
+                totals: ledger.totals,
+                byType: ledger.byType,
+                energy: ledger.energy,
+                has: ledger.has
+            };
+        }
+        if (Memory.debug) {
+            const energy = ledger.energy || {};
+            debug(
+                'overseer.ledger',
+                `[Ledger] ${room.name} energy=${energy.total || 0} (storage=${energy.storage || 0}, terminal=${energy.terminal || 0}, containers=${energy.containers || 0}, labs=${energy.labs || 0}, links=${energy.links || 0}) totals=${JSON.stringify(ledger.totals)}`
+            );
+        }
+
+        // 3. Determine Room State
         const state = overseerIntel.determineState(room, intel);
         const economyState = overseerIntel.determineEconomyState(room, intel);
 
-        // 3. Generate Missions
+        // 4. Generate Missions
         const missions = overseerMissions.generate(room, intel, state, economyState);
 
-        // 4. Analyze Census (Match Creeps to Missions)
+        // 5. Analyze Census (Match Creeps to Missions)
         overseerUtils.analyzeCensus(missions, intel.myCreeps);
 
-        // 4.5 Reassign Workers (Optimize assignments)
+        // 6. Reassign Workers (Optimize assignments)
         overseerUtils.reassignWorkers(room, missions, intel);
 
-        // 5. Publish Missions (Contract for Tasker and Spawner)
+        // 7. Publish Missions (Contract for Tasker and Spawner)
         room._missions = missions;
         room._state = state;
         room._economyState = economyState;
