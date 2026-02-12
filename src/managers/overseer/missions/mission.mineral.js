@@ -9,6 +9,9 @@ module.exports = {
             if (mineral.mineralAmount <= 0) return;
             if (mineral.availableSpaces <= 0) return;
 
+            debug('mission.mineral', `[Mineral] ${room.name} ${mineral.id} type=${mineral.mineralType} ` +
+                `amount=${mineral.mineralAmount} container=${!!mineral.containerId}`);
+
             missions.push({
                 name: `mineral:${mineral.id}`,
                 type: 'mineral',

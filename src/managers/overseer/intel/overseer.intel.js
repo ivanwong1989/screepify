@@ -128,16 +128,16 @@ const overseerIntel = {
 
     determineState: function(room, intel) {
         if (intel.myCreeps.length === 0) {
-            log(`[Overseer] ${room.name} State: EMERGENCY (Zero Population)`);
+            debug('overseer', `[Overseer] ${room.name} State: EMERGENCY (Zero Population)`);
             return 'EMERGENCY';
         }
         if (intel.energyAvailable < 300 && intel.myCreeps.length < 2) {
-            log(`[Overseer] ${room.name} State: EMERGENCY (Low Energy: ${intel.energyAvailable}, Low Pop: ${intel.myCreeps.length})`);
+            debug('overseer', `[Overseer] ${room.name} State: EMERGENCY (Low Energy: ${intel.energyAvailable}, Low Pop: ${intel.myCreeps.length})`);
             return 'EMERGENCY';
         }
         const miners = intel.myCreeps.filter(c => c.memory.role === 'miner');
         if (miners.length === 0 && intel.sources.length > 0) {
-            log(`[Overseer] ${room.name} State: EMERGENCY (No Miners)`);
+            debug('overseer', `[Overseer] ${room.name} State: EMERGENCY (No Miners)`);
             return 'EMERGENCY';
         }
         if ((intel.hostiles || []).length > 0) {
@@ -189,7 +189,7 @@ const overseerIntel = {
             flow.lastLogTotal = totalStored;
             flow.lastLogTick = Game.time;
             room.memory.overseer.economyFlow = flow;
-            log(`[Overseer] ${room.name} Flow: total=${totalStored} tickDelta=${delta} tickDt=${dt} tickPerTick=${perTick.toFixed(2)} windowDelta=${logDelta} windowDt=${logDt} windowPerTick=${logPerTick.toFixed(2)} avg=${flow.avg.toFixed(2)}`);
+            debug('overseer', `[Overseer] ${room.name} Flow: total=${totalStored} tickDelta=${delta} tickDt=${dt} tickPerTick=${perTick.toFixed(2)} windowDelta=${logDelta} windowDt=${logDt} windowPerTick=${logPerTick.toFixed(2)} avg=${flow.avg.toFixed(2)}`);
         }
         
         if (totalCapacity < 500) return 'UPGRADING';

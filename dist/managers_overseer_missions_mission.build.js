@@ -9,8 +9,21 @@ module.exports = {
         const buildCensus = getMissionCensus(buildName);
         const buildStats = managerSpawner.checkBody('worker', budget);
         const buildTarget = 5;
-        const buildDeficit = Math.max(0, buildTarget - buildCensus.workParts);
-        const buildNeeded = Math.ceil(buildDeficit / (buildStats.work || 1));
+        const workPerCreep = buildStats.work || 1;
+        const desiredCount = Math.ceil(buildTarget / workPerCreep);
+
+        let reqCount = 0;
+        if (buildCensus.workParts >= buildTarget) {
+            reqCount = Math.max(1, desiredCount);
+        } else {
+            const buildDeficit = Math.max(0, buildTarget - buildCensus.workParts);
+            const buildNeeded = Math.ceil(buildDeficit / workPerCreep);
+            reqCount = buildCensus.count + buildNeeded;
+            if (reqCount === 0 && buildTarget > 0) reqCount = 1;
+        }
+
+        debug('mission.build', `[Build] ${room.name} count=${buildCensus.count} workParts=${buildCensus.workParts}/${buildTarget} ` +
+            `workPerCreep=${workPerCreep} desired=${desiredCount} req=${reqCount}`);
 
         missions.push({
             name: buildName,
@@ -20,7 +33,7 @@ module.exports = {
             data: { sourceIds: intel.allEnergySources.map(s => s.id) },
             requirements: {
                 archetype: 'worker',
-                count: buildCensus.count + buildNeeded
+                count: reqCount
             },
             priority: 60
         });

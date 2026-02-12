@@ -6,7 +6,7 @@ var admiralMissions = {
         const missions = [];
         const cache = global.getRoomCache(room);
 
-        if (state === 'DEFEND' || state === 'SIEGE' || state === 'CAUTION') {
+        if (state === 'DEFEND' || state === 'SIEGE') {
             const response = this.calculateResponse(threat, budget, room);
             missions.push({
                 name: `defend_${room.name}_${response.strategy}`,

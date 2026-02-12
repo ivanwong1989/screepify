@@ -16,7 +16,7 @@ var managerAdmiral = {
         const budget = room.energyCapacityAvailable;
 
         // 2. Determine Combat State
-        const state = admiralIntel.determineCombatState(hostiles, threat);
+        const state = admiralIntel.determineCombatState(hostiles, threat, room);
 
         // 3. Generate Missions
         const missions = admiralMissions.generate(room, hostiles, threat, state, budget);
@@ -28,11 +28,11 @@ var managerAdmiral = {
         room._combatState = state;
         room.memory.admiral.state = state;
 
-        if (Memory.debug && state !== 'PEACE' && missions.length > 0) {
+        if (state !== 'PEACE' && missions.length > 0) {
             const m = missions[0];
             const strat = m.data && m.data.strategy ? m.data.strategy : 'N/A';
             const formation = m.data && m.data.formation ? m.data.formation : 'N/A';
-            console.log(`[Admiral] Room ${room.name} state: ${state}, Strat: ${strat}, Formation: ${formation}`);
+            debug('admiral', `[Admiral] Room ${room.name} state: ${state}, Strat: ${strat}, Formation: ${formation}`);
         }
     }
 };

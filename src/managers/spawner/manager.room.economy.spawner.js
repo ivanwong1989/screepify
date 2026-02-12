@@ -49,7 +49,7 @@ var managerSpawner = {
         spawnQueue.sort((a, b) => b.priority - a.priority);
 
         if (spawnQueue.length > 0) {
-            log(`[Spawner] Queue: ${spawnQueue.map(m => m.name).join(', ')}`);
+            debug('spawner', `[Spawner] Queue: ${spawnQueue.map(m => m.name).join(', ')}`);
         }
 
         // 3. Execute Spawn
@@ -101,12 +101,12 @@ var managerSpawner = {
             
             if (room.memory.spawner.waitTicks > GRACE_PERIOD) {
                 budget = Math.max(room.energyAvailable, 200);
-                log(`[Spawner] Grace period expired for ${mission.name} (${room.memory.spawner.waitTicks} ticks). Downgrading budget.`);
+                debug('spawner', `[Spawner] Grace period expired for ${mission.name} (${room.memory.spawner.waitTicks} ticks). Downgrading budget.`);
             } else {
                 // Maintain full budget to force waiting for refill
                 budget = room.energyCapacityAvailable;
                 if (room.memory.spawner.waitTicks % 20 === 0) {
-                    log(`[Spawner] Waiting for refill for ${mission.name} (${room.memory.spawner.waitTicks}/${GRACE_PERIOD}).`);
+                    debug('spawner', `[Spawner] Waiting for refill for ${mission.name} (${room.memory.spawner.waitTicks}/${GRACE_PERIOD}).`);
                 }
             }
         } else {
@@ -128,17 +128,17 @@ var managerSpawner = {
             
             const result = spawn.spawnCreep(body, name, { memory: memory });
             if (result === OK) {
-                log(`[Spawner] Spawning ${name} for ${mission.name} (Cost: ${cost})`);
+                debug('spawner', `[Spawner] Spawning ${name} for ${mission.name} (Cost: ${cost})`);
 
                 if (!room.memory.spawnHistory) room.memory.spawnHistory = [];
                 room.memory.spawnHistory.push(mission.archetype);
                 if (room.memory.spawnHistory.length > 5) room.memory.spawnHistory.shift();
                 room.memory.spawner.waitTicks = 0;
             } else {
-                log(`[Spawner] Failed to spawn ${name}: ${result}`);
+                debug('spawner', `[Spawner] Failed to spawn ${name}: ${result}`);
             }
         } else {
-            log(`[Spawner] Waiting for energy: ${mission.name} (Cost: ${cost}/${room.energyAvailable}) [Budget: ${budget}, State: ${state}]`);
+            debug('spawner', `[Spawner] Waiting for energy: ${mission.name} (Cost: ${cost}/${room.energyAvailable}) [Budget: ${budget}, State: ${state}]`);
         }
     },
 
@@ -229,15 +229,20 @@ var managerSpawner = {
     },
 
     generateMineralMinerBody: function(budget) {
-        // Mobile miner: MOVE count == (WORK + CARRY) count
-        // Base: WORK, CARRY, MOVE, MOVE (300)
-        let body = [WORK, CARRY, MOVE, MOVE];
-        let cost = 300;
+        // Self-hauling mineral miner: enough CARRY for trips + MOVE for mobility
+        // Segment: WORK, CARRY, CARRY, MOVE, MOVE (350)
+        const segment = [WORK, CARRY, CARRY, MOVE, MOVE];
+        let body = [];
+        let cost = 0;
 
-        while (cost + 150 <= budget && body.length + 2 <= 50) {
-            body.push(WORK);
-            body.push(MOVE);
-            cost += 150;
+        while (cost + 350 <= budget && body.length + 5 <= 50) {
+            body = body.concat(segment);
+            cost += 350;
+        }
+
+        if (body.length === 0) {
+            if (budget >= 300) return this.sortBody([WORK, CARRY, MOVE, MOVE]);
+            return this.sortBody([WORK, CARRY, MOVE]);
         }
 
         return this.sortBody(body);

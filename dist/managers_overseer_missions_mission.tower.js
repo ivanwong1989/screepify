@@ -8,6 +8,7 @@ module.exports = {
                 targetIds: intel.hostiles.map(c => c.id),
                 priority: 1000
             });
+            debug('mission.tower', `[Tower] ${room.name} defense hostiles=${intel.hostiles.length}`);
         }
 
         // --- Priority 0.5: Heal ---
@@ -19,6 +20,7 @@ module.exports = {
                 targetIds: damagedCreeps.map(c => c.id),
                 priority: 950
             });
+            debug('mission.tower', `[Tower] ${room.name} heal targets=${damagedCreeps.length}`);
         }
 
         // --- Priority 4.5: Repair ---
@@ -43,6 +45,7 @@ module.exports = {
                     targetIds: allRepair.map(s => s.id),
                     priority: 40
                 });
+                debug('mission.tower', `[Tower] ${room.name} repair targets=${allRepair.length}`);
             }
         }
     }

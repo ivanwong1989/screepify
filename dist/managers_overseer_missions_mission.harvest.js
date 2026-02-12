@@ -18,10 +18,24 @@ module.exports = {
             const archStats = managerSpawner.checkBody('miner', budget);
             
             const targetWork = 5;
-            const deficit = Math.max(0, targetWork - census.workParts);
-            const neededNew = Math.ceil(deficit / (archStats.work || 1));
-            let reqCount = Math.min(census.count + neededNew, source.availableSpaces);
-            if (reqCount === 0 && targetWork > 0) reqCount = 1;
+            const workPerCreep = archStats.work || 1;
+            const desiredCount = Math.min(Math.ceil(targetWork / workPerCreep), source.availableSpaces);
+
+            let reqCount = 0;
+            if (census.workParts >= targetWork) {
+                // If we're already saturated on work parts, avoid locking in extra miners.
+                reqCount = Math.max(1, desiredCount);
+            } else {
+                const deficit = Math.max(0, targetWork - census.workParts);
+                const neededNew = Math.ceil(deficit / workPerCreep);
+                reqCount = Math.min(census.count + neededNew, source.availableSpaces);
+                if (reqCount === 0 && targetWork > 0) reqCount = 1;
+            }
+
+            debug('mission.harvest', `[Harvest] ${room.name} ${source.id} mode=${canDropMine ? 'static' : 'mobile'} ` +
+                `count=${census.count} workParts=${census.workParts}/${targetWork} ` +
+                `workPerCreep=${workPerCreep} desired=${desiredCount} req=${reqCount} ` +
+                `spaces=${source.availableSpaces}`);
 
             missions.push({
                 name: missionName,

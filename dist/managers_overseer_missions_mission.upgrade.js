@@ -39,17 +39,29 @@ module.exports = {
         const upName = 'upgrade:controller';
         const upCensus = getMissionCensus(upName);
         const upStats = managerSpawner.checkBody('worker', budget);
-        const upDeficit = Math.max(0, desiredWork - upCensus.workParts);
-        const upNeeded = Math.ceil(upDeficit / (upStats.work || 1));
-        let upCount = Math.min(upCensus.count + upNeeded, intel.availableControllerSpaces);
+        const workPerCreep = upStats.work || 1;
+        const desiredCount = Math.min(Math.ceil(desiredWork / workPerCreep), intel.availableControllerSpaces);
+
+        let upCount = 0;
+        if (upCensus.workParts >= desiredWork) {
+            upCount = Math.max(1, desiredCount);
+        } else {
+            const upDeficit = Math.max(0, desiredWork - upCensus.workParts);
+            const upNeeded = Math.ceil(upDeficit / workPerCreep);
+            upCount = Math.min(upCensus.count + upNeeded, intel.availableControllerSpaces);
+            if (desiredWork > 0 && upCount < 1) upCount = 1;
+        }
 
         if (intel.constructionSites.length > 0) {
-            upCount = Math.ceil(desiredWork / (upStats.work || 1));
-            if (desiredWork > 0 && upCount < 1) upCount = 1;
+            upCount = Math.max(1, desiredCount);
         }
         if (economyState === 'STOCKPILING' && !isCritical) {
             upCount = Math.min(upCount, 1);
         }
+
+        debug('mission.upgrade', `[Upgrade] ${room.name} count=${upCensus.count} workParts=${upCensus.workParts}/${desiredWork} ` +
+            `workPerCreep=${workPerCreep} desired=${desiredCount} req=${upCount} ` +
+            `state=${economyState}`);
 
         missions.push({
             name: upName,

@@ -4,14 +4,57 @@ var roleTower = require('role.tower');
 var runColony = require('runColony');
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
-//const profiler = require('screeps-profiler');
+const profiler = require('screeps-profiler');
 
+const DEBUG_CATEGORIES = Object.freeze([
+    'admiral',
+    'general',
+    'mission.build',
+    'mission.decongest',
+    'mission.harvest',
+    'mission.logistics',
+    'mission.mineral',
+    'mission.repair',
+    'mission.tower',
+    'mission.upgrade',
+    'overseer',
+    'spawner',
+    'system'
+]);
 
-// A simple, reliable custom logger
-global.log = function(...args) {
-    if (Memory.debug) {
-        console.log(...args);
+function registerDebugCategory(category) {
+    if (!global._debugCategorySet) global._debugCategorySet = new Set();
+    global._debugCategorySet.add(category);
+}
+
+function getAvailableDebugCategories() {
+    const list = new Set(DEBUG_CATEGORIES);
+    const cats = Memory.debugCategories;
+    if (cats && typeof cats === 'object') {
+        for (const key of Object.keys(cats)) list.add(key);
     }
+    if (global._debugCategorySet instanceof Set) {
+        for (const key of global._debugCategorySet) list.add(key);
+    }
+    return Array.from(list).sort();
+}
+
+
+// Debug logger with optional category filtering.
+// If Memory.debugCategories has keys, only those categories will log.
+global.debug = function(category, ...args) {
+    registerDebugCategory(category);
+    if (!Memory.debug) return;
+    const cats = Memory.debugCategories;
+    if (cats && typeof cats === 'object') {
+        if (!cats[category]) return;
+    }
+    console.log(...args);
+};
+
+// Backward-compatible logger (general category)
+global.log = function(...args) {
+    global.debug('general', ...args);
 };
 
 // Combat logger
@@ -36,6 +79,7 @@ Object.defineProperty(global, 'debugoff', {
     get: function() {
         delete Memory.debug;
         delete Memory.debugMissions;
+        delete Memory.debugCategories;
         console.log('Debug mode DISABLED');
         return 'Debug mode DISABLED';
     },
@@ -59,6 +103,45 @@ Object.defineProperty(global, 'debugoffcombat', {
     },
     configurable: true
 });
+
+function ensureDebugCategories() {
+    if (!Memory.debugCategories || typeof Memory.debugCategories !== 'object') {
+        Memory.debugCategories = {};
+    }
+    return Memory.debugCategories;
+}
+
+global.debugcaton = function(name) {
+    const key = ('' + name).trim();
+    if (!key) return 'Usage: debugcaton(\"category\")';
+    Memory.debug = true;
+    const cats = ensureDebugCategories();
+    cats[key] = true;
+    return `Debug categories enabled: ${Object.keys(cats).filter(k => cats[k]).sort().join(', ') || '(none)'}`;
+};
+
+global.debugcatoff = function(name) {
+    const key = ('' + name).trim();
+    if (!key) return 'Usage: debugcatoff(\"category\")';
+    const cats = ensureDebugCategories();
+    delete cats[key];
+    return `Debug categories enabled: ${Object.keys(cats).filter(k => cats[k]).sort().join(', ') || '(none)'}`;
+};
+
+global.debugcats = function() {
+    const available = getAvailableDebugCategories();
+    if (!Memory.debugCategories || typeof Memory.debugCategories !== 'object') {
+        return `Debug categories enabled: (all) | available: ${available.join(', ') || '(none)'}`;
+    }
+    const enabled = Object.keys(Memory.debugCategories).filter(k => Memory.debugCategories[k]).sort();
+    return `Debug categories enabled: ${enabled.join(', ') || '(none)'} | available: ${available.join(', ') || '(none)'}`;
+};
+
+global.debugall = function() {
+    Memory.debug = true;
+    delete Memory.debugCategories;
+    return 'Debug categories cleared (all enabled)';
+};
 
 // Console helpers
 function normalizeAllyName(name) {
@@ -102,6 +185,10 @@ Object.defineProperty(global, 'help', {
             'debugoff          - disable debug logging',
             'debugoncombat     - enable combat debug logging',
             'debugoffcombat    - disable combat debug logging',
+            'debugcaton(\"cat\")  - enable a debug category (allowlist)',
+            'debugcatoff(\"cat\") - disable a debug category',
+            'debugcats()       - list enabled and available debug categories',
+            'debugall          - clear category filter (log all)',
             'allyAdd(\"Name\")    - add an ally by player name',
             'allyRemove(\"Name\") - remove an ally by player name',
             'allyList()        - show current allies'
@@ -196,9 +283,9 @@ global.getRoomCache = function(room) {
 
 
 // This line monkey patches the global prototypes.
-//profiler.enable();
+profiler.enable();
 module.exports.loop = function() {
-    //profiler.wrap(function() {
+    profiler.wrap(function() {
         // Main.js logic should go here.
 
         // --- Initialize Remote Memory ---
@@ -208,7 +295,7 @@ module.exports.loop = function() {
         for(var name in Memory.creeps) {
             if(!Game.creeps[name]) {
                 delete Memory.creeps[name];
-                log('Clearing non-existing creep memory:', name);
+                debug('system', 'Clearing non-existing creep memory:', name);
             }
         }
     
@@ -248,5 +335,26 @@ module.exports.loop = function() {
                 roleUniversal.run(creep);
             }
         }
-    //});
+
+        // 1. Configuration: How many ticks to average over
+        const EMA_WINDOW = 20; // The 'X' ticks
+
+        // 2. Get the CPU used this tick
+        const cpuUsed = Game.cpu.getUsed();
+
+        // 3. Initialize memory if it doesn't exist
+        if (Memory.avgCpu === undefined) {
+            Memory.avgCpu = cpuUsed;
+        }
+
+        // 4. Update the Moving Average
+        // Formula: (OldAvg * (X-1) + NewValue) / X
+        Memory.avgCpu = (Memory.avgCpu * (EMA_WINDOW - 1) + cpuUsed) / EMA_WINDOW;
+
+        // 5. Output to console (optional)
+        if (Game.time % 10 === 0) {
+            console.log(`Average CPU over ${EMA_WINDOW} ticks: ${Memory.avgCpu.toFixed(2)}`);
+        }
+
+    });
 }

@@ -3,6 +3,8 @@ module.exports = {
         const parkingFlags = intel.flags.filter(f => f.name.startsWith('Parking'));
         if (parkingFlags.length === 0) return;
 
+        debug('mission.decongest', `[Decongest] ${room.name} parkingFlags=${parkingFlags.length}`);
+
         missions.push({
             name: 'decongest:parking',
             type: 'decongest',

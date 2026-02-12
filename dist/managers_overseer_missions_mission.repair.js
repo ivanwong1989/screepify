@@ -27,8 +27,21 @@ module.exports = {
         const repairStats = managerSpawner.checkBody('worker', budget);
         
         let repairWorkTarget = repairTargets.length > 10 ? 10 : 5;
-        const repairDeficit = Math.max(0, repairWorkTarget - repairCensus.workParts);
-        const repairNeeded = Math.ceil(repairDeficit / (repairStats.work || 1));
+        const workPerCreep = repairStats.work || 1;
+        const desiredCount = Math.ceil(repairWorkTarget / workPerCreep);
+
+        let reqCount = 0;
+        if (repairCensus.workParts >= repairWorkTarget) {
+            reqCount = Math.max(1, desiredCount);
+        } else {
+            const repairDeficit = Math.max(0, repairWorkTarget - repairCensus.workParts);
+            const repairNeeded = Math.ceil(repairDeficit / workPerCreep);
+            reqCount = repairCensus.count + repairNeeded;
+            if (reqCount === 0 && repairWorkTarget > 0) reqCount = 1;
+        }
+
+        debug('mission.repair', `[Repair] ${room.name} count=${repairCensus.count} workParts=${repairCensus.workParts}/${repairWorkTarget} ` +
+            `workPerCreep=${workPerCreep} desired=${desiredCount} req=${reqCount}`);
 
         missions.push({
             name: repairName,
@@ -38,7 +51,7 @@ module.exports = {
             data: { sourceIds: intel.allEnergySources.map(s => s.id) },
             requirements: {
                 archetype: 'worker',
-                count: repairCensus.count + repairNeeded
+                count: reqCount
             },
             priority: 65
         });

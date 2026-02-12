@@ -41,17 +41,54 @@ var admiralIntel = {
         return stats;
     },
 
+    estimateTowerDamage: function(room, assumedRange) {
+        if (!room) return { dps: 0, towers: 0 };
+        const cache = global.getRoomCache(room);
+        const towers = cache.myStructuresByType[STRUCTURE_TOWER] || [];
+        if (towers.length === 0) return { dps: 0, towers: 0 };
+
+        const range = Math.max(1, Math.min(assumedRange || 20, 50));
+        let perTower = 600;
+        if (range > 5) {
+            perTower = 600 - ((range - 5) * 30);
+        }
+        if (range >= 20) perTower = 150;
+
+        let activeTowers = 0;
+        let dps = 0;
+        for (const tower of towers) {
+            if (!tower.store || tower.store[RESOURCE_ENERGY] < 10) continue;
+            activeTowers++;
+            dps += perTower;
+        }
+
+        return { dps, towers: activeTowers };
+    },
+
     /**
      * Combat State: PEACE, CAUTION, DEFEND, or SIEGE.
      */
-    determineCombatState: function(hostiles, threat) {
+    determineCombatState: function(hostiles, threat, room) {
         let state = 'PEACE';
         if (hostiles.length > 0) {
-            // A "Dangerous" threat is any creep with offensive parts or high EHP/work power
-            const isDangerous = threat.attack > 0 || threat.ranged > 0 || threat.work > 10 || threat.ehp > 2000;
-            
+            /* A "Dangerous" threat is any creep with offensive parts or high EHP/work power,
+             * AND also unable to be dealt with just our tower damage output.
+             * Towers also have fall off damage. Let's make an assumption along the mid point where
+             * our towers would mostly likely engage when they are nearer to our base/core. Perhaps 
+             * a range of 20 squares perhaps. 
+             * We only need to be in a DEFEND state if towers can't outheal or outkill the enemy before 
+             * the enemy breaches our ramparts. Othewise, it's CAUTION. 
+            */
+            const baseDanger = threat.attack > 0 || threat.ranged > 0 || threat.work > 10 || threat.ehp > 2000;
+            const towerStats = this.estimateTowerDamage(room, 20);
+            const enemyHeal = threat.heal * 12;
+            const netTowerDps = towerStats.dps - enemyHeal;
+            const timeToKill = netTowerDps > 0 ? (threat.ehp / netTowerDps) : Infinity;
+            const towersCanHandle = towerStats.dps > 0 && netTowerDps > 0 && timeToKill <= 20;
+            const isDangerous = baseDanger && !towersCanHandle;
+
             // Trigger SIEGE state if enemy work parts are high (structure destruction threat)
-            if (threat.work > 20) {
+            if (threat.work > 20 && !towersCanHandle) {
                 state = 'SIEGE';
             } else {
                 state = isDangerous ? 'DEFEND' : 'CAUTION';

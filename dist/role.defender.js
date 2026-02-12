@@ -13,15 +13,20 @@ var roleDefender = {
     /** @param {Creep} creep **/
     run: function(creep) {
         const task = creep.memory.task;
+        const debugCombat = Memory.debugCombat;
         
-        logCombat(`[Defender] ${creep.name} Tick: ${Game.time} Pos: ${creep.pos} Task: ${JSON.stringify(task)}`);
+        if (debugCombat) {
+            logCombat(`[Defender] ${creep.name} Tick: ${Game.time} Pos: ${creep.pos} Task: ${JSON.stringify(task)}`);
+        }
 
         if (!task) return;
 
         // 1. Execute Movement (Basic command)
         if (task.moveTarget) {
             const pos = new RoomPosition(task.moveTarget.x, task.moveTarget.y, task.moveTarget.roomName);
-            logCombat(`[Defender] ${creep.name} moving to ${pos}`);
+            if (debugCombat) {
+                logCombat(`[Defender] ${creep.name} moving to ${pos}`);
+            }
             moveToTarget(creep, pos, task.range, { stroke: '#ff0000' });
         } else if (task.action === 'move') {
             // Handle generic move tasks (e.g. Decongest/Parking)
@@ -41,14 +46,16 @@ var roleDefender = {
             if (act.action && act.targetId) {
                 const target = Game.getObjectById(act.targetId);
                 if (target) {
-                    logCombat(`[Defender] ${creep.name} executing ${act.action} on ${target} (Range: ${creep.pos.getRangeTo(target)})`);
+                    if (debugCombat) {
+                        logCombat(`[Defender] ${creep.name} executing ${act.action} on ${target} (Range: ${creep.pos.getRangeTo(target)})`);
+                    }
                     switch(act.action) {
                         case 'attack': creep.attack(target); break;
                         case 'rangedAttack': creep.rangedAttack(target); break;
                         case 'heal': creep.heal(target); break;
                         case 'rangedHeal': creep.rangedHeal(target); break;
                     }
-                } else if (Memory.debugCombat) {
+                } else if (debugCombat) {
                     logCombat(`[Defender] ${creep.name} target ${act.targetId} missing/invisible`);
                 }
             }

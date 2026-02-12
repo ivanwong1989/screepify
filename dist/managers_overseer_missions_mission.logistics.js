@@ -117,6 +117,9 @@ module.exports = {
         const minHaulers = Math.max(2, efficientSources.size);
         const desiredHaulers = Math.max(minHaulers, Math.ceil(totalRequiredCarryParts / carryParts));
 
+        debug('mission.logistics', `[Logistics] ${room.name} sources=${efficientSources.size} ` +
+            `carryPerHauler=${carryParts} requiredCarry=${totalRequiredCarryParts} desiredHaulers=${desiredHaulers}`);
+
         missions.push({
             name: 'logistics:fleet',
             type: 'hauler_fleet',

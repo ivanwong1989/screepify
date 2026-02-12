@@ -68,11 +68,6 @@ var roleUniversal = {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
-            case 'repair':
-                if (creep.repair(target) === ERR_NOT_IN_RANGE) {
-                    moveToTarget(creep, target, task.range);
-                }
-                break;
             case 'drop':
                 creep.drop(task.resourceType);
                 break;
