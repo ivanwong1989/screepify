@@ -581,11 +581,15 @@ var managerTasks = {
     },
 
     getTransferTask: function(creep, mission, room) {
-        this.updateState(creep);
+        const resourceType = (mission.data && mission.data.resourceType) ? mission.data.resourceType : RESOURCE_ENERGY;
+        this.updateState(creep, resourceType);
         if (creep.memory.taskState === 'working') {
             let target = null;
             
-            if (mission.targetType === 'transfer_list' && mission.data && mission.data.targetIds) {
+            if (resourceType === RESOURCE_ENERGY &&
+                mission.targetType === 'transfer_list' &&
+                mission.data &&
+                mission.data.targetIds) {
                 const targets = mission.data.targetIds
                     .map(id => this.getCachedObject(creep.room, id))
                     .filter(t => t && t.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
@@ -597,12 +601,18 @@ var managerTasks = {
             }
 
             if (target) {
-                if (target.store && target.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                if (target.store && target.store.getFreeCapacity(resourceType) === 0) {
                     delete creep.memory.missionName;
                     delete creep.memory.taskState;
                     return null;
                 }
-                return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
+                return { action: 'transfer', targetId: target.id, resourceType: resourceType };
+            }
+
+            if (resourceType !== RESOURCE_ENERGY) {
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                return null;
             }
 
             // Fallback: If primary targets are full, try Storage, Towers, or any other Refillable
@@ -629,6 +639,16 @@ var managerTasks = {
                 if (target) return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
             }
         } else {
+            if (resourceType !== RESOURCE_ENERGY && mission.data && mission.data.sourceId) {
+                const source = this.getCachedObject(creep.room, mission.data.sourceId);
+                if (source && source.store && (source.store[resourceType] || 0) > 0) {
+                    return { action: 'withdraw', targetId: source.id, resourceType: resourceType };
+                }
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                return null;
+            }
+
             // If specific source is defined in mission data, use it
             let task = null;
             if (mission.data && mission.data.sourceId) {
@@ -729,24 +749,25 @@ var managerTasks = {
         return null;
     },
 
-    updateState: function(creep) {
+    updateState: function(creep, resourceType) {
         // State Machine: working <-> idle <-> gathering
+        const type = resourceType || RESOURCE_ENERGY;
         
         // Transition from Working to Idle
-        if (creep.memory.taskState === 'working' && creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        if (creep.memory.taskState === 'working' && creep.store.getUsedCapacity(type) === 0) {
             creep.memory.taskState = 'idle';
             creep.say('idle');
         }
         
         // Transition from Gathering to Idle
-        if (creep.memory.taskState === 'gathering' && creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+        if (creep.memory.taskState === 'gathering' && creep.store.getFreeCapacity() === 0) {
             creep.memory.taskState = 'idle';
             creep.say('idle');
         }
 
         // Transition from Idle/Init to Working or Gathering
         if (creep.memory.taskState === 'idle' || creep.memory.taskState === 'init' || !creep.memory.taskState) {
-            if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+            if (creep.store.getUsedCapacity(type) > 0) {
                 creep.memory.taskState = 'working';
                 creep.say('work');
             } else {

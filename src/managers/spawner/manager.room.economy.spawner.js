@@ -187,6 +187,10 @@ var managerSpawner = {
     },
 
     generateBody: function(mission, budget) {
+        const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
+        if (archetype === 'dismantler' || archetype === 'worker') {
+            budget = Math.min(budget, 1000);
+        }
         if (mission.requirements && mission.requirements.body) {
             return this.generateMilitaryBody(budget, mission.requirements.body);
         }
@@ -263,15 +267,15 @@ var managerSpawner = {
 
     generateDismantlerBody: function(budget) {
         // Dismantling is WORK-based. No CARRY parts needed.
-        // Segment: WORK, MOVE (150)
+        // Segment: WORK, WORK, MOVE (250)
         const segment = [WORK, WORK, MOVE];
         let body = [];
         let cost = 0;
         const MAX_COST = 1000;
 
-        while (cost + 150 <= budget && body.length + 3 <= 50 && cost < MAX_COST) {
+        while (cost + 250 <= budget && body.length + 3 <= 50 && cost < MAX_COST) {
             body = body.concat(segment);
-            cost += 150;
+            cost += 250;
         }
 
         if (body.length === 0) {

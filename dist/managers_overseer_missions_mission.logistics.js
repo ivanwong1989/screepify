@@ -1,4 +1,5 @@
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
+const managerMarket = require('managers_overseer_manager.room.economy.market');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
@@ -17,6 +18,7 @@ module.exports = {
         const miningContainers = allContainers.filter(c => miningContainerIds.has(c.id));
         const nonMiningContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
         const storage = room.storage;
+        const terminal = room.terminal;
         const spawns = intel.structures[STRUCTURE_SPAWN] || [];
 
         const miningContainersById = new Map(miningContainers.map(c => [c.id, c]));
@@ -138,9 +140,10 @@ module.exports = {
         intel.myCreeps.forEach(c => {
             if (c.memory.missionName && c.memory.missionName.startsWith('haul:')) {
                 const parts = c.memory.missionName.split(':');
-                if (parts.length === 3) {
+                if (parts.length >= 3) {
                     const sourceId = parts[1];
                     const targetId = parts[2];
+                    const resourceType = parts[3];
                     const source = Game.getObjectById(sourceId);
                     const target = Game.getObjectById(targetId);
                     
@@ -152,6 +155,8 @@ module.exports = {
                             type = 'scavenge';
                         } else if (target.structureType === STRUCTURE_STORAGE) {
                             type = miningContainerIds.has(source.id) ? 'mining' : 'consolidation';
+                        } else if (target.structureType === STRUCTURE_TERMINAL) {
+                            type = 'terminal_stock';
                         } else if (target.structureType === STRUCTURE_CONTAINER) {
                             type = miningContainerIds.has(source.id) ? 'mining' : 'scavenge';
                         }
@@ -161,7 +166,7 @@ module.exports = {
                             type: 'transfer',
                             archetype: 'hauler',
                             targetId: targetId,
-                            data: { sourceId: sourceId },
+                            data: { sourceId: sourceId, resourceType: resourceType },
                             requirements: { archetype: 'hauler', count: 1, spawn: false },
                             priority: this.getLogisticsPriority(type, target, isEmergency)
                         };
@@ -224,18 +229,33 @@ module.exports = {
             });
         }
 
+        const terminalStockTargets = terminal ? managerMarket.getTerminalStockTargets(room.name) : null;
+        if (storage && terminal && terminalStockTargets) {
+            for (const resourceType of Object.keys(terminalStockTargets)) {
+                const targetAmount = terminalStockTargets[resourceType] || 0;
+                if (targetAmount <= 0) continue;
+                const terminalAmount = terminal.store[resourceType] || 0;
+                const storageAmount = storage.store[resourceType] || 0;
+                if (terminalAmount >= targetAmount) continue;
+                if (storageAmount <= 0) continue;
+                if (terminal.store.getFreeCapacity(resourceType) <= 0) continue;
+                this.addLogisticsMission(activeMissions, storage, terminal, isEmergency, 'terminal_stock', resourceType);
+            }
+        }
+
         for (const m of activeMissions.values()) missions.push(m);
     },
 
-    addLogisticsMission: function(activeMissions, source, target, isEmergency, type) {
-        const missionName = `haul:${source.id}:${target.id}`;
+    addLogisticsMission: function(activeMissions, source, target, isEmergency, type, resourceType) {
+        const baseName = `haul:${source.id}:${target.id}`;
+        const missionName = resourceType ? `${baseName}:${resourceType}` : baseName;
         if (activeMissions.has(missionName)) return;
         activeMissions.set(missionName, {
             name: missionName,
             type: 'transfer',
             archetype: 'hauler',
             targetId: target.id,
-            data: { sourceId: source.id },
+            data: { sourceId: source.id, resourceType: resourceType },
             requirements: { archetype: 'hauler', count: 1, spawn: false },
             priority: this.getLogisticsPriority(type, target, isEmergency)
         });
@@ -249,6 +269,7 @@ module.exports = {
         }
         if (type === 'scavenge') return 45;
         if (type === 'mining') return 30;
+        if (type === 'terminal_stock') return 20;
         return 10;
     }
 };
