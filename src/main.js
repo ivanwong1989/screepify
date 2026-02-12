@@ -11,6 +11,7 @@ const DEBUG_CATEGORIES = Object.freeze([
     'general',
     'mission.build',
     'mission.decongest',
+    'mission.dismantle',
     'mission.harvest',
     'mission.logistics',
     'mission.mineral',
@@ -193,7 +194,9 @@ Object.defineProperty(global, 'help', {
             'debugall          - clear category filter (log all)',
             'allyAdd(\"Name\")    - add an ally by player name',
             'allyRemove(\"Name\") - remove an ally by player name',
-            'allyList()        - show current allies'
+            'allyList()        - show current allies',
+            'flag directives:',
+            '  RED/PURPLE      - dismantle (optional flag.memory: sponsorRoom, priority, persist)'
         ];
         for (const line of lines) console.log(line);
         return `Done`;
@@ -333,7 +336,7 @@ module.exports.loop = function() {
             var creep = Game.creeps[name];
             if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
                 roleDefender.run(creep);
-            } else if(['universal', 'miner', 'mineral_miner', 'mobile_miner', 'scout', 'hauler', 'upgrader', 'builder', 'repairer', 'worker'].includes(creep.memory.role)) {
+            } else if(['universal', 'miner', 'mineral_miner', 'mobile_miner', 'scout', 'hauler', 'upgrader', 'builder', 'repairer', 'worker', 'dismantler'].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }
         }

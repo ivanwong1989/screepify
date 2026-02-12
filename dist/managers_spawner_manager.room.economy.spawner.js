@@ -196,6 +196,8 @@ var managerSpawner = {
             return this.generateMineralMinerBody(budget);
         } else if (mission.archetype === 'scout') {
             return this.generateScoutBody(budget);
+        } else if (mission.archetype === 'dismantler') {
+            return this.generateDismantlerBody(budget);
         } else if (mission.archetype === 'hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             return this.generateHaulerBody(budget, maxCarryParts);
@@ -237,10 +239,13 @@ var managerSpawner = {
         const segment = [WORK, CARRY, MOVE, MOVE];
         let body = [];
         let cost = 0;
+        let carryCount = 0;
+        const MAX_CARRY = 6;
 
-        while (cost + 250 <= budget && body.length + 5 <= 50) {
+        while (cost + 250 <= budget && body.length + 4 <= 50 && carryCount < MAX_CARRY) {
             body = body.concat(segment);
             cost += 250;
+            carryCount++;
         }
 
         if (body.length === 0) {
@@ -254,6 +259,27 @@ var managerSpawner = {
     generateScoutBody: function(budget) {
         if (budget >= 100) return [MOVE, MOVE];
         return [MOVE];
+    },
+
+    generateDismantlerBody: function(budget) {
+        // Dismantling is WORK-based. No CARRY parts needed.
+        // Segment: WORK, WORK, MOVE (250)
+        const segment = [WORK, WORK, MOVE];
+        let body = [];
+        let cost = 0;
+
+        while (cost + 250 <= budget && body.length + 3 <= 50) {
+            body = body.concat(segment);
+            cost += 250;
+        }
+
+        if (body.length === 0) {
+            if (budget >= 150) return this.sortBody([WORK, MOVE]);
+            if (budget >= 100) return this.sortBody([WORK]);
+            return this.sortBody([MOVE]);
+        }
+
+        return this.sortBody(body);
     },
 
     generateHaulerBody: function(budget, maxCarryParts) {

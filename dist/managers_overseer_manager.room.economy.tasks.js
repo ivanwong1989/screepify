@@ -198,6 +198,8 @@ var managerTasks = {
                 if (creep.getActiveBodyparts(WORK) === 0 || creep.getActiveBodyparts(CARRY) === 0) continue;
             } else if (m.type === 'transfer') {
                 if (creep.getActiveBodyparts(CARRY) === 0) continue;
+            } else if (m.type === 'dismantle') {
+                if (creep.getActiveBodyparts(WORK) === 0) continue;
             }
 
             return m;
@@ -247,6 +249,9 @@ var managerTasks = {
                 break;
             case 'decongest':
                 task = this.getDecongestTask(creep, mission);
+                break;
+            case 'dismantle':
+                task = this.getDismantleTask(creep, mission);
                 break;
             case 'scout':
                 task = this.getScoutTask(creep, mission, room);
@@ -339,6 +344,43 @@ var managerTasks = {
                 return { action: 'move', targetId: target.id };
             }
         }
+        return null;
+    },
+
+    getDismantleTask: function(creep, mission) {
+        const data = mission.data || {};
+        const flagName = data.flagName;
+        const flag = flagName ? Game.flags[flagName] : null;
+
+        if (mission.targetId) {
+            const target = this.getCachedObject(creep.room, mission.targetId) || Game.getObjectById(mission.targetId);
+            if (target) {
+                return { action: 'dismantle', targetId: target.id };
+            }
+        }
+
+        if (flag) {
+            const targetPos = flag.pos;
+            if (creep.room.name !== targetPos.roomName) {
+                return {
+                    action: 'move',
+                    targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName },
+                    range: 1
+                };
+            }
+
+            const structures = targetPos.lookFor(LOOK_STRUCTURES);
+            if (structures && structures.length > 0) {
+                return { action: 'dismantle', targetId: structures[0].id };
+            }
+
+            if (!flag.memory || flag.memory.persist !== true) {
+                flag.remove();
+            }
+        }
+
+        delete creep.memory.missionName;
+        delete creep.memory.taskState;
         return null;
     },
 
