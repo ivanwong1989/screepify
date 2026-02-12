@@ -2,9 +2,10 @@ var roleUniversal = require('role.universal');
 var roleDefender = require('role.defender');
 var roleTower = require('role.tower');
 var runColony = require('runColony');
+var userMissions = require('userMissions');
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
-const profiler = require('screeps-profiler');
+//const profiler = require('screeps-profiler');
 
 const DEBUG_CATEGORIES = Object.freeze([
     'admiral',
@@ -180,6 +181,217 @@ global.allyList = function() {
     return `Allies: ${JSON.stringify(allies)}`;
 };
 
+function getOwnedSpawnRoomsForMissionCreate() {
+    const cache = global._ownedSpawnRoomsCache;
+    if (cache && cache.time === Game.time) return cache.rooms;
+
+    const owned = [];
+    for (const roomName in Game.rooms) {
+        const room = Game.rooms[roomName];
+        if (!room || !room.controller || !room.controller.my) continue;
+        const roomCache = global.getRoomCache(room);
+        const spawns = roomCache.myStructuresByType[STRUCTURE_SPAWN] || [];
+        if (spawns.length > 0) owned.push(roomName);
+    }
+
+    global._ownedSpawnRoomsCache = { time: Game.time, rooms: owned };
+    return owned;
+}
+
+function resolveSponsorRoomForTargetPos(targetPos) {
+    if (!targetPos || !targetPos.roomName) return null;
+    const ownedRooms = getOwnedSpawnRoomsForMissionCreate();
+    if (!ownedRooms || ownedRooms.length === 0) return null;
+    const ownedSet = new Set(ownedRooms);
+    if (ownedSet.has(targetPos.roomName)) return targetPos.roomName;
+
+    let bestRoom = ownedRooms[0];
+    let bestDist = Game.map.getRoomLinearDistance(targetPos.roomName, bestRoom);
+    for (let i = 1; i < ownedRooms.length; i++) {
+        const roomName = ownedRooms[i];
+        const dist = Game.map.getRoomLinearDistance(targetPos.roomName, roomName);
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestRoom = roomName;
+        }
+    }
+    return bestRoom;
+}
+
+function tryResolveTargetIdForPos(targetPos) {
+    if (!targetPos || !targetPos.roomName) return null;
+    const room = Game.rooms[targetPos.roomName];
+    if (!room) return null;
+    const pos = new RoomPosition(Number(targetPos.x), Number(targetPos.y), targetPos.roomName);
+    const structures = pos.lookFor(LOOK_STRUCTURES);
+    if (!structures || structures.length === 0) return null;
+    return structures[0].id;
+}
+
+function formatMissionTarget(pos) {
+    if (!pos) return 'n/a';
+    return `${pos.roomName}:${pos.x},${pos.y}`;
+}
+
+function listUserMissions() {
+    const all = userMissions.getAll();
+    if (all.length === 0) {
+        console.log('No user missions.');
+        return 'No user missions.';
+    }
+    console.log(`User missions (${all.length}):`);
+    for (const m of all) {
+        const enabled = m.enabled === false ? 'off' : 'on';
+        const target = formatMissionTarget(m.targetPos);
+        const sponsor = m.sponsorRoom || '(auto)';
+        const label = m.label ? ` label="${m.label}"` : '';
+        console.log(`${m.id} type=${m.type} ${enabled} sponsor=${sponsor} target=${target} priority=${m.priority}${label}`);
+    }
+    return `Listed ${all.length} user missions.`;
+}
+
+function showMissionHelp() {
+    const defs = userMissions.getDefinitions();
+    const types = Object.keys(defs);
+    const lines = [
+        'mission()                         - show this help',
+        'mission("types")                  - list available user mission types',
+        'mission("list")                   - list user missions',
+        'mission("add","dismantle", room, x, y, sponsorRoom?, priority?, persist?, label?)',
+        'mission("add","dismantle", { roomName, x, y, sponsorRoom, priority, persist, label })',
+        'mission("set", id, { sponsorRoom, priority, persist, label, x, y, roomName })',
+        'mission("enable", id) / mission("disable", id)',
+        'mission("remove", id)',
+        `available types: ${types.join(', ') || '(none)'}`
+    ];
+    for (const line of lines) console.log(line);
+    return 'Done';
+}
+
+function normalizeMissionPatch(patch) {
+    if (!patch || typeof patch !== 'object') return null;
+    const next = {};
+    if ('enabled' in patch) next.enabled = patch.enabled === false ? false : true;
+    if ('priority' in patch) {
+        const priority = Number(patch.priority);
+        if (Number.isFinite(priority)) next.priority = priority;
+    }
+    if ('sponsorRoom' in patch) {
+        const sponsor = userMissions.normalizeRoomName(patch.sponsorRoom);
+        next.sponsorRoom = sponsor || null;
+    }
+    if ('persist' in patch) {
+        const raw = patch.persist;
+        const persist = (raw === true || raw === 'true' || raw === 1 || raw === '1' || raw === 'yes' || raw === 'y');
+        next.persist = persist;
+    }
+    if ('label' in patch) next.label = patch.label ? ('' + patch.label).trim() : '';
+    if ('targetId' in patch) next.targetId = patch.targetId ? ('' + patch.targetId).trim() : null;
+
+    const posInput = patch.targetPos || patch.pos || patch.target || patch;
+    const pos = userMissions.normalizeTargetPos(posInput);
+    if (pos) next.targetPos = pos;
+
+    return next;
+}
+
+global.mission = function(action, typeOrData, ...args) {
+    const cmd = action ? ('' + action).trim().toLowerCase() : 'help';
+    if (!cmd || cmd === 'help' || cmd === 'h') return showMissionHelp();
+
+    if (cmd === 'types') {
+        const defs = userMissions.getDefinitions();
+        const keys = Object.keys(defs);
+        if (keys.length === 0) return 'No mission types registered.';
+        for (const key of keys) {
+            const def = defs[key];
+            const req = (def.required || []).join(', ');
+            const opt = (def.optional || []).join(', ');
+            console.log(`${key}: ${def.label || ''} required=[${req}] optional=[${opt}]`);
+        }
+        return `Types: ${keys.join(', ')}`;
+    }
+
+    if (cmd === 'list' || cmd === 'ls') {
+        return listUserMissions();
+    }
+
+    if (cmd === 'add') {
+        let type = null;
+        let data = null;
+        if (typeOrData && typeof typeOrData === 'object') {
+            data = typeOrData;
+            type = data.type;
+        } else {
+            type = typeOrData;
+        }
+        const key = type ? ('' + type).trim().toLowerCase() : '';
+        if (!key) return 'Usage: mission("add", "dismantle", room, x, y, sponsorRoom?, priority?, persist?, label?)';
+
+        if (!data) {
+            if (key === 'dismantle') {
+                data = {
+                    roomName: args[0],
+                    x: args[1],
+                    y: args[2],
+                    sponsorRoom: args[3],
+                    priority: args[4],
+                    persist: args[5],
+                    label: args[6]
+                };
+            } else {
+                data = {};
+            }
+        }
+
+        if (key === 'dismantle') {
+            const targetPos = userMissions.normalizeTargetPos(data.targetPos || data);
+            if (targetPos) {
+                if (!data.sponsorRoom) {
+                    const sponsorRoom = resolveSponsorRoomForTargetPos(targetPos);
+                    if (sponsorRoom) data.sponsorRoom = sponsorRoom;
+                }
+                if (!data.targetId) {
+                    const targetId = tryResolveTargetIdForPos(targetPos);
+                    if (targetId) data.targetId = targetId;
+                }
+            }
+        }
+
+        const result = userMissions.addMission(key, data);
+        if (result && result.error) return result.error;
+        const mission = result.mission;
+        console.log(`Added mission ${mission.id} type=${mission.type} target=${formatMissionTarget(mission.targetPos)}`);
+        return mission.id;
+    }
+
+    if (cmd === 'set' || cmd === 'update') {
+        const id = typeOrData ? ('' + typeOrData).trim() : '';
+        const patch = normalizeMissionPatch(args[0]);
+        if (!id || !patch) return 'Usage: mission("set", id, { sponsorRoom, priority, persist, label, x, y, roomName })';
+        const updated = userMissions.updateMission(id, patch);
+        if (!updated) return `Unknown mission id: ${id}`;
+        return `Updated mission ${id}`;
+    }
+
+    if (cmd === 'enable' || cmd === 'disable') {
+        const id = typeOrData ? ('' + typeOrData).trim() : '';
+        if (!id) return `Usage: mission("${cmd}", id)`;
+        const updated = userMissions.updateMission(id, { enabled: cmd === 'enable' });
+        if (!updated) return `Unknown mission id: ${id}`;
+        return `${cmd}d mission ${id}`;
+    }
+
+    if (cmd === 'remove' || cmd === 'rm' || cmd === 'del') {
+        const id = typeOrData ? ('' + typeOrData).trim() : '';
+        if (!id) return 'Usage: mission("remove", id)';
+        const removed = userMissions.removeMission(id);
+        return removed ? `Removed mission ${id}` : `Unknown mission id: ${id}`;
+    }
+
+    return showMissionHelp();
+};
+
 Object.defineProperty(global, 'help', {
     get: function() {
         const lines = [
@@ -195,8 +407,10 @@ Object.defineProperty(global, 'help', {
             'allyAdd(\"Name\")    - add an ally by player name',
             'allyRemove(\"Name\") - remove an ally by player name',
             'allyList()        - show current allies',
+            'mission()         - manage user-controlled missions',
             'flag directives:',
-            '  RED/PURPLE      - dismantle (optional flag.memory: sponsorRoom, priority, persist)'
+            '  Parking*        - decongest parking flags',
+            '  Dismantle flags are deprecated; use mission()'
         ];
         for (const line of lines) console.log(line);
         return `Done`;
@@ -288,9 +502,9 @@ global.getRoomCache = function(room) {
 
 
 // This line monkey patches the global prototypes.
-profiler.enable();
+//profiler.enable();
 module.exports.loop = function() {
-    profiler.wrap(function() {
+    //profiler.wrap(function() {
         // Main.js logic should go here.
 
         // --- Initialize Remote Memory ---
@@ -361,5 +575,5 @@ module.exports.loop = function() {
             console.log(`Average CPU over ${EMA_WINDOW} ticks: ${Memory.avgCpu.toFixed(2)}`);
         }
 
-    });
+    //});
 }

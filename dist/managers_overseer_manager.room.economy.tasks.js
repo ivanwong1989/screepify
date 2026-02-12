@@ -14,6 +14,30 @@
  * @param {Room} room
  */
 var managerTasks = {
+    getRemoteCreepsByHomeRoom: function() {
+        const cache = global._remoteCreepsByHomeRoom;
+        if (cache && cache.time === Game.time) return cache.byRoom;
+
+        const byRoom = {};
+        const creeps = Object.values(Game.creeps);
+        for (const creep of creeps) {
+            if (!creep || !creep.my) continue;
+            const memory = creep.memory || {};
+            const home = memory.room;
+            if (!home) continue;
+            if (creep.room && creep.room.name === home) continue; // local creeps are handled by room cache
+
+            if (!byRoom[home]) {
+                byRoom[home] = { assigned: [], idle: [] };
+            }
+            if (memory.missionName) byRoom[home].assigned.push(creep);
+            else byRoom[home].idle.push(creep);
+        }
+
+        global._remoteCreepsByHomeRoom = { time: Game.time, byRoom };
+        return byRoom;
+    },
+
     run: function(room) {
         // 1. Read the Contract (Missions)
         // If no missions are published by Overseer, we have nothing to direct.
@@ -27,7 +51,12 @@ var managerTasks = {
         this.buildIdCache(room, missions);
         const missionsSorted = [...missions].sort((a, b) => (b.priority || 0) - (a.priority || 0));
         const cache = global.getRoomCache(room);
-        const creeps = cache.myCreeps || [];
+        const localCreeps = cache.myCreeps || [];
+        // Include creeps spawned by this room that are currently in other rooms,
+        // so their missions continue to update (e.g., dismantle in adjacent rooms).
+        const remoteByHome = this.getRemoteCreepsByHomeRoom();
+        const remote = remoteByHome[room.name] || { assigned: [], idle: [] };
+        const creeps = localCreeps.concat(remote.assigned);
 
         // 2. Track Mission Assignments
         // We need to know how many resources (creeps/parts) are currently assigned to each mission
@@ -68,7 +97,9 @@ var managerTasks = {
         });
 
         // 4. Assign Idle Creeps
-        const idleCreeps = creeps.filter(c => !c.spawning && !c.memory.missionName);
+        const localIdle = localCreeps.filter(c => !c.spawning && !c.memory.missionName);
+        const remoteIdle = (remote.idle || []).filter(c => !c.spawning && !c.memory.missionName);
+        const idleCreeps = localIdle.concat(remoteIdle);
         
         idleCreeps.forEach(creep => {
             const bestMission = this.findBestMission(creep, missionsSorted, missionStatus);
@@ -351,6 +382,16 @@ var managerTasks = {
         const data = mission.data || {};
         const flagName = data.flagName;
         const flag = flagName ? Game.flags[flagName] : null;
+        const targetPosData = data.targetPos;
+        const toRoomPosition = (pos) => {
+            if (!pos) return null;
+            if (pos instanceof RoomPosition) return pos;
+            if (!pos.roomName) return null;
+            const x = Number(pos.x);
+            const y = Number(pos.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+            return new RoomPosition(x, y, pos.roomName);
+        };
 
         if (mission.targetId) {
             const target = this.getCachedObject(creep.room, mission.targetId) || Game.getObjectById(mission.targetId);
@@ -376,6 +417,22 @@ var managerTasks = {
 
             if (!flag.memory || flag.memory.persist !== true) {
                 flag.remove();
+            }
+        }
+
+        const fallbackPos = toRoomPosition(targetPosData);
+        if (fallbackPos) {
+            if (creep.room.name !== fallbackPos.roomName) {
+                return {
+                    action: 'move',
+                    targetPos: { x: fallbackPos.x, y: fallbackPos.y, roomName: fallbackPos.roomName },
+                    range: 1
+                };
+            }
+
+            const structures = fallbackPos.lookFor(LOOK_STRUCTURES);
+            if (structures && structures.length > 0) {
+                return { action: 'dismantle', targetId: structures[0].id };
             }
         }
 

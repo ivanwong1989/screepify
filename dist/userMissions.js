@@ -1,0 +1,142 @@
+const DEFAULT_PRIORITY = 60;
+
+const MISSION_DEFS = Object.freeze({
+    dismantle: {
+        label: 'Dismantle a structure at a target position (remote OK).',
+        required: ['roomName', 'x', 'y'],
+        optional: ['sponsorRoom', 'priority', 'persist', 'label', 'targetId']
+    }
+});
+
+function ensureStore() {
+    if (!Memory.userMissions || typeof Memory.userMissions !== 'object') {
+        Memory.userMissions = {};
+    }
+    const store = Memory.userMissions;
+    if (!store.items || typeof store.items !== 'object') store.items = {};
+    if (!Number.isFinite(store.count)) store.count = 0;
+    if (!Number.isFinite(store.nextId)) store.nextId = 1;
+    return store;
+}
+
+function normalizeRoomName(value) {
+    if (value === undefined || value === null) return '';
+    return ('' + value).trim();
+}
+
+function normalizeBool(value, fallback = false) {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    const raw = ('' + value).trim().toLowerCase();
+    if (raw === 'true' || raw === '1' || raw === 'yes' || raw === 'y') return true;
+    if (raw === 'false' || raw === '0' || raw === 'no' || raw === 'n') return false;
+    return fallback;
+}
+
+function clampPosCoord(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    const int = Math.floor(num);
+    if (int < 0 || int > 49) return null;
+    return int;
+}
+
+function normalizeTargetPos(input) {
+    if (!input) return null;
+    if (input instanceof RoomPosition) {
+        return { x: input.x, y: input.y, roomName: input.roomName };
+    }
+    const roomName = normalizeRoomName(input.roomName || input.room || input.targetRoom);
+    const x = clampPosCoord(input.x);
+    const y = clampPosCoord(input.y);
+    if (!roomName || x === null || y === null) return null;
+    return { x, y, roomName };
+}
+
+function buildId(store) {
+    const id = `u${store.nextId}`;
+    store.nextId += 1;
+    return id;
+}
+
+function getDefinitions() {
+    return MISSION_DEFS;
+}
+
+function getAll() {
+    const store = Memory.userMissions;
+    if (!store || !store.items || !Number.isFinite(store.count) || store.count === 0) return [];
+    return Object.values(store.items);
+}
+
+function getByType(type) {
+    if (!type) return [];
+    const key = ('' + type).trim().toLowerCase();
+    if (!key) return [];
+    return getAll().filter(m => m && m.type === key);
+}
+
+function addMission(type, data) {
+    const store = ensureStore();
+    const key = ('' + type).trim().toLowerCase();
+    if (!key) return { error: 'Missing mission type.' };
+    if (!MISSION_DEFS[key]) return { error: `Unknown mission type: ${key}` };
+
+    const targetPos = normalizeTargetPos(data && (data.targetPos || data.pos || data.target));
+    const roomName = normalizeRoomName((data && (data.roomName || data.targetRoom)) || (targetPos && targetPos.roomName));
+    const x = clampPosCoord(data && data.x);
+    const y = clampPosCoord(data && data.y);
+    const finalTargetPos = targetPos || (roomName && x !== null && y !== null ? { x, y, roomName } : null);
+
+    if (key === 'dismantle' && !finalTargetPos) {
+        return { error: 'Missing target position (roomName, x, y).' };
+    }
+
+    const id = buildId(store);
+    const mission = {
+        id,
+        type: key,
+        enabled: data && data.enabled === false ? false : true,
+        created: Game.time,
+        priority: Number.isFinite(data && data.priority) ? data.priority : DEFAULT_PRIORITY,
+        sponsorRoom: normalizeRoomName(data && data.sponsorRoom),
+        targetPos: finalTargetPos || null,
+        targetId: data && data.targetId ? ('' + data.targetId) : null,
+        persist: normalizeBool(data && data.persist, false),
+        label: data && data.label ? ('' + data.label).trim() : ''
+    };
+
+    store.items[id] = mission;
+    store.count += 1;
+    return { id, mission };
+}
+
+function updateMission(id, patch) {
+    const store = ensureStore();
+    if (!id || !store.items[id]) return null;
+    const item = store.items[id];
+    Object.assign(item, patch);
+    return item;
+}
+
+function removeMission(id) {
+    const store = ensureStore();
+    if (!id || !store.items[id]) return false;
+    delete store.items[id];
+    store.count = Math.max(0, (store.count || 1) - 1);
+    return true;
+}
+
+module.exports = {
+    DEFAULT_PRIORITY,
+    addMission,
+    updateMission,
+    removeMission,
+    getDefinitions,
+    getAll,
+    getByType,
+    normalizeTargetPos,
+    normalizeRoomName,
+    clampPosCoord
+};

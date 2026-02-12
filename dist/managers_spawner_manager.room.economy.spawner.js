@@ -263,14 +263,15 @@ var managerSpawner = {
 
     generateDismantlerBody: function(budget) {
         // Dismantling is WORK-based. No CARRY parts needed.
-        // Segment: WORK, WORK, MOVE (250)
+        // Segment: WORK, MOVE (150)
         const segment = [WORK, WORK, MOVE];
         let body = [];
         let cost = 0;
+        const MAX_COST = 1000;
 
-        while (cost + 250 <= budget && body.length + 3 <= 50) {
+        while (cost + 150 <= budget && body.length + 3 <= 50 && cost < MAX_COST) {
             body = body.concat(segment);
-            cost += 250;
+            cost += 150;
         }
 
         if (body.length === 0) {
