@@ -35,7 +35,7 @@ const overseerUtils = {
 
     reassignWorkers: function(room, missions, intel) {
         const moveCreeps = (fromMissionName, toMission, count) => {
-            if (!toMission || count <= 0) return;
+            if (!toMission || count <= 0) return 0;
             const fromCreeps = intel.myCreeps.filter(c => c.memory.missionName === fromMissionName);
             let moved = 0;
             for (let creep of fromCreeps) {
@@ -48,15 +48,27 @@ const overseerUtils = {
                 if (toMission.census) toMission.census.count++;
                 moved++;
             }
+            return moved;
         };
 
         if (intel.constructionSites.length > 0) {
-            const buildMission = missions.find(m => m.name === 'build:sites');
+            const buildMissions = missions.filter(m => m.type === 'build');
             const upgradeMission = missions.find(m => m.name === 'upgrade:controller');
-            if (buildMission && upgradeMission) {
+            if (buildMissions.length > 0 && upgradeMission) {
                 const upgraders = intel.myCreeps.filter(c => c.memory.missionName === 'upgrade:controller');
-                const available = upgraders.length - 1;
-                if (available > 0) moveCreeps('upgrade:controller', buildMission, available);
+                let available = upgraders.length - 1;
+                if (available > 0) {
+                    const sortedBuilds = [...buildMissions].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+                    for (const buildMission of sortedBuilds) {
+                        if (available <= 0) break;
+                        const required = buildMission.requirements ? buildMission.requirements.count : 0;
+                        const assigned = buildMission.census ? buildMission.census.count : 0;
+                        const deficit = Math.max(0, required - assigned);
+                        if (deficit <= 0) continue;
+                        const moved = moveCreeps('upgrade:controller', buildMission, Math.min(deficit, available));
+                        available -= moved;
+                    }
+                }
             }
         }
 
@@ -66,7 +78,7 @@ const overseerUtils = {
              const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
              for (const mission of sortedMissions) {
                  if (parkedCreeps.length === 0) break;
-                 if (mission.name === 'decongest:parking' || !mission.requirements || !mission.requirements.count) continue;
+                 if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'worker_fleet' || !mission.requirements || !mission.requirements.count) continue;
                  const deficit = mission.requirements.count - (mission.census ? mission.census.count : 0);
                  if (deficit > 0) {
                      const candidates = parkedCreeps.filter(c => c.memory.role === mission.requirements.archetype);
@@ -108,8 +120,9 @@ const overseerUtils = {
                 if (m.type === 'harvest' || m.type === 'mineral') {
                     room.visual.circle(m.pos, {fill: 'transparent', radius: 0.7, stroke: color, strokeWidth: 0.1, lineStyle: 'dashed'});
                 } 
-            } else if ((m.type === 'build' || m.type === 'repair') && m.targetIds) {
-                m.targetIds.forEach(id => {
+            } else if (m.type === 'build' || m.type === 'repair') {
+                const targetIds = m.targetId ? [m.targetId] : (m.targetIds || []);
+                targetIds.forEach(id => {
                     const target = Game.getObjectById(id);
                     if (target) room.visual.text(`🔨 ${assigned}/${required}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
                 });

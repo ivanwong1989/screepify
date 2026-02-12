@@ -70,7 +70,7 @@ module.exports = {
             targetId: intel.controller.id,
             data: { sourceIds: intel.allEnergySources.map(s => s.id) },
             pos: intel.controller.pos,
-            requirements: { archetype: 'worker', count: upCount, spawn: spawnAllowed },
+            requirements: { archetype: 'worker', count: upCount, spawn: spawnAllowed, spawnFromFleet: true },
             priority: upgradePriority
         });
     }

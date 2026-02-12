@@ -21,6 +21,7 @@ var managerSpawner = {
             if (!mission.census) return;
             
             const req = mission.requirements || {};
+            if (req.spawnFromFleet) return;
             const current = mission.census;
             const archetype = mission.archetype || req.archetype;
             let nearDeathCount = 0;

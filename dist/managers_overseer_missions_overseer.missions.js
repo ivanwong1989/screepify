@@ -8,6 +8,7 @@ const missionModules = {
     upgrade: require('managers_overseer_missions_mission.upgrade'),
     build: require('managers_overseer_missions_mission.build'),
     repair: require('managers_overseer_missions_mission.repair'),
+    worker: require('managers_overseer_missions_mission.worker'),
     decongest: require('managers_overseer_missions_mission.decongest')
 };
 
@@ -54,6 +55,7 @@ const overseerMissions = {
         missionModules.repair.generate(room, intel, context, missions);
         missionModules.upgrade.generate(room, intel, context, missions);
         missionModules.build.generate(room, intel, context, missions);
+        missionModules.worker.generate(room, intel, context, missions);
         missionModules.decongest.generate(room, intel, context, missions);
 
         return missions;
