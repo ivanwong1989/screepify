@@ -10,6 +10,7 @@ module.exports = {
 
         const activeMissions = new Map();
         const coveredSources = new Set();
+        const coveredSourceResources = new Set();
         const coveredTargets = new Set();
 
         const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
@@ -171,6 +172,7 @@ module.exports = {
                         };
                         activeMissions.set(c.memory.missionName, mission);
                         coveredSources.add(sourceId);
+                        if (resourceType) coveredSourceResources.add(`${sourceId}:${resourceType}`);
                         coveredTargets.add(targetId);
                     }
                 }
@@ -212,6 +214,23 @@ module.exports = {
                 if (coveredSources.has(source.id)) return;
                 const bestSink = source.pos.findClosestByRange(inflowSinks);
                 if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'scavenge');
+            });
+
+            const scavengeStores = [
+                ...intel.ruins,
+                ...intel.tombstones
+            ];
+            scavengeStores.forEach(source => {
+                const store = source && source.store ? source.store : null;
+                if (!store) return;
+                for (const resourceType in store) {
+                    if (resourceType === RESOURCE_ENERGY) continue;
+                    if ((store[resourceType] || 0) <= 0) continue;
+                    const key = `${source.id}:${resourceType}`;
+                    if (coveredSourceResources.has(key)) continue;
+                    const bestSink = source.pos.findClosestByRange(inflowSinks);
+                    if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'scavenge', resourceType);
+                }
             });
 
             miningContainers.filter(c => c.store[RESOURCE_ENERGY] >= 500).forEach(source => {

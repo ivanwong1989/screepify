@@ -38,6 +38,16 @@ var managerTasks = {
         return byRoom;
     },
 
+    isRemoteMission: function(mission, homeRoomName) {
+        if (!mission || !homeRoomName) return false;
+        if (mission.type && mission.type.startsWith('remote_')) return true;
+        const data = mission.data || {};
+        if (data.remoteRoom || data.targetRoom) return true;
+        const pos = mission.targetPos || data.targetPos;
+        if (pos && pos.roomName && pos.roomName !== homeRoomName) return true;
+        return false;
+    },
+
     run: function(room) {
         // 1. Read the Contract (Missions)
         // If no missions are published by Overseer, we have nothing to direct.
@@ -81,6 +91,16 @@ var managerTasks = {
             if (missionName) {
                 // Check if mission still exists in the contract
                 if (missionStatus[missionName]) {
+                    const home = creep.memory.room;
+                    const awayFromHome = home && creep.room && creep.room.name !== home;
+                    if (awayFromHome && !this.isRemoteMission(missionStatus[missionName].mission, home)) {
+                        delete creep.memory.missionName;
+                        delete creep.memory.taskState;
+                        delete creep.memory.scout;
+                        delete creep.memory.task;
+                        creep.say('home');
+                        return;
+                    }
                     // Update status
                     missionStatus[missionName].assignedCount++;
                     missionStatus[missionName].assignedWorkParts += creep.getActiveBodyparts(WORK);
@@ -237,6 +257,10 @@ var managerTasks = {
 
             // Exclude combatants from economy missions
             if (['defender', 'brawler'].includes(creep.memory.role)) continue;
+
+            const home = creep.memory.room;
+            const awayFromHome = home && creep.room && creep.room.name !== home;
+            if (awayFromHome && !this.isRemoteMission(m, home)) continue;
 
             const status = missionStatus[m.name];
             if (!status) continue;
@@ -788,26 +812,32 @@ var managerTasks = {
         const container = (mission.data && mission.data.containerId)
             ? this.getCachedObject(creep.room, mission.data.containerId)
             : null;
+        const terminal = room && room.terminal ? room.terminal : null;
+        const storage = room && room.storage ? room.storage : null;
 
         const carriedTypes = Object.keys(creep.store).filter(r => creep.store[r] > 0);
         if (carriedTypes.length > 0) {
             const depositType = carriedTypes.includes(resourceType) ? resourceType : carriedTypes[0];
+            const terminalHasSpace = terminal && terminal.store.getFreeCapacity(depositType) > 0;
+            const storageHasSpace = storage && storage.store.getFreeCapacity(depositType) > 0;
+            const containerHasSpace = container && container.store.getFreeCapacity(depositType) > 0;
+            const depositTarget = terminalHasSpace ? terminal : (storageHasSpace ? storage : (containerHasSpace ? container : null));
 
             // If we're already adjacent to the container, keep it emptied to avoid overflow.
-            if (container && creep.pos.inRangeTo(container.pos, 1) && container.store.getFreeCapacity(depositType) > 0) {
+            if (depositTarget === container && creep.pos.inRangeTo(container.pos, 1)) {
                 return { action: 'transfer', targetId: container.id, resourceType: depositType };
             }
 
             // Only haul when full; otherwise keep mining.
             if (creep.store.getFreeCapacity() === 0) {
-                if (container && container.store.getFreeCapacity(depositType) > 0) {
-                    if (creep.pos.inRangeTo(container.pos, 1)) {
-                        return { action: 'transfer', targetId: container.id, resourceType: depositType };
+                if (depositTarget) {
+                    if (depositTarget === container) {
+                        if (creep.pos.inRangeTo(container.pos, 1)) {
+                            return { action: 'transfer', targetId: container.id, resourceType: depositType };
+                        }
+                        return { action: 'move', targetId: container.id, range: 0 };
                     }
-                    return { action: 'move', targetId: container.id, range: 0 };
-                }
-                if (room.storage && room.storage.store.getFreeCapacity(depositType) > 0) {
-                    return { action: 'transfer', targetId: room.storage.id, resourceType: depositType };
+                    return { action: 'transfer', targetId: depositTarget.id, resourceType: depositType };
                 }
                 return { action: 'drop', resourceType: depositType };
             }

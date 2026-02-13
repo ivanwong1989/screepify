@@ -11,7 +11,7 @@ var managerSpawner = {
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
         const PRESPAWN_TTL = 80;
-        const ECONOMY_ROLES = new Set(['miner', 'hauler', 'worker']);
+        const ECONOMY_ROLES = new Set(['miner', 'hauler', 'worker', 'mineral_miner']);
 
         // 1. Identify Deficits
         const spawnQueue = [];

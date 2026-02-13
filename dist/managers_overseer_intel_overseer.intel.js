@@ -10,7 +10,7 @@ const overseerIntel = {
         const structures = cache.structuresByType || {};
         const dropped = cache.dropped || [];
         const ruins = cache.ruins || [];
-        const tombstones = (cache.tombstones || []).filter(t => t.store[RESOURCE_ENERGY] > 0);
+        const tombstones = (cache.tombstones || []).filter(t => t && t.store && t.store.getUsedCapacity() > 0);
         const flags = cache.flags || [];
         
         const containers = structures[STRUCTURE_CONTAINER] || [];
@@ -50,7 +50,9 @@ const overseerIntel = {
             }
         });
         tombstones.forEach(t => {
-            allEnergySources.push({ id: t.id, pos: t.pos, amount: t.store[RESOURCE_ENERGY], type: 'tombstone' });
+            if (t.store[RESOURCE_ENERGY] > 0) {
+                allEnergySources.push({ id: t.id, pos: t.pos, amount: t.store[RESOURCE_ENERGY], type: 'tombstone' });
+            }
         });
         
         const sources = (cache.sources || []).map(source => {
