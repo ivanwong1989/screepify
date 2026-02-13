@@ -84,19 +84,21 @@ var managerOverseer = {
         const state = overseerIntel.determineState(room, intel);
         const economyState = overseerIntel.determineEconomyState(room, intel);
 
-        // 4. Generate Missions
-        const missions = overseerMissions.generate(room, intel, state, economyState);
-
-        // 5. Analyze Census (Match Creeps to Missions)
+        // 4. Build Census (include remote creeps assigned to this home room)
         const remoteByHome = getRemoteCreepsByHomeRoom();
         const remote = remoteByHome[room.name] || { assigned: [], idle: [] };
         const censusCreeps = intel.myCreeps.concat(remote.assigned || [], remote.idle || []);
+
+        // 5. Generate Missions
+        const missions = overseerMissions.generate(room, intel, state, economyState, censusCreeps);
+
+        // 6. Analyze Census (Match Creeps to Missions)
         overseerUtils.analyzeCensus(missions, censusCreeps);
 
-        // 6. Reassign Workers (Optimize assignments)
+        // 7. Reassign Workers (Optimize assignments)
         overseerUtils.reassignWorkers(room, missions, intel);
 
-        // 7. Publish Missions (Contract for Tasker and Spawner)
+        // 8. Publish Missions (Contract for Tasker and Spawner)
         room._missions = missions;
         room._state = state;
         room._economyState = economyState;
