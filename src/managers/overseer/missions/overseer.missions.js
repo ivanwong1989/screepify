@@ -16,7 +16,8 @@ const missionModules = {
     repair: require('managers_overseer_missions_mission.repair'),
     worker: require('managers_overseer_missions_mission.worker'),
     decongest: require('managers_overseer_missions_mission.decongest'),
-    dismantle: require('managers_overseer_missions_mission.dismantle')
+    dismantle: require('managers_overseer_missions_mission.dismantle'),
+    userTransfer: require('managers_overseer_missions_mission.user.transfer')
 };
 
 const overseerMissions = {
@@ -72,6 +73,7 @@ const overseerMissions = {
         missionModules.worker.generate(room, intel, context, missions);
         missionModules.decongest.generate(room, intel, context, missions);
         missionModules.dismantle.generate(room, intel, context, missions);
+        missionModules.userTransfer.generate(room, intel, context, missions);
 
         return missions;
     }

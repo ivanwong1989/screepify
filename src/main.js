@@ -163,6 +163,7 @@ function showMarketHelp() {
         'market(\"room\", roomName, { ... })  - patch per-room overrides',
         'market(\"room\", roomName, \"on|off\") - enable/disable per-room trading',
         'market(\"room\", roomName, \"report\") - show mineral totals (ledger + terminal)',
+        'market(\"calc\", roomName, \"force\"?) - show buy/sell calc details for a room',
         'example: market(\"set\", { stockTargets: { LO: 2000 }, buy: { LO: { maxPrice: 1.5 } } })',
         'example: market(\"set\", { stockTargets: { energy: 100000 }, sell: { energy: { minPrice: 0.01 } } })',
         'example: market(\"set\", { energyValue: 16, maxOverpayPct: 0.08, sellBufferPct: 0.05 })'
@@ -269,6 +270,19 @@ global.market = function(action, ...args) {
         return msg;
     }
 
+    if (cmd === 'calc' || cmd === 'explain' || cmd === 'debug') {
+        const roomName = args[0];
+        if (!roomName) return 'Usage: market(\"calc\", \"W1N1\", \"force\"?)';
+        const mode = args[1];
+        const opts = {};
+        if (mode === 'force' || mode === 'f') opts.force = true;
+        const result = managerMarket.explainRoom(roomName, opts);
+        if (result && Array.isArray(result.lines)) {
+            result.lines.forEach(line => console.log(line));
+        }
+        return result && result.summary ? result.summary : 'Done';
+    }
+
     return showMarketHelp();
 };
 
@@ -364,6 +378,22 @@ function resolveSponsorRoomForTargetRoom(targetRoom) {
     return bestRoom;
 }
 
+function resolveRoomNameForObjectId(objectId) {
+    const id = objectId ? ('' + objectId).trim() : '';
+    if (!id) return null;
+    const obj = Game.getObjectById(id);
+    if (!obj || !obj.room || !obj.room.name) return null;
+    return obj.room.name;
+}
+
+function resolveSponsorRoomForTransfer(sourceId, targetId) {
+    const targetRoom = resolveRoomNameForObjectId(targetId);
+    const sourceRoom = resolveRoomNameForObjectId(sourceId);
+    const roomName = targetRoom || sourceRoom;
+    if (!roomName) return null;
+    return resolveSponsorRoomForTargetRoom(roomName);
+}
+
 function tryResolveTargetIdForPos(targetPos) {
     if (!targetPos || !targetPos.roomName) return null;
     const room = Game.rooms[targetPos.roomName];
@@ -410,7 +440,9 @@ function showMissionHelp() {
         'mission("add","dismantle", { roomName, x, y, sponsorRoom, priority, persist, label })',
         'mission("add","reserve", roomName, sponsorRoom?, priority?, persist?, label?)',
         'mission("add","reserve", { roomName, sponsorRoom, priority, persist, label })',
-        'mission("set", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom })',
+        'mission("add","transfer", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?)',
+        'mission("add","transfer", { sourceId, targetId, resourceType, sponsorRoom, priority, persist, label, sourceRoom, targetRoom })',
+        'mission("set", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, sourceId, targetId, resourceType, sourceRoom })',
         'mission("enable", id) / mission("disable", id)',
         'mission("remove", id)',
         `available types: ${types.join(', ') || '(none)'}`
@@ -438,6 +470,12 @@ function normalizeMissionPatch(patch) {
     }
     if ('label' in patch) next.label = patch.label ? ('' + patch.label).trim() : '';
     if ('targetId' in patch) next.targetId = patch.targetId ? ('' + patch.targetId).trim() : null;
+    if ('sourceId' in patch) next.sourceId = patch.sourceId ? ('' + patch.sourceId).trim() : null;
+    if ('resourceType' in patch) next.resourceType = patch.resourceType ? ('' + patch.resourceType).trim() : null;
+    if ('sourceRoom' in patch) {
+        const sourceRoom = userMissions.normalizeRoomName(patch.sourceRoom);
+        next.sourceRoom = sourceRoom || null;
+    }
     if ('roomName' in patch || 'targetRoom' in patch) {
         const targetRoom = userMissions.normalizeRoomName(patch.roomName || patch.targetRoom);
         next.targetRoom = targetRoom || null;
@@ -505,6 +543,16 @@ global.mission = function(action, typeOrData, ...args) {
                     persist: args[3],
                     label: args[4]
                 };
+            } else if (key === 'transfer') {
+                data = {
+                    sourceId: args[0],
+                    targetId: args[1],
+                    resourceType: args[2],
+                    sponsorRoom: args[3],
+                    priority: args[4],
+                    persist: args[5],
+                    label: args[6]
+                };
             } else {
                 data = {};
             }
@@ -526,6 +574,19 @@ global.mission = function(action, typeOrData, ...args) {
             if (!data.sponsorRoom) {
                 const sponsorRoom = resolveSponsorRoomForTargetRoom(data.roomName || data.targetRoom);
                 if (sponsorRoom) data.sponsorRoom = sponsorRoom;
+            }
+        } else if (key === 'transfer') {
+            if (!data.sponsorRoom) {
+                const sponsorRoom = resolveSponsorRoomForTransfer(data.sourceId, data.targetId);
+                if (sponsorRoom) data.sponsorRoom = sponsorRoom;
+            }
+            if (!data.targetRoom) {
+                const targetRoom = resolveRoomNameForObjectId(data.targetId);
+                if (targetRoom) data.targetRoom = targetRoom;
+            }
+            if (!data.sourceRoom) {
+                const sourceRoom = resolveRoomNameForObjectId(data.sourceId);
+                if (sourceRoom) data.sourceRoom = sourceRoom;
             }
         }
 

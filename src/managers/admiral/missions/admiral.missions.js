@@ -27,20 +27,29 @@ var admiralMissions = {
         }
 
         // Maintenance Missions (Fortify walls/ramparts)
+        const FORTIFY_TARGET_HITS = 50000;
+        const FORTIFY_MAX_TARGETS = 5;
+        const FORTIFY_PRIORITY = 70;
         const structures = [
             ...(cache.myStructuresByType[STRUCTURE_RAMPART] || []),
             ...(cache.myStructuresByType[STRUCTURE_WALL] || [])
         ];
-        const weakWalls = structures.filter(s => s.hits < 5000);
+        const weakWalls = structures.filter(s => s.hits < FORTIFY_TARGET_HITS);
         if (weakWalls.length > 0) {
-            missions.push({
-                name: `fortify_${room.name}_walls`,
-                type: 'repair',
-                archetype: 'worker',
-                priority: 40,
-                requirements: { count: 1 },
-                targetIds: weakWalls.map(w => w.id),
-                census: { count: 0, workParts: 0, carryParts: 0 }
+            const selected = weakWalls
+                .sort((a, b) => a.hits - b.hits)
+                .slice(0, FORTIFY_MAX_TARGETS);
+
+            selected.forEach(w => {
+                missions.push({
+                    name: `fortify_${room.name}_${w.id}`,
+                    type: 'repair',
+                    archetype: 'worker',
+                    priority: FORTIFY_PRIORITY,
+                    requirements: { count: 1 },
+                    targetId: w.id,
+                    census: { count: 0, workParts: 0, carryParts: 0 }
+                });
             });
         }
 

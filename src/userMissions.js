@@ -10,6 +10,11 @@ const MISSION_DEFS = Object.freeze({
         label: 'Reserve a target room controller (remote).',
         required: ['roomName'],
         optional: ['sponsorRoom', 'priority', 'persist', 'label']
+    },
+    transfer: {
+        label: 'Transfer resources from a source structure to a target structure (user-directed logistics).',
+        required: ['sourceId', 'targetId'],
+        optional: ['resourceType', 'sponsorRoom', 'priority', 'persist', 'label', 'sourceRoom', 'targetRoom']
     }
 });
 
@@ -88,8 +93,15 @@ function addMission(type, data) {
     if (!key) return { error: 'Missing mission type.' };
     if (!MISSION_DEFS[key]) return { error: `Unknown mission type: ${key}` };
 
+    const sourceIdRaw = data && (data.sourceId || data.source || data.from);
+    const targetIdRaw = data && (data.targetId || data.target || data.to);
+    const sourceId = sourceIdRaw ? ('' + sourceIdRaw).trim() : '';
+    const targetId = targetIdRaw ? ('' + targetIdRaw).trim() : '';
+
     const targetPos = normalizeTargetPos(data && (data.targetPos || data.pos || data.target));
     const roomName = normalizeRoomName((data && (data.roomName || data.targetRoom)) || (targetPos && targetPos.roomName));
+    const transferTargetRoom = normalizeRoomName(data && data.targetRoom);
+    const transferSourceRoom = normalizeRoomName(data && data.sourceRoom);
     const x = clampPosCoord(data && data.x);
     const y = clampPosCoord(data && data.y);
     const finalTargetPos = targetPos || (roomName && x !== null && y !== null ? { x, y, roomName } : null);
@@ -99,6 +111,9 @@ function addMission(type, data) {
     }
     if (key === 'reserve' && !roomName) {
         return { error: 'Missing target room (roomName).' };
+    }
+    if (key === 'transfer' && (!sourceId || !targetId)) {
+        return { error: 'Missing sourceId or targetId.' };
     }
 
     const id = buildId(store);
@@ -110,8 +125,11 @@ function addMission(type, data) {
         priority: Number.isFinite(data && data.priority) ? data.priority : DEFAULT_PRIORITY,
         sponsorRoom: normalizeRoomName(data && data.sponsorRoom),
         targetPos: finalTargetPos || null,
-        targetRoom: key === 'reserve' ? roomName : null,
-        targetId: data && data.targetId ? ('' + data.targetId) : null,
+        targetRoom: key === 'reserve' ? roomName : (key === 'transfer' ? transferTargetRoom : null),
+        sourceRoom: key === 'transfer' ? transferSourceRoom : null,
+        sourceId: key === 'transfer' ? sourceId : null,
+        resourceType: key === 'transfer' && data && data.resourceType ? ('' + data.resourceType).trim() : null,
+        targetId: key === 'transfer' ? targetId : (data && data.targetId ? ('' + data.targetId) : null),
         persist: normalizeBool(data && data.persist, false),
         label: data && data.label ? ('' + data.label).trim() : ''
     };
