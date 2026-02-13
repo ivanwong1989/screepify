@@ -319,10 +319,52 @@ function trySell(room, cfg, totals) {
 }
 
 function summarizeConfig(cfg) {
-    const buyList = Object.keys(cfg.buy || {}).join(', ') || '(none)';
-    const sellList = Object.keys(cfg.sell || {}).join(', ') || '(none)';
-    const stockList = Object.keys(cfg.terminalStock || {}).join(', ') || '(none)';
-    return `Market auto=${cfg.enabled ? 'ON' : 'OFF'} runEvery=${cfg.runEvery} energyReserve=${cfg.energyReserve} minCredits=${cfg.minCredits} maxDeals=${cfg.maxDealsPerRoom} buy=[${buyList}] sell=[${sellList}] stock=[${stockList}]`;
+    const lines = [];
+    lines.push(
+        `Market auto=${cfg.enabled ? 'ON' : 'OFF'} runEvery=${cfg.runEvery} ` +
+        `energyReserve=${cfg.energyReserve} minCredits=${cfg.minCredits} maxDeals=${cfg.maxDealsPerRoom}`
+    );
+
+    const buyKeys = Object.keys(cfg.buy || {}).sort();
+    if (buyKeys.length > 0) {
+        lines.push('Buy specs:');
+        for (const resourceType of buyKeys) {
+            const spec = normalizeBuySpec(cfg.buy[resourceType] || {});
+            lines.push(
+                `${resourceType}: enabled=${spec.enabled ? 'true' : 'false'} ` +
+                `target=${spec.target} batch=${spec.batch} maxPrice=${spec.maxPrice}`
+            );
+        }
+    } else {
+        lines.push('Buy specs: (none)');
+    }
+
+    const sellKeys = Object.keys(cfg.sell || {}).sort();
+    if (sellKeys.length > 0) {
+        lines.push('Sell specs:');
+        for (const resourceType of sellKeys) {
+            const spec = normalizeSellSpec(cfg.sell[resourceType] || {});
+            lines.push(
+                `${resourceType}: enabled=${spec.enabled ? 'true' : 'false'} ` +
+                `keep=${spec.keep} batch=${spec.batch} minPrice=${spec.minPrice}`
+            );
+        }
+    } else {
+        lines.push('Sell specs: (none)');
+    }
+
+    const stockKeys = Object.keys(cfg.terminalStock || {}).sort();
+    if (stockKeys.length > 0) {
+        lines.push('Terminal stock targets:');
+        for (const resourceType of stockKeys) {
+            const amount = clampNumber(cfg.terminalStock[resourceType], 0, 0);
+            lines.push(`${resourceType}: ${amount}`);
+        }
+    } else {
+        lines.push('Terminal stock targets: (none)');
+    }
+
+    return lines.join('\n');
 }
 
 const managerMarket = {

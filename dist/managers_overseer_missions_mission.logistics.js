@@ -19,6 +19,7 @@ module.exports = {
         const nonMiningContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
         const storage = room.storage;
         const terminal = room.terminal;
+        const terminalStockTargets = terminal ? managerMarket.getTerminalStockTargets(room.name) : null;
         const spawns = intel.structures[STRUCTURE_SPAWN] || [];
 
         const miningContainersById = new Map(miningContainers.map(c => [c.id, c]));
@@ -161,6 +162,21 @@ module.exports = {
                             type = miningContainerIds.has(source.id) ? 'mining' : 'scavenge';
                         }
 
+                        if (type === 'terminal_stock') {
+                            const targetAmount = terminalStockTargets && resourceType
+                                ? (terminalStockTargets[resourceType] || 0)
+                                : 0;
+                            const terminalAmount = terminal && resourceType
+                                ? (terminal.store[resourceType] || 0)
+                                : 0;
+                            const terminalSpace = terminal && resourceType
+                                ? terminal.store.getFreeCapacity(resourceType)
+                                : 0;
+                            if (targetAmount <= 0 || terminalAmount >= targetAmount || terminalSpace <= 0) {
+                                return;
+                            }
+                        }
+
                         const mission = {
                             name: c.memory.missionName,
                             type: 'transfer',
@@ -229,7 +245,6 @@ module.exports = {
             });
         }
 
-        const terminalStockTargets = terminal ? managerMarket.getTerminalStockTargets(room.name) : null;
         if (storage && terminal && terminalStockTargets) {
             for (const resourceType of Object.keys(terminalStockTargets)) {
                 const targetAmount = terminalStockTargets[resourceType] || 0;
