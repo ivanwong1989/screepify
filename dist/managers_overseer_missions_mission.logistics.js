@@ -1,5 +1,4 @@
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
-const managerMarket = require('managers_overseer_manager.room.economy.market');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
@@ -19,7 +18,6 @@ module.exports = {
         const nonMiningContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
         const storage = room.storage;
         const terminal = room.terminal;
-        const terminalStockTargets = terminal ? managerMarket.getTerminalStockTargets(room.name) : null;
         const spawns = intel.structures[STRUCTURE_SPAWN] || [];
 
         const miningContainersById = new Map(miningContainers.map(c => [c.id, c]));
@@ -162,21 +160,6 @@ module.exports = {
                             type = miningContainerIds.has(source.id) ? 'mining' : 'scavenge';
                         }
 
-                        if (type === 'terminal_stock') {
-                            const targetAmount = terminalStockTargets && resourceType
-                                ? (terminalStockTargets[resourceType] || 0)
-                                : 0;
-                            const terminalAmount = terminal && resourceType
-                                ? (terminal.store[resourceType] || 0)
-                                : 0;
-                            const terminalSpace = terminal && resourceType
-                                ? terminal.store.getFreeCapacity(resourceType)
-                                : 0;
-                            if (targetAmount <= 0 || terminalAmount >= targetAmount || terminalSpace <= 0) {
-                                return;
-                            }
-                        }
-
                         const mission = {
                             name: c.memory.missionName,
                             type: 'transfer',
@@ -243,19 +226,6 @@ module.exports = {
                 if (coveredSources.has(source.id)) return;
                 this.addLogisticsMission(activeMissions, source, storage, isEmergency, 'consolidation');
             });
-        }
-
-        if (storage && terminal && terminalStockTargets) {
-            for (const resourceType of Object.keys(terminalStockTargets)) {
-                const targetAmount = terminalStockTargets[resourceType] || 0;
-                if (targetAmount <= 0) continue;
-                const terminalAmount = terminal.store[resourceType] || 0;
-                const storageAmount = storage.store[resourceType] || 0;
-                if (terminalAmount >= targetAmount) continue;
-                if (storageAmount <= 0) continue;
-                if (terminal.store.getFreeCapacity(resourceType) <= 0) continue;
-                this.addLogisticsMission(activeMissions, storage, terminal, isEmergency, 'terminal_stock', resourceType);
-            }
         }
 
         for (const m of activeMissions.values()) missions.push(m);

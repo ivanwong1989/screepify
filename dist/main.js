@@ -162,9 +162,9 @@ function showMarketHelp() {
         'market(\"room\", roomName, { ... })  - patch per-room overrides',
         'market(\"room\", roomName, \"on|off\") - enable/disable per-room trading',
         'market(\"room\", roomName, \"report\") - show mineral totals (ledger + terminal)',
-        'example: market(\"set\", { buy: { LO: { target: 2000, maxPrice: 1.5 } } })',
-        'example: market(\"set\", { sell: { energy: { keep: 100000, minPrice: 0.01 } } })',
-        'example: market(\"set\", { terminalStock: { O: 2000, LO: 1000 } })'
+        'example: market(\"set\", { stockTargets: { LO: 2000 }, buy: { LO: { maxPrice: 1.5 } } })',
+        'example: market(\"set\", { stockTargets: { energy: 100000 }, sell: { energy: { minPrice: 0.01 } } })',
+        'example: market(\"set\", { energyValue: 16, maxOverpayPct: 0.08, sellBufferPct: 0.05 })'
     ];
     for (const line of lines) console.log(line);
     return 'Done';
@@ -190,7 +190,7 @@ function marketReport(roomName) {
     const ledger = room._resourceLedger || (room.memory.overseer && room.memory.overseer.resourceLedger);
     const totals = ledger && ledger.totals ? ledger.totals : collectRoomMineralTotals(room);
     const tracked = managerMarket.getTrackedResources(roomName);
-    const stockTargets = managerMarket.getTerminalStockTargets(roomName);
+    const stockTargets = managerMarket.getStockTargets(roomName);
     const lines = [];
 
     if (tracked.length > 0) {
@@ -200,7 +200,7 @@ function marketReport(roomName) {
             const total = totals[resourceType] || 0;
             const terminalAmount = room.terminal ? (room.terminal.store[resourceType] || 0) : 0;
             const target = stockTargets[resourceType] || 0;
-            lines.push(`${resourceType}: total=${total} terminal=${terminalAmount} target=${target}`);
+            lines.push(`${resourceType}: total=${total} terminal=${terminalAmount} stockTarget=${target}`);
         });
     }
 
