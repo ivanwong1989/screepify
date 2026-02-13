@@ -189,8 +189,8 @@ var managerTasks = {
 
     getCachedObject: function(room, id) {
         if (!id) return null;
-        if (!room._idCache) return null;
-        return room._idCache.get(id);
+        if (room && room._idCache && room._idCache.has(id)) return room._idCache.get(id);
+        return Game.getObjectById(id);
     },
 
     /**
@@ -223,11 +223,13 @@ var managerTasks = {
             // Check if creep is capable for this mission type
             if (m.type === 'harvest') {
                 if (creep.getActiveBodyparts(WORK) === 0) continue;
+            } else if (m.type === 'remote_harvest') {
+                if (creep.getActiveBodyparts(WORK) === 0) continue;
             } else if (m.type === 'mineral') {
                 if (creep.getActiveBodyparts(WORK) === 0) continue;
-            } else if (m.type === 'upgrade' || m.type === 'build' || m.type === 'repair') {
+            } else if (m.type === 'upgrade' || m.type === 'build' || m.type === 'repair' || m.type === 'remote_build') {
                 if (creep.getActiveBodyparts(WORK) === 0 || creep.getActiveBodyparts(CARRY) === 0) continue;
-            } else if (m.type === 'transfer') {
+            } else if (m.type === 'transfer' || m.type === 'remote_haul') {
                 if (creep.getActiveBodyparts(CARRY) === 0) continue;
             } else if (m.type === 'dismantle') {
                 if (creep.getActiveBodyparts(WORK) === 0) continue;
@@ -263,17 +265,26 @@ var managerTasks = {
             case 'harvest':
                 task = this.getHarvestTask(creep, mission);
                 break;
+            case 'remote_harvest':
+                task = this.getRemoteHarvestTask(creep, mission);
+                break;
             case 'mineral':
                 task = this.getMineralTask(creep, mission, room);
                 break;
             case 'transfer':
                 task = this.getTransferTask(creep, mission, room);
                 break;
+            case 'remote_haul':
+                task = this.getRemoteHaulTask(creep, mission, room);
+                break;
             case 'upgrade':
                 task = this.getUpgradeTask(creep, mission, room);
                 break;
             case 'build':
                 task = this.getBuildTask(creep, mission, room);
+                break;
+            case 'remote_build':
+                task = this.getRemoteBuildTask(creep, mission, room);
                 break;
             case 'repair':
                 task = this.getRepairTask(creep, mission, room);
@@ -321,6 +332,16 @@ var managerTasks = {
         const targets = targetIds.map(id => this.getCachedObject(tower.room, id)).filter(t => t);
         const target = tower.pos.findClosestByRange(targets);
         return target ? target.id : null;
+    },
+
+    toRoomPosition: function(pos) {
+        if (!pos) return null;
+        if (pos instanceof RoomPosition) return pos;
+        if (!pos.roomName) return null;
+        const x = Number(pos.x);
+        const y = Number(pos.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return new RoomPosition(x, y, pos.roomName);
     },
 
     getDecongestTask: function(creep, mission) {
@@ -438,6 +459,146 @@ var managerTasks = {
 
         delete creep.memory.missionName;
         delete creep.memory.taskState;
+        return null;
+    },
+
+    getRemoteBuildTask: function(creep, mission, room) {
+        const targetPos = this.toRoomPosition(mission.targetPos || (mission.data && mission.data.targetPos));
+        const remoteRoom = (mission.data && mission.data.remoteRoom) || (targetPos && targetPos.roomName);
+
+        this.updateState(creep);
+
+        if (creep.memory.taskState === 'working') {
+            if (targetPos && creep.room.name !== targetPos.roomName) {
+                return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
+            }
+
+            let target = null;
+            if (mission.targetId) {
+                target = this.getCachedObject(creep.room, mission.targetId) || Game.getObjectById(mission.targetId);
+            }
+
+            if (!target && targetPos && creep.room.name === targetPos.roomName) {
+                const sites = targetPos.lookFor(LOOK_CONSTRUCTION_SITES);
+                if (sites && sites.length > 0) target = sites[0];
+            }
+
+            if (!target && creep.room.name === (targetPos && targetPos.roomName)) {
+                const roomSites = creep.room.find(FIND_CONSTRUCTION_SITES);
+                if (roomSites.length > 0) target = creep.pos.findClosestByRange(roomSites);
+            }
+
+            if (target) return { action: 'build', targetId: target.id };
+
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
+        }
+
+        if (remoteRoom && creep.room.name === remoteRoom) {
+            const containerIds = (mission.data && mission.data.containerIds) ? mission.data.containerIds : [];
+            if (containerIds.length > 0) {
+                const task = this.getGatherTask(creep, creep.room, { allowedIds: containerIds });
+                if (task) return task;
+            }
+        }
+
+        const task = this.getGatherTask(creep, creep.room, {});
+        if (task) return task;
+        if (targetPos && creep.room.name !== targetPos.roomName) {
+            return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
+        }
+        return null;
+    },
+
+    getRemoteHarvestTask: function(creep, mission) {
+        const data = mission.data || {};
+        const sourcePos = this.toRoomPosition(data.sourcePos || mission.pos);
+        const remoteRoom = data.remoteRoom || (sourcePos && sourcePos.roomName);
+        const containerPos = this.toRoomPosition(data.containerPos);
+
+        if (remoteRoom && creep.room.name !== remoteRoom) {
+            if (sourcePos) {
+                return { action: 'move', targetPos: { x: sourcePos.x, y: sourcePos.y, roomName: sourcePos.roomName }, range: 1 };
+            }
+            return { action: 'move', targetPos: { x: 25, y: 25, roomName: remoteRoom }, range: 20 };
+        }
+
+        const container = data.containerId ? Game.getObjectById(data.containerId) : null;
+        if (container && !creep.pos.isEqualTo(container.pos)) {
+            const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS);
+            if (creepsOnContainer.length === 0 || (creepsOnContainer.length === 1 && creepsOnContainer[0].id === creep.id)) {
+                return { action: 'move', targetPos: { x: container.pos.x, y: container.pos.y, roomName: container.pos.roomName }, range: 0 };
+            }
+        } else if (!container && containerPos && !creep.pos.isEqualTo(containerPos)) {
+            return { action: 'move', targetPos: { x: containerPos.x, y: containerPos.y, roomName: containerPos.roomName }, range: 0 };
+        }
+
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+            if (container && creep.pos.inRangeTo(container.pos, 1) && container.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+                return { action: 'transfer', targetId: container.id, resourceType: RESOURCE_ENERGY };
+            }
+            if (!container || (container && container.store.getFreeCapacity(RESOURCE_ENERGY) === 0)) {
+                return { action: 'drop', resourceType: RESOURCE_ENERGY };
+            }
+        }
+
+        const source = mission.sourceId ? Game.getObjectById(mission.sourceId) : null;
+        if (source) return { action: 'harvest', targetId: source.id };
+        if (sourcePos) return { action: 'move', targetPos: { x: sourcePos.x, y: sourcePos.y, roomName: sourcePos.roomName }, range: 1 };
+        return null;
+    },
+
+    getRemoteHaulTask: function(creep, mission, room) {
+        const data = mission.data || {};
+        const resourceType = data.resourceType || RESOURCE_ENERGY;
+        const pickupPos = this.toRoomPosition(data.pickupPos);
+        const dropoffPos = this.toRoomPosition(data.dropoffPos);
+
+        this.updateState(creep, resourceType);
+
+        if (creep.memory.taskState === 'working') {
+            if (dropoffPos && creep.room.name !== dropoffPos.roomName) {
+                return { action: 'move', targetPos: { x: dropoffPos.x, y: dropoffPos.y, roomName: dropoffPos.roomName }, range: 1 };
+            }
+
+            let target = data.dropoffId ? Game.getObjectById(data.dropoffId) : null;
+            if (!target) {
+                const cache = global.getRoomCache(creep.room);
+                const storage = (cache.myStructuresByType[STRUCTURE_STORAGE] || [])[0];
+                if (storage) target = storage;
+                if (!target) {
+                    const spawns = cache.myStructuresByType[STRUCTURE_SPAWN] || [];
+                    target = creep.pos.findClosestByRange(spawns);
+                }
+            }
+
+            if (target) {
+                if (target.store && target.store.getFreeCapacity(resourceType) === 0) {
+                    delete creep.memory.missionName;
+                    delete creep.memory.taskState;
+                    return null;
+                }
+                return { action: 'transfer', targetId: target.id, resourceType: resourceType };
+            }
+            return null;
+        }
+
+        if (pickupPos && creep.room.name !== pickupPos.roomName) {
+            return { action: 'move', targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName }, range: 1 };
+        }
+
+        const pickup = data.pickupId ? Game.getObjectById(data.pickupId) : null;
+        if (pickup && pickup.store && (pickup.store[resourceType] || 0) > 0) {
+            return { action: 'withdraw', targetId: pickup.id, resourceType: resourceType };
+        }
+
+        const cache = global.getRoomCache(creep.room);
+        const dropped = creep.pos.findClosestByRange(cache.dropped || [], {
+            filter: r => r.resourceType === resourceType && r.amount > 50
+        });
+        if (dropped) return { action: 'pickup', targetId: dropped.id };
+
         return null;
     },
 
