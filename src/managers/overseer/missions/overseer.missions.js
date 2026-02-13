@@ -6,6 +6,7 @@ const missionModules = {
     remoteBuild: require('managers_overseer_missions_mission.remote.build'),
     remoteHarvest: require('managers_overseer_missions_mission.remote.harvest'),
     remoteHaul: require('managers_overseer_missions_mission.remote.haul'),
+    remoteReserve: require('managers_overseer_missions_mission.remote.reserve'),
     harvest: require('managers_overseer_missions_mission.harvest'),
     mineral: require('managers_overseer_missions_mission.mineral'),
     logistics: require('managers_overseer_missions_mission.logistics'),
@@ -58,6 +59,7 @@ const overseerMissions = {
         missionModules.remoteBuild.generate(room, intel, context, missions);
         missionModules.remoteHarvest.generate(room, intel, context, missions);
         missionModules.remoteHaul.generate(room, intel, context, missions);
+        missionModules.remoteReserve.generate(room, intel, context, missions);
         missionModules.harvest.generate(room, intel, context, missions);
         missionModules.mineral.generate(room, intel, context, missions);
         missionModules.logistics.generate(room, intel, context, missions);

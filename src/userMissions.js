@@ -5,6 +5,11 @@ const MISSION_DEFS = Object.freeze({
         label: 'Dismantle a structure at a target position (remote OK).',
         required: ['roomName', 'x', 'y'],
         optional: ['sponsorRoom', 'priority', 'persist', 'label', 'targetId']
+    },
+    reserve: {
+        label: 'Reserve a target room controller (remote).',
+        required: ['roomName'],
+        optional: ['sponsorRoom', 'priority', 'persist', 'label']
     }
 });
 
@@ -92,6 +97,9 @@ function addMission(type, data) {
     if (key === 'dismantle' && !finalTargetPos) {
         return { error: 'Missing target position (roomName, x, y).' };
     }
+    if (key === 'reserve' && !roomName) {
+        return { error: 'Missing target room (roomName).' };
+    }
 
     const id = buildId(store);
     const mission = {
@@ -102,6 +110,7 @@ function addMission(type, data) {
         priority: Number.isFinite(data && data.priority) ? data.priority : DEFAULT_PRIORITY,
         sponsorRoom: normalizeRoomName(data && data.sponsorRoom),
         targetPos: finalTargetPos || null,
+        targetRoom: key === 'reserve' ? roomName : null,
         targetId: data && data.targetId ? ('' + data.targetId) : null,
         persist: normalizeBool(data && data.persist, false),
         label: data && data.label ? ('' + data.label).trim() : ''

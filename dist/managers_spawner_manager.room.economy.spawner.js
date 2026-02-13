@@ -202,6 +202,8 @@ var managerSpawner = {
             return this.generateScoutBody(budget);
         } else if (mission.archetype === 'dismantler') {
             return this.generateDismantlerBody(budget);
+        } else if (mission.archetype === 'reserver') {
+            return this.generateReserverBody(budget);
         } else if (mission.archetype === 'hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             return this.generateHaulerBody(budget, maxCarryParts);
@@ -261,7 +263,7 @@ var managerSpawner = {
     },
 
     generateScoutBody: function(budget) {
-        if (budget >= 100) return [MOVE, MOVE];
+        //if (budget >= 100) return [MOVE, MOVE]; // no need to spend so much on a disposable periodic scout
         return [MOVE];
     },
 
@@ -284,6 +286,18 @@ var managerSpawner = {
             return this.sortBody([MOVE]);
         }
 
+        return this.sortBody(body);
+    },
+
+    generateReserverBody: function(budget) {
+        // Reserving is CLAIM-based. Segment: CLAIM, MOVE (650)
+        const segment = [CLAIM, MOVE];
+        const segmentCost = 650;
+        const segments = Math.max(1, Math.min(2, Math.floor(budget / segmentCost)));
+        let body = [];
+        for (let i = 0; i < segments; i++) {
+            body = body.concat(segment);
+        }
         return this.sortBody(body);
     },
 

@@ -20,6 +20,7 @@ const DEBUG_CATEGORIES = Object.freeze([
     'mission.remote.build',
     'mission.remote.harvest',
     'mission.remote.haul',
+    'mission.remote.reserve',
     'mission.repair',
     'mission.scout',
     'mission.tower',
@@ -341,6 +342,27 @@ function resolveSponsorRoomForTargetPos(targetPos) {
     return bestRoom;
 }
 
+function resolveSponsorRoomForTargetRoom(targetRoom) {
+    const roomName = userMissions.normalizeRoomName(targetRoom);
+    if (!roomName) return null;
+    const ownedRooms = getOwnedSpawnRoomsForMissionCreate();
+    if (!ownedRooms || ownedRooms.length === 0) return null;
+    const ownedSet = new Set(ownedRooms);
+    if (ownedSet.has(roomName)) return roomName;
+
+    let bestRoom = ownedRooms[0];
+    let bestDist = Game.map.getRoomLinearDistance(roomName, bestRoom);
+    for (let i = 1; i < ownedRooms.length; i++) {
+        const candidate = ownedRooms[i];
+        const dist = Game.map.getRoomLinearDistance(roomName, candidate);
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestRoom = candidate;
+        }
+    }
+    return bestRoom;
+}
+
 function tryResolveTargetIdForPos(targetPos) {
     if (!targetPos || !targetPos.roomName) return null;
     const room = Game.rooms[targetPos.roomName];
@@ -351,9 +373,12 @@ function tryResolveTargetIdForPos(targetPos) {
     return structures[0].id;
 }
 
-function formatMissionTarget(pos) {
-    if (!pos) return 'n/a';
-    return `${pos.roomName}:${pos.x},${pos.y}`;
+function formatMissionTarget(pos, targetRoom) {
+    if (pos && pos.roomName !== undefined && pos.x !== undefined && pos.y !== undefined) {
+        return `${pos.roomName}:${pos.x},${pos.y}`;
+    }
+    if (targetRoom) return targetRoom;
+    return 'n/a';
 }
 
 function listUserMissions() {
@@ -365,7 +390,7 @@ function listUserMissions() {
     console.log(`User missions (${all.length}):`);
     for (const m of all) {
         const enabled = m.enabled === false ? 'off' : 'on';
-        const target = formatMissionTarget(m.targetPos);
+        const target = formatMissionTarget(m.targetPos, m.targetRoom);
         const sponsor = m.sponsorRoom || '(auto)';
         const label = m.label ? ` label="${m.label}"` : '';
         console.log(`${m.id} type=${m.type} ${enabled} sponsor=${sponsor} target=${target} priority=${m.priority}${label}`);
@@ -382,7 +407,9 @@ function showMissionHelp() {
         'mission("list")                   - list user missions',
         'mission("add","dismantle", room, x, y, sponsorRoom?, priority?, persist?, label?)',
         'mission("add","dismantle", { roomName, x, y, sponsorRoom, priority, persist, label })',
-        'mission("set", id, { sponsorRoom, priority, persist, label, x, y, roomName })',
+        'mission("add","reserve", roomName, sponsorRoom?, priority?, persist?, label?)',
+        'mission("add","reserve", { roomName, sponsorRoom, priority, persist, label })',
+        'mission("set", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom })',
         'mission("enable", id) / mission("disable", id)',
         'mission("remove", id)',
         `available types: ${types.join(', ') || '(none)'}`
@@ -410,10 +437,17 @@ function normalizeMissionPatch(patch) {
     }
     if ('label' in patch) next.label = patch.label ? ('' + patch.label).trim() : '';
     if ('targetId' in patch) next.targetId = patch.targetId ? ('' + patch.targetId).trim() : null;
+    if ('roomName' in patch || 'targetRoom' in patch) {
+        const targetRoom = userMissions.normalizeRoomName(patch.roomName || patch.targetRoom);
+        next.targetRoom = targetRoom || null;
+    }
 
     const posInput = patch.targetPos || patch.pos || patch.target || patch;
     const pos = userMissions.normalizeTargetPos(posInput);
-    if (pos) next.targetPos = pos;
+    if (pos) {
+        next.targetPos = pos;
+        if (!next.targetRoom) next.targetRoom = pos.roomName;
+    }
 
     return next;
 }
@@ -449,7 +483,7 @@ global.mission = function(action, typeOrData, ...args) {
             type = typeOrData;
         }
         const key = type ? ('' + type).trim().toLowerCase() : '';
-        if (!key) return 'Usage: mission("add", "dismantle", room, x, y, sponsorRoom?, priority?, persist?, label?)';
+        if (!key) return 'Usage: mission("add", "dismantle", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission("add", "reserve", roomName, sponsorRoom?, priority?, persist?, label?)';
 
         if (!data) {
             if (key === 'dismantle') {
@@ -461,6 +495,14 @@ global.mission = function(action, typeOrData, ...args) {
                     priority: args[4],
                     persist: args[5],
                     label: args[6]
+                };
+            } else if (key === 'reserve') {
+                data = {
+                    roomName: args[0],
+                    sponsorRoom: args[1],
+                    priority: args[2],
+                    persist: args[3],
+                    label: args[4]
                 };
             } else {
                 data = {};
@@ -479,19 +521,24 @@ global.mission = function(action, typeOrData, ...args) {
                     if (targetId) data.targetId = targetId;
                 }
             }
+        } else if (key === 'reserve') {
+            if (!data.sponsorRoom) {
+                const sponsorRoom = resolveSponsorRoomForTargetRoom(data.roomName || data.targetRoom);
+                if (sponsorRoom) data.sponsorRoom = sponsorRoom;
+            }
         }
 
         const result = userMissions.addMission(key, data);
         if (result && result.error) return result.error;
         const mission = result.mission;
-        console.log(`Added mission ${mission.id} type=${mission.type} target=${formatMissionTarget(mission.targetPos)}`);
+        console.log(`Added mission ${mission.id} type=${mission.type} target=${formatMissionTarget(mission.targetPos, mission.targetRoom)}`);
         return mission.id;
     }
 
     if (cmd === 'set' || cmd === 'update') {
         const id = typeOrData ? ('' + typeOrData).trim() : '';
         const patch = normalizeMissionPatch(args[0]);
-        if (!id || !patch) return 'Usage: mission("set", id, { sponsorRoom, priority, persist, label, x, y, roomName })';
+        if (!id || !patch) return 'Usage: mission("set", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom })';
         const updated = userMissions.updateMission(id, patch);
         if (!updated) return `Unknown mission id: ${id}`;
         return `Updated mission ${id}`;
@@ -674,7 +721,7 @@ module.exports.loop = function() {
             var creep = Game.creeps[name];
             if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
                 roleDefender.run(creep);
-            } else if(['universal', 'miner', 'mineral_miner', 'mobile_miner', 'scout', 'hauler', 'upgrader', 'builder', 'repairer', 'worker', 'dismantler'].includes(creep.memory.role)) {
+            } else if(['universal', 'miner', 'mineral_miner', 'mobile_miner', 'scout', 'hauler', 'upgrader', 'builder', 'repairer', 'worker', 'dismantler', 'reserver'].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }
         }

@@ -1,6 +1,6 @@
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const SCOUT_INTERVAL = 2000;
+        const SCOUT_INTERVAL = 1450;
         if (context.state === 'EMERGENCY') return;
 
         const exits = Game.map.describeExits(room.name);

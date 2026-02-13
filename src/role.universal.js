@@ -96,6 +96,11 @@ var roleUniversal = {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
+            case 'reserve':
+                if (creep.reserveController(target) === ERR_NOT_IN_RANGE) {
+                    moveToTarget(creep, target, task.range);
+                }
+                break;
             case 'drop':
                 creep.drop(task.resourceType);
                 break;

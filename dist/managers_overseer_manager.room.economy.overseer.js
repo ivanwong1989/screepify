@@ -3,6 +3,30 @@ const overseerResourceLedger = require('managers_overseer_intel_overseer.resourc
 const overseerMissions = require('managers_overseer_missions_overseer.missions');
 const overseerUtils = require('managers_overseer_utils_overseer.utils');
 
+const getRemoteCreepsByHomeRoom = function() {
+    const cache = global._remoteCreepsByHomeRoom;
+    if (cache && cache.time === Game.time) return cache.byRoom;
+
+    const byRoom = {};
+    const creeps = Object.values(Game.creeps);
+    for (const creep of creeps) {
+        if (!creep || !creep.my) continue;
+        const memory = creep.memory || {};
+        const home = memory.room;
+        if (!home) continue;
+        if (creep.room && creep.room.name === home) continue;
+
+        if (!byRoom[home]) {
+            byRoom[home] = { assigned: [], idle: [] };
+        }
+        if (memory.missionName) byRoom[home].assigned.push(creep);
+        else byRoom[home].idle.push(creep);
+    }
+
+    global._remoteCreepsByHomeRoom = { time: Game.time, byRoom };
+    return byRoom;
+};
+
 /**
  * The Overseer acts as the "Brain" of the room.
  * It analyzes the environment and sets the high-level State and Goals.
@@ -64,7 +88,10 @@ var managerOverseer = {
         const missions = overseerMissions.generate(room, intel, state, economyState);
 
         // 5. Analyze Census (Match Creeps to Missions)
-        overseerUtils.analyzeCensus(missions, intel.myCreeps);
+        const remoteByHome = getRemoteCreepsByHomeRoom();
+        const remote = remoteByHome[room.name] || { assigned: [], idle: [] };
+        const censusCreeps = intel.myCreeps.concat(remote.assigned || [], remote.idle || []);
+        overseerUtils.analyzeCensus(missions, censusCreeps);
 
         // 6. Reassign Workers (Optimize assignments)
         overseerUtils.reassignWorkers(room, missions, intel);

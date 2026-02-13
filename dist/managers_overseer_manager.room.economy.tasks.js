@@ -91,6 +91,7 @@ var managerTasks = {
                     delete creep.memory.missionName;
                     delete creep.memory.taskState;
                     delete creep.memory.scout;
+                    delete creep.memory.task;
                     creep.say('?');
                 }
             }
@@ -100,6 +101,12 @@ var managerTasks = {
         const localIdle = localCreeps.filter(c => !c.spawning && !c.memory.missionName);
         const remoteIdle = (remote.idle || []).filter(c => !c.spawning && !c.memory.missionName);
         const idleCreeps = localIdle.concat(remoteIdle);
+
+        // Clear any stale tasks on unassigned creeps so they don't keep acting without a mission
+        idleCreeps.forEach(creep => {
+            if (creep.memory.task) delete creep.memory.task;
+            if (creep.memory.taskState) delete creep.memory.taskState;
+        });
         
         idleCreeps.forEach(creep => {
             const bestMission = this.findBestMission(creep, missionsSorted, missionStatus);
@@ -114,6 +121,27 @@ var managerTasks = {
                 
                 creep.say(bestMission.type);
             }
+        });
+
+        // 4.5 If still idle and away from home, return to home room
+        idleCreeps.forEach(creep => {
+            if (creep.memory.missionName) return;
+            const home = creep.memory.room;
+            if (!home || creep.room.name === home) return;
+
+            let targetPos = null;
+            const homeRoom = Game.rooms[home];
+            if (homeRoom && homeRoom.controller) {
+                targetPos = homeRoom.controller.pos;
+            } else {
+                targetPos = new RoomPosition(25, 25, home);
+            }
+
+            creep.memory.task = {
+                action: 'move',
+                targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName },
+                range: 5
+            };
         });
 
         // Sync Tasker's real-time census back to the mission object for the Spawner
@@ -233,6 +261,8 @@ var managerTasks = {
                 if (creep.getActiveBodyparts(CARRY) === 0) continue;
             } else if (m.type === 'dismantle') {
                 if (creep.getActiveBodyparts(WORK) === 0) continue;
+            } else if (m.type === 'remote_reserve') {
+                if (creep.getActiveBodyparts(CLAIM) === 0) continue;
             }
 
             return m;
@@ -294,6 +324,9 @@ var managerTasks = {
                 break;
             case 'dismantle':
                 task = this.getDismantleTask(creep, mission);
+                break;
+            case 'remote_reserve':
+                task = this.getReserveTask(creep, mission);
                 break;
             case 'scout':
                 task = this.getScoutTask(creep, mission, room);
@@ -462,11 +495,60 @@ var managerTasks = {
         return null;
     },
 
+    getReserveTask: function(creep, mission) {
+        const data = mission.data || {};
+        const targetRoom = data.targetRoom || (mission.targetPos && mission.targetPos.roomName) || (data.targetPos && data.targetPos.roomName);
+
+        if (!targetRoom) {
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
+        }
+
+        if (creep.room.name !== targetRoom) {
+            const movePos = this.toRoomPosition(data.targetPos || mission.targetPos) || new RoomPosition(25, 25, targetRoom);
+            return {
+                action: 'move',
+                targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName },
+                range: 20
+            };
+        }
+
+        const controller = creep.room.controller;
+        if (!controller) {
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
+        }
+
+        if (controller.owner && !controller.my) {
+            if (data.persist !== true) {
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+            }
+            return null;
+        }
+
+        if (controller.my) {
+            if (data.persist !== true) {
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+            }
+            return null;
+        }
+
+        return { action: 'reserve', targetId: controller.id, range: 1 };
+    },
+
     getRemoteBuildTask: function(creep, mission, room) {
         const targetPos = this.toRoomPosition(mission.targetPos || (mission.data && mission.data.targetPos));
         const remoteRoom = (mission.data && mission.data.remoteRoom) || (targetPos && targetPos.roomName);
 
         this.updateState(creep);
+        const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+        if (creep.memory.taskState === 'working' && !hasEnergy) {
+            creep.memory.taskState = 'gathering';
+        }
 
         if (creep.memory.taskState === 'working') {
             if (targetPos && creep.room.name !== targetPos.roomName) {
