@@ -89,6 +89,28 @@ function updateEntryFromVision(entry, visibleRoom, myUser) {
         progressTotal: site.progressTotal
     }));
 
+    const repairables = visibleRoom.find(FIND_STRUCTURES, {
+        filter: s => (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) &&
+            s.hits < s.hitsMax
+    });
+    const MAX_REMOTE_REPAIR_CACHE = 25;
+    const repairInfo = repairables
+        .sort((a, b) => {
+            const aRatio = a.hitsMax > 0 ? (a.hits / a.hitsMax) : 1;
+            const bRatio = b.hitsMax > 0 ? (b.hits / b.hitsMax) : 1;
+            return aRatio - bRatio;
+        })
+        .slice(0, MAX_REMOTE_REPAIR_CACHE)
+        .map(s => ({
+            id: s.id,
+            x: s.pos.x,
+            y: s.pos.y,
+            roomName: s.pos.roomName,
+            structureType: s.structureType,
+            hits: s.hits,
+            hitsMax: s.hitsMax
+        }));
+
     entry.lastSeen = Game.time;
     entry.sources = sources.length;
     entry.sourcesInfo = sourcesInfo;
@@ -99,6 +121,8 @@ function updateEntryFromVision(entry, visibleRoom, myUser) {
     entry.reservation = statusInfo.reservation;
     entry.sites = siteInfo;
     entry.lastSites = Game.time;
+    entry.repairs = repairInfo;
+    entry.lastRepairs = Game.time;
 }
 
 function isEligible(entry, myUser, maxScoutAge) {

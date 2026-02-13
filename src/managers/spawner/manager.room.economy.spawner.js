@@ -11,7 +11,7 @@ var managerSpawner = {
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
         const PRESPAWN_TTL = 80;
-        const ECONOMY_ROLES = new Set(['miner', 'hauler', 'worker', 'mineral_miner']);
+        const ECONOMY_ROLES = new Set(['miner', 'hauler', 'worker', 'remote_worker', 'mineral_miner']);
 
         // 1. Identify Deficits
         const spawnQueue = [];
@@ -188,7 +188,7 @@ var managerSpawner = {
 
     generateBody: function(mission, budget) {
         const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
-        if (archetype === 'dismantler' || archetype === 'worker') {
+        if (archetype === 'dismantler' || archetype === 'worker' || archetype === 'remote_worker') {
             budget = Math.min(budget, 1000);
         }
         if (mission.requirements && mission.requirements.body) {
@@ -207,6 +207,8 @@ var managerSpawner = {
         } else if (mission.archetype === 'hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             return this.generateHaulerBody(budget, maxCarryParts);
+        } else if (mission.archetype == 'remote_worker') {
+            return this.generateRemoteWorkerBody(budget);
         } else {
             return this.generateWorkerBody(budget);
         }
@@ -329,6 +331,25 @@ var managerSpawner = {
             body.push(CARRY);
             body.push(MOVE);
             cost += 200;
+        }
+        
+        if (body.length === 0) return [WORK, CARRY, MOVE];
+
+        return this.sortBody(body);
+    },
+
+    generateRemoteWorkerBody: function(budget) {
+        // WORK, CARRY, MOVE, MOVE, MOVE (300) Needs high move since we're travelling alot
+        let body = [];
+        let cost = 0;
+        
+        while (cost + 300 <= budget && body.length + 3 <= 50) {
+            body.push(WORK);
+            body.push(CARRY);
+            body.push(MOVE);
+            body.push(MOVE);
+            body.push(MOVE);
+            cost += 300;
         }
         
         if (body.length === 0) return [WORK, CARRY, MOVE];

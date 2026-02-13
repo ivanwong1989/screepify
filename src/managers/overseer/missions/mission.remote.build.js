@@ -5,6 +5,9 @@ module.exports = {
     generate: function(room, intel, context, missions) {
         if (context.state === 'EMERGENCY') return;
 
+        if (!room.memory.overseer) room.memory.overseer = {};
+        if (!room.memory.overseer.remoteBuildCache) room.memory.overseer.remoteBuildCache = {};
+
         const entries = remoteUtils.getRemoteContext(room, {
             state: context.state,
             requireStorage: true,
@@ -12,8 +15,9 @@ module.exports = {
         });
 
         const MAX_REMOTE_SITES = 3;
+        const REMOTE_SCAN_INTERVAL = 25;
         const STALE_SITE_TICKS = 2000;
-        const buildStats = managerSpawner.checkBody('worker', context.budget);
+        const buildStats = managerSpawner.checkBody('remote_worker', context.budget);
         const workPerCreep = buildStats.work || 1;
 
         entries.forEach(({ name, entry, room: remoteRoom, enabled }) => {
@@ -26,15 +30,36 @@ module.exports = {
                 sites = entry.sites;
             }
 
-            if (!sites || sites.length === 0) return;
+            const cacheRoot = room.memory.overseer.remoteBuildCache;
+            if (!cacheRoot[name]) cacheRoot[name] = { lastScan: 0, targetIds: [] };
+            const cache = cacheRoot[name];
+            const now = Game.time;
+            const shouldScan = !cache.lastScan || (now - cache.lastScan) >= REMOTE_SCAN_INTERVAL;
 
-            const sorted = [...sites].sort((a, b) => {
-                const aRatio = a.progressTotal > 0 ? (a.progress / a.progressTotal) : 0;
-                const bRatio = b.progressTotal > 0 ? (b.progress / b.progressTotal) : 0;
-                return aRatio - bRatio;
-            });
+            if (!sites || sites.length === 0) {
+                cache.targetIds = [];
+                cache.lastScan = now;
+                return;
+            }
 
-            const selected = sorted.slice(0, Math.min(MAX_REMOTE_SITES, sorted.length));
+            let selected = null;
+            if (!shouldScan && cache.targetIds && cache.targetIds.length > 0) {
+                const byId = new Map(sites.map(s => [s.id, s]));
+                const cachedTargets = cache.targetIds.map(id => byId.get(id)).filter(s => s);
+                if (cachedTargets.length > 0) selected = cachedTargets;
+            }
+
+            if (!selected) {
+                const sorted = [...sites].sort((a, b) => {
+                    const aRatio = a.progressTotal > 0 ? (a.progress / a.progressTotal) : 0;
+                    const bRatio = b.progressTotal > 0 ? (b.progress / b.progressTotal) : 0;
+                    return aRatio - bRatio;
+                });
+
+                selected = sorted.slice(0, Math.min(MAX_REMOTE_SITES, sorted.length));
+                cache.targetIds = selected.map(s => s.id);
+                cache.lastScan = now;
+            }
             const sourceIds = Array.isArray(entry.sourcesInfo) ? entry.sourcesInfo.map(s => s.id) : [];
             const containerIds = Array.isArray(entry.sourcesInfo)
                 ? entry.sourcesInfo.map(s => s.containerId).filter(id => id)
@@ -50,7 +75,7 @@ module.exports = {
                 missions.push({
                     name: `remote:build:${site.id}`,
                     type: 'remote_build',
-                    archetype: 'worker',
+                    archetype: 'remote_worker',
                     targetId: site.id,
                     targetPos: targetPos,
                     data: {
@@ -59,7 +84,7 @@ module.exports = {
                         containerIds: containerIds
                     },
                     requirements: {
-                        archetype: 'worker',
+                        archetype: 'remote_worker',
                         count: 1,
                         spawnFromFleet: true
                     },

@@ -89,7 +89,7 @@ const overseerUtils = {
              const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
              for (const mission of sortedMissions) {
                  if (parkedCreeps.length === 0) break;
-                 if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'worker_fleet' || !mission.requirements || !mission.requirements.count) continue;
+                 if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'worker_fleet' || mission.type === 'remote_worker_fleet' || !mission.requirements || !mission.requirements.count) continue;
                  const deficit = mission.requirements.count - (mission.census ? mission.census.count : 0);
                  if (deficit > 0) {
                      const candidates = parkedCreeps.filter(c => c.memory.role === mission.requirements.archetype);

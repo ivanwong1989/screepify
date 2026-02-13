@@ -101,6 +101,15 @@ var managerTasks = {
                         creep.say('home');
                         return;
                     }
+                    const req = missionStatus[missionName].mission.requirements;
+                    if (req && req.archetype && creep.memory.role !== req.archetype) {
+                        delete creep.memory.missionName;
+                        delete creep.memory.taskState;
+                        delete creep.memory.scout;
+                        delete creep.memory.task;
+                        creep.say('role');
+                        return;
+                    }
                     // Update status
                     missionStatus[missionName].assignedCount++;
                     missionStatus[missionName].assignedWorkParts += creep.getActiveBodyparts(WORK);
@@ -250,7 +259,7 @@ var managerTasks = {
             if (m.type.startsWith('tower')) continue;
             
             // Exclude fleet missions (they are for spawning only)
-            if (m.type === 'hauler_fleet' || m.type === 'worker_fleet') continue;
+            if (m.type === 'hauler_fleet' || m.type === 'worker_fleet' || m.type === 'remote_worker_fleet') continue;
 
             // Exclude military missions (handled by military manager)
             if (m.type === 'defend' || m.type === 'patrol') continue;
@@ -279,7 +288,7 @@ var managerTasks = {
                 if (creep.getActiveBodyparts(WORK) === 0) continue;
             } else if (m.type === 'mineral') {
                 if (creep.getActiveBodyparts(WORK) === 0) continue;
-            } else if (m.type === 'upgrade' || m.type === 'build' || m.type === 'repair' || m.type === 'remote_build') {
+            } else if (m.type === 'upgrade' || m.type === 'build' || m.type === 'repair' || m.type === 'remote_build' || m.type === 'remote_repair') {
                 if (creep.getActiveBodyparts(WORK) === 0 || creep.getActiveBodyparts(CARRY) === 0) continue;
             } else if (m.type === 'transfer' || m.type === 'remote_haul') {
                 if (creep.getActiveBodyparts(CARRY) === 0) continue;
@@ -316,6 +325,11 @@ var managerTasks = {
                 delete creep.memory.missionName;
                 delete creep.memory.taskState;
                 break;
+            case 'remote_worker_fleet':
+                // Release creep from fleet mission so it can pick up real work
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                break;
             case 'harvest':
                 task = this.getHarvestTask(creep, mission);
                 break;
@@ -339,6 +353,9 @@ var managerTasks = {
                 break;
             case 'remote_build':
                 task = this.getRemoteBuildTask(creep, mission, room);
+                break;
+            case 'remote_repair':
+                task = this.getRemoteRepairTask(creep, mission, room);
                 break;
             case 'repair':
                 task = this.getRepairTask(creep, mission, room);
@@ -567,6 +584,8 @@ var managerTasks = {
     getRemoteBuildTask: function(creep, mission, room) {
         const targetPos = this.toRoomPosition(mission.targetPos || (mission.data && mission.data.targetPos));
         const remoteRoom = (mission.data && mission.data.remoteRoom) || (targetPos && targetPos.roomName);
+        const homeRoom = room || (creep.memory && creep.memory.room ? Game.rooms[creep.memory.room] : null);
+        const homeRoomName = homeRoom ? homeRoom.name : (creep.memory && creep.memory.room);
 
         this.updateState(creep);
         const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
@@ -601,15 +620,77 @@ var managerTasks = {
             return null;
         }
 
-        if (remoteRoom && creep.room.name === remoteRoom) {
-            const containerIds = (mission.data && mission.data.containerIds) ? mission.data.containerIds : [];
-            if (containerIds.length > 0) {
-                const task = this.getGatherTask(creep, creep.room, { allowedIds: containerIds });
-                if (task) return task;
-            }
+        if (homeRoomName && creep.room.name !== homeRoomName) {
+            const anchor = homeRoom && homeRoom.storage ? homeRoom.storage.pos
+                : (homeRoom && homeRoom.controller ? homeRoom.controller.pos : null);
+            const movePos = anchor || { x: 25, y: 25, roomName: homeRoomName };
+            return { action: 'move', targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName }, range: 3 };
         }
 
-        const task = this.getGatherTask(creep, creep.room, {});
+        const gatherRoom = homeRoom || creep.room;
+        const task = this.getGatherTask(creep, gatherRoom, {});
+        if (task) return task;
+        if (targetPos && creep.room.name !== targetPos.roomName) {
+            return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
+        }
+        return null;
+    },
+
+    getRemoteRepairTask: function(creep, mission, room) {
+        const targetPos = this.toRoomPosition(mission.targetPos || (mission.data && mission.data.targetPos));
+        const remoteRoom = (mission.data && mission.data.remoteRoom) || (targetPos && targetPos.roomName);
+        const homeRoom = room || (creep.memory && creep.memory.room ? Game.rooms[creep.memory.room] : null);
+        const homeRoomName = homeRoom ? homeRoom.name : (creep.memory && creep.memory.room);
+
+        this.updateState(creep);
+        const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+        if (creep.memory.taskState === 'working' && !hasEnergy) {
+            creep.memory.taskState = 'gathering';
+        }
+
+        if (creep.memory.taskState === 'working') {
+            if (targetPos && creep.room.name !== targetPos.roomName) {
+                return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
+            }
+
+            let target = null;
+            if (mission.targetId) {
+                target = this.getCachedObject(creep.room, mission.targetId) || Game.getObjectById(mission.targetId);
+            }
+
+            if (!target && targetPos && creep.room.name === targetPos.roomName) {
+                const structures = targetPos.lookFor(LOOK_STRUCTURES);
+                const repairable = structures.find(s =>
+                    (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) &&
+                    s.hits < s.hitsMax
+                );
+                if (repairable) target = repairable;
+            }
+
+            if (!target && creep.room.name === (targetPos && targetPos.roomName)) {
+                const roomTargets = creep.room.find(FIND_STRUCTURES, {
+                    filter: s => (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) &&
+                        s.hits < s.hitsMax
+                });
+                if (roomTargets.length > 0) target = creep.pos.findClosestByRange(roomTargets);
+            }
+
+            if (target && target.hits < target.hitsMax) return { action: 'repair', targetId: target.id };
+
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
+        }
+
+        if (homeRoomName && creep.room.name !== homeRoomName) {
+            const anchor = homeRoom && homeRoom.storage ? homeRoom.storage.pos
+                : (homeRoom && homeRoom.controller ? homeRoom.controller.pos : null);
+            const movePos = anchor || { x: 25, y: 25, roomName: homeRoomName };
+            return { action: 'move', targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName }, range: 3 };
+        }
+
+        const gatherRoom = homeRoom || creep.room;
+        const task = this.getGatherTask(creep, gatherRoom, {});
         if (task) return task;
         if (targetPos && creep.room.name !== targetPos.roomName) {
             return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
