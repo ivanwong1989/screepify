@@ -30,7 +30,7 @@ module.exports = {
         if (remoteDemand > 0) {
             const budget = (context && Number.isFinite(context.budget)) ? context.budget : (intel.energyCapacityAvailable || 0);
             const MAX_REMOTE_BUILDERS = 5;
-            const CAPACITY_PER_BUILDER = 500;
+            const CAPACITY_PER_BUILDER = 900;
             const capacityCap = Math.max(1, Math.floor(budget / CAPACITY_PER_BUILDER));
             remoteCap = Math.min(MAX_REMOTE_BUILDERS, capacityCap);
             remoteBuilderCount = Math.min(remoteDemand, remoteCap);

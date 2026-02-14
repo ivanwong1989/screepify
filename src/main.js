@@ -783,7 +783,7 @@ module.exports.loop = function() {
             var creep = Game.creeps[name];
             if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
                 roleDefender.run(creep);
-            } else if(['universal', 'miner', 'mineral_miner', 'mobile_miner', 'scout', 'hauler', 'remote_hauler', 'upgrader', 'builder', 'repairer', 'worker', 'remote_worker', 'dismantler', 'reserver'].includes(creep.memory.role)) {
+            } else if(['universal', 'miner', 'remote_miner', 'mineral_miner', 'mobile_miner', 'scout', 'hauler', 'remote_hauler', 'upgrader', 'builder', 'repairer', 'worker', 'remote_worker', 'dismantler', 'reserver'].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }
         }

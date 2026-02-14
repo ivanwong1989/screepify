@@ -142,9 +142,9 @@ const overseerUtils = {
         const remoteHaulerFleet = getFleetCounts('remote_hauler_fleet');
         const fleetParts = [];
         if (workerFleet) fleetParts.push(`worker ${workerFleet.have}/${workerFleet.need}`);
-        if (remoteWorkerFleet) fleetParts.push(`remote ${remoteWorkerFleet.have}/${remoteWorkerFleet.need}`);
+        if (remoteWorkerFleet) fleetParts.push(`remote_worker ${remoteWorkerFleet.have}/${remoteWorkerFleet.need}`);
         if (haulerFleet) fleetParts.push(`hauler ${haulerFleet.have}/${haulerFleet.need}`);
-        if (remoteHaulerFleet) fleetParts.push(`remote_haul ${remoteHaulerFleet.have}/${remoteHaulerFleet.need}`);
+        if (remoteHaulerFleet) fleetParts.push(`remote_hauler ${remoteHaulerFleet.have}/${remoteHaulerFleet.need}`);
         if (fleetParts.length > 0) {
             room.visual.text(
                 `Fleet: ${fleetParts.join(' | ')}`,

@@ -9,8 +9,9 @@ module.exports = {
         const CRITICAL_WALL_HITS = 5000;
         const FORTIFY_START_HITS = 50000;
         const FORTIFY_TARGET_HITS = 100000;
-        const CRITICAL_GENERAL_RATIO = 0.2;
-        const CRITICAL_DECAYABLE_RATIO = 0.1;
+        const REPAIR_MIN_RATIO = 0.9;
+        const CRITICAL_GENERAL_RATIO = 0.8;
+        const CRITICAL_DECAYABLE_RATIO = 0.7;
 
         if (!room.memory.overseer) room.memory.overseer = {};
         if (!room.memory.overseer.repairCache) {
@@ -35,6 +36,12 @@ module.exports = {
             return s.hits < (s.hitsMax * CRITICAL_GENERAL_RATIO);
         };
 
+        const needsRepair = (s) => {
+            if (!s || !s.hitsMax) return false;
+            if (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) return false;
+            return s.hits < (s.hitsMax * REPAIR_MIN_RATIO);
+        };
+
         const getActiveForts = (structures) => {
             return structures.filter(s => {
                 if (s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART) return false;
@@ -54,11 +61,11 @@ module.exports = {
             const allStructures = [].concat(...Object.values(intel.structures));
         
             const decayables = allStructures.filter(s => 
-                (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && s.hits < s.hitsMax
+                (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && needsRepair(s)
             );
             const others = allStructures.filter(s => 
                 s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_CONTAINER &&
-                s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && s.hits < s.hitsMax
+                s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && needsRepair(s)
             );
             const activeForts = getActiveForts(allStructures);
             const criticalForts = activeForts.filter(isCritical);
@@ -76,14 +83,14 @@ module.exports = {
             const cachedTargets = repairCache.targets || [];
             const refreshedTargets = cachedTargets
                 .map(id => Game.getObjectById(id))
-                .filter(s => s && s.hits < s.hitsMax);
+                .filter(s => s && (needsRepair(s) || isCritical(s) || getActiveForts([s]).length > 0));
 
             const decayables = refreshedTargets.filter(s => 
-                (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && s.hits < s.hitsMax
+                (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && needsRepair(s)
             );
             const others = refreshedTargets.filter(s => 
                 s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_CONTAINER &&
-                s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && s.hits < s.hitsMax
+                s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && needsRepair(s)
             );
             const activeForts = getActiveForts(refreshedTargets);
             const criticalForts = activeForts.filter(isCritical);

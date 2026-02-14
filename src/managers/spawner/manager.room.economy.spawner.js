@@ -11,7 +11,7 @@ var managerSpawner = {
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
         const PRESPAWN_TTL = 80;
-        const ECONOMY_ROLES = new Set(['miner', 'hauler', 'remote_hauler', 'worker', 'remote_worker', 'mineral_miner']);
+        const ECONOMY_ROLES = new Set(['miner', 'remote_miner', 'hauler', 'remote_hauler', 'worker', 'remote_worker', 'mineral_miner']);
 
         // 1. Identify Deficits
         const spawnQueue = [];
@@ -188,7 +188,7 @@ var managerSpawner = {
 
     generateBody: function(mission, budget) {
         const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
-        if (archetype === 'dismantler' || archetype === 'remote_worker') {
+        if (archetype === 'dismantler' || archetype === 'remote_worker' || archetype === 'remote_hauler') {
             budget = Math.min(budget, 1000);
         }
         if (archetype === 'worker') {
@@ -199,6 +199,8 @@ var managerSpawner = {
         }
         if (mission.archetype === 'miner') {
             return this.generateMinerBody(budget);
+        } else if (mission.archetype === 'remote_miner') {
+            return this.generateRemoteMinerBody(budget);
         } else if (mission.archetype === 'mineral_miner') {
             return this.generateMineralMinerBody(budget);
         } else if (mission.archetype === 'scout') {
@@ -241,6 +243,38 @@ var managerSpawner = {
             cost += 100;
         }
         
+        return this.sortBody(body);
+    },
+
+    generateRemoteMinerBody: function(budget) {
+        // Remote miners travel: extra MOVE compared to local static miners.
+        // Base: WORK, CARRY, MOVE, MOVE (250)
+        if (budget < 250) {
+            if (budget >= 200) return this.sortBody([WORK, CARRY, MOVE]);
+            if (budget >= 150) return this.sortBody([WORK, MOVE]);
+            if (budget >= 100) return this.sortBody([WORK]);
+            return this.sortBody([MOVE]);
+        }
+
+        let body = [WORK, CARRY, MOVE, MOVE];
+        let cost = 250;
+        let workCount = 1;
+        const MAX_WORK = 5;
+
+        // Segment: WORK, WORK, MOVE (250)
+        while (cost + 250 <= budget && body.length + 3 <= 50 && workCount + 2 <= MAX_WORK) {
+            body.push(WORK, WORK, MOVE);
+            cost += 250;
+            workCount += 2;
+        }
+
+        // If budget allows, add a final WORK to approach 5 total.
+        if (workCount < MAX_WORK && cost + 100 <= budget && body.length + 1 <= 50) {
+            body.push(WORK);
+            cost += 100;
+            workCount += 1;
+        }
+
         return this.sortBody(body);
     },
 
@@ -342,11 +376,11 @@ var managerSpawner = {
     },
 
     generateRemoteWorkerBody: function(budget) {
-        // WORK, CARRY, MOVE, MOVE, MOVE (300) Needs high move since we're travelling alot
+        // WORK, CARRY, MOVE x3 (300) Needs high move since we're travelling alot
         let body = [];
         let cost = 0;
         
-        while (cost + 300 <= budget && body.length + 3 <= 50) {
+        while (cost + 300 <= budget && body.length + 7 <= 50) {
             body.push(WORK);
             body.push(CARRY);
             body.push(MOVE);

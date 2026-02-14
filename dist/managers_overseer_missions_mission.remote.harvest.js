@@ -12,7 +12,7 @@ module.exports = {
         });
 
         const { budget, getMissionCensus } = context;
-        const minerStats = managerSpawner.checkBody('miner', budget);
+        const minerStats = managerSpawner.checkBody('remote_miner', budget);
         const workPerCreep = minerStats.work || 1;
 
         entries.forEach(({ name, entry, enabled }) => {
@@ -46,11 +46,11 @@ module.exports = {
                 missions.push({
                     name: missionName,
                     type: 'remote_harvest',
-                    archetype: 'miner',
+                    archetype: 'remote_miner',
                     sourceId: source.id,
                     pos: new RoomPosition(source.x, source.y, name),
                     requirements: {
-                        archetype: 'miner',
+                        archetype: 'remote_miner',
                         count: reqCount
                     },
                     data: {

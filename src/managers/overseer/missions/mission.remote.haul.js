@@ -15,7 +15,7 @@ module.exports = {
         const { budget, getMissionCensus } = context;
         const haulerStats = managerSpawner.checkBody('remote_hauler', budget);
         const carryParts = haulerStats.carry || 1;
-        const MAX_CARRY_PARTS = 16;
+        const MAX_REMOTE_HAULER_CARRY_PARTS = 5;
 
         entries.forEach(({ name, entry, enabled }) => {
             if (!enabled || !entry || !Array.isArray(entry.sourcesInfo)) return;
@@ -38,7 +38,7 @@ module.exports = {
                     requirements: {
                         archetype: 'remote_hauler',
                         count: reqCount,
-                        maxCarryParts: MAX_CARRY_PARTS,
+                        maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS,
                         spawnFromFleet: true
                     },
                     data: {

@@ -1,3 +1,5 @@
+const MAX_REMOTE_HAULER_CARRY_PARTS = 5;
+
 module.exports = {
     generate: function(room, intel, context, missions) {
         const haulMissions = missions.filter(m =>
@@ -23,7 +25,8 @@ module.exports = {
             roleCensus: 'remote_hauler',
             requirements: {
                 archetype: 'remote_hauler',
-                count: remoteDemand
+                count: remoteDemand,
+                maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS
             },
             priority: remotePriority
         });
