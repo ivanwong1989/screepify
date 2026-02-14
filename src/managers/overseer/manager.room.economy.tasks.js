@@ -259,7 +259,7 @@ var managerTasks = {
             if (m.type.startsWith('tower')) continue;
             
             // Exclude fleet missions (they are for spawning only)
-            if (m.type === 'hauler_fleet' || m.type === 'worker_fleet' || m.type === 'remote_worker_fleet') continue;
+            if (m.type === 'hauler_fleet' || m.type === 'remote_hauler_fleet' || m.type === 'worker_fleet' || m.type === 'remote_worker_fleet') continue;
 
             // Exclude military missions (handled by military manager)
             if (m.type === 'defend' || m.type === 'patrol') continue;
@@ -316,6 +316,11 @@ var managerTasks = {
         let task = null;
         switch (mission.type) {
             case 'hauler_fleet':
+                // Release creep from fleet mission so it can pick up real work
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                break;
+            case 'remote_hauler_fleet':
                 // Release creep from fleet mission so it can pick up real work
                 delete creep.memory.missionName;
                 delete creep.memory.taskState;

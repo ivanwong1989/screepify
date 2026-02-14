@@ -2,23 +2,27 @@ const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { state, budget } = context;
+        const { state, budget, getMissionCensus } = context;
         if (state === 'EMERGENCY') return;
 
         const REPAIR_SCAN_INTERVAL = 7; // ticks
         const CRITICAL_WALL_HITS = 5000;
+        const FORTIFY_START_HITS = 50000;
+        const FORTIFY_TARGET_HITS = 100000;
         const CRITICAL_GENERAL_RATIO = 0.2;
         const CRITICAL_DECAYABLE_RATIO = 0.1;
 
         if (!room.memory.overseer) room.memory.overseer = {};
         if (!room.memory.overseer.repairCache) {
-            room.memory.overseer.repairCache = { lastScan: 0, targets: [], critical: false };
+            room.memory.overseer.repairCache = { lastScan: 0, targets: [], critical: false, fortifyIds: [] };
         }
         const repairCache = room.memory.overseer.repairCache;
+        if (!Array.isArray(repairCache.fortifyIds)) repairCache.fortifyIds = [];
         const now = Game.time;
         const hostilesPresent = intel.hostiles && intel.hostiles.length > 0;
         const combatState = room.memory.admiral && room.memory.admiral.state;
         const siegeMode = combatState === 'SIEGE';
+        const previousFortifyIds = new Set(repairCache.fortifyIds);
 
         const isCritical = (s) => {
             if (!s || !s.hitsMax) return false;
@@ -29,6 +33,14 @@ module.exports = {
                 return s.hits < (s.hitsMax * CRITICAL_DECAYABLE_RATIO);
             }
             return s.hits < (s.hitsMax * CRITICAL_GENERAL_RATIO);
+        };
+
+        const getActiveForts = (structures) => {
+            return structures.filter(s => {
+                if (s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART) return false;
+                if (s.hits < FORTIFY_START_HITS) return true;
+                return previousFortifyIds.has(s.id) && s.hits < FORTIFY_TARGET_HITS;
+            });
         };
 
         const forceScan = hostilesPresent || siegeMode || repairCache.critical;
@@ -48,12 +60,9 @@ module.exports = {
                 s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_CONTAINER &&
                 s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && s.hits < s.hitsMax
             );
-            const forts = allStructures.filter(s => 
-                (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < 50000
-            );
-
-            const criticalForts = forts.filter(isCritical);
-            const nonCriticalForts = forts.filter(s => !isCritical(s));
+            const activeForts = getActiveForts(allStructures);
+            const criticalForts = activeForts.filter(isCritical);
+            const nonCriticalForts = activeForts.filter(s => !isCritical(s));
 
             repairTargets.push(...decayables, ...others, ...criticalForts);
             fortifyTargets.push(...nonCriticalForts);
@@ -62,6 +71,7 @@ module.exports = {
             repairCache.targets = repairTargets.concat(fortifyTargets).map(s => s.id);
             repairCache.lastScan = now;
             repairCache.critical = criticalFound;
+            repairCache.fortifyIds = activeForts.map(s => s.id);
         } else {
             const cachedTargets = repairCache.targets || [];
             const refreshedTargets = cachedTargets
@@ -75,12 +85,9 @@ module.exports = {
                 s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_CONTAINER &&
                 s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && s.hits < s.hitsMax
             );
-            const forts = refreshedTargets.filter(s => 
-                (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < 50000
-            );
-
-            const criticalForts = forts.filter(isCritical);
-            const nonCriticalForts = forts.filter(s => !isCritical(s));
+            const activeForts = getActiveForts(refreshedTargets);
+            const criticalForts = activeForts.filter(isCritical);
+            const nonCriticalForts = activeForts.filter(s => !isCritical(s));
 
             repairTargets = decayables.concat(others, criticalForts);
             fortifyTargets = nonCriticalForts;
@@ -88,6 +95,7 @@ module.exports = {
 
             repairCache.targets = repairTargets.concat(fortifyTargets).map(s => s.id);
             repairCache.critical = criticalFound;
+            repairCache.fortifyIds = activeForts.map(s => s.id);
         }
 
         if (repairTargets.length === 0 && fortifyTargets.length === 0) return;
@@ -107,6 +115,13 @@ module.exports = {
             return 1;
         };
 
+        const getMissionCount = (name) => {
+            if (typeof getMissionCensus !== 'function') return 0;
+            const census = getMissionCensus(name);
+            if (!census || !Number.isFinite(census.count)) return 0;
+            return census.count;
+        };
+
         const sortedTargets = [...repairTargets].sort((a, b) => {
             const groupDiff = getRepairGroup(a) - getRepairGroup(b);
             if (groupDiff !== 0) return groupDiff;
@@ -115,15 +130,31 @@ module.exports = {
             return aRatio - bRatio;
         });
 
-        const targetCount = Math.min(desiredCount, sortedTargets.length);
+        const stickyRepairTargets = [];
+        const stickyRepairIds = new Set();
+        sortedTargets.forEach(target => {
+            if (getMissionCount(`repair:${target.id}`) > 0) {
+                stickyRepairTargets.push(target);
+                stickyRepairIds.add(target.id);
+            }
+        });
 
-        if (targetCount > 0) {
+        const targetCount = Math.min(
+            sortedTargets.length,
+            Math.max(desiredCount, stickyRepairTargets.length)
+        );
+        const selectedTargets = stickyRepairTargets.concat(
+            sortedTargets
+                .filter(target => !stickyRepairIds.has(target.id))
+                .slice(0, Math.max(0, targetCount - stickyRepairTargets.length))
+        );
+
+        if (selectedTargets.length > 0) {
             debug('mission.repair', `[Repair] ${room.name} targets=${targetCount}/${repairTargets.length} ` +
                 `workPerCreep=${workPerCreep} desired=${desiredCount} critical=${criticalFound}`);
         }
 
-        if (targetCount > 0) {
-            const selectedTargets = sortedTargets.slice(0, targetCount);
+        if (selectedTargets.length > 0) {
             selectedTargets.forEach(target => {
                 missions.push({
                     name: `repair:${target.id}`,
@@ -148,7 +179,23 @@ module.exports = {
                 const bRatio = b.hitsMax > 0 ? (b.hits / b.hitsMax) : 1;
                 return aRatio - bRatio;
             });
-            const selectedForts = sortedForts.slice(0, Math.min(FORTIFY_TARGET_CAP, sortedForts.length));
+            const stickyFortTargets = [];
+            const stickyFortIds = new Set();
+            sortedForts.forEach(target => {
+                if (getMissionCount(`fortify:${target.id}`) > 0) {
+                    stickyFortTargets.push(target);
+                    stickyFortIds.add(target.id);
+                }
+            });
+            const fortifyCount = Math.min(
+                sortedForts.length,
+                Math.max(FORTIFY_TARGET_CAP, stickyFortTargets.length)
+            );
+            const selectedForts = stickyFortTargets.concat(
+                sortedForts
+                    .filter(target => !stickyFortIds.has(target.id))
+                    .slice(0, Math.max(0, fortifyCount - stickyFortTargets.length))
+            );
 
             debug('mission.repair', `[Fortify] ${room.name} targets=${selectedForts.length}/${fortifyTargets.length}`);
 

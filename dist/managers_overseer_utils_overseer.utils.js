@@ -89,7 +89,7 @@ const overseerUtils = {
              const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
              for (const mission of sortedMissions) {
                  if (parkedCreeps.length === 0) break;
-                 if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'worker_fleet' || mission.type === 'remote_worker_fleet' || !mission.requirements || !mission.requirements.count) continue;
+                 if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'remote_hauler_fleet' || mission.type === 'worker_fleet' || mission.type === 'remote_worker_fleet' || !mission.requirements || !mission.requirements.count) continue;
                  const deficit = mission.requirements.count - (mission.census ? mission.census.count : 0);
                  if (deficit > 0) {
                      const candidates = parkedCreeps.filter(c => c.memory.role === mission.requirements.archetype);
@@ -139,10 +139,12 @@ const overseerUtils = {
         const workerFleet = getFleetCounts('worker_fleet');
         const remoteWorkerFleet = getFleetCounts('remote_worker_fleet');
         const haulerFleet = getFleetCounts('hauler_fleet');
+        const remoteHaulerFleet = getFleetCounts('remote_hauler_fleet');
         const fleetParts = [];
         if (workerFleet) fleetParts.push(`worker ${workerFleet.have}/${workerFleet.need}`);
         if (remoteWorkerFleet) fleetParts.push(`remote ${remoteWorkerFleet.have}/${remoteWorkerFleet.need}`);
         if (haulerFleet) fleetParts.push(`hauler ${haulerFleet.have}/${haulerFleet.need}`);
+        if (remoteHaulerFleet) fleetParts.push(`remote_haul ${remoteHaulerFleet.have}/${remoteHaulerFleet.need}`);
         if (fleetParts.length > 0) {
             room.visual.text(
                 `Fleet: ${fleetParts.join(' | ')}`,

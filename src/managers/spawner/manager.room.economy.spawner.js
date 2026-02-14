@@ -11,7 +11,7 @@ var managerSpawner = {
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
         const PRESPAWN_TTL = 80;
-        const ECONOMY_ROLES = new Set(['miner', 'hauler', 'worker', 'remote_worker', 'mineral_miner']);
+        const ECONOMY_ROLES = new Set(['miner', 'hauler', 'remote_hauler', 'worker', 'remote_worker', 'mineral_miner']);
 
         // 1. Identify Deficits
         const spawnQueue = [];
@@ -207,7 +207,7 @@ var managerSpawner = {
             return this.generateDismantlerBody(budget);
         } else if (mission.archetype === 'reserver') {
             return this.generateReserverBody(budget);
-        } else if (mission.archetype === 'hauler') {
+        } else if (mission.archetype === 'hauler' || mission.archetype === 'remote_hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             return this.generateHaulerBody(budget, maxCarryParts);
         } else if (mission.archetype == 'remote_worker') {
