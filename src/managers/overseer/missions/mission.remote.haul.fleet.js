@@ -1,4 +1,4 @@
-const MAX_REMOTE_HAULER_CARRY_PARTS = 5;
+const MAX_REMOTE_HAULER_CARRY_PARTS = 8;
 
 module.exports = {
     generate: function(room, intel, context, missions) {

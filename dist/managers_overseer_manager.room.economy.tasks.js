@@ -726,13 +726,12 @@ var managerTasks = {
             return { action: 'move', targetPos: { x: containerPos.x, y: containerPos.y, roomName: containerPos.roomName }, range: 0 };
         }
 
-        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+        this.updateState(creep);
+        if (creep.memory.taskState === 'working' && creep.getActiveBodyparts(CARRY) > 0) {
             if (container && creep.pos.inRangeTo(container.pos, 1) && container.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
                 return { action: 'transfer', targetId: container.id, resourceType: RESOURCE_ENERGY };
             }
-            if (!container || (container && container.store.getFreeCapacity(RESOURCE_ENERGY) === 0)) {
-                return { action: 'drop', resourceType: RESOURCE_ENERGY };
-            }
+            // Static mining: if no transfer target, fall through to harvest (mirrors local miner behavior).
         }
 
         const source = mission.sourceId ? Game.getObjectById(mission.sourceId) : null;
