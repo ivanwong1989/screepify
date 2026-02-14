@@ -392,13 +392,13 @@ var managerTasks = {
 
         if (mission.type === 'tower_attack') {
             action = 'attack';
-            targetId = this.findBestTarget(tower, mission.targetIds);
+            targetId = this.findBestTarget(tower, mission.targetIds, action);
         } else if (mission.type === 'tower_heal') {
             action = 'heal';
-            targetId = this.findBestTarget(tower, mission.targetIds);
+            targetId = this.findBestTarget(tower, mission.targetIds, action);
         } else if (mission.type === 'tower_repair') {
             action = 'repair';
-            targetId = this.findBestTarget(tower, mission.targetIds);
+            targetId = this.findBestTarget(tower, mission.targetIds, action);
         }
 
         if (action && targetId) {
@@ -406,9 +406,96 @@ var managerTasks = {
         }
     },
 
-    findBestTarget: function(tower, targetIds) {
+    findBestTarget: function(tower, targetIds, action) {
         if (!targetIds || targetIds.length === 0) return null;
         const targets = targetIds.map(id => this.getCachedObject(tower.room, id)).filter(t => t);
+        if (targets.length === 0) return null;
+
+        if (action !== 'attack') {
+            const target = tower.pos.findClosestByRange(targets);
+            return target ? target.id : null;
+        }
+
+        const creepTargets = targets.filter(t => t instanceof Creep || t instanceof PowerCreep);
+        if (creepTargets.length === 0) {
+            const target = tower.pos.findClosestByRange(targets);
+            return target ? target.id : null;
+        }
+
+        const getTowerDamageAtRange = (range) => {
+            const clamped = Math.max(1, Math.min(range || 20, 50));
+            if (clamped <= 5) return 600;
+            if (clamped >= 20) return 150;
+            return 600 - ((clamped - 5) * 30);
+        };
+
+        const getHealPower = (creep) => {
+            if (!creep) return 0;
+            if (!creep.body) {
+                return creep.getActiveBodyparts ? creep.getActiveBodyparts(HEAL) * 12 : 0;
+            }
+            let total = 0;
+            for (const part of creep.body) {
+                if (part.type !== HEAL || part.hits <= 0) continue;
+                let multiplier = 1;
+                if (part.boost && global.BOOSTS && BOOSTS[HEAL] && BOOSTS[HEAL][part.boost]) {
+                    multiplier = BOOSTS[HEAL][part.boost].heal || 1;
+                }
+                total += 12 * multiplier;
+            }
+            return total;
+        };
+
+        const healers = creepTargets.filter(c => c.getActiveBodyparts && c.getActiveBodyparts(HEAL) > 0);
+        const healerPower = {};
+        for (const healer of healers) {
+            healerPower[healer.id] = getHealPower(healer);
+        }
+
+        const stats = creepTargets.map(target => {
+            const range = tower.pos.getRangeTo(target.pos);
+            const towerDamage = getTowerDamageAtRange(range);
+            let healingReceived = 0;
+            for (const healer of healers) {
+                if (healer.pos.inRangeTo(target.pos, 3)) {
+                    healingReceived += healerPower[healer.id] || 0;
+                }
+            }
+            const netDamage = towerDamage - healingReceived;
+            const shotsToKill = netDamage > 0 ? Math.ceil(target.hits / netDamage) : Infinity;
+            return {
+                target,
+                range,
+                towerDamage,
+                healingReceived,
+                netDamage,
+                shotsToKill,
+                healPower: healerPower[target.id] || 0
+            };
+        });
+
+        const QUICK_KILL_SHOTS = 3;
+        const quickKills = stats.filter(s => s.shotsToKill <= QUICK_KILL_SHOTS);
+        if (quickKills.length > 0) {
+            quickKills.sort((a, b) => (a.shotsToKill - b.shotsToKill) || (a.range - b.range));
+            return quickKills[0].target.id;
+        }
+
+        const unkillableTargets = stats.filter(s => s.netDamage <= 0);
+        if (unkillableTargets.length > 0 && healers.length > 0) {
+            const blockingHealers = stats.filter(s => s.healPower > 0 && unkillableTargets.some(u => s.target.pos.inRangeTo(u.target.pos, 3)));
+            if (blockingHealers.length > 0) {
+                blockingHealers.sort((a, b) => (b.healPower - a.healPower) || (a.range - b.range));
+                return blockingHealers[0].target.id;
+            }
+        }
+
+        const killable = stats.filter(s => s.shotsToKill !== Infinity);
+        if (killable.length > 0) {
+            killable.sort((a, b) => (a.shotsToKill - b.shotsToKill) || (a.range - b.range));
+            return killable[0].target.id;
+        }
+
         const target = tower.pos.findClosestByRange(targets);
         return target ? target.id : null;
     },

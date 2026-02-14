@@ -27,6 +27,7 @@ function ensureRemoteMemory(room) {
     if (!room.memory.overseer.remote) room.memory.overseer.remote = { rooms: {} };
     if (!room.memory.overseer.remote.rooms) room.memory.overseer.remote.rooms = {};
     if (!Array.isArray(room.memory.overseer.remote.skipRooms)) room.memory.overseer.remote.skipRooms = [];
+    if (room.memory.overseer.remote.enabled === undefined) room.memory.overseer.remote.enabled = true;
     return room.memory.overseer.remote;
 }
 
@@ -171,6 +172,9 @@ function getRemoteContext(room, options = {}) {
 
     const storageOk = !requireStorage || !!room.storage;
     const stateOk = state !== 'EMERGENCY';
+    const globalEnabled = Memory.remoteMissionsEnabled !== false;
+    const roomEnabled = remoteMemory.enabled !== false;
+    const remoteEnabled = globalEnabled && roomEnabled;
 
     for (const name of Object.keys(remoteMemory.rooms || {})) {
         const entry = remoteMemory.rooms[name];
@@ -179,7 +183,7 @@ function getRemoteContext(room, options = {}) {
         if (visible) updateEntryFromVision(entry, visible, myUser, allies);
 
         const eligible = isEligible(entry, myUser, maxScoutAge);
-        const enabled = storageOk && stateOk && eligible;
+        const enabled = storageOk && stateOk && eligible && remoteEnabled;
 
         entry.enabled = enabled;
         entries.push({ name, entry, room: visible, enabled });

@@ -25,6 +25,7 @@ function getSponsorRemoteMemory(sponsorRoomName) {
     if (!sponsorMemory.overseer.remote) sponsorMemory.overseer.remote = { rooms: {} };
     if (!sponsorMemory.overseer.remote.rooms) sponsorMemory.overseer.remote.rooms = {};
     if (!Array.isArray(sponsorMemory.overseer.remote.skipRooms)) sponsorMemory.overseer.remote.skipRooms = [];
+    if (sponsorMemory.overseer.remote.enabled === undefined) sponsorMemory.overseer.remote.enabled = true;
     return sponsorMemory.overseer.remote;
 }
 

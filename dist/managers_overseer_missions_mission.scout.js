@@ -21,6 +21,7 @@ module.exports = {
         if (!room.memory.overseer.remote) room.memory.overseer.remote = { rooms: {} };
         if (!room.memory.overseer.remote.rooms) room.memory.overseer.remote.rooms = {};
         if (!Array.isArray(room.memory.overseer.remote.skipRooms)) room.memory.overseer.remote.skipRooms = [];
+        if (room.memory.overseer.remote.enabled === undefined) room.memory.overseer.remote.enabled = true;
 
         const remoteMemory = room.memory.overseer.remote;
         const remoteRooms = remoteMemory.rooms;
