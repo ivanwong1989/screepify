@@ -3,6 +3,10 @@ function getAllies() {
     return Memory.allies.map(a => ('' + a).toLowerCase());
 }
 
+const STATIC_REFRESH_TICKS = 200;
+const SITES_REFRESH_TICKS = 25;
+const REPAIRS_REFRESH_TICKS = 50;
+
 function isAllyName(name, allies) {
     if (!name) return false;
     const normalized = ('' + name).toLowerCase();
@@ -43,86 +47,97 @@ function computeStatus(room, allies, myUser) {
     return { status, owner, reservation };
 }
 
-function updateEntryFromVision(entry, visibleRoom, myUser) {
-    const allies = getAllies();
+function updateEntryFromVision(entry, visibleRoom, myUser, allies) {
     const hostiles = visibleRoom.find(FIND_HOSTILE_CREEPS).filter(c => !isAllyName(c.owner && c.owner.username, allies));
     const hostileStructures = visibleRoom.find(FIND_HOSTILE_STRUCTURES).filter(s => !isAllyName(s.owner && s.owner.username, allies));
     const statusInfo = computeStatus(visibleRoom, allies, myUser);
 
-    const sources = visibleRoom.find(FIND_SOURCES);
-    const containers = visibleRoom.find(FIND_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_CONTAINER
-    });
-    const terrain = visibleRoom.getTerrain();
-    const sourcesInfo = sources.map(source => {
-        const nearbyContainers = containers.filter(c => c.pos.inRangeTo(source.pos, 1));
-        let availableSpaces = 0;
-        for (let x = -1; x <= 1; x++) {
-            for (let y = -1; y <= 1; y++) {
-                if (x === 0 && y === 0) continue;
-                const t = terrain.get(source.pos.x + x, source.pos.y + y);
-                if (t !== TERRAIN_MASK_WALL) availableSpaces++;
+    const now = Game.time;
+    let staticStale = !entry.lastStatic || (now - entry.lastStatic) >= STATIC_REFRESH_TICKS || !Array.isArray(entry.sourcesInfo);
+    if (!staticStale && entry.sourcesInfo && entry.sourcesInfo.length > 0) {
+        staticStale = entry.sourcesInfo.some(info => info.containerId && !Game.getObjectById(info.containerId));
+    }
+
+    if (staticStale) {
+        const sources = visibleRoom.find(FIND_SOURCES);
+        const containers = visibleRoom.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER
+        });
+        const terrain = visibleRoom.getTerrain();
+        const sourcesInfo = sources.map(source => {
+            const nearbyContainers = containers.filter(c => c.pos.inRangeTo(source.pos, 1));
+            let availableSpaces = 0;
+            for (let x = -1; x <= 1; x++) {
+                for (let y = -1; y <= 1; y++) {
+                    if (x === 0 && y === 0) continue;
+                    const t = terrain.get(source.pos.x + x, source.pos.y + y);
+                    if (t !== TERRAIN_MASK_WALL) availableSpaces++;
+                }
             }
-        }
 
-        const container = nearbyContainers.length > 0 ? nearbyContainers[0] : null;
-        return {
-            id: source.id,
-            x: source.pos.x,
-            y: source.pos.y,
-            roomName: source.pos.roomName,
-            availableSpaces,
-            hasContainer: !!container,
-            containerId: container ? container.id : null,
-            containerPos: container ? { x: container.pos.x, y: container.pos.y, roomName: container.pos.roomName } : null
-        };
-    });
+            const container = nearbyContainers.length > 0 ? nearbyContainers[0] : null;
+            return {
+                id: source.id,
+                x: source.pos.x,
+                y: source.pos.y,
+                roomName: source.pos.roomName,
+                availableSpaces,
+                hasContainer: !!container,
+                containerId: container ? container.id : null,
+                containerPos: container ? { x: container.pos.x, y: container.pos.y, roomName: container.pos.roomName } : null
+            };
+        });
 
-    const sites = visibleRoom.find(FIND_CONSTRUCTION_SITES);
-    const siteInfo = sites.map(site => ({
-        id: site.id,
-        x: site.pos.x,
-        y: site.pos.y,
-        roomName: site.pos.roomName,
-        structureType: site.structureType,
-        progress: site.progress,
-        progressTotal: site.progressTotal
-    }));
+        entry.sources = sources.length;
+        entry.sourcesInfo = sourcesInfo;
+        entry.lastStatic = now;
+    }
 
-    const repairables = visibleRoom.find(FIND_STRUCTURES, {
-        filter: s => (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) &&
-            s.hits < s.hitsMax
-    });
-    const MAX_REMOTE_REPAIR_CACHE = 25;
-    const repairInfo = repairables
-        .sort((a, b) => {
-            const aRatio = a.hitsMax > 0 ? (a.hits / a.hitsMax) : 1;
-            const bRatio = b.hitsMax > 0 ? (b.hits / b.hitsMax) : 1;
-            return aRatio - bRatio;
-        })
-        .slice(0, MAX_REMOTE_REPAIR_CACHE)
-        .map(s => ({
-            id: s.id,
-            x: s.pos.x,
-            y: s.pos.y,
-            roomName: s.pos.roomName,
-            structureType: s.structureType,
-            hits: s.hits,
-            hitsMax: s.hitsMax
+    if (!entry.lastSites || (now - entry.lastSites) >= SITES_REFRESH_TICKS) {
+        const sites = visibleRoom.find(FIND_CONSTRUCTION_SITES);
+        entry.sites = sites.map(site => ({
+            id: site.id,
+            x: site.pos.x,
+            y: site.pos.y,
+            roomName: site.pos.roomName,
+            structureType: site.structureType,
+            progress: site.progress,
+            progressTotal: site.progressTotal
         }));
+        entry.lastSites = now;
+    }
 
-    entry.lastSeen = Game.time;
-    entry.sources = sources.length;
-    entry.sourcesInfo = sourcesInfo;
+    if (!entry.lastRepairs || (now - entry.lastRepairs) >= REPAIRS_REFRESH_TICKS) {
+        const repairables = visibleRoom.find(FIND_STRUCTURES, {
+            filter: s => (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) &&
+                s.hits < s.hitsMax
+        });
+        const MAX_REMOTE_REPAIR_CACHE = 25;
+        entry.repairs = repairables
+            .sort((a, b) => {
+                const aRatio = a.hitsMax > 0 ? (a.hits / a.hitsMax) : 1;
+                const bRatio = b.hitsMax > 0 ? (b.hits / b.hitsMax) : 1;
+                return aRatio - bRatio;
+            })
+            .slice(0, MAX_REMOTE_REPAIR_CACHE)
+            .map(s => ({
+                id: s.id,
+                x: s.pos.x,
+                y: s.pos.y,
+                roomName: s.pos.roomName,
+                structureType: s.structureType,
+                hits: s.hits,
+                hitsMax: s.hitsMax
+            }));
+        entry.lastRepairs = now;
+    }
+
+    entry.lastSeen = now;
     entry.hostiles = hostiles.length;
     entry.hostileStructures = hostileStructures.length;
     entry.status = statusInfo.status;
     entry.owner = statusInfo.owner;
     entry.reservation = statusInfo.reservation;
-    entry.sites = siteInfo;
-    entry.lastSites = Game.time;
-    entry.repairs = repairInfo;
-    entry.lastRepairs = Game.time;
 }
 
 function isEligible(entry, myUser, maxScoutAge) {
@@ -149,6 +164,7 @@ function getRemoteContext(room, options = {}) {
     const remoteMemory = ensureRemoteMemory(room);
     const entries = [];
     const myUser = getMyUsername(room);
+    const allies = getAllies();
     const maxScoutAge = Number.isFinite(options.maxScoutAge) ? options.maxScoutAge : 4000;
     const requireStorage = options.requireStorage !== false;
     const state = options.state || null;
@@ -160,7 +176,7 @@ function getRemoteContext(room, options = {}) {
         const entry = remoteMemory.rooms[name];
         if (!entry) continue;
         const visible = Game.rooms[name];
-        if (visible) updateEntryFromVision(entry, visible, myUser);
+        if (visible) updateEntryFromVision(entry, visible, myUser, allies);
 
         const eligible = isEligible(entry, myUser, maxScoutAge);
         const enabled = storageOk && stateOk && eligible;

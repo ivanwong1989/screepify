@@ -15,6 +15,16 @@ var managerSpawner = {
 
         // 1. Identify Deficits
         const spawnQueue = [];
+        const nearDeathByRole = Object.create(null);
+        const nearDeathByMission = Object.create(null);
+
+        for (const creep of myCreeps) {
+            if (!creep.ticksToLive || creep.ticksToLive > PRESPAWN_TTL) continue;
+            const role = creep.memory && creep.memory.role;
+            if (role) nearDeathByRole[role] = (nearDeathByRole[role] || 0) + 1;
+            const missionName = creep.memory && creep.memory.missionName;
+            if (missionName) nearDeathByMission[missionName] = (nearDeathByMission[missionName] || 0) + 1;
+        }
         
         missions.forEach(mission => {
             // Census data provided by Overseer
@@ -28,14 +38,10 @@ var managerSpawner = {
 
             if (archetype && ECONOMY_ROLES.has(archetype)) {
                 const roleMatch = mission.roleCensus;
-                for (const creep of myCreeps) {
-                    if (!creep.ticksToLive || creep.ticksToLive > PRESPAWN_TTL) continue;
-                    if (roleMatch) {
-                        if (creep.memory.role !== roleMatch) continue;
-                    } else {
-                        if (creep.memory.missionName !== mission.name) continue;
-                    }
-                    nearDeathCount++;
+                if (roleMatch) {
+                    nearDeathCount = nearDeathByRole[roleMatch] || 0;
+                } else {
+                    nearDeathCount = nearDeathByMission[mission.name] || 0;
                 }
             }
 

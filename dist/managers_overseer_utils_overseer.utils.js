@@ -25,38 +25,59 @@ const overseerUtils = {
         });
 
         creeps.forEach(c => {
-            if (c.memory.missionName && missionMap[c.memory.missionName]) {
-                const m = missionMap[c.memory.missionName];
+            const memory = c.memory || {};
+            const workParts = c.getActiveBodyparts(WORK);
+            const carryParts = c.getActiveBodyparts(CARRY);
+
+            if (memory.missionName && missionMap[memory.missionName]) {
+                const m = missionMap[memory.missionName];
                 if (!m.censusLocked) {
                     m.census.count++;
-                    m.census.workParts += c.getActiveBodyparts(WORK);
-                    m.census.carryParts += c.getActiveBodyparts(CARRY);
+                    m.census.workParts += workParts;
+                    m.census.carryParts += carryParts;
                 }
             }
-            if (c.memory.role && roleMissions[c.memory.role]) {
-                roleMissions[c.memory.role].forEach(m => {
+            if (memory.role && roleMissions[memory.role]) {
+                roleMissions[memory.role].forEach(m => {
                     if (m.censusLocked) return;
                     m.census.count++;
-                    m.census.workParts += c.getActiveBodyparts(WORK);
-                    m.census.carryParts += c.getActiveBodyparts(CARRY);
+                    m.census.workParts += workParts;
+                    m.census.carryParts += carryParts;
                 });
             }
         });
     },
 
     reassignWorkers: function(room, missions, intel) {
+        const creepsByMission = Object.create(null);
+        intel.myCreeps.forEach(c => {
+            const memory = c.memory || {};
+            const missionName = memory.missionName;
+            if (missionName) {
+                if (!creepsByMission[missionName]) creepsByMission[missionName] = [];
+                creepsByMission[missionName].push(c);
+            }
+        });
+
+        const missionsByName = Object.create(null);
+        missions.forEach(m => { missionsByName[m.name] = m; });
+
         const moveCreeps = (fromMissionName, toMission, count) => {
             if (!toMission || count <= 0) return 0;
-            const fromCreeps = intel.myCreeps.filter(c => c.memory.missionName === fromMissionName);
+            const fromCreeps = creepsByMission[fromMissionName];
+            if (!fromCreeps || fromCreeps.length === 0) return 0;
             let moved = 0;
-            for (let creep of fromCreeps) {
-                if (moved >= count) break;
-                creep.memory.missionName = toMission.name;
-                delete creep.memory.task;
-                creep.memory.taskState = 'init';
-                const fromMission = missions.find(m => m.name === fromMissionName);
+            const toCreeps = creepsByMission[toMission.name] || (creepsByMission[toMission.name] = []);
+            while (moved < count && fromCreeps.length > 0) {
+                const creep = fromCreeps.pop();
+                const memory = creep.memory || {};
+                memory.missionName = toMission.name;
+                delete memory.task;
+                memory.taskState = 'init';
+                const fromMission = missionsByName[fromMissionName];
                 if (fromMission && fromMission.census) fromMission.census.count--;
                 if (toMission.census) toMission.census.count++;
+                toCreeps.push(creep);
                 moved++;
             }
             return moved;
@@ -64,9 +85,9 @@ const overseerUtils = {
 
         if (intel.constructionSites.length > 0) {
             const buildMissions = missions.filter(m => m.type === 'build');
-            const upgradeMission = missions.find(m => m.name === 'upgrade:controller');
+            const upgradeMission = missionsByName['upgrade:controller'];
             if (buildMissions.length > 0 && upgradeMission) {
-                const upgraders = intel.myCreeps.filter(c => c.memory.missionName === 'upgrade:controller');
+                const upgraders = creepsByMission['upgrade:controller'] || [];
                 let available = upgraders.length - 1;
                 if (available > 0) {
                     const sortedBuilds = [...buildMissions].sort((a, b) => (b.priority || 0) - (a.priority || 0));
@@ -83,26 +104,50 @@ const overseerUtils = {
             }
         }
 
-        const parkingMission = missions.find(m => m.name === 'decongest:parking');
+        const parkingMission = missionsByName['decongest:parking'];
         if (parkingMission && parkingMission.census && parkingMission.census.count > 0) {
-             const parkedCreeps = intel.myCreeps.filter(c => c.memory.missionName === 'decongest:parking');
-             const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
-             for (const mission of sortedMissions) {
-                 if (parkedCreeps.length === 0) break;
-                 if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'remote_hauler_fleet' || mission.type === 'worker_fleet' || mission.type === 'remote_worker_fleet' || !mission.requirements || !mission.requirements.count) continue;
-                 const deficit = mission.requirements.count - (mission.census ? mission.census.count : 0);
-                 if (deficit > 0) {
-                     const candidates = parkedCreeps.filter(c => c.memory.role === mission.requirements.archetype);
-                     let movedCount = 0;
-                     for (const creep of candidates) {
-                         if (movedCount >= deficit) break;
-                         creep.memory.missionName = mission.name;
-                         delete creep.memory.task;
-                         creep.memory.taskState = 'init';
-                         if (parkingMission.census) parkingMission.census.count--;
-                         if (mission.census) mission.census.count++;
-                         parkedCreeps.splice(parkedCreeps.indexOf(creep), 1);
-                         movedCount++;
+             const parkedCreeps = creepsByMission['decongest:parking'] || [];
+             let parkedTotal = parkedCreeps.length;
+             if (parkedTotal > 0) {
+                 const parkedByRole = Object.create(null);
+                 parkedCreeps.forEach(c => {
+                     const role = c.memory && c.memory.role;
+                     if (!role) return;
+                     if (!parkedByRole[role]) parkedByRole[role] = [];
+                     parkedByRole[role].push(c);
+                 });
+                 const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
+                 for (const mission of sortedMissions) {
+                     if (parkedTotal === 0) break;
+                     if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'remote_hauler_fleet' || mission.type === 'worker_fleet' || mission.type === 'remote_worker_fleet' || !mission.requirements || !mission.requirements.count) continue;
+                     const deficit = mission.requirements.count - (mission.census ? mission.census.count : 0);
+                     if (deficit > 0) {
+                         const role = mission.requirements.archetype;
+                         const candidates = parkedByRole[role];
+                         if (!candidates || candidates.length === 0) continue;
+                         let movedCount = 0;
+                         const toCreeps = creepsByMission[mission.name] || (creepsByMission[mission.name] = []);
+                         while (movedCount < deficit && candidates.length > 0) {
+                             const creep = candidates.pop();
+                             const memory = creep.memory || {};
+                             memory.missionName = mission.name;
+                             delete memory.task;
+                             memory.taskState = 'init';
+                             if (parkingMission.census) parkingMission.census.count--;
+                             if (mission.census) mission.census.count++;
+                             toCreeps.push(creep);
+                             parkedTotal--;
+                             const list = creepsByMission['decongest:parking'];
+                             if (list) {
+                                 const index = list.indexOf(creep);
+                                 if (index !== -1) {
+                                     const last = list.length - 1;
+                                     if (index !== last) list[index] = list[last];
+                                     list.pop();
+                                 }
+                             }
+                             movedCount++;
+                         }
                      }
                  }
              }
