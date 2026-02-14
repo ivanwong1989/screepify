@@ -781,6 +781,11 @@ var managerTasks = {
         }
 
         const cache = global.getRoomCache(creep.room);
+        const tombstone = creep.pos.findClosestByRange(cache.tombstones || [], {
+            filter: t => t.store && (t.store[resourceType] || 0) > 50
+        });
+        if (tombstone) return { action: 'withdraw', targetId: tombstone.id, resourceType: resourceType };
+
         const dropped = creep.pos.findClosestByRange(cache.dropped || [], {
             filter: r => r.resourceType === resourceType && r.amount > 50
         });
