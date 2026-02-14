@@ -11,7 +11,7 @@ module.exports = {
 
         const flowAvg = economyFlow && Number.isFinite(economyFlow.avg) ? economyFlow.avg : 0;
         const STOCKPILE_PERIOD = 50;
-        const STOCKPILE_WINDOW = 10; // 20% uptime while stockpiling (if flow is non-negative)
+        const STOCKPILE_WINDOW = 40; // 20% uptime while stockpiling (if flow is non-negative)
         const allowStockpileWindow = (Game.time % STOCKPILE_PERIOD) < STOCKPILE_WINDOW;
         const allowStockpileUpgrade = isCritical || (flowAvg >= 0 && allowStockpileWindow);
 

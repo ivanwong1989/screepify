@@ -194,12 +194,18 @@ var managerSpawner = {
 
     generateBody: function(mission, budget) {
         const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
-        if (archetype === 'dismantler' || archetype === 'remote_worker' || archetype === 'remote_hauler') {
+        if (archetype === 'remote_worker' || archetype === 'remote_hauler') {
             budget = Math.min(budget, 1000);
         }
-        if (archetype === 'worker') {
-            budget = Math.min(budget, 1800);
+        if (archetype === 'dismantler') {
+            budget = Math.min(budget, 1500);
         }
+        if (archetype === 'worker') {
+            budget = Math.min(budget, 1300);
+        }
+        if (archetype === 'hauler') {
+            budget = Math.min(budget, 1300);
+        }        
         if (mission.requirements && mission.requirements.body) {
             return this.generateMilitaryBody(budget, mission.requirements.body);
         }
@@ -315,10 +321,10 @@ var managerSpawner = {
     generateDismantlerBody: function(budget) {
         // Dismantling is WORK-based. No CARRY parts needed.
         // Segment: WORK, WORK, MOVE (250)
-        const segment = [WORK, WORK, MOVE];
+        const segment = [WORK, MOVE];
         let body = [];
         let cost = 0;
-        const MAX_COST = 1000;
+        const MAX_COST = 1500;
 
         while (cost + 250 <= budget && body.length + 3 <= 50 && cost < MAX_COST) {
             body = body.concat(segment);
@@ -408,7 +414,7 @@ var managerSpawner = {
             [MOVE]: 3, 
             [HEAL]: 4 
         };
-        return body.sort((a, b) => (sortOrder[a] || 99) - (sortOrder[b] || 99));
+        return body.sort((a, b) => ((sortOrder[a] !== undefined ? sortOrder[a] : 99) - (sortOrder[b] !== undefined ? sortOrder[b] : 99)));
     },
 
     calculateBodyCost: function(body) {

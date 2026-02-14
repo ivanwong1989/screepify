@@ -3,6 +3,8 @@ function getAllies() {
     return Memory.allies.map(a => ('' + a).toLowerCase());
 }
 
+const DEFAULT_SCOUT_INTERVAL = 500;
+
 function isAllyName(name, allies) {
     if (!name) return false;
     const normalized = ('' + name).toLowerCase();
@@ -56,7 +58,7 @@ function selectScoutTarget(creep, scoutData, adjacentRooms, remoteRooms) {
     if (currentTarget && creep.room.name !== currentTarget) return currentTarget;
 
     const now = Game.time;
-    const interval = Number.isFinite(scoutData.interval) ? scoutData.interval : 1500;
+    const interval = Number.isFinite(scoutData.interval) ? scoutData.interval : DEFAULT_SCOUT_INTERVAL;
     const stale = adjacentRooms
         .map(name => ({ name, lastScout: (remoteRooms[name] && remoteRooms[name].lastScout) || 0 }))
         .filter(entry => (now - entry.lastScout) >= interval);
@@ -113,7 +115,7 @@ function ensureScoutTask(creep, task) {
     }
 
     if (!scoutData.sponsorRoom) scoutData.sponsorRoom = creep.memory.room || creep.room.name;
-    if (!Number.isFinite(scoutData.interval)) scoutData.interval = 1500;
+    if (!Number.isFinite(scoutData.interval)) scoutData.interval = DEFAULT_SCOUT_INTERVAL;
 
     const adjacentRooms = (Array.isArray(scoutData.rooms) && scoutData.rooms.length > 0)
         ? scoutData.rooms

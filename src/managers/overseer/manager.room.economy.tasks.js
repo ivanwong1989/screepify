@@ -262,10 +262,10 @@ var managerTasks = {
             if (m.type === 'hauler_fleet' || m.type === 'remote_hauler_fleet' || m.type === 'worker_fleet' || m.type === 'remote_worker_fleet') continue;
 
             // Exclude military missions (handled by military manager)
-            if (m.type === 'defend' || m.type === 'patrol') continue;
+            if (m.type === 'defend' || m.type === 'patrol' || m.type === 'drain') continue;
 
             // Exclude combatants from economy missions
-            if (['defender', 'brawler'].includes(creep.memory.role)) continue;
+            if (['defender', 'brawler', 'drainer'].includes(creep.memory.role)) continue;
 
             const home = creep.memory.room;
             const awayFromHome = home && creep.room && creep.room.name !== home;
@@ -311,7 +311,7 @@ var managerTasks = {
     },
 
     assignAction: function(creep, mission, room) {
-        if (mission.type === 'defend') return;
+        if (mission.type === 'defend' || mission.type === 'patrol' || mission.type === 'drain') return;
 
         let task = null;
         switch (mission.type) {
@@ -802,7 +802,7 @@ var managerTasks = {
         const data = mission.data || {};
         const sponsorRoom = data.sponsorRoom || room.name;
         const rooms = Array.isArray(data.rooms) ? data.rooms : [];
-        const interval = Number.isFinite(data.interval) ? data.interval : 1500;
+        const interval = Number.isFinite(data.interval) ? data.interval : 500;
 
         creep.memory.scout = {
             sponsorRoom,

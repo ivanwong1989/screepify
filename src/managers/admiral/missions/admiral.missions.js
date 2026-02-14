@@ -1,6 +1,8 @@
 ﻿/**
  * Admiral Missions: generate combat missions and compositions.
  */
+const drainerMission = require('managers_admiral_missions_mission.drainer');
+
 var admiralMissions = {
     generate: function(room, hostiles, threat, state, budget) {
         const missions = [];
@@ -42,6 +44,14 @@ var admiralMissions = {
                 data: { },
                 census: { count: 0, workParts: 0, carryParts: 0 }
             });
+        }
+
+        if (drainerMission && typeof drainerMission.generate === 'function') {
+            const drainerContext = {
+                budget,
+                getMissionCensus: () => ({ count: 0, workParts: 0, carryParts: 0 })
+            };
+            drainerMission.generate(room, null, drainerContext, missions);
         }
 
         return missions;

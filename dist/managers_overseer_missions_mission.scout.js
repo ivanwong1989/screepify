@@ -1,6 +1,14 @@
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const SCOUT_INTERVAL = 1450;
+        const DEFAULT_SCOUT_INTERVAL = 500;
+        const MIN_SCOUT_INTERVAL = 25;
+        const memoryInterval = (room.memory && room.memory.overseer && Number.isFinite(room.memory.overseer.scoutInterval))
+            ? room.memory.overseer.scoutInterval
+            : null;
+        const SCOUT_INTERVAL = Math.max(
+            MIN_SCOUT_INTERVAL,
+            memoryInterval !== null ? memoryInterval : DEFAULT_SCOUT_INTERVAL
+        );
         if (context.state === 'EMERGENCY') return;
 
         const exits = Game.map.describeExits(room.name);

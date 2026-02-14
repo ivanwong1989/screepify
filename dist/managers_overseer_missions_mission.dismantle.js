@@ -101,7 +101,7 @@ module.exports = {
                 archetype: 'dismantler',
                 requirements: {
                     archetype: 'dismantler',
-                    count: 1
+                    count: 2
                 },
                 targetId: entry.targetId || null,
                 data: {

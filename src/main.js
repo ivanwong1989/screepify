@@ -13,6 +13,7 @@ const DEBUG_CATEGORIES = Object.freeze([
     'general',
     'mission.build',
     'mission.decongest',
+    'mission.drainer',
     'mission.dismantle',
     'mission.harvest',
     'mission.logistics',
@@ -438,6 +439,8 @@ function showMissionHelp() {
         'mission("list")                   - list user missions',
         'mission("add","dismantle", room, x, y, sponsorRoom?, priority?, persist?, label?)',
         'mission("add","dismantle", { roomName, x, y, sponsorRoom, priority, persist, label })',
+        'mission("add","drainer", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?)',
+        'mission("add","drainer", { roomName, x, y, sponsorRoom, priority, persist, label })',
         'mission("add","reserve", roomName, sponsorRoom?, priority?, persist?, label?)',
         'mission("add","reserve", { roomName, sponsorRoom, priority, persist, label })',
         'mission("add","transfer", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?)',
@@ -522,10 +525,20 @@ global.mission = function(action, typeOrData, ...args) {
             type = typeOrData;
         }
         const key = type ? ('' + type).trim().toLowerCase() : '';
-        if (!key) return 'Usage: mission("add", "dismantle", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission("add", "reserve", roomName, sponsorRoom?, priority?, persist?, label?)';
+        if (!key) return 'Usage: mission("add", "dismantle", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission("add", "drainer", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission("add", "reserve", roomName, sponsorRoom?, priority?, persist?, label?)';
 
         if (!data) {
             if (key === 'dismantle') {
+                data = {
+                    roomName: args[0],
+                    x: args[1],
+                    y: args[2],
+                    sponsorRoom: args[3],
+                    priority: args[4],
+                    persist: args[5],
+                    label: args[6]
+                };
+            } else if (key === 'drainer') {
                 data = {
                     roomName: args[0],
                     x: args[1],
@@ -569,6 +582,18 @@ global.mission = function(action, typeOrData, ...args) {
                     const targetId = tryResolveTargetIdForPos(targetPos);
                     if (targetId) data.targetId = targetId;
                 }
+            }
+        } else if (key === 'drainer') {
+            const targetPos = userMissions.normalizeTargetPos(data.targetPos || data);
+            if (targetPos) {
+                data.targetPos = targetPos;
+                if (!data.roomName) data.roomName = targetPos.roomName;
+            }
+            if (!data.sponsorRoom) {
+                const sponsorRoom = targetPos
+                    ? resolveSponsorRoomForTargetPos(targetPos)
+                    : resolveSponsorRoomForTargetRoom(data.roomName || data.targetRoom);
+                if (sponsorRoom) data.sponsorRoom = sponsorRoom;
             }
         } else if (key === 'reserve') {
             if (!data.sponsorRoom) {
@@ -781,7 +806,7 @@ module.exports.loop = function() {
         // Run creep logic globally, as they may be in any room
         for(var name in Game.creeps) {
             var creep = Game.creeps[name];
-            if (creep.memory.role === 'defender' || creep.memory.role === 'brawler') {
+            if (creep.memory.role === 'defender' || creep.memory.role === 'brawler' || creep.memory.role === 'drainer') {
                 roleDefender.run(creep);
             } else if(['universal', 'miner', 'remote_miner', 'mineral_miner', 'mobile_miner', 'scout', 'hauler', 'remote_hauler', 'upgrader', 'builder', 'repairer', 'worker', 'remote_worker', 'dismantler', 'reserver'].includes(creep.memory.role)) {
                 roleUniversal.run(creep);

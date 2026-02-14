@@ -7,8 +7,8 @@ module.exports = {
 
         const REPAIR_SCAN_INTERVAL = 7; // ticks
         const CRITICAL_WALL_HITS = 5000;
-        const FORTIFY_START_HITS = 100000;
-        const FORTIFY_TARGET_HITS = 150000;
+        const FORTIFY_START_HITS = 140000;
+        const FORTIFY_TARGET_HITS = 250000;
         const REPAIR_MIN_RATIO = 0.9;
         const CRITICAL_GENERAL_RATIO = 0.8;
         const CRITICAL_DECAYABLE_RATIO = 0.7;
