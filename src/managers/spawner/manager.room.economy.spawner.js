@@ -188,8 +188,11 @@ var managerSpawner = {
 
     generateBody: function(mission, budget) {
         const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
-        if (archetype === 'dismantler' || archetype === 'worker' || archetype === 'remote_worker') {
+        if (archetype === 'dismantler' || archetype === 'remote_worker') {
             budget = Math.min(budget, 1000);
+        }
+        if (archetype === 'worker') {
+            budget = Math.min(budget, 1800);
         }
         if (mission.requirements && mission.requirements.body) {
             return this.generateMilitaryBody(budget, mission.requirements.body);

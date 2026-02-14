@@ -128,6 +128,30 @@ const overseerUtils = {
             { align: 'left', color: color, font: 0.7 }
         );
         let y = 2.5;
+        const getFleetCounts = (type) => {
+            const m = missions.find(m => m.type === type);
+            if (!m) return null;
+            return {
+                have: m.census ? m.census.count : 0,
+                need: m.requirements ? m.requirements.count : 0
+            };
+        };
+        const workerFleet = getFleetCounts('worker_fleet');
+        const remoteWorkerFleet = getFleetCounts('remote_worker_fleet');
+        const haulerFleet = getFleetCounts('hauler_fleet');
+        const fleetParts = [];
+        if (workerFleet) fleetParts.push(`worker ${workerFleet.have}/${workerFleet.need}`);
+        if (remoteWorkerFleet) fleetParts.push(`remote ${remoteWorkerFleet.have}/${remoteWorkerFleet.need}`);
+        if (haulerFleet) fleetParts.push(`hauler ${haulerFleet.have}/${haulerFleet.need}`);
+        if (fleetParts.length > 0) {
+            room.visual.text(
+                `Fleet: ${fleetParts.join(' | ')}`,
+                1,
+                y,
+                { align: 'left', color: '#aaccff', font: 0.5 }
+            );
+            y += 0.6;
+        }
         const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
         sortedMissions.forEach(m => {
             const assigned = m.census ? m.census.count : 0;

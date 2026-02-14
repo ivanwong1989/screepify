@@ -96,6 +96,7 @@ const overseerIntel = {
                 pos: mineral.pos,
                 mineralType: mineral.mineralType,
                 mineralAmount: mineral.mineralAmount,
+                ticksToRegeneration: mineral.ticksToRegeneration || 0,
                 hasExtractor: !!extractor,
                 extractorId: extractor ? extractor.id : null,
                 hasContainer: nearbyContainers.length > 0,
