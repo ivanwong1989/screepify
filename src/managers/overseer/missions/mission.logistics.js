@@ -188,7 +188,11 @@ module.exports = {
                         } else if (source instanceof Resource || source instanceof Tombstone || source instanceof Ruin) {
                             type = 'scavenge';
                         } else if (target.structureType === STRUCTURE_STORAGE) {
-                            type = miningContainerIds.has(source.id) ? 'mining' : 'consolidation';
+                            if (source.structureType === STRUCTURE_LINK) {
+                                type = 'link_out';
+                            } else {
+                                type = miningContainerIds.has(source.id) ? 'mining' : 'consolidation';
+                            }
                         } else if (target.structureType === STRUCTURE_TERMINAL) {
                             type = 'terminal_stock';
                         } else if (target.structureType === STRUCTURE_CONTAINER) {
@@ -271,6 +275,12 @@ module.exports = {
                 if (coveredSources.has(source.id)) return;
                 this.addLogisticsMission(activeMissions, source, storage, isEmergency, 'consolidation');
             });
+
+            links.filter(l => l.store[RESOURCE_ENERGY] > 0 && (l.pos.inRangeTo(storage.pos, 3) || spawns.some(s => l.pos.inRangeTo(s.pos, 3)))).forEach(link => {
+                if (coveredSources.has(link.id)) return;
+                if (room.controller && link.pos.inRangeTo(room.controller.pos, 3)) return;
+                this.addLogisticsMission(activeMissions, link, storage, isEmergency, 'link_out');
+            });
         }
 
         for (const m of activeMissions.values()) missions.push(m);
@@ -311,6 +321,7 @@ module.exports = {
             if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) return isEmergency ? 900 : 90;
             return 50;
         }
+        if (type === 'link_out') return 55;
         if (type === 'scavenge') return 45;
         if (type === 'mining') return 30;
         if (type === 'terminal_stock') return 20;

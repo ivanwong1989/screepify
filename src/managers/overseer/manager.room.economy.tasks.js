@@ -1481,7 +1481,8 @@ var managerTasks = {
         // 2. Withdraw from Container/Storage
         const storageAndContainers = [
             ...(cache.structuresByType[STRUCTURE_CONTAINER] || []),
-            ...(cache.structuresByType[STRUCTURE_STORAGE] || [])
+            ...(cache.structuresByType[STRUCTURE_STORAGE] || []),
+            ...(cache.structuresByType[STRUCTURE_LINK] || [])
         ];
         const validStructures = storageAndContainers.filter(s => {
             if (allowedIds && !allowedIds.includes(s.id)) return false;

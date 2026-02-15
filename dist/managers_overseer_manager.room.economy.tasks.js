@@ -185,7 +185,7 @@ var managerTasks = {
                 
                 if (isRemote) {
                     creep.memory.idleTicks = (creep.memory.idleTicks || 0) + 1;
-                    if (creep.memory.idleTicks > 10) {
+                    if (creep.memory.idleTicks > 50) {
                         const spawns = cache.myStructuresByType[STRUCTURE_SPAWN] || [];
                         const spawn = creep.pos.findClosestByRange(spawns);
                         if (spawn) {
@@ -1481,7 +1481,8 @@ var managerTasks = {
         // 2. Withdraw from Container/Storage
         const storageAndContainers = [
             ...(cache.structuresByType[STRUCTURE_CONTAINER] || []),
-            ...(cache.structuresByType[STRUCTURE_STORAGE] || [])
+            ...(cache.structuresByType[STRUCTURE_STORAGE] || []),
+            ...(cache.structuresByType[STRUCTURE_LINK] || [])
         ];
         const validStructures = storageAndContainers.filter(s => {
             if (allowedIds && !allowedIds.includes(s.id)) return false;
