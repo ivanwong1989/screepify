@@ -149,6 +149,7 @@ var managerTasks = {
                 missionStatus[bestMission.name].assignedCarryParts += creep.getActiveBodyparts(CARRY);
                 
                 creep.say(bestMission.type);
+                if (creep.memory.idleTicks) delete creep.memory.idleTicks;
             }
         });
 
@@ -171,6 +172,39 @@ var managerTasks = {
                 targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName },
                 range: 5
             };
+        });
+
+        // 4.6 Recycle if idle for too long in home room (Remote Creeps)
+        idleCreeps.forEach(creep => {
+            if (creep.memory.missionName) return;
+
+            const home = creep.memory.room;
+            if (home && creep.room.name === home) {
+                const role = creep.memory.role || '';
+                const isRemote = role.startsWith('remote_');
+                
+                if (isRemote) {
+                    creep.memory.idleTicks = (creep.memory.idleTicks || 0) + 1;
+                    if (creep.memory.idleTicks > 10) {
+                        const spawns = cache.myStructuresByType[STRUCTURE_SPAWN] || [];
+                        const spawn = creep.pos.findClosestByRange(spawns);
+                        if (spawn) {
+                            if (creep.pos.isNearTo(spawn)) {
+                                spawn.recycleCreep(creep);
+                            } else {
+                                creep.memory.task = {
+                                    action: 'move',
+                                    targetId: spawn.id,
+                                    range: 1
+                                };
+                            }
+                            creep.say('recycle');
+                        }
+                    }
+                }
+            } else {
+                if (creep.memory.idleTicks) delete creep.memory.idleTicks;
+            }
         });
 
         // Sync Tasker's real-time census back to the mission object for the Spawner
@@ -250,11 +284,35 @@ var managerTasks = {
         return Game.getObjectById(id);
     },
 
+    getMissionPosition: function(mission, room) {
+        if (mission.pos) return mission.pos;
+        if (mission.targetPos) return this.toRoomPosition(mission.targetPos);
+        if (mission.data) {
+            if (mission.data.targetPos) return this.toRoomPosition(mission.data.targetPos);
+            if (mission.data.sourcePos) return this.toRoomPosition(mission.data.sourcePos);
+            if (mission.data.pickupPos) return this.toRoomPosition(mission.data.pickupPos);
+        }
+        if (mission.targetId) {
+            const target = this.getCachedObject(room, mission.targetId);
+            if (target) return target.pos;
+        }
+        return null;
+    },
+
     /**
      * Finds the most suitable mission for a creep based on priority and requirements.
      */
     findBestMission: function(creep, missionsSorted, missionStatus) {
+        let bestPriority = null;
+        const candidates = [];
+
         for (const m of missionsSorted) {
+            // Optimization: If we found a priority group and this mission is lower, stop.
+            const priority = m.priority || 0;
+            if (bestPriority !== null && priority < bestPriority) {
+                break;
+            }
+
             // Exclude tower missions
             if (m.type.startsWith('tower')) continue;
             
@@ -298,7 +356,34 @@ var managerTasks = {
                 if (creep.getActiveBodyparts(CLAIM) === 0) continue;
             }
 
-            return m;
+            // Mission is valid
+            if (bestPriority === null) {
+                bestPriority = priority;
+            }
+            candidates.push(m);
+        }
+
+        if (candidates.length > 0) {
+            // If only one candidate, return it.
+            if (candidates.length === 1) return candidates[0];
+
+            // Map candidates to objects with pos for findClosestByRange
+            const mapped = [];
+            for (const m of candidates) {
+                const pos = this.getMissionPosition(m, creep.room);
+                if (pos) {
+                    mapped.push({ mission: m, pos: pos });
+                }
+            }
+
+            // If we have positions, find the closest one
+            if (mapped.length > 0) {
+                const closest = creep.pos.findClosestByRange(mapped);
+                if (closest) return closest.mission;
+            }
+
+            // Fallback: return the first candidate (highest priority / first generated)
+            return candidates[0];
         }
         return null;
     },

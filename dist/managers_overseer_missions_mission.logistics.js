@@ -26,11 +26,11 @@ module.exports = {
         // 0. Generate Fleet Mission
         const MAX_HAULER_CARRY_PARTS = 16;
         const MIN_CARRY_PER_SOURCE = 4;
-        const LINKED_SOURCE_MIN_CARRY = 1;
+        const LINKED_SOURCE_MIN_CARRY = 3;
         const ENERGY_PER_TICK = 10;
         const TRANSFER_BUFFER_TICKS = 2;
-        const DISTANCE_SOFT_CAP = 20;
-        const DISTANCE_SCALE_PER_TILE = 0.05;
+        const DISTANCE_SOFT_CAP = 10;
+        const DISTANCE_SCALE_PER_TILE = 0.15;
         const EARLY_GAME_ENERGY_CAP = 800;
         const EARLY_GAME_HAULER_MULTIPLIER = 1.25;
         const LINK_SOURCE_RANGE = 2;
