@@ -195,6 +195,10 @@ const overseerIntel = {
             room.memory.overseer.economyFlow = flow;
             debug('overseer', `[Overseer] ${room.name} Flow: total=${totalStored} tickDelta=${delta} tickDt=${dt} tickPerTick=${perTick.toFixed(2)} windowDelta=${logDelta} windowDt=${logDt} windowPerTick=${logPerTick.toFixed(2)} avg=${flow.avg.toFixed(2)}`);
         }
+
+        const override = room.memory.overseer.economyOverride;
+        const normalized = override ? ('' + override).trim().toUpperCase() : '';
+        if (normalized === 'UPGRADING' || normalized === 'STOCKPILING') return normalized;
         
         if (totalCapacity < 500) return 'UPGRADING';
 
