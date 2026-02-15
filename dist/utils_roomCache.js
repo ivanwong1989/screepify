@@ -12,7 +12,7 @@ function getRoomCache(room) {
 
     let staticRefreshed = false;
     if (!cache.static || (cache.static.time + staticInterval) <= now) {
-        console.log("static refreshed")
+        console.log(`static refreshed`)
         const structures = room.find(FIND_STRUCTURES);
         const structuresByType = structures.reduce((acc, s) => {
             acc[s.structureType] = acc[s.structureType] || [];
