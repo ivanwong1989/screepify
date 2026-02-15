@@ -26,12 +26,15 @@ module.exports = {
         // 0. Generate Fleet Mission
         const MAX_HAULER_CARRY_PARTS = 16;
         const MIN_CARRY_PER_SOURCE = 4;
+        const LINKED_SOURCE_MIN_CARRY = 1;
         const ENERGY_PER_TICK = 10;
         const TRANSFER_BUFFER_TICKS = 2;
         const DISTANCE_SOFT_CAP = 20;
         const DISTANCE_SCALE_PER_TILE = 0.05;
         const EARLY_GAME_ENERGY_CAP = 800;
         const EARLY_GAME_HAULER_MULTIPLIER = 1.25;
+        const LINK_SOURCE_RANGE = 2;
+        const LINK_RECEIVER_RANGE = 3;
 
         const haulerStats = managerSpawner.checkBody('hauler', budget);
         const uncappedCarryParts = haulerStats.carry || 1;
@@ -39,6 +42,20 @@ module.exports = {
 
         const haulTargets = storage ? [storage] : spawns;
         if (haulTargets.length === 0) return;
+
+        const links = intel.structures[STRUCTURE_LINK] || [];
+        const hasReceiverLink = links.some(link =>
+            (storage && link.pos.inRangeTo(storage.pos, LINK_RECEIVER_RANGE)) ||
+            spawns.some(spawn => link.pos.inRangeTo(spawn.pos, LINK_RECEIVER_RANGE))
+        );
+        const sourcesWithLink = new Set();
+        if (hasReceiverLink && links.length > 0) {
+            intel.sources.forEach(source => {
+                if (links.some(link => link.pos.inRangeTo(source.pos, LINK_SOURCE_RANGE))) {
+                    sourcesWithLink.add(source.id);
+                }
+            });
+        }
 
         const pathLengthCache = new Map();
         const getPathLength = (fromPos, toPos) => {
@@ -84,12 +101,17 @@ module.exports = {
         const setCachedPath = (pickupId, entry) => { pathCache.paths[pickupId] = entry; };
 
         let totalRequiredCarryParts = 0;
+        let linkedSourcesCount = 0;
         intel.sources.forEach(source => {
             if (!efficientSources.has(source.id)) return;
             const container = source.containerId ? miningContainersById.get(source.containerId) : null;
             const pickupPos = container ? container.pos : source.pos;
 
             const pickupId = container ? container.id : source.id;
+            const isLinkedSource = sourcesWithLink.has(source.id);
+            if (isLinkedSource) linkedSourcesCount += 1;
+
+            let requiredCarry = LINKED_SOURCE_MIN_CARRY;
             const cached = getCachedPath(pickupId);
             const cachedTarget = cached ? Game.getObjectById(cached.targetId) : null;
             const useCached = !!cached &&
@@ -97,25 +119,28 @@ module.exports = {
                 cachedTarget &&
                 cached.targetSignature === targetSignature;
 
-            let pathLen = 1;
-            if (useCached) {
-                pathLen = cached.pathLen;
-            } else {
-                const dropoff = storage ? storage : getClosestByPath(pickupPos, haulTargets);
-                pathLen = dropoff ? getPathLength(pickupPos, dropoff.pos) : 1;
-                if (dropoff) {
-                    setCachedPath(pickupId, {
-                        pickupId,
-                        targetId: dropoff.id,
-                        pathLen,
-                        targetSignature
-                    });
+            if (!isLinkedSource) {
+                let pathLen = 1;
+                if (useCached) {
+                    pathLen = cached.pathLen;
+                } else {
+                    const dropoff = storage ? storage : getClosestByPath(pickupPos, haulTargets);
+                    pathLen = dropoff ? getPathLength(pickupPos, dropoff.pos) : 1;
+                    if (dropoff) {
+                        setCachedPath(pickupId, {
+                            pickupId,
+                            targetId: dropoff.id,
+                            pathLen,
+                            targetSignature
+                        });
+                    }
                 }
+                const roundTrip = (pathLen * 2) + TRANSFER_BUFFER_TICKS;
+                const distanceScale = 1 + Math.max(0, pathLen - DISTANCE_SOFT_CAP) * DISTANCE_SCALE_PER_TILE;
+                requiredCarry = Math.ceil((ENERGY_PER_TICK * roundTrip * distanceScale) / 50);
             }
-            const roundTrip = (pathLen * 2) + TRANSFER_BUFFER_TICKS;
-            const distanceScale = 1 + Math.max(0, pathLen - DISTANCE_SOFT_CAP) * DISTANCE_SCALE_PER_TILE;
-            const requiredCarry = Math.ceil((ENERGY_PER_TICK * roundTrip * distanceScale) / 50);
-            totalRequiredCarryParts += Math.max(MIN_CARRY_PER_SOURCE, requiredCarry);
+            const minCarry = isLinkedSource ? LINKED_SOURCE_MIN_CARRY : MIN_CARRY_PER_SOURCE;
+            totalRequiredCarryParts += Math.max(minCarry, requiredCarry);
         });
 
         const isEarlyGame = (room.controller && room.controller.level <= 3) ||
@@ -127,7 +152,7 @@ module.exports = {
         const minHaulers = Math.max(2, efficientSources.size);
         const desiredHaulers = Math.max(minHaulers, Math.ceil(scaledRequiredCarryParts / carryParts));
 
-        debug('mission.logistics', `[Logistics] ${room.name} sources=${efficientSources.size} ` +
+        debug('mission.logistics', `[Logistics] ${room.name} sources=${efficientSources.size} linkedSources=${linkedSourcesCount} ` +
             `carryPerHauler=${carryParts} requiredCarry=${totalRequiredCarryParts} ` +
             `scaledCarry=${scaledRequiredCarryParts} early=${isEarlyGame} desiredHaulers=${desiredHaulers}`);
 
@@ -195,17 +220,9 @@ module.exports = {
             ...(intel.structures[STRUCTURE_TOWER] || [])
         ].filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
 
-        const refillSources = [
-            ...(storage && storage.store[RESOURCE_ENERGY] > 0 ? [storage] : []),
-            ...allContainers.filter(c => c.store[RESOURCE_ENERGY] > 0)
-        ];
-
         refillSinks.forEach(target => {
             if (coveredTargets.has(target.id)) return;
-            const bestSource = target.pos.findClosestByRange(refillSources);
-            if (bestSource) {
-                this.addLogisticsMission(activeMissions, bestSource, target, isEmergency, 'outflow');
-            }
+            this.addSupplyMission(activeMissions, target, isEmergency);
         });
 
         const inflowSinks = [
@@ -271,6 +288,20 @@ module.exports = {
             data: { sourceId: source.id, resourceType: resourceType },
             requirements: { archetype: 'hauler', count: 1, spawn: false },
             priority: this.getLogisticsPriority(type, target, isEmergency)
+        });
+    },
+
+    addSupplyMission: function(activeMissions, target, isEmergency) {
+        const missionName = `supply:${target.id}`;
+        if (activeMissions.has(missionName)) return;
+        activeMissions.set(missionName, {
+            name: missionName,
+            type: 'transfer',
+            archetype: 'hauler',
+            targetId: target.id,
+            data: { resourceType: RESOURCE_ENERGY, mode: 'supply' },
+            requirements: { archetype: 'hauler', count: 1, spawn: false },
+            priority: this.getLogisticsPriority('outflow', target, isEmergency)
         });
     },
 

@@ -686,6 +686,7 @@ var managerTasks = {
         }
 
         if (creep.memory.taskState === 'working') {
+            if (creep.memory._remoteEnergy) delete creep.memory._remoteEnergy;
             if (targetPos && creep.room.name !== targetPos.roomName) {
                 return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
             }
@@ -712,20 +713,7 @@ var managerTasks = {
             return null;
         }
 
-        if (homeRoomName && creep.room.name !== homeRoomName) {
-            const anchor = homeRoom && homeRoom.storage ? homeRoom.storage.pos
-                : (homeRoom && homeRoom.controller ? homeRoom.controller.pos : null);
-            const movePos = anchor || { x: 25, y: 25, roomName: homeRoomName };
-            return { action: 'move', targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName }, range: 3 };
-        }
-
-        const gatherRoom = homeRoom || creep.room;
-        const task = this.getGatherTask(creep, gatherRoom, {});
-        if (task) return task;
-        if (targetPos && creep.room.name !== targetPos.roomName) {
-            return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
-        }
-        return null;
+        return this.getRemoteEnergyGatherTask(creep, homeRoom, homeRoomName, remoteRoom, targetPos);
     },
 
     getRemoteRepairTask: function(creep, mission, room) {
@@ -741,6 +729,7 @@ var managerTasks = {
         }
 
         if (creep.memory.taskState === 'working') {
+            if (creep.memory._remoteEnergy) delete creep.memory._remoteEnergy;
             if (targetPos && creep.room.name !== targetPos.roomName) {
                 return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
             }
@@ -772,6 +761,105 @@ var managerTasks = {
             delete creep.memory.missionName;
             delete creep.memory.taskState;
             return null;
+        }
+
+        return this.getRemoteEnergyGatherTask(creep, homeRoom, homeRoomName, remoteRoom, targetPos);
+    },
+
+    hasFreeHarvestSpot: function(creep, source) {
+        if (!creep || !source || !source.pos || !creep.room) return false;
+        const terrain = creep.room.getTerrain();
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const x = source.pos.x + dx;
+                const y = source.pos.y + dy;
+                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+                if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+                const creeps = creep.room.lookForAt(LOOK_CREEPS, x, y);
+                if (creeps && creeps.length > 0 && !(creeps.length === 1 && creeps[0].id === creep.id)) continue;
+                return true;
+            }
+        }
+        return false;
+    },
+
+    getRemoteEnergyGatherTask: function(creep, homeRoom, homeRoomName, remoteRoomName, targetPos) {
+        const REMOTE_GATHER_RANGE = 6;
+        const REMOTE_STICKY_TICKS = 25;
+        const REMOTE_HOME_STICKY_TICKS = 40;
+        const now = Game.time;
+
+        if (creep.memory._remoteEnergy && creep.memory._remoteEnergy.until && creep.memory._remoteEnergy.until < now) {
+            delete creep.memory._remoteEnergy;
+        }
+
+        const inRemoteRoom = remoteRoomName && creep.room.name === remoteRoomName;
+        const memory = creep.memory._remoteEnergy;
+
+        if (inRemoteRoom) {
+            if (memory && memory.mode === 'home' && memory.until && memory.until >= now) {
+                // Stick to the decision to return home for a bit to avoid churn.
+            } else {
+                if (memory && memory.mode === 'remote' && memory.targetId && memory.roomName === creep.room.name &&
+                    memory.until && memory.until >= now) {
+                    const stickyTarget = Game.getObjectById(memory.targetId);
+                    if (stickyTarget) {
+                        if (memory.action === 'harvest') {
+                            if (creep.getActiveBodyparts(WORK) > 0 &&
+                                stickyTarget.energy > 0 &&
+                                this.hasFreeHarvestSpot(creep, stickyTarget)) {
+                                return { action: 'harvest', targetId: stickyTarget.id };
+                            }
+                        } else if (memory.action === 'withdraw') {
+                            if (stickyTarget.store && (stickyTarget.store[RESOURCE_ENERGY] || 0) > 0) {
+                                return { action: 'withdraw', targetId: stickyTarget.id, resourceType: RESOURCE_ENERGY };
+                            }
+                        }
+                    }
+                }
+
+                if (creep.getActiveBodyparts(WORK) > 0) {
+                    const cache = global.getRoomCache(creep.room);
+                    const sources = cache.sourcesActive || creep.room.find(FIND_SOURCES_ACTIVE);
+                    const nearbySources = sources.filter(s =>
+                        creep.pos.getRangeTo(s.pos) <= REMOTE_GATHER_RANGE &&
+                        this.hasFreeHarvestSpot(creep, s)
+                    );
+                    const source = creep.pos.findClosestByRange(nearbySources);
+                    if (source) {
+                        creep.memory._remoteEnergy = {
+                            mode: 'remote',
+                            action: 'harvest',
+                            targetId: source.id,
+                            roomName: creep.room.name,
+                            until: now + REMOTE_STICKY_TICKS
+                        };
+                        return { action: 'harvest', targetId: source.id };
+                    }
+                }
+
+                const cache = global.getRoomCache(creep.room);
+                const containers = (cache.structuresByType[STRUCTURE_CONTAINER] || [])
+                    .filter(c => (c.store[RESOURCE_ENERGY] || 0) > 0 && creep.pos.getRangeTo(c.pos) <= REMOTE_GATHER_RANGE);
+                const container = creep.pos.findClosestByRange(containers);
+                if (container) {
+                    creep.memory._remoteEnergy = {
+                        mode: 'remote',
+                        action: 'withdraw',
+                        targetId: container.id,
+                        roomName: creep.room.name,
+                        until: now + REMOTE_STICKY_TICKS
+                    };
+                    return { action: 'withdraw', targetId: container.id, resourceType: RESOURCE_ENERGY };
+                }
+
+                creep.memory._remoteEnergy = {
+                    mode: 'home',
+                    roomName: homeRoomName,
+                    until: now + REMOTE_HOME_STICKY_TICKS
+                };
+            }
         }
 
         if (homeRoomName && creep.room.name !== homeRoomName) {
@@ -833,7 +921,7 @@ var managerTasks = {
         const pickupPos = this.toRoomPosition(data.pickupPos);
         const dropoffPos = this.toRoomPosition(data.dropoffPos);
 
-        this.updateState(creep, resourceType);
+        this.updateState(creep, resourceType, { requireFull: true });
 
         if (creep.memory.taskState === 'working') {
             if (dropoffPos && creep.room.name !== dropoffPos.roomName) {
@@ -853,9 +941,7 @@ var managerTasks = {
 
             if (target) {
                 if (target.store && target.store.getFreeCapacity(resourceType) === 0) {
-                    delete creep.memory.missionName;
-                    delete creep.memory.taskState;
-                    return null;
+                    return { action: 'move', targetId: target.id, range: 1 };
                 }
                 return { action: 'transfer', targetId: target.id, resourceType: resourceType };
             }
@@ -1035,8 +1121,9 @@ var managerTasks = {
 
     getTransferTask: function(creep, mission, room) {
         const resourceType = (mission.data && mission.data.resourceType) ? mission.data.resourceType : RESOURCE_ENERGY;
+        const isSupply = !!(mission.data && mission.data.mode === 'supply');
         const EMPTY_SOURCE_TIMEOUT = 20;
-        this.updateState(creep, resourceType);
+        this.updateState(creep, resourceType, { requireFull: true, allowPartialWork: isSupply });
         if (creep.memory.taskState === 'working') {
             if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
             let target = null;
@@ -1057,9 +1144,13 @@ var managerTasks = {
 
             if (target) {
                 if (target.store && target.store.getFreeCapacity(resourceType) === 0) {
-                    delete creep.memory.missionName;
-                    delete creep.memory.taskState;
-                    return null;
+                    if (isSupply) {
+                        delete creep.memory.missionName;
+                        delete creep.memory.taskState;
+                        return null;
+                    }
+                    creep.say('wait');
+                    return { action: 'move', targetId: target.id, range: 1 };
                 }
                 return { action: 'transfer', targetId: target.id, resourceType: resourceType };
             }
@@ -1070,29 +1161,9 @@ var managerTasks = {
                 return null;
             }
 
-            // Fallback: If primary targets are full, try Storage, Towers, or any other Refillable
-            if (room.storage && room.storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
-                return { action: 'transfer', targetId: room.storage.id, resourceType: RESOURCE_ENERGY };
-            }
-
-            const cache = global.getRoomCache(room);
-            const towers = (cache.structuresByType[STRUCTURE_TOWER] || [])
-                .filter(s => s.my && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-            
-            if (towers.length > 0) {
-                const tower = creep.pos.findClosestByRange(towers);
-                if (tower) return { action: 'transfer', targetId: tower.id, resourceType: RESOURCE_ENERGY };
-            }
-
-            const refillables = [
-                ...(cache.structuresByType[STRUCTURE_SPAWN] || []),
-                ...(cache.structuresByType[STRUCTURE_EXTENSION] || [])
-            ].filter(s => s.my && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-            
-            if (refillables.length > 0) {
-                const target = creep.pos.findClosestByRange(refillables);
-                if (target) return { action: 'transfer', targetId: target.id, resourceType: RESOURCE_ENERGY };
-            }
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
         } else {
             if (resourceType !== RESOURCE_ENERGY && mission.data && mission.data.sourceId) {
                 const source = this.getCachedObject(creep.room, mission.data.sourceId);
@@ -1118,6 +1189,11 @@ var managerTasks = {
             if (task) {
                 if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
                 return task;
+            }
+
+            if (creep.store.getUsedCapacity(resourceType) > 0) {
+                creep.memory.taskState = 'working';
+                return this.getTransferTask(creep, mission, room);
             }
 
             if (resourceType === RESOURCE_ENERGY && mission.data && mission.data.sourceId) {
@@ -1222,25 +1298,29 @@ var managerTasks = {
         return null;
     },
 
-    updateState: function(creep, resourceType) {
+    updateState: function(creep, resourceType, options = {}) {
         // State Machine: working <-> idle <-> gathering
         const type = resourceType || RESOURCE_ENERGY;
+        const requireFull = !!options.requireFull;
+        const allowPartialWork = !!options.allowPartialWork;
+        const used = creep.store.getUsedCapacity(type);
+        const free = creep.store.getFreeCapacity(type);
         
         // Transition from Working to Idle
-        if (creep.memory.taskState === 'working' && creep.store.getUsedCapacity(type) === 0) {
+        if (creep.memory.taskState === 'working' && used === 0) {
             creep.memory.taskState = 'idle';
             creep.say('idle');
         }
         
         // Transition from Gathering to Idle
-        if (creep.memory.taskState === 'gathering' && creep.store.getFreeCapacity() === 0) {
+        if (creep.memory.taskState === 'gathering' && free === 0) {
             creep.memory.taskState = 'idle';
             creep.say('idle');
         }
 
         // Transition from Idle/Init to Working or Gathering
         if (creep.memory.taskState === 'idle' || creep.memory.taskState === 'init' || !creep.memory.taskState) {
-            if (creep.store.getUsedCapacity(type) > 0) {
+            if (used > 0 && (!requireFull || free === 0 || allowPartialWork)) {
                 creep.memory.taskState = 'working';
                 creep.say('work');
             } else {
