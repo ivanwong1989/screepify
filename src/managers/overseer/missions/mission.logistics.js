@@ -30,6 +30,8 @@ module.exports = {
         const TRANSFER_BUFFER_TICKS = 2;
         const DISTANCE_SOFT_CAP = 20;
         const DISTANCE_SCALE_PER_TILE = 0.05;
+        const EARLY_GAME_ENERGY_CAP = 800;
+        const EARLY_GAME_HAULER_MULTIPLIER = 1.25;
 
         const haulerStats = managerSpawner.checkBody('hauler', budget);
         const uncappedCarryParts = haulerStats.carry || 1;
@@ -116,11 +118,18 @@ module.exports = {
             totalRequiredCarryParts += Math.max(MIN_CARRY_PER_SOURCE, requiredCarry);
         });
 
+        const isEarlyGame = (room.controller && room.controller.level <= 3) ||
+            (!storage && intel.energyCapacityAvailable <= EARLY_GAME_ENERGY_CAP);
+        const scaledRequiredCarryParts = isEarlyGame
+            ? Math.ceil(totalRequiredCarryParts * EARLY_GAME_HAULER_MULTIPLIER)
+            : totalRequiredCarryParts;
+
         const minHaulers = Math.max(2, efficientSources.size);
-        const desiredHaulers = Math.max(minHaulers, Math.ceil(totalRequiredCarryParts / carryParts));
+        const desiredHaulers = Math.max(minHaulers, Math.ceil(scaledRequiredCarryParts / carryParts));
 
         debug('mission.logistics', `[Logistics] ${room.name} sources=${efficientSources.size} ` +
-            `carryPerHauler=${carryParts} requiredCarry=${totalRequiredCarryParts} desiredHaulers=${desiredHaulers}`);
+            `carryPerHauler=${carryParts} requiredCarry=${totalRequiredCarryParts} ` +
+            `scaledCarry=${scaledRequiredCarryParts} early=${isEarlyGame} desiredHaulers=${desiredHaulers}`);
 
         missions.push({
             name: 'logistics:fleet',
@@ -233,7 +242,7 @@ module.exports = {
                 }
             });
 
-            miningContainers.filter(c => c.store[RESOURCE_ENERGY] >= 500).forEach(source => {
+            miningContainers.filter(c => c.store[RESOURCE_ENERGY] >= (carryParts * 50)).forEach(source => {
                 if (coveredSources.has(source.id)) return;
                 const bestSink = source.pos.findClosestByRange(inflowSinks);
                 if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'mining');

@@ -1035,8 +1035,10 @@ var managerTasks = {
 
     getTransferTask: function(creep, mission, room) {
         const resourceType = (mission.data && mission.data.resourceType) ? mission.data.resourceType : RESOURCE_ENERGY;
+        const EMPTY_SOURCE_TIMEOUT = 20;
         this.updateState(creep, resourceType);
         if (creep.memory.taskState === 'working') {
+            if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
             let target = null;
             
             if (resourceType === RESOURCE_ENERGY &&
@@ -1095,6 +1097,7 @@ var managerTasks = {
             if (resourceType !== RESOURCE_ENERGY && mission.data && mission.data.sourceId) {
                 const source = this.getCachedObject(creep.room, mission.data.sourceId);
                 if (source && source.store && (source.store[resourceType] || 0) > 0) {
+                    if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
                     return { action: 'withdraw', targetId: source.id, resourceType: resourceType };
                 }
                 delete creep.memory.missionName;
@@ -1112,12 +1115,29 @@ var managerTasks = {
                 task = this.getGatherTask(creep, room, { allowedIds, excludeIds });
             }
 
-            if (!task) {
-                delete creep.memory.missionName;
-                delete creep.memory.taskState;
-                return null;
+            if (task) {
+                if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
+                return task;
             }
-            return task;
+
+            if (resourceType === RESOURCE_ENERGY && mission.data && mission.data.sourceId) {
+                const source = this.getCachedObject(creep.room, mission.data.sourceId);
+                const ticks = (creep.memory._emptySourceTicks || 0) + 1;
+                creep.memory._emptySourceTicks = ticks;
+
+                if (ticks < EMPTY_SOURCE_TIMEOUT) {
+                    if (source) {
+                        return { action: 'move', targetId: source.id, range: 1 };
+                    }
+                    return null;
+                }
+
+                delete creep.memory._emptySourceTicks;
+            }
+
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
         }
         return null;
     },
