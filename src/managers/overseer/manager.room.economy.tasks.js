@@ -1123,7 +1123,15 @@ var managerTasks = {
         const resourceType = (mission.data && mission.data.resourceType) ? mission.data.resourceType : RESOURCE_ENERGY;
         const isSupply = !!(mission.data && mission.data.mode === 'supply');
         const EMPTY_SOURCE_TIMEOUT = 20;
+        const previousState = creep.memory.taskState;
         this.updateState(creep, resourceType, { requireFull: true, allowPartialWork: isSupply });
+
+        if (!isSupply && previousState === 'working' && creep.memory.taskState === 'gathering') {
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
+        }
+
         if (creep.memory.taskState === 'working') {
             if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
             let target = null;
