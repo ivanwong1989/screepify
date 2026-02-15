@@ -1,6 +1,6 @@
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const DEFAULT_SCOUT_INTERVAL = 1500;
+        const DEFAULT_SCOUT_INTERVAL = 800;
         const MIN_SCOUT_INTERVAL = 25;
         const memoryInterval = (room.memory && room.memory.overseer && Number.isFinite(room.memory.overseer.scoutInterval))
             ? room.memory.overseer.scoutInterval
