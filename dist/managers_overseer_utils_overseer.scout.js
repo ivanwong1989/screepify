@@ -175,7 +175,7 @@ function recordRemoteIntel(creep, scoutData) {
     const controller = creep.room.controller;
     const owner = controller && controller.owner ? controller.owner.username : null;
     const reservation = controller && controller.reservation ? controller.reservation.username : null;
-    const hostiles = creep.room.find(FIND_HOSTILE_CREEPS).filter(c => !isAllyName(c.owner && c.owner.username, allies));
+    const hostiles = creep.room.find(FIND_HOSTILE_CREEPS).filter(c => !isAllyName(c.owner && c.owner.username, allies) && (c.getActiveBodyParts(ATTACK) || c.getActiveBodyParts(RANGED_ATTACK)));
     const hostileStructures = creep.room.find(FIND_HOSTILE_STRUCTURES).filter(s => !isAllyName(s.owner && s.owner.username, allies));
     const sources = creep.room.find(FIND_SOURCES);
     const sourceCount = sources.length;
