@@ -108,10 +108,14 @@ const overseerIntel = {
         let controllerSpaces = 0;
         let controllerContainerId = null;
         if (room.controller) {
-            for (let x = -1; x <= 1; x++) {
-                for (let y = -1; y <= 1; y++) {
+            const cPos = room.controller.pos;
+            for (let x = -3; x <= 3; x++) {
+                for (let y = -3; y <= 3; y++) {
                     if (x === 0 && y === 0) continue;
-                    const t = terrain.get(room.controller.pos.x + x, room.controller.pos.y + y);
+                    const cx = cPos.x + x;
+                    const cy = cPos.y + y;
+                    if (cx < 0 || cx > 49 || cy < 0 || cy > 49) continue;
+                    const t = terrain.get(cx, cy);
                     if (t !== TERRAIN_MASK_WALL) controllerSpaces++;
                 }
             }

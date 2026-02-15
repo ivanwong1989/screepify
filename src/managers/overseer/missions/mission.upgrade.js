@@ -26,7 +26,7 @@ module.exports = {
             upgradePriority = 10;
             spawnAllowed = isCritical;
             if (isCritical) upgradePriority = 100;
-        } else if (intel.energyAvailable === intel.energyCapacityAvailable) {
+        } else if (intel.energyAvailable >= intel.energyCapacityAvailable * 0.95) {
             upgradePriority = 80;
             desiredWork = 15;
         }
@@ -61,7 +61,7 @@ module.exports = {
 
         debug('mission.upgrade', `[Upgrade] ${room.name} count=${upCensus.count} workParts=${upCensus.workParts}/${desiredWork} ` +
             `workPerCreep=${workPerCreep} desired=${desiredCount} req=${upCount} ` +
-            `state=${economyState}`);
+            `spaces=${intel.availableControllerSpaces} state=${economyState}`);
 
         missions.push({
             name: upName,
