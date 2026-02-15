@@ -919,12 +919,15 @@ var managerTasks = {
         // 2. Check Capacity (Mobile Mining / Link Transfer)
         this.updateState(creep);
         if (creep.memory.taskState === 'working' && creep.getActiveBodyparts(CARRY) > 0) {
-            const nearby = [
-                ...(cache.structuresByType[STRUCTURE_CONTAINER] || []),
-                ...(cache.structuresByType[STRUCTURE_LINK] || [])
-            ].filter(s => creep.pos.inRangeTo(s.pos, 1));
-            
-            const transferTarget = nearby.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+            const nearbyContainers = (cache.structuresByType[STRUCTURE_CONTAINER] || [])
+                .filter(s => creep.pos.inRangeTo(s.pos, 1));
+            const nearbyLinks = (cache.structuresByType[STRUCTURE_LINK] || [])
+                .filter(s => creep.pos.inRangeTo(s.pos, 1));
+            const nearby = nearbyContainers.concat(nearbyLinks);
+
+            const linkTarget = nearbyLinks.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+            const containerTarget = nearbyContainers.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+            const transferTarget = linkTarget || containerTarget;
 
             if (transferTarget) {
                 return { action: 'transfer', targetId: transferTarget.id, resourceType: RESOURCE_ENERGY };
