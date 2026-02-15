@@ -867,7 +867,7 @@ function summarizeConfig(cfg) {
     return lines.join('\n');
 }
 
-const managerMarket = {
+const managerTerminal = {
     getConfig: function() {
         return ensureMarketConfig();
     },
@@ -968,4 +968,4 @@ const managerMarket = {
     }
 };
 
-module.exports = managerMarket;
+module.exports = managerTerminal;

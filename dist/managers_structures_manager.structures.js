@@ -1,6 +1,5 @@
 const managerLinks = require('managers_structures_manager.links');
-// Importing the existing market manager from its current location
-const managerMarket = require('managers_overseer_manager.room.economy.market');
+const managerTerminal = require('managers_structures_manager.terminal');
 
 /**
  * Unified Room Structure Manager.
@@ -12,7 +11,7 @@ const managerStructures = {
         managerLinks.run(room);
 
         // 2. Run Market (Terminal)
-        managerMarket.run(room);
+        managerTerminal.run(room);
         
         // Future: Lab management can be added here
     }

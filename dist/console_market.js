@@ -1,4 +1,4 @@
-var managerMarket = require('managers_overseer_manager.room.economy.market');
+var managerMarket = require('managers_structures_manager.terminal');
 
 function showMarketHelp() {
     const lines = [
