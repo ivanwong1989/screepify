@@ -4,6 +4,9 @@
  */
 const managerLinks = {
     run: function(room) {
+        // Constants
+        const MIN_SENDER_LINKS_ENERGY_TRIGGER = 600;
+
         const cache = global.getRoomCache(room);
         const links = cache.myStructuresByType[STRUCTURE_LINK] || [];
         if (links.length < 2) return;
@@ -52,7 +55,7 @@ const managerLinks = {
                 sender.store[RESOURCE_ENERGY],
                 receiver.store.getFreeCapacity(RESOURCE_ENERGY)
             );
-            if (amount <= 0) continue;
+            if (amount <= MIN_SENDER_LINKS_ENERGY_TRIGGER) continue;
 
             const result = sender.transferEnergy(receiver, amount);
             if (result === OK) {
