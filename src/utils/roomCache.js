@@ -17,7 +17,7 @@ function getRoomCache(room) {
 
     // Refresh static IDs in heap if expired
     if (!heap.static || (heap.static.time + staticInterval) <= now) {
-        console.log(`static refreshed ${room.name}`);
+        debug('roomCache', `[RoomCache] Static refreshed ${room.name}`);
         const structures = room.find(FIND_STRUCTURES);
         const flags = room.find(FIND_FLAGS);
         const sources = room.find(FIND_SOURCES);

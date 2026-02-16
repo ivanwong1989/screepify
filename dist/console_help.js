@@ -5,6 +5,8 @@ module.exports = function registerHelpConsole() {
                 'Console commands:',
                 'debugon           - enable debug logging',
                 'debugoff          - disable debug logging',
+                'debugvison           - enable debug visual logging',
+                'debugvisoff          - disable debug visual logging',
                 'debugoncombat     - enable combat debug logging',
                 'debugoffcombat    - disable combat debug logging',
                 'debugcaton(\"cat\")  - enable a debug category (allowlist)',

@@ -20,6 +20,7 @@ const DEBUG_CATEGORIES = Object.freeze([
     'market',
     'overseer',
     'overseer.ledger',
+    'roomCache',
     'spawner',
     'system'
 ]);
@@ -91,6 +92,25 @@ module.exports = function registerDebugConsole() {
             delete Memory.debugCategories;
             console.log('Debug mode DISABLED');
             return 'Debug mode DISABLED';
+        },
+        configurable: true
+    });
+ 
+    // Global debug command object
+    Object.defineProperty(global, 'debugvison', {
+        get: function() {
+            Memory.debugVisual = true;
+            console.log('Debug visual mode ENABLED');
+            return 'Debug visual mode ENABLED';
+        },
+        configurable: true
+    });
+
+    Object.defineProperty(global, 'debugvisoff', {
+        get: function() {
+            delete Memory.debugVisual;
+            console.log('Debug visual mode DISABLED');
+            return 'Debug visual mode DISABLED';
         },
         configurable: true
     });

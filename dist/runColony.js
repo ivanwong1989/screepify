@@ -42,7 +42,7 @@ module.exports = {
         managerMilitaryTasks.run(room);
 
         // 4. Visualization: Draw the room state and missions (including military)
-        if (Memory.debug) {
+        if (Memory.debugVisual) {
             overseerUtils.visualize(room, room._missions, room._roomState);
         }
 

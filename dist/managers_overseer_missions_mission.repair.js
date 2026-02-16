@@ -7,8 +7,23 @@ module.exports = {
 
         const REPAIR_SCAN_INTERVAL = 7; // ticks
         const CRITICAL_WALL_HITS = 5000;
-        const FORTIFY_START_HITS = 270000;
-        const FORTIFY_TARGET_HITS = 320000;
+
+        const rcl = room.controller ? room.controller.level : 0;
+        const FORTIFY_SETTINGS = {
+            0: { start: 0, target: 0 },
+            1: { start: 0, target: 0 },
+            2: { start: 10000, target: 20000 },
+            3: { start: 20000, target: 150000 },
+            4: { start: 150000, target: 300000 },
+            5: { start: 300000, target: 500000 },
+            6: { start: 500000, target: 800000 },
+            7: { start: 800000, target: 1300000 },
+            8: { start: 1300000, target: 5000000 }
+        };
+        const settings = FORTIFY_SETTINGS[rcl] || FORTIFY_SETTINGS[0];
+        const FORTIFY_START_HITS = settings.start;
+        const FORTIFY_TARGET_HITS = settings.target;
+
         const REPAIR_MIN_RATIO = 0.9;
         const CRITICAL_GENERAL_RATIO = 0.8;
         const CRITICAL_DECAYABLE_RATIO = 0.7;
