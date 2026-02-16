@@ -22,6 +22,7 @@ var managerSpawner = {
         const globalRoleCounts = Object.create(null);
         const spawningMissionCounts = Object.create(null);
         const spawningRoleCounts = Object.create(null);
+        const queuedKeys = new Set();
 
         // Track spawning creeps via spawn.spawning + Memory.creeps[name].
         // spawnCreep stores Memory.creeps immediately, so this is robust even if Game.creeps timing differs.
@@ -75,6 +76,7 @@ var managerSpawner = {
             if (!mission.census) return;
             
             const req = mission.requirements || {};
+            const assignmentKey = this.getAssignmentKey(mission, room.name);
             if (req.spawnFromFleet) return;
             const current = mission.census;
             const archetype = mission.archetype || req.archetype;
@@ -93,18 +95,32 @@ var managerSpawner = {
             // - Fleet missions (roleCensus): compare role-based counts.
             // - Non-fleet missions: compare missionName-based counts.
             const isFleet = !!mission.roleCensus;
-            const localCount = current.count || 0;
-            const globalCount = isFleet
-                ? (globalRoleCounts[mission.roleCensus] || 0)
-                : (globalMissionCounts[mission.name] || 0);
-            const inSpawnCount = isFleet
-                ? (spawningRoleCounts[mission.roleCensus] || 0)
-                : (spawningMissionCounts[mission.name] || 0);
+            let effectiveCount = 0;
+            let localCount = current.count || 0;
+            let globalCount = 0;
+            let inSpawnCount = 0;
 
-            const totalCount = Math.max(localCount, globalCount + inSpawnCount);
-            const effectiveCount = Math.max(0, totalCount - nearDeathCount);
+            if (assignmentKey) {
+                // Slot-based mission: Check reservation
+                if (this.isReserved(room, assignmentKey)) {
+                    effectiveCount = 1;
+                } else {
+                    effectiveCount = 0;
+                }
+            } else {
+                // Fleet/Legacy mission: Use census
+                globalCount = isFleet
+                    ? (globalRoleCounts[mission.roleCensus] || 0)
+                    : (globalMissionCounts[mission.name] || 0);
+                inSpawnCount = isFleet
+                    ? (spawningRoleCounts[mission.roleCensus] || 0)
+                    : (spawningMissionCounts[mission.name] || 0);
+                effectiveCount = Math.max(0, Math.max(localCount, globalCount + inSpawnCount) - nearDeathCount);
+            }
 
             if (req.count && effectiveCount < req.count && req.spawn !== false) {
+                if (assignmentKey && queuedKeys.has(assignmentKey)) return; // Dedupe
+
                 if (mission.name.includes('fleet')) {
                     debug('spawner',
                         `[Spawner] Enqueue ${mission.name} for ${room.name}. ` +
@@ -113,6 +129,7 @@ var managerSpawner = {
                     );
                 }
                 spawnQueue.push(mission);
+                if (assignmentKey) queuedKeys.add(assignmentKey);
             }
         });
 
@@ -130,6 +147,32 @@ var managerSpawner = {
             const request = this.createSpawnRequest(mission, room);
             if (request) room._spawnRequests.push(request);
         }
+    },
+
+    getAssignmentKey: function(mission, roomName) {
+        if (mission.assignmentKey) return mission.assignmentKey;
+        // Fallbacks for missions without explicit key
+        if (mission.type === 'harvest') return `harvest:${roomName}:${mission.sourceId}`;
+        if (mission.type === 'remote_reserve') return `reserve:${roomName}:${mission.data.targetRoom}`;
+        if (mission.type === 'defend') return `defend:${roomName}:${mission.data.targetRoom}`;
+        if (mission.type === 'remote_build') return `build:${roomName}:${mission.data.targetRoom}:${mission.data.groupId || 'main'}`;
+        return null;
+    },
+
+    isReserved: function(room, key) {
+        if (!room.memory.assignments || !room.memory.assignments[key]) return false;
+        const res = room.memory.assignments[key];
+        if (res.expiresAt <= Game.time) return false;
+        
+        // If REQUESTED, check if it's stale (older than 1 tick implies it wasn't picked up)
+        // But we give it a small grace period or rely on the fact that we re-queue if it expires.
+        // The prompt says "treat slot as filled if: reservation state in {REQUESTED...}"
+        // We will trust the state until it expires.
+        if (['REQUESTED', 'SPAWNING', 'EN_ROUTE', 'ACTIVE'].includes(res.state)) {
+            // Double check creep existence for active states if needed, but Tasker handles GC.
+            return true;
+        }
+        return false;
     },
 
     createSpawnRequest: function(mission, room) {
@@ -187,13 +230,30 @@ var managerSpawner = {
         const body = this.generateBody(mission, budget);
         const cost = this.calculateBodyCost(body);
 
+        const assignmentKey = this.getAssignmentKey(mission, room.name);
+
         // Construct the request object
         const memory = {
             role: mission.archetype,
             missionName: mission.name,
             room: room.name,
-            taskState: 'init'
+            taskState: 'init',
+            assignmentKey: assignmentKey
         };
+
+        // Create/Update Reservation
+        if (assignmentKey) {
+            if (!room.memory.assignments) room.memory.assignments = {};
+            room.memory.assignments[assignmentKey] = {
+                state: 'REQUESTED',
+                creepName: null,
+                spawnRoom: null,
+                targetRoom: mission.data ? mission.data.targetRoom : null,
+                role: mission.archetype,
+                updatedAt: Game.time,
+                expiresAt: Game.time + 50 // REQUEST_TTL
+            };
+        }
 
         return {
             missionId: mission.name,

@@ -35,7 +35,7 @@ module.exports = {
     },
 
     findBestSpawn: function(request, availableSpawns) {
-        /*
+        
         // Filter 1: Capable of spawning (Energy Capacity)
         // We check capacity, not current available, because if it's local we might be waiting for refill (Grace Period handled in local manager, but we double check here)
         let candidates = availableSpawns.filter(s => s.room.energyCapacityAvailable >= request.cost);
@@ -70,9 +70,8 @@ module.exports = {
         }
 
         return null;
-        */
 
-        return availableSpawns.find(s => s.room.name === request.homeRoom && s.room.energyAvailable >= request.cost);
+        //return availableSpawns.find(s => s.room.name === request.homeRoom && s.room.energyAvailable >= request.cost);
     },
 
     executeSpawn: function(spawn, request) {
@@ -86,6 +85,21 @@ module.exports = {
         // If remote, add travel flag
         if (spawn.room.name !== request.homeRoom) {
             request.memory._travellingToHome = true;
+        }
+        
+        // Update Reservation
+        const key = request.memory.assignmentKey;
+        if (key) {
+            const homeRoom = Game.rooms[request.homeRoom];
+            if (homeRoom && (!homeRoom.memory.assignments)) homeRoom.memory.assignments = {};
+            if (homeRoom && homeRoom.memory.assignments[key]) {
+                const res = homeRoom.memory.assignments[key];
+                res.state = 'SPAWNING';
+                res.creepName = name;
+                res.spawnRoom = spawn.room.name;
+                res.updatedAt = Game.time;
+                res.expiresAt = Game.time + (request.body.length * 3) + 10;
+            }
         }
 
         const result = spawn.spawnCreep(request.body, name, { memory: request.memory });

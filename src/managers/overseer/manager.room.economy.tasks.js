@@ -49,6 +49,40 @@ var managerTasks = {
     },
 
     run: function(room) {
+        // 0. Garbage Collection & Reservation Maintenance
+        if (room.memory.assignments) {
+            const assignments = room.memory.assignments;
+            for (const key in assignments) {
+                const res = assignments[key];
+                
+                // Expire
+                if (res.expiresAt <= Game.time) {
+                    delete assignments[key];
+                    continue;
+                }
+
+                // Validate Creep
+                if (res.creepName) {
+                    const creepExists = Game.creeps[res.creepName];
+                    let spawningExists = false;
+                    if (!creepExists) {
+                        // Check if spawning
+                        for (const spawn of room.find(FIND_MY_SPAWNS)) {
+                            if (spawn.spawning && spawn.spawning.name === res.creepName) {
+                                spawningExists = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!creepExists && !spawningExists) {
+                        // Creep is gone
+                        delete assignments[key];
+                    }
+                }
+            }
+        }
+
         // 1. Read the Contract (Missions)
         // If no missions are published by Overseer, we have nothing to direct.
         
@@ -116,6 +150,14 @@ var managerTasks = {
                     }
                     // Update status
                     missionStatus[missionName].assignedCount++;
+                    
+                    // Update Reservation to ACTIVE if working
+                    if (creep.memory.assignmentKey) {
+                        this.updateReservation(creep, 'ACTIVE');
+                    } else if (creep.ticksToLive > 1450) { // Bootstrap check for EN_ROUTE
+                         // Handled in idle loop or specific check below
+                    }
+
                     missionStatus[missionName].assignedWorkParts += creep.getActiveBodyparts(WORK);
                     missionStatus[missionName].assignedCarryParts += creep.getActiveBodyparts(CARRY);
                 } else {
@@ -135,6 +177,11 @@ var managerTasks = {
         const remoteIdle = (remote.idle || []).filter(c => !c.spawning && !c.memory.missionName);
         const idleCreeps = localIdle.concat(remoteIdle);
 
+        // Bootstrap EN_ROUTE state for new creeps
+        idleCreeps.forEach(creep => {
+            if (creep.memory.assignmentKey) this.updateReservation(creep, 'EN_ROUTE');
+        });
+
         // Clear any stale tasks on unassigned creeps so they don't keep acting without a mission
         idleCreeps.forEach(creep => {
             if (creep.memory.task) delete creep.memory.task;
@@ -152,6 +199,8 @@ var managerTasks = {
                 missionStatus[bestMission.name].assignedWorkParts += creep.getActiveBodyparts(WORK);
                 missionStatus[bestMission.name].assignedCarryParts += creep.getActiveBodyparts(CARRY);
                 
+                if (creep.memory.assignmentKey) this.updateReservation(creep, 'ACTIVE');
+
                 creep.say(bestMission.type);
                 if (creep.memory.idleTicks) delete creep.memory.idleTicks;
             }
@@ -247,6 +296,31 @@ var managerTasks = {
         });
     },
 
+    updateReservation: function(creep, state) {
+        const key = creep.memory.assignmentKey;
+        if (!key) return;
+        
+        // Find home room memory
+        const homeName = creep.memory.room;
+        if (!homeName || !Memory.rooms[homeName]) return;
+        const assignments = Memory.rooms[homeName].assignments;
+        if (!assignments || !assignments[key]) return;
+        
+        const res = assignments[key];
+        
+        // State transitions
+        if (state === 'EN_ROUTE' && res.state !== 'ACTIVE') {
+            res.state = 'EN_ROUTE';
+            res.creepName = creep.name;
+            res.updatedAt = Game.time;
+            res.expiresAt = Game.time + 1500; // EN_ROUTE_TTL
+        } else if (state === 'ACTIVE') {
+            res.state = 'ACTIVE';
+            res.updatedAt = Game.time;
+            res.expiresAt = Game.time + 50; // ACTIVE_STALE_TTL
+        }
+    },
+
     buildIdCache: function(room, missions) {
         if (room._idCacheTick === Game.time && room._idCache) return;
         const cache = new Map();
@@ -303,6 +377,16 @@ var managerTasks = {
         return null;
     },
 
+    getAssignmentKey: function(mission, roomName) {
+        if (mission.assignmentKey) return mission.assignmentKey;
+        // Fallbacks matching Spawner logic
+        if (mission.type === 'harvest') return `harvest:${roomName}:${mission.sourceId}`;
+        if (mission.type === 'remote_reserve') return `reserve:${roomName}:${mission.data.targetRoom}`;
+        if (mission.type === 'defend') return `defend:${roomName}:${mission.data.targetRoom}`;
+        if (mission.type === 'remote_build') return `build:${roomName}:${mission.data.targetRoom}:${mission.data.groupId || 'main'}`;
+        return null;
+    },
+
     /**
      * Finds the most suitable mission for a creep based on priority and requirements.
      */
@@ -336,6 +420,12 @@ var managerTasks = {
             const status = missionStatus[m.name];
             if (!status) continue;
             const req = m.requirements || {};
+
+            // Check assignment key match
+            if (creep.memory.assignmentKey) {
+                const key = this.getAssignmentKey(m, creep.memory.room);
+                if (key !== creep.memory.assignmentKey) continue;
+            }
 
             // Check archetype match if specified
             if (req.archetype && req.archetype !== creep.memory.role) continue;
