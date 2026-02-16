@@ -354,6 +354,8 @@ var managerTasks = {
                 if (creep.getActiveBodyparts(WORK) === 0) continue;
             } else if (m.type === 'remote_reserve') {
                 if (creep.getActiveBodyparts(CLAIM) === 0) continue;
+            } else if (m.type === 'remote_claim') {
+                if (creep.getActiveBodyparts(CLAIM) === 0) continue;
             }
 
             // Mission is valid
@@ -458,6 +460,9 @@ var managerTasks = {
                 break;
             case 'remote_reserve':
                 task = this.getReserveTask(creep, mission);
+                break;
+            case 'remote_claim':
+                task = this.getClaimTask(creep, mission);
                 break;
             case 'scout':
                 task = this.getScoutTask(creep, mission, room);
@@ -756,6 +761,49 @@ var managerTasks = {
         }
 
         return { action: 'reserve', targetId: controller.id, range: 1 };
+    },
+
+    getClaimTask: function(creep, mission) {
+        const data = mission.data || {};
+        const targetRoom = data.targetRoom || (mission.targetPos && mission.targetPos.roomName) || (data.targetPos && data.targetPos.roomName);
+
+        if (!targetRoom) {
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
+        }
+
+        if (creep.room.name !== targetRoom) {
+            const movePos = this.toRoomPosition(data.targetPos || mission.targetPos) || new RoomPosition(25, 25, targetRoom);
+            return {
+                action: 'move',
+                targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName },
+                range: 1
+            };
+        }
+
+        const controller = creep.room.controller;
+        if (!controller) {
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
+        }
+
+        if (controller.my) {
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            return null;
+        }
+
+        if (controller.owner) {
+            if (data.persist !== true) {
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+            }
+            return null;
+        }
+
+        return { action: 'claim', targetId: controller.id, range: 1 };
     },
 
     getRemoteBuildTask: function(creep, mission, room) {

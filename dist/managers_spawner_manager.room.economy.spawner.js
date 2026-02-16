@@ -214,6 +214,8 @@ var managerSpawner = {
             return this.generateDismantlerBody(budget);
         } else if (mission.archetype === 'reserver') {
             return this.generateReserverBody(budget);
+        } else if (mission.archetype === 'claimer') {
+            return this.generateClaimerBody(budget);
         } else if (mission.archetype === 'hauler' || mission.archetype === 'remote_hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             return this.generateHaulerBody(budget, maxCarryParts);
@@ -343,6 +345,10 @@ var managerSpawner = {
             body = body.concat(segment);
         }
         return this.sortBody(body);
+    },
+
+    generateClaimerBody: function(budget) {
+        return [CLAIM, MOVE];
     },
 
     generateHaulerBody: function(budget, maxCarryParts) {

@@ -43,21 +43,31 @@ module.exports = {
         const localSpawns = candidates.filter(s => s.room.name === request.homeRoom);
         
         // Strategy: Try local first. If local exists, pick the one with enough energy NOW.
-        if (localSpawns.length > 0) {
-            // If we have a local spawn that can afford it right now, take it.
-            const readyLocal = localSpawns.find(s => s.room.energyAvailable >= request.cost);
-            if (readyLocal) return readyLocal;
-            
-            // If no local spawn is ready, but we have local spawns, we might want to wait (if strictly local).
-            // For Phase 1, let's just return the first local spawn and let the spawn attempt fail (or wait) if not enough energy?
-            // Actually, if we return a spawn that can't afford it, executeSpawn will fail.
-            // If we want to support "Waiting for energy", we should probably pick the local one and let it fail silently (occupying the request but not the spawn?).
-            // For now, let's return null if no energy, effectively waiting.
-            return null; 
+        const readyLocal = localSpawns.find(s => s.room.energyAvailable >= request.cost);
+        if (readyLocal) return readyLocal;
+
+        // Filter 3: Remote Spawns
+        // We only consider remote spawns if they are ready to spawn NOW.
+        // We don't want to wait on a remote room's energy regeneration.
+        const remoteCandidates = candidates.filter(s => {
+            if (s.room.name === request.homeRoom) return false;
+            if (s.room.energyAvailable < request.cost) return false;
+            if (s.room._state === 'EMERGENCY') return false;
+            const dist = Game.map.getRoomLinearDistance(request.homeRoom, s.room.name);
+            return dist <= 2; // Allow adjacent + 1
+        });
+
+        if (remoteCandidates.length > 0) {
+            // Sort by distance, then by energy available
+            remoteCandidates.sort((a, b) => {
+                const distA = Game.map.getRoomLinearDistance(request.homeRoom, a.room.name);
+                const distB = Game.map.getRoomLinearDistance(request.homeRoom, b.room.name);
+                if (distA !== distB) return distA - distB;
+                return b.room.energyAvailable - a.room.energyAvailable;
+            });
+            return remoteCandidates[0];
         }
 
-        // Filter 3: Remote Spawns (Phase 1: Placeholder / Basic)
-        // In future phases, we check Game.map.getRoomLinearDistance
         return null; 
     },
 

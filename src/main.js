@@ -88,7 +88,8 @@ module.exports.loop = function() {
                 'worker',
                 'remote_worker',
                 'dismantler',
-                'reserver'
+                'reserver',
+                'claimer'
             ].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }

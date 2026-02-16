@@ -6,6 +6,11 @@ const MISSION_DEFS = Object.freeze({
         required: ['roomName', 'x', 'y'],
         optional: ['sponsorRoom', 'priority', 'persist', 'label', 'targetId']
     },
+    claim: {
+        label: 'Claim a target room controller (remote).',
+        required: ['roomName'],
+        optional: ['sponsorRoom', 'priority', 'persist', 'label']
+    },
     reserve: {
         label: 'Reserve a target room controller (remote).',
         required: ['roomName'],
@@ -117,6 +122,9 @@ function addMission(type, data) {
     if (key === 'reserve' && !roomName) {
         return { error: 'Missing target room (roomName).' };
     }
+    if (key === 'claim' && !roomName) {
+        return { error: 'Missing target room (roomName).' };
+    }
     if (key === 'drainer' && !roomName) {
         return { error: 'Missing target room (roomName).' };
     }
@@ -133,7 +141,7 @@ function addMission(type, data) {
         priority: Number.isFinite(data && data.priority) ? data.priority : DEFAULT_PRIORITY,
         sponsorRoom: normalizeRoomName(data && data.sponsorRoom),
         targetPos: finalTargetPos || null,
-        targetRoom: key === 'reserve' || key === 'drainer' ? roomName : (key === 'transfer' ? transferTargetRoom : null),
+        targetRoom: key === 'reserve' || key === 'drainer' || key === 'claim' ? roomName : (key === 'transfer' ? transferTargetRoom : null),
         sourceRoom: key === 'transfer' ? transferSourceRoom : null,
         sourceId: key === 'transfer' ? sourceId : null,
         resourceType: key === 'transfer' && data && data.resourceType ? ('' + data.resourceType).trim() : null,

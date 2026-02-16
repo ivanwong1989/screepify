@@ -49,7 +49,7 @@ function computeStatus(room, allies, myUser) {
 }
 
 function updateEntryFromVision(entry, visibleRoom, myUser, allies) {
-    const hostiles = visibleRoom.find(FIND_HOSTILE_CREEPS).filter(c => !isAllyName(c.owner && c.owner.username, allies));
+    const hostiles = visibleRoom.find(FIND_HOSTILE_CREEPS).filter(c => !isAllyName(c.owner && c.owner.username, allies) && (c.getActiveBodyparts(ATTACK) || c.getActiveBodyparts(RANGED_ATTACK)));
     const hostileStructures = visibleRoom.find(FIND_HOSTILE_STRUCTURES).filter(s => !isAllyName(s.owner && s.owner.username, allies));
     const statusInfo = computeStatus(visibleRoom, allies, myUser);
 

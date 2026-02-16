@@ -37,6 +37,8 @@ function showMissionHelp() {
         'mission(\"add\",\"dismantle\", { roomName, x, y, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?)',
         'mission(\"add\",\"drainer\", { roomName, x, y, sponsorRoom, priority, persist, label })',
+        'mission(\"add\",\"claim\", roomName, sponsorRoom?, priority?, persist?, label?)',
+        'mission(\"add\",\"claim\", { roomName, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"reserve\", roomName, sponsorRoom?, priority?, persist?, label?)',
         'mission(\"add\",\"reserve\", { roomName, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?)',
@@ -153,6 +155,14 @@ module.exports = function registerMissionConsole() {
                         persist: args[3],
                         label: args[4]
                     };
+                } else if (key === 'claim') {
+                    data = {
+                        roomName: args[0],
+                        sponsorRoom: args[1],
+                        priority: args[2],
+                        persist: args[3],
+                        label: args[4]
+                    };
                 } else if (key === 'transfer') {
                     data = {
                         sourceId: args[0],
@@ -193,6 +203,11 @@ module.exports = function registerMissionConsole() {
                     if (sponsorRoom) data.sponsorRoom = sponsorRoom;
                 }
             } else if (key === 'reserve') {
+                if (!data.sponsorRoom) {
+                    const sponsorRoom = shared.resolveSponsorRoomForTargetRoom(data.roomName || data.targetRoom);
+                    if (sponsorRoom) data.sponsorRoom = sponsorRoom;
+                }
+            } else if (key === 'claim') {
                 if (!data.sponsorRoom) {
                     const sponsorRoom = shared.resolveSponsorRoomForTargetRoom(data.roomName || data.targetRoom);
                     if (sponsorRoom) data.sponsorRoom = sponsorRoom;
