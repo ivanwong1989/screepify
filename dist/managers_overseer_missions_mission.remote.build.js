@@ -27,7 +27,9 @@ module.exports = {
             if (existingNames.has(roomName)) return;
 
             const remoteRoom = Game.rooms[roomName];
-            if (remoteRoom && remoteRoom.controller && remoteRoom.controller.my && remoteRoom.controller.level < 2) {
+            const isMy = remoteRoom && remoteRoom.controller && remoteRoom.controller.my;
+            const needsHelp = isMy && (remoteRoom.controller.level < 3 || remoteRoom.find(FIND_MY_SPAWNS).length === 0);
+            if (needsHelp) {
                 const sources = remoteRoom.find(FIND_SOURCES);
                 const sourcesInfo = sources.map(s => ({ id: s.id, x: s.pos.x, y: s.pos.y }));
                 
@@ -48,7 +50,10 @@ module.exports = {
         const workPerCreep = buildStats.work || 1;
 
         entries.forEach(({ name, entry, room: remoteRoom, enabled }) => {
-            if (!enabled || !entry) return;
+            const isMy = remoteRoom && remoteRoom.controller && remoteRoom.controller.my;
+            const needsHelp = isMy && (remoteRoom.controller.level < 3 || remoteRoom.find(FIND_MY_SPAWNS).length === 0);
+
+            if ((!enabled && !needsHelp) || !entry) return;
 
             let sites = [];
             if (remoteRoom) {
