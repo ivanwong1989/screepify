@@ -120,7 +120,7 @@ module.exports = {
                         count: 1,
                         spawnFromFleet: true
                     },
-                    priority: 45
+                    priority: 55
                 });
             });
         });

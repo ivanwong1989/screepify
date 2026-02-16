@@ -251,7 +251,7 @@ var managerSpawner = {
     generateBody: function(mission, budget) {
         const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
         if (archetype === 'remote_worker' || archetype === 'remote_hauler') {
-            budget = Math.min(budget, 1000);
+            budget = Math.min(budget, 1200);
         }
         if (archetype === 'dismantler') {
             budget = Math.min(budget, 1500);
@@ -450,11 +450,12 @@ var managerSpawner = {
     },
 
     generateRemoteWorkerBody: function(budget) {
-        // WORK, CARRY, MOVE x3 (300) Needs high move since we're travelling alot
+        // WORK, WORK, CARRY, MOVE x3 (400) Needs high move since we're travelling alot
         let body = [];
         let cost = 0;
         
-        while (cost + 300 <= budget && body.length + 7 <= 50) {
+        while (cost + 400 <= budget && body.length + 7 <= 50) {
+            body.push(WORK);
             body.push(WORK);
             body.push(CARRY);
             body.push(MOVE);
