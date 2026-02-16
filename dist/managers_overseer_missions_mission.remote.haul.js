@@ -26,7 +26,7 @@ module.exports = {
         const ENERGY_PER_TICK = 10;
         const TRANSFER_BUFFER_TICKS = 2;
         const DISTANCE_SOFT_CAP = 25;
-        const DISTANCE_SCALE_PER_TILE = 0.01;
+        const DISTANCE_SCALE_PER_TILE = 0.002;
         const carryParts = Math.min(haulerStats.carry || 1, MAX_REMOTE_HAULER_CARRY_PARTS);
 
         if (!room.memory.overseer) room.memory.overseer = {};
