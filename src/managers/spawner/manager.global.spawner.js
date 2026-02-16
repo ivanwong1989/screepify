@@ -35,6 +35,7 @@ module.exports = {
     },
 
     findBestSpawn: function(request, availableSpawns) {
+        /*
         // Filter 1: Capable of spawning (Energy Capacity)
         // We check capacity, not current available, because if it's local we might be waiting for refill (Grace Period handled in local manager, but we double check here)
         let candidates = availableSpawns.filter(s => s.room.energyCapacityAvailable >= request.cost);
@@ -68,7 +69,10 @@ module.exports = {
             return remoteCandidates[0];
         }
 
-        return null; 
+        return null;
+        */
+
+        return availableSpawns.find(s => s.room.name === request.homeRoom && s.room.energyAvailable >= request.cost);
     },
 
     executeSpawn: function(spawn, request) {
