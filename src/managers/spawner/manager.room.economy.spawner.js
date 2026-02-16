@@ -70,11 +70,9 @@ var managerSpawner = {
                 }
             }
 
-            // Fix: Add remote/spawning creeps to the local census. 
-            // We don't use Math.max(local, global) because 'local' might be high (bad memory creeps) 
-            // and 'global' might be low (only new creeps), causing us to ignore the new creeps.
-            const remoteCount = remoteMissionCounts[mission.name] || 0;
-            const totalCount = current.count + remoteCount;
+            // Use the greater of local census (Overseer) or global count (Spawner scan) to ensure we don't double spawn.
+            // Overseer census includes remote/spawning creeps if memory is set correctly.
+            const totalCount = Math.max(current.count, globalMissionCounts[mission.name] || 0);
             const effectiveCount = Math.max(0, totalCount - nearDeathCount);
 
             if (req.count && effectiveCount < req.count && req.spawn !== false) {
