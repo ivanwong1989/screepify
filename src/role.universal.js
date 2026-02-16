@@ -140,6 +140,17 @@ var roleUniversal = {
             }
         }
 
+        // --- Global Deployment Logic ---
+        // If spawned remotely, travel to home room before doing anything else.
+        if (creep.memory._travellingToHome) {
+            if (creep.room.name === creep.memory.room) {
+                delete creep.memory._travellingToHome;
+            } else {
+                moveToTarget(creep, new RoomPosition(25, 25, creep.memory.room), 20);
+                return;
+            }
+        }
+
         let task = creep.memory.task;
 
         if (creep.memory.role === 'scout') {

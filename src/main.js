@@ -9,6 +9,7 @@ var roleDefender = require('role.defender');
 var roleTower = require('role.tower');
 var runColony = require('runColony');
 var cpuEma = require('telemetry_cpuEma');
+var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
 
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
@@ -56,6 +57,15 @@ module.exports.loop = function() {
                 }
             }
         }
+
+        // --- GLOBAL SPAWN MANAGER ---
+        // Collect requests from all rooms
+        let allSpawnRequests = [];
+        for (const roomName in Game.rooms) {
+            const room = Game.rooms[roomName];
+            if (room._spawnRequests) allSpawnRequests.push(...room._spawnRequests);
+        }
+        managerGlobalSpawner.run(allSpawnRequests);
 
         // --- CREEP RUN LOGIC ---
         // Run creep logic globally, as they may be in any room

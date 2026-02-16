@@ -12,6 +12,7 @@ var managerSpawner = {
         const myCreeps = cache.myCreeps || [];
         const PRESPAWN_TTL = 80;
         const ECONOMY_ROLES = new Set(['miner', 'remote_miner', 'hauler', 'remote_hauler', 'worker', 'remote_worker', 'mineral_miner']);
+        room._spawnRequests = [];
 
         // 1. Identify Deficits
         const spawnQueue = [];
@@ -59,17 +60,16 @@ var managerSpawner = {
             debug('spawner', `[Spawner] Queue: ${spawnQueue.map(m => m.name).join(', ')}`);
         }
 
-        // 3. Execute Spawn
+        // 3. Generate Request (Decoupled)
         if (spawnQueue.length > 0) {
-            const spawns = (cache.myStructuresByType[STRUCTURE_SPAWN] || []).filter(s => !s.spawning);
-            if (spawns.length > 0) {
-                const mission = this.selectMission(room, spawnQueue);
-                this.spawnCreep(spawns[0], mission, room);
-            }
+            // We select the most important mission to request
+            const mission = this.selectMission(room, spawnQueue);
+            const request = this.createSpawnRequest(mission, room);
+            if (request) room._spawnRequests.push(request);
         }
     },
 
-    spawnCreep: function(spawn, mission, room) {
+    createSpawnRequest: function(mission, room) {
         const state = room._state;
         let budget = room.energyCapacityAvailable;
         
@@ -124,29 +124,22 @@ var managerSpawner = {
         const body = this.generateBody(mission, budget);
         const cost = this.calculateBodyCost(body);
 
-        if (room.energyAvailable >= cost) {
-            const name = `${mission.archetype}_${Game.time.toString(36)}`;
-            const memory = {
-                role: mission.archetype,
-                missionName: mission.name,
-                room: room.name,
-                taskState: 'init'
-            };
-            
-            const result = spawn.spawnCreep(body, name, { memory: memory });
-            if (result === OK) {
-                debug('spawner', `[Spawner] Spawning ${name} for ${mission.name} (Cost: ${cost})`);
+        // Construct the request object
+        const memory = {
+            role: mission.archetype,
+            missionName: mission.name,
+            room: room.name,
+            taskState: 'init'
+        };
 
-                if (!room.memory.spawnHistory) room.memory.spawnHistory = [];
-                room.memory.spawnHistory.push(mission.archetype);
-                if (room.memory.spawnHistory.length > 5) room.memory.spawnHistory.shift();
-                room.memory.spawner.waitTicks = 0;
-            } else {
-                debug('spawner', `[Spawner] Failed to spawn ${name}: ${result}`);
-            }
-        } else {
-            debug('spawner', `[Spawner] Waiting for energy: ${mission.name} (Cost: ${cost}/${room.energyAvailable}) [Budget: ${budget}, State: ${state}]`);
-        }
+        return {
+            missionId: mission.name,
+            priority: mission.priority,
+            body: body,
+            memory: memory,
+            homeRoom: room.name,
+            cost: cost
+        };
     },
 
     selectMission: function(room, spawnQueue) {
