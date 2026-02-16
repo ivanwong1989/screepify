@@ -87,7 +87,13 @@ var managerOverseer = {
         // 4. Build Census (include remote creeps assigned to this home room)
         const remoteByHome = getRemoteCreepsByHomeRoom();
         const remote = remoteByHome[room.name] || { assigned: [], idle: [] };
-        const censusCreeps = intel.myCreeps.concat(remote.assigned || [], remote.idle || []);
+
+        // Only count creeps that *belong* to this room (home/owner semantics).
+        // Physical-local creeps from other home rooms should not inflate this room's fleet census.
+        const localOwned = (intel.myCreeps || []).filter(c =>
+            c && c.my && c.memory && c.memory.room === room.name
+        );
+        const censusCreeps = localOwned.concat(remote.assigned || [], remote.idle || []);
 
         // 5. Generate Missions
         const missions = overseerMissions.generate(room, intel, state, economyState, censusCreeps);

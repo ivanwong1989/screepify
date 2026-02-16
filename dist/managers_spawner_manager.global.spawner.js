@@ -74,6 +74,11 @@ module.exports = {
     executeSpawn: function(spawn, request) {
         const name = `${request.memory.role}_${Game.time.toString(36)}_${Math.floor(Math.random()*100)}`;
         
+        // Canonicalize home vs spawn room fields for debugging and future census logic.
+        request.memory.homeRoom = request.homeRoom;
+        request.memory.spawnRoom = spawn.room.name;
+        request.memory.room = request.homeRoom; // keep existing semantics: memory.room == home room
+
         // If remote, add travel flag
         if (spawn.room.name !== request.homeRoom) {
             request.memory._travellingToHome = true;

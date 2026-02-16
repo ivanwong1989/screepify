@@ -19,7 +19,27 @@ var managerSpawner = {
         const nearDeathByRole = Object.create(null);
         const nearDeathByMission = Object.create(null);
         const globalMissionCounts = Object.create(null);
-        const remoteMissionCounts = Object.create(null);
+        const globalRoleCounts = Object.create(null);
+        const spawningMissionCounts = Object.create(null);
+        const spawningRoleCounts = Object.create(null);
+
+        // Track spawning creeps via spawn.spawning + Memory.creeps[name].
+        // spawnCreep stores Memory.creeps immediately, so this is robust even if Game.creeps timing differs.
+        const spawningNames = new Set();
+        for (const rn in Game.rooms) {
+            const r = Game.rooms[rn];
+            if (!r.controller || !r.controller.my) continue;
+            const spawns = r.find(FIND_MY_SPAWNS);
+            for (const s of spawns) {
+                if (!s.spawning) continue;
+                const cname = s.spawning.name;
+                spawningNames.add(cname);
+                const mem = Memory.creeps && Memory.creeps[cname];
+                if (!mem || mem.room !== room.name) continue;
+                if (mem.missionName) spawningMissionCounts[mem.missionName] = (spawningMissionCounts[mem.missionName] || 0) + 1;
+                if (mem.role) spawningRoleCounts[mem.role] = (spawningRoleCounts[mem.role] || 0) + 1;
+            }
+        }
 
         // Use allCreeps if available to catch remote/spawning creeps
         const creepsToAnalyze = allCreeps || myCreeps;
@@ -34,19 +54,18 @@ var managerSpawner = {
                 continue;
             }
 
+            // Avoid double counting if this creep is also represented via spawn.spawning/Memory.creeps
+            if (spawningNames.has(creep.name)) continue;
+
             // Track global counts (includes spawning creeps)
             const missionName = creep.memory && creep.memory.missionName;
             if (missionName) {
                 globalMissionCounts[missionName] = (globalMissionCounts[missionName] || 0) + 1;
-                
-                // Track remote/spawning creeps specifically (creeps NOT physically in the room)
-                if (creep.room.name !== room.name || creep.spawning) {
-                    remoteMissionCounts[missionName] = (remoteMissionCounts[missionName] || 0) + 1;
-                }
             }
+            const role = creep.memory && creep.memory.role;
+            if (role) globalRoleCounts[role] = (globalRoleCounts[role] || 0) + 1;
 
             if (!creep.ticksToLive || creep.ticksToLive > PRESPAWN_TTL) continue;
-            const role = creep.memory && creep.memory.role;
             if (role) nearDeathByRole[role] = (nearDeathByRole[role] || 0) + 1;
             if (missionName) nearDeathByMission[missionName] = (nearDeathByMission[missionName] || 0) + 1;
         }
@@ -70,16 +89,28 @@ var managerSpawner = {
                 }
             }
 
-            // Fix: Add remote/spawning creeps to the local census. 
-            // We don't use Math.max(local, global) because 'local' might be high (bad memory creeps) 
-            // and 'global' might be low (only new creeps), causing us to ignore the new creeps.
-            const remoteCount = remoteMissionCounts[mission.name] || 0;
-            const totalCount = current.count + remoteCount;
+            // Compare local census vs global scan using consistent keys.
+            // - Fleet missions (roleCensus): compare role-based counts.
+            // - Non-fleet missions: compare missionName-based counts.
+            const isFleet = !!mission.roleCensus;
+            const localCount = current.count || 0;
+            const globalCount = isFleet
+                ? (globalRoleCounts[mission.roleCensus] || 0)
+                : (globalMissionCounts[mission.name] || 0);
+            const inSpawnCount = isFleet
+                ? (spawningRoleCounts[mission.roleCensus] || 0)
+                : (spawningMissionCounts[mission.name] || 0);
+
+            const totalCount = Math.max(localCount, globalCount + inSpawnCount);
             const effectiveCount = Math.max(0, totalCount - nearDeathCount);
 
             if (req.count && effectiveCount < req.count && req.spawn !== false) {
                 if (mission.name.includes('fleet')) {
-                    debug('spawner', `[Spawner] Enqueue ${mission.name} for ${room.name}. Eff: ${effectiveCount} (Local: ${current.count}, Remote: ${remoteCount}, NearDeath: ${nearDeathCount}) Req: ${req.count}`);
+                    debug('spawner',
+                        `[Spawner] Enqueue ${mission.name} for ${room.name}. ` +
+                        `Eff:${effectiveCount} (Local:${localCount}, Global:${globalCount}, Spawning:${inSpawnCount}, NearDeath:${nearDeathCount}) ` +
+                        `Req:${req.count}`
+                    );
                 }
                 spawnQueue.push(mission);
             }

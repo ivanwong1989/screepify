@@ -61,7 +61,11 @@ var managerTasks = {
         this.buildIdCache(room, missions);
         const missionsSorted = [...missions].sort((a, b) => (b.priority || 0) - (a.priority || 0));
         const cache = global.getRoomCache(room);
-        const localCreeps = cache.myCreeps || [];
+        // Only manage creeps owned by this home room.
+        // Foreign creeps in the room should be managed by their own home room via remote-by-home.
+        const localCreeps = (cache.myCreeps || []).filter(c =>
+            c && c.my && c.memory && c.memory.room === room.name
+        );
         // Include creeps spawned by this room that are currently in other rooms,
         // so their missions continue to update (e.g., dismantle in adjacent rooms).
         const remoteByHome = this.getRemoteCreepsByHomeRoom();
