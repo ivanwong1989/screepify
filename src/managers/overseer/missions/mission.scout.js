@@ -64,14 +64,14 @@ module.exports = {
             return (now - lastScout) >= SCOUT_INTERVAL;
         });
 
-        if (dueRooms.length === 0) return;
-
         const missionName = `scout:${room.name}`;
-
         const creepList = Object.values(Game.creeps);
         const assigned = creepList.filter(c =>
             c.memory && c.memory.role === 'scout' && c.memory.room === room.name
         );
+
+        if (dueRooms.length === 0 && assigned.length === 0) return;
+
         const census = {
             count: assigned.length,
             workParts: assigned.reduce((sum, c) => sum + c.getActiveBodyparts(WORK), 0),
@@ -88,8 +88,10 @@ module.exports = {
             },
             data: {
                 sponsorRoom: room.name,
-                rooms: dueRooms,
-                interval: SCOUT_INTERVAL
+                rooms: available,
+                interval: SCOUT_INTERVAL,
+                holdTime: 10,
+                repeat: true
             },
             priority: 20,
             census: census,

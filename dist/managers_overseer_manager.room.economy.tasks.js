@@ -1113,7 +1113,9 @@ var managerTasks = {
         creep.memory.scout = {
             sponsorRoom,
             rooms,
-            interval
+            interval,
+            holdTime: data.holdTime,
+            repeat: data.repeat
         };
 
         return null;

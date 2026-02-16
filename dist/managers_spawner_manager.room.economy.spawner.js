@@ -5,7 +5,7 @@
  * @param {Room} room
  */
 var managerSpawner = {
-    run: function(room) {
+    run: function(room, allCreeps) {
         const missions = room._missions;
         if (!missions) return;
         const cache = global.getRoomCache(room);
@@ -18,12 +18,36 @@ var managerSpawner = {
         const spawnQueue = [];
         const nearDeathByRole = Object.create(null);
         const nearDeathByMission = Object.create(null);
+        const globalMissionCounts = Object.create(null);
+        const remoteMissionCounts = Object.create(null);
 
-        for (const creep of myCreeps) {
+        // Use allCreeps if available to catch remote/spawning creeps
+        const creepsToAnalyze = allCreeps || myCreeps;
+
+        for (const creep of creepsToAnalyze) {
+            // Filter by home room if we are looking at the global list
+            if (allCreeps && (!creep.memory || creep.memory.room !== room.name)) {
+                // Debug: Log if we are skipping a creep that looks like it belongs to a fleet mission for this room
+                if (creep.memory && creep.memory.missionName && creep.memory.missionName.includes('fleet') && creep.memory.missionName.includes(room.name)) {
+                     // debug('spawner', `[GlobalFilter] Skipping ${creep.name} (MemRoom: ${creep.memory.room}) for ${room.name} (Mission: ${creep.memory.missionName})`);
+                }
+                continue;
+            }
+
+            // Track global counts (includes spawning creeps)
+            const missionName = creep.memory && creep.memory.missionName;
+            if (missionName) {
+                globalMissionCounts[missionName] = (globalMissionCounts[missionName] || 0) + 1;
+                
+                // Track remote/spawning creeps specifically (creeps NOT physically in the room)
+                if (creep.room.name !== room.name || creep.spawning) {
+                    remoteMissionCounts[missionName] = (remoteMissionCounts[missionName] || 0) + 1;
+                }
+            }
+
             if (!creep.ticksToLive || creep.ticksToLive > PRESPAWN_TTL) continue;
             const role = creep.memory && creep.memory.role;
             if (role) nearDeathByRole[role] = (nearDeathByRole[role] || 0) + 1;
-            const missionName = creep.memory && creep.memory.missionName;
             if (missionName) nearDeathByMission[missionName] = (nearDeathByMission[missionName] || 0) + 1;
         }
         
@@ -46,9 +70,17 @@ var managerSpawner = {
                 }
             }
 
-            const effectiveCount = Math.max(0, current.count - nearDeathCount);
+            // Fix: Add remote/spawning creeps to the local census. 
+            // We don't use Math.max(local, global) because 'local' might be high (bad memory creeps) 
+            // and 'global' might be low (only new creeps), causing us to ignore the new creeps.
+            const remoteCount = remoteMissionCounts[mission.name] || 0;
+            const totalCount = current.count + remoteCount;
+            const effectiveCount = Math.max(0, totalCount - nearDeathCount);
 
             if (req.count && effectiveCount < req.count && req.spawn !== false) {
+                if (mission.name.includes('fleet')) {
+                    debug('spawner', `[Spawner] Enqueue ${mission.name} for ${room.name}. Eff: ${effectiveCount} (Local: ${current.count}, Remote: ${remoteCount}, NearDeath: ${nearDeathCount}) Req: ${req.count}`);
+                }
                 spawnQueue.push(mission);
             }
         });

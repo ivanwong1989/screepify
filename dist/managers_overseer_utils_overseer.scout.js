@@ -141,6 +141,21 @@ function ensureScoutTask(creep, task) {
     }
 
     const remoteRooms = ensureRemoteRoomMemory(remoteMemory, filteredRooms);
+
+    if (scoutData.targetRoom && creep.room.name === scoutData.targetRoom) {
+        recordRemoteIntel(creep, scoutData);
+        if (scoutData.holdTime) {
+            if (!scoutData.arrivalTime) scoutData.arrivalTime = Game.time;
+            if ((Game.time - scoutData.arrivalTime) < scoutData.holdTime) {
+                if (creep.memory.task) delete creep.memory.task;
+                creep.memory.scout = scoutData;
+                return;
+            }
+        }
+        delete scoutData.targetRoom;
+        delete scoutData.arrivalTime;
+    }
+
     const targetRoom = selectScoutTarget(creep, scoutData, filteredRooms, remoteRooms);
     if (!targetRoom) {
         creep.memory.scout = scoutData;

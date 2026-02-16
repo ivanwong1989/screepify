@@ -82,7 +82,7 @@ module.exports = {
         const result = spawn.spawnCreep(request.body, name, { memory: request.memory });
         
         if (result === OK) {
-            debug('spawner', `[GlobalSpawner] Spawning ${name} in ${spawn.room.name} for ${request.homeRoom}`);
+            debug('spawner', `[GlobalSpawner] Spawning ${name} in ${spawn.room.name} for ${request.homeRoom} (Mission: ${request.memory.missionName})`);
             
             // Update Home Room History
             const homeRoom = Game.rooms[request.homeRoom];

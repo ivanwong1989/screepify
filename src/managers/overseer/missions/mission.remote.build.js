@@ -14,6 +14,33 @@ module.exports = {
             maxScoutAge: 4000
         });
 
+        // Check for newly claimed rooms (often in skipRooms or filtered out of remote context)
+        // We want to help build spawn and early infrastructure until RCL 2
+        const remoteMem = room.memory.overseer.remote || {};
+        const candidates = new Set([
+            ...(remoteMem.skipRooms || []),
+            ...Object.keys(remoteMem.rooms || {})
+        ]);
+        const existingNames = new Set(entries.map(e => e.name));
+
+        candidates.forEach(roomName => {
+            if (existingNames.has(roomName)) return;
+
+            const remoteRoom = Game.rooms[roomName];
+            if (remoteRoom && remoteRoom.controller && remoteRoom.controller.my && remoteRoom.controller.level < 2) {
+                const sources = remoteRoom.find(FIND_SOURCES);
+                const sourcesInfo = sources.map(s => ({ id: s.id, x: s.pos.x, y: s.pos.y }));
+                
+                entries.push({
+                    name: roomName,
+                    entry: { sourcesInfo },
+                    room: remoteRoom,
+                    enabled: true
+                });
+                existingNames.add(roomName);
+            }
+        });
+
         const MAX_REMOTE_SITES = 3;
         const REMOTE_SCAN_INTERVAL = 25;
         const STALE_SITE_TICKS = 2000;
