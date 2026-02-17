@@ -7,6 +7,9 @@ const spawnCensus = {
         for (const entry of contractEntries) {
             desiredByContract[entry.contract.contractId] = entry.contract.desired || 0;
         }
+        const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
+            ? Memory.rooms[room.name].spawnTicketsByKey
+            : null;
 
         const isActiveTicket = (ticket) => {
             if (!ticket) return false;
@@ -19,16 +22,34 @@ const spawnCensus = {
         const activeCounts = Object.create(null);
         const requestedByContract = Object.create(null);
 
-        for (const id in tickets) {
-            const ticket = tickets[id];
-            if (!isActiveTicket(ticket)) continue;
-
+        const countTicket = (ticketId, ticket) => {
+            if (!isActiveTicket(ticket)) return;
             const contractId = ticket.contractId;
             activeCounts[contractId] = (activeCounts[contractId] || 0) + 1;
-
             if (ticket.state === 'REQUESTED' && !ticket.creepName) {
                 if (!requestedByContract[contractId]) requestedByContract[contractId] = [];
-                requestedByContract[contractId].push(id);
+                requestedByContract[contractId].push(ticketId);
+            }
+        };
+
+        if (roomIndex) {
+            for (const contractId of contractIds) {
+                const list = roomIndex[contractId];
+                if (!list || list.length === 0) continue;
+                for (let i = list.length - 1; i >= 0; i--) {
+                    const ticketId = list[i];
+                    const ticket = tickets[ticketId];
+                    if (!ticket || ticket.contractId !== contractId) {
+                        list.splice(i, 1);
+                        continue;
+                    }
+                    countTicket(ticketId, ticket);
+                }
+            }
+        } else {
+            for (const id in tickets) {
+                const ticket = tickets[id];
+                countTicket(id, ticket);
             }
         }
 
@@ -79,7 +100,7 @@ const spawnCensus = {
             }
         }
     },
-    getFulfillment: function(room, contractEntries, creepsFallback) {
+    getFulfillment: function(room, contractEntries, creepsFallback, spawningNamesFallback) {
         const contractIds = new Set(contractEntries.map(e => e.contract.contractId));
         const counts = Object.create(null);
         const countedCreepNamesByContract = Object.create(null);
@@ -90,17 +111,26 @@ const spawnCensus = {
             countedCreepNamesByContract[entry.contract.contractId] = new Set();
         }
 
-        const spawningNames = new Set();
-        for (const rn in Game.rooms) {
-            const r = Game.rooms[rn];
-            if (!r.controller || !r.controller.my) continue;
-            const spawns = r.find(FIND_MY_SPAWNS);
-            for (const s of spawns) {
-                if (s.spawning) spawningNames.add(s.spawning.name);
+        let spawningNames = spawningNamesFallback;
+        if (!spawningNames && global._spawningNamesCache && global._spawningNamesCache.time === Game.time) {
+            spawningNames = global._spawningNamesCache.names;
+        }
+        if (!spawningNames) {
+            spawningNames = new Set();
+            for (const rn in Game.rooms) {
+                const r = Game.rooms[rn];
+                if (!r.controller || !r.controller.my) continue;
+                const spawns = r.find(FIND_MY_SPAWNS);
+                for (const s of spawns) {
+                    if (s.spawning) spawningNames.add(s.spawning.name);
+                }
             }
         }
 
         const tickets = Memory.spawnTickets || {};
+        const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
+            ? Memory.rooms[room.name].spawnTicketsByKey
+            : null;
         const poolIndex = Object.create(null);
         for (const entry of contractEntries) {
             const contract = entry.contract;
@@ -116,13 +146,33 @@ const spawnCensus = {
             return true;
         };
 
-        for (const id in tickets) {
-            const ticket = tickets[id];
-            if (!isActiveTicket(ticket)) continue;
-
-            counts[ticket.contractId] = (counts[ticket.contractId] || 0) + 1;
+        const countFulfillmentTicket = (ticketId, ticket, contractId) => {
+            if (!isActiveTicket(ticket)) return;
+            counts[contractId] = (counts[contractId] || 0) + 1;
             if (ticket.creepName) {
-                countedCreepNamesByContract[ticket.contractId].add(ticket.creepName);
+                countedCreepNamesByContract[contractId].add(ticket.creepName);
+            }
+        };
+
+        if (roomIndex) {
+            for (const contractId of contractIds) {
+                const list = roomIndex[contractId];
+                if (!list || list.length === 0) continue;
+                for (let i = list.length - 1; i >= 0; i--) {
+                    const ticketId = list[i];
+                    const ticket = tickets[ticketId];
+                    if (!ticket || ticket.contractId !== contractId) {
+                        list.splice(i, 1);
+                        continue;
+                    }
+                    countFulfillmentTicket(ticketId, ticket, contractId);
+                }
+            }
+        } else {
+            for (const id in tickets) {
+                const ticket = tickets[id];
+                if (!ticket || !contractIds.has(ticket.contractId)) continue;
+                countFulfillmentTicket(id, ticket, ticket.contractId);
             }
         }
         debug('spawner', `[SpawnCensus] ${room.name} ticketsCounted=${Object.values(counts).reduce((a,b)=>a+b,0)}`);
@@ -156,15 +206,37 @@ const spawnCensus = {
         }
         debug('spawner', `[SpawnCensus] ${room.name} creepsCounted=${creepsCounted}`);
 
-        for (const id in tickets) {
-            const ticket = tickets[id];
-            if (!ticket || !contractIds.has(ticket.contractId)) continue;
-            if (ticket.creepName && spawningNames.has(ticket.creepName)) {
+        const refreshTicketState = (ticketId, ticket, contractId) => {
+            if (!ticket) return;
+            if (!contractIds.has(contractId)) return;
+            if (ticket.creepName && spawningNames && spawningNames.has(ticket.creepName)) {
                 if (ticket.state !== 'SPAWNING') ticket.state = 'SPAWNING';
             } else if (ticket.creepName && Game.creeps[ticket.creepName]) {
                 if (ticket.state === 'REQUESTED' || ticket.state === 'SPAWNING') {
                     ticket.state = 'EN_ROUTE';
                 }
+            }
+        };
+
+        if (roomIndex) {
+            for (const contractId of contractIds) {
+                const list = roomIndex[contractId];
+                if (!list || list.length === 0) continue;
+                for (let i = list.length - 1; i >= 0; i--) {
+                    const ticketId = list[i];
+                    const ticket = tickets[ticketId];
+                    if (!ticket || ticket.contractId !== contractId) {
+                        list.splice(i, 1);
+                        continue;
+                    }
+                    refreshTicketState(ticketId, ticket, contractId);
+                }
+            }
+        } else {
+            for (const id in tickets) {
+                const ticket = tickets[id];
+                if (!ticket || !contractIds.has(ticket.contractId)) continue;
+                refreshTicketState(id, ticket, ticket.contractId);
             }
         }
 

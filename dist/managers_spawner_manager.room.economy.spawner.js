@@ -23,7 +23,10 @@ var managerSpawner = {
         if (contractEntries.length === 0) return;
 
         spawnCensus.pruneTickets(room, contractEntries);
-        const fulfillment = spawnCensus.getFulfillment(room, contractEntries, allCreeps || myCreeps);
+        const spawningNames = global._spawningNamesCache && global._spawningNamesCache.time === Game.time
+            ? global._spawningNamesCache.names
+            : null;
+        const fulfillment = spawnCensus.getFulfillment(room, contractEntries, allCreeps || myCreeps, spawningNames);
         debug('spawner', `[Spawner] ${room.name} fulfillment keys=${Object.keys(fulfillment).length}`);
         const buildOptions = {
             buildBody: (mission, budget) => this.generateBody(mission, budget),
@@ -46,18 +49,16 @@ var managerSpawner = {
             for (const entry of contractEntries) {
                 entriesById[entry.contract.contractId] = entry;
             }
+            const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
+                ? Memory.rooms[room.name].spawnTicketsByKey
+                : null;
 
             let backlogAdded = 0;
-            for (const id in tickets) {
-                const ticket = tickets[id];
-                if (!ticket || ticket.state !== 'REQUESTED') continue;
-                if (ticket.expiresAt && ticket.expiresAt <= Game.time) continue;
-                if (ticket.homeRoom !== room.name) continue;
-                if (addedTicketIds.has(ticket.ticketId)) continue;
-
-                const entry = entriesById[ticket.contractId];
-                if (!entry) continue;
-
+            const tryAddBacklog = (ticket, entry) => {
+                if (!ticket || ticket.state !== 'REQUESTED') return false;
+                if (ticket.expiresAt && ticket.expiresAt <= Game.time) return false;
+                if (ticket.homeRoom !== room.name) return false;
+                if (addedTicketIds.has(ticket.ticketId)) return false;
                 const spawnTicket = (ticket.body && ticket.cost && ticket.memory) ? {
                     ticketId: ticket.ticketId,
                     contractId: ticket.contractId,
@@ -75,7 +76,33 @@ var managerSpawner = {
                 if (spawnTicket) {
                     room._spawnTicketsToRequest.push(spawnTicket);
                     addedTicketIds.add(ticket.ticketId);
-                    backlogAdded++;
+                    return true;
+                }
+                return false;
+            };
+
+            if (roomIndex) {
+                for (const contractId in entriesById) {
+                    const entry = entriesById[contractId];
+                    const list = roomIndex[contractId];
+                    if (!list || list.length === 0) continue;
+                    for (let i = list.length - 1; i >= 0; i--) {
+                        const ticketId = list[i];
+                        const ticket = tickets[ticketId];
+                        if (!ticket || ticket.contractId !== contractId) {
+                            list.splice(i, 1);
+                            continue;
+                        }
+                        if (tryAddBacklog(ticket, entry)) backlogAdded++;
+                    }
+                }
+            } else {
+                for (const id in tickets) {
+                    const ticket = tickets[id];
+                    if (!ticket) continue;
+                    const entry = entriesById[ticket.contractId];
+                    if (!entry) continue;
+                    if (tryAddBacklog(ticket, entry)) backlogAdded++;
                 }
             }
 

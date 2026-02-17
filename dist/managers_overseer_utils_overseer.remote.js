@@ -145,10 +145,8 @@ function isEligible(entry, myUser, maxScoutAge) {
     if (!entry) return false;
     const status = entry.status;
     if (!status) return false;
-    if (status === 'hostile' || status === 'occupied' || status === 'owned' || status === 'ally') return false;
-    if (status === 'reserved') {
-        if (!entry.reservation || !myUser || entry.reservation !== myUser) return false;
-    }
+    if (status !== 'reserved') return false;
+    if (!entry.reservation || !myUser || entry.reservation !== myUser) return false;
     if ((entry.hostiles || 0) > 0 || (entry.hostileStructures || 0) > 0) return false;
     const lastScout = Number.isFinite(entry.lastScout) ? entry.lastScout : 0;
     if (maxScoutAge && lastScout > 0 && (Game.time - lastScout) > maxScoutAge) return false;
@@ -167,11 +165,9 @@ function getRemoteContext(room, options = {}) {
     const myUser = getMyUsername(room);
     const allies = getAllies();
     const maxScoutAge = Number.isFinite(options.maxScoutAge) ? options.maxScoutAge : 4000;
-    const requireStorage = options.requireStorage !== false;
     const state = options.state || null;
     const skipRooms = new Set(remoteMemory.skipRooms || []);
 
-    const storageOk = !requireStorage || !!room.storage;
     const stateOk = state !== 'EMERGENCY';
     const globalEnabled = Memory.remoteMissionsEnabled !== false;
     const roomEnabled = remoteMemory.enabled !== false;
@@ -185,7 +181,7 @@ function getRemoteContext(room, options = {}) {
         if (visible) updateEntryFromVision(entry, visible, myUser, allies);
 
         const eligible = isEligible(entry, myUser, maxScoutAge);
-        const enabled = storageOk && stateOk && eligible && remoteEnabled;
+        const enabled = stateOk && eligible && remoteEnabled;
 
         entry.enabled = enabled;
         entries.push({ name, entry, room: visible, enabled });

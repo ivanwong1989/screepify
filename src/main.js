@@ -24,12 +24,8 @@ module.exports.loop = function() {
         // --- Initialize Remote Memory ---
         if (!Memory.remoteRooms) Memory.remoteRooms = {};
         if (!Memory.spawnTickets) Memory.spawnTickets = {};
-
-        // --- Spawn Ticket GC (prevents unbounded growth) ---
-        (function cleanupSpawnTickets() {
-            const tickets = Memory.spawnTickets;
+        if (!global._spawningNamesCache || global._spawningNamesCache.time !== Game.time) {
             const spawningNames = new Set();
-
             for (const rn in Game.rooms) {
                 const r = Game.rooms[rn];
                 if (!r.controller || !r.controller.my) continue;
@@ -38,6 +34,15 @@ module.exports.loop = function() {
                     if (s.spawning) spawningNames.add(s.spawning.name);
                 }
             }
+            global._spawningNamesCache = { time: Game.time, names: spawningNames };
+        }
+
+        // --- Spawn Ticket GC (prevents unbounded growth) ---
+        (function cleanupSpawnTickets() {
+            const tickets = Memory.spawnTickets;
+            const spawningNames = global._spawningNamesCache && global._spawningNamesCache.time === Game.time
+                ? global._spawningNamesCache.names
+                : null;
 
             for (const id in tickets) {
                 const t = tickets[id];
@@ -48,7 +53,7 @@ module.exports.loop = function() {
 
                 const expired = t.expiresAt && t.expiresAt <= Game.time;
                 const creepAlive = t.creepName && Game.creeps[t.creepName];
-                const creepSpawning = t.creepName && spawningNames.has(t.creepName);
+                const creepSpawning = t.creepName && spawningNames && spawningNames.has(t.creepName);
 
                 if (expired && !creepAlive && !creepSpawning) {
                     delete tickets[id];
