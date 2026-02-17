@@ -3,7 +3,7 @@ function getAllies() {
     return Memory.allies.map(a => ('' + a).toLowerCase());
 }
 
-const DEFAULT_SCOUT_INTERVAL = 1600;
+const DEFAULT_SCOUT_INTERVAL = 500;
 
 function isAllyName(name, allies) {
     if (!name) return false;
