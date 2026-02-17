@@ -15,6 +15,7 @@ var managerSpawner = {
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
         room._spawnTicketsToRequest = [];
+        const addedTicketIds = new Set();
 
         // 1. Build contracts + fulfillment using tickets
         const contractEntries = spawnContracts.buildContracts(room, missions);
@@ -24,15 +25,63 @@ var managerSpawner = {
         spawnCensus.pruneTickets(room, contractEntries);
         const fulfillment = spawnCensus.getFulfillment(room, contractEntries, allCreeps || myCreeps);
         debug('spawner', `[Spawner] ${room.name} fulfillment keys=${Object.keys(fulfillment).length}`);
-        const ticketToSpawn = spawnPlanner.plan(room, contractEntries, fulfillment, {
+        const buildOptions = {
             buildBody: (mission, budget) => this.generateBody(mission, budget),
             calculateBodyCost: (body) => this.calculateBodyCost(body)
-        });
+        };
+
+        const ticketToSpawn = spawnPlanner.plan(room, contractEntries, fulfillment, buildOptions);
         if (ticketToSpawn) {
             debug('spawner', `[Spawner] ${room.name} planned ticket=${ticketToSpawn.ticketId} contract=${ticketToSpawn.contractId} role=${ticketToSpawn.role} prio=${ticketToSpawn.priority} cost=${ticketToSpawn.cost}`);
             room._spawnTicketsToRequest.push(ticketToSpawn);
+            addedTicketIds.add(ticketToSpawn.ticketId);
         } else {
             debug('spawner', `[Spawner] ${room.name} no ticket planned`);
+        }
+
+        // 2. Add pending REQUESTED tickets from Memory as durable backlog.
+        const tickets = Memory.spawnTickets;
+        if (tickets) {
+            const entriesById = Object.create(null);
+            for (const entry of contractEntries) {
+                entriesById[entry.contract.contractId] = entry;
+            }
+
+            let backlogAdded = 0;
+            for (const id in tickets) {
+                const ticket = tickets[id];
+                if (!ticket || ticket.state !== 'REQUESTED') continue;
+                if (ticket.expiresAt && ticket.expiresAt <= Game.time) continue;
+                if (ticket.homeRoom !== room.name) continue;
+                if (addedTicketIds.has(ticket.ticketId)) continue;
+
+                const entry = entriesById[ticket.contractId];
+                if (!entry) continue;
+
+                const spawnTicket = (ticket.body && ticket.cost && ticket.memory) ? {
+                    ticketId: ticket.ticketId,
+                    contractId: ticket.contractId,
+                    homeRoom: ticket.homeRoom,
+                    role: ticket.role || entry.contract.role,
+                    bindMode: ticket.bindMode || entry.contract.bindMode,
+                    bindId: ticket.bindId || entry.contract.bindId,
+                    priority: Number.isFinite(ticket.priority) ? ticket.priority : entry.contract.priority,
+                    body: ticket.body,
+                    cost: ticket.cost,
+                    memory: ticket.memory,
+                    targetRoom: ticket.targetRoom || (entry.mission && entry.mission.data ? entry.mission.data.targetRoom : null)
+                } : spawnPlanner.buildSpawnTicket(entry, room, ticket, buildOptions);
+
+                if (spawnTicket) {
+                    room._spawnTicketsToRequest.push(spawnTicket);
+                    addedTicketIds.add(ticket.ticketId);
+                    backlogAdded++;
+                }
+            }
+
+            if (backlogAdded > 0) {
+                debug('spawner', `[Spawner] ${room.name} backlog REQUESTED added=${backlogAdded}`);
+            }
         }
     },
 

@@ -85,7 +85,7 @@ const spawnPlanner = {
             memory.missionName = mission.name;
         }
 
-        return {
+        const spawnTicket = {
             ticketId: ticket.ticketId,
             contractId: contract.contractId,
             homeRoom: room.name,
@@ -98,6 +98,17 @@ const spawnPlanner = {
             memory: memory,
             targetRoom: mission && mission.data ? mission.data.targetRoom : null
         };
+
+        if (Memory.spawnTickets && Memory.spawnTickets[ticket.ticketId]) {
+            const stored = Memory.spawnTickets[ticket.ticketId];
+            stored.body = body;
+            stored.cost = cost;
+            stored.priority = contract.priority;
+            stored.memory = memory;
+            stored.targetRoom = spawnTicket.targetRoom;
+        }
+
+        return spawnTicket;
     },
 
     computeBudget: function(room, mission) {
