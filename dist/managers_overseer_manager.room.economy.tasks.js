@@ -769,7 +769,7 @@ var managerTasks = {
             return {
                 action: 'move',
                 targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName },
-                range: 20
+                range: 1
             };
         }
 

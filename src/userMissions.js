@@ -14,7 +14,7 @@ const MISSION_DEFS = Object.freeze({
     reserve: {
         label: 'Reserve a target room controller (remote).',
         required: ['roomName'],
-        optional: ['sponsorRoom', 'priority', 'persist', 'label']
+        optional: ['sponsorRoom', 'priority', 'persist', 'label', 'x', 'y']
     },
     drainer: {
         label: 'Drain tower energy by tanking in a target room (remote).',

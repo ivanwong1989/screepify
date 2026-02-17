@@ -102,6 +102,7 @@ function buildReserveMissionCache() {
             id: mission.id,
             label: mission.label,
             targetRoom,
+            pos: mission.targetPos,
             priority: getMissionPriority(mission),
             persist: mission.persist === true
         });
@@ -136,7 +137,16 @@ module.exports = {
             const missionName = `reserve:${nameSuffix}`;
             const census = getMissionCensus(missionName);
             const targetRoom = entry.targetRoom;
-            const targetPos = { x: 25, y: 25, roomName: targetRoom };
+            let targetPos = entry.pos;
+            const visible = Game.rooms[targetRoom];
+            if (visible && visible.controller) {
+                const cPos = visible.controller.pos;
+                if (!targetPos || targetPos.x !== cPos.x || targetPos.y !== cPos.y) {
+                    targetPos = { x: cPos.x, y: cPos.y, roomName: targetRoom };
+                    userMissions.updateMission(missionId, { targetPos });
+                }
+            }
+            if (!targetPos) targetPos = { x: 25, y: 25, roomName: targetRoom };
             const timer = timerStore[missionId] || {};
             let reservationTicks = null;
 
