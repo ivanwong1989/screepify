@@ -4,6 +4,8 @@
  */
 const overseerUtils = {
     analyzeCensus: function(missions, creeps) {
+        // Informational only: used for UI/debug and mission logic that depends on "currently assigned".
+        // Spawn planning must rely on contract/ticket census, not mission.census.
         const missionMap = {};
         const roleMissions = {};
 
@@ -31,7 +33,8 @@ const overseerUtils = {
 
             if (memory.missionName && missionMap[memory.missionName]) {
                 const m = missionMap[memory.missionName];
-                if (!m.censusLocked) {
+                // Avoid double-counting roleCensus missions through missionName.
+                if (!m.censusLocked && !m.roleCensus) {
                     m.census.count++;
                     m.census.workParts += workParts;
                     m.census.carryParts += carryParts;

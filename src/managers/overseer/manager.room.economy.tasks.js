@@ -132,12 +132,27 @@ var managerTasks = {
                     const home = creep.memory.room;
                     const awayFromHome = home && creep.room && creep.room.name !== home;
                     if (awayFromHome && !this.isRemoteMission(missionStatus[missionName].mission, home)) {
-                        delete creep.memory.missionName;
-                        delete creep.memory.taskState;
-                        delete creep.memory.scout;
-                        delete creep.memory.task;
-                        creep.say('home');
-                        return;
+                        const isTravellingHome = creep.memory._travellingToHome === true ||
+                            (creep.memory.spawnRoom && creep.memory.spawnRoom !== creep.memory.room);
+                        if (!isTravellingHome) {
+                            delete creep.memory.missionName;
+                            delete creep.memory.taskState;
+                            delete creep.memory.scout;
+                            delete creep.memory.task;
+                            creep.say('home');
+                            return;
+                        }
+                        if (!creep.memory.task) {
+                            const homeRoom = Game.rooms[home];
+                            const targetPos = (homeRoom && homeRoom.controller)
+                                ? homeRoom.controller.pos
+                                : new RoomPosition(25, 25, home);
+                            creep.memory.task = {
+                                action: 'move',
+                                targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName },
+                                range: 5
+                            };
+                        }
                     }
                     const req = missionStatus[missionName].mission.requirements;
                     if (req && req.archetype && creep.memory.role !== req.archetype) {
@@ -152,7 +167,7 @@ var managerTasks = {
                     missionStatus[missionName].assignedCount++;
                     
                     // Update Reservation to ACTIVE if working
-                    if (creep.memory.assignmentKey) {
+                    if (creep.memory.assignmentKey || creep.memory.ticketId || creep.memory.contractId) {
                         this.updateReservation(creep, 'ACTIVE');
                     } else if (creep.ticksToLive > 1450) { // Bootstrap check for EN_ROUTE
                          // Handled in idle loop or specific check below
@@ -179,7 +194,9 @@ var managerTasks = {
 
         // Bootstrap EN_ROUTE state for new creeps
         idleCreeps.forEach(creep => {
-            if (creep.memory.assignmentKey) this.updateReservation(creep, 'EN_ROUTE');
+            if (creep.memory.assignmentKey || creep.memory.ticketId || creep.memory.contractId) {
+                this.updateReservation(creep, 'EN_ROUTE');
+            }
         });
 
         // Clear any stale tasks on unassigned creeps so they don't keep acting without a mission
@@ -260,21 +277,6 @@ var managerTasks = {
             }
         });
 
-        // Sync Tasker's real-time census back to the mission object for the Spawner
-        // This prevents the Spawner from queuing creeps for missions we just filled with idle creeps
-        for (const name in missionStatus) {
-            const status = missionStatus[name];
-            // Do not overwrite census for missions that track by role (e.g. fleet), as Tasker only tracks active assignments
-            if (status.mission.roleCensus) continue;
-            if (status.mission.censusLocked) continue;
-
-            if (status.mission.census) {
-                status.mission.census.count = status.assignedCount;
-                status.mission.census.workParts = status.assignedWorkParts;
-                status.mission.census.carryParts = status.assignedCarryParts;
-            }
-        }
-
         // 5. Assign Actions
         creeps.forEach(creep => {
             if (!creep.spawning && creep.memory.missionName) {
@@ -298,26 +300,40 @@ var managerTasks = {
 
     updateReservation: function(creep, state) {
         const key = creep.memory.assignmentKey;
-        if (!key) return;
-        
-        // Find home room memory
-        const homeName = creep.memory.room;
-        if (!homeName || !Memory.rooms[homeName]) return;
-        const assignments = Memory.rooms[homeName].assignments;
-        if (!assignments || !assignments[key]) return;
-        
-        const res = assignments[key];
-        
-        // State transitions
-        if (state === 'EN_ROUTE' && res.state !== 'ACTIVE') {
-            res.state = 'EN_ROUTE';
-            res.creepName = creep.name;
-            res.updatedAt = Game.time;
-            res.expiresAt = Game.time + 1500; // EN_ROUTE_TTL
+        if (key) {
+            // Find home room memory
+            const homeName = creep.memory.room;
+            if (!homeName || !Memory.rooms[homeName]) return;
+            const assignments = Memory.rooms[homeName].assignments;
+            if (!assignments || !assignments[key]) return;
+            
+            const res = assignments[key];
+            
+            // State transitions
+            if (state === 'EN_ROUTE' && res.state !== 'ACTIVE') {
+                res.state = 'EN_ROUTE';
+                res.creepName = creep.name;
+                res.updatedAt = Game.time;
+                res.expiresAt = Game.time + 1500; // EN_ROUTE_TTL
+            } else if (state === 'ACTIVE') {
+                res.state = 'ACTIVE';
+                res.updatedAt = Game.time;
+                res.expiresAt = Game.time + 50; // ACTIVE_STALE_TTL
+            }
+            return;
+        }
+
+        const ticketId = creep.memory.ticketId;
+        if (!ticketId || !Memory.spawnTickets || !Memory.spawnTickets[ticketId]) return;
+        const ticket = Memory.spawnTickets[ticketId];
+        if (state === 'EN_ROUTE' && ticket.state !== 'ACTIVE') {
+            ticket.state = 'EN_ROUTE';
+            ticket.creepName = creep.name;
+            ticket.expiresAt = Game.time + 1500;
         } else if (state === 'ACTIVE') {
-            res.state = 'ACTIVE';
-            res.updatedAt = Game.time;
-            res.expiresAt = Game.time + 50; // ACTIVE_STALE_TTL
+            ticket.state = 'ACTIVE';
+            ticket.creepName = creep.name;
+            ticket.expiresAt = Game.time + 50;
         }
     },
 

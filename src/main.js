@@ -23,6 +23,53 @@ module.exports.loop = function() {
 
         // --- Initialize Remote Memory ---
         if (!Memory.remoteRooms) Memory.remoteRooms = {};
+        if (!Memory.spawnTickets) Memory.spawnTickets = {};
+
+        // --- Spawn Ticket GC (prevents unbounded growth) ---
+        (function cleanupSpawnTickets() {
+            const tickets = Memory.spawnTickets;
+            const spawningNames = new Set();
+
+            for (const rn in Game.rooms) {
+                const r = Game.rooms[rn];
+                if (!r.controller || !r.controller.my) continue;
+                const spawns = r.find(FIND_MY_SPAWNS);
+                for (const s of spawns) {
+                    if (s.spawning) spawningNames.add(s.spawning.name);
+                }
+            }
+
+            for (const id in tickets) {
+                const t = tickets[id];
+                if (!t) {
+                    delete tickets[id];
+                    continue;
+                }
+
+                const expired = t.expiresAt && t.expiresAt <= Game.time;
+                const creepAlive = t.creepName && Game.creeps[t.creepName];
+                const creepSpawning = t.creepName && spawningNames.has(t.creepName);
+
+                if (expired && !creepAlive && !creepSpawning) {
+                    delete tickets[id];
+                    const home = t.homeRoom;
+                    const contractId = t.contractId;
+                    if (home && contractId && Memory.rooms && Memory.rooms[home] && Memory.rooms[home].spawnTicketsByKey) {
+                        const index = Memory.rooms[home].spawnTicketsByKey;
+                        const list = index[contractId];
+                        if (list && list.length > 0) {
+                            index[contractId] = list.filter(tid => tid !== id);
+                        }
+                    }
+                    continue;
+                }
+
+                // If expired but creep exists, keep ticket and let tasker refresh.
+                if (expired && creepAlive) {
+                    t.expiresAt = Game.time + 50;
+                }
+            }
+        })();
 
         // --- Memory name garbage clearing ---
         for (var name in Memory.creeps) {
@@ -59,13 +106,13 @@ module.exports.loop = function() {
         }
 
         // --- GLOBAL SPAWN MANAGER ---
-        // Collect requests from all rooms
-        let allSpawnRequests = [];
+        // Collect tickets from all rooms
+        let allSpawnTickets = [];
         for (const roomName in Game.rooms) {
             const room = Game.rooms[roomName];
-            if (room._spawnRequests) allSpawnRequests.push(...room._spawnRequests);
+            if (room._spawnTicketsToRequest) allSpawnTickets.push(...room._spawnTicketsToRequest);
         }
-        managerGlobalSpawner.run(allSpawnRequests);
+        managerGlobalSpawner.run(allSpawnTickets);
 
         // --- CREEP RUN LOGIC ---
         // Run creep logic globally, as they may be in any room

@@ -49,7 +49,8 @@ module.exports = {
                 roleCensus: 'worker',
                 requirements: {
                     archetype: 'worker',
-                    count: totalLocalCount
+                    count: totalLocalCount,
+                    spawn: false
                 },
                 priority: localPriority
             });
@@ -68,7 +69,8 @@ module.exports = {
                 roleCensus: 'remote_worker',
                 requirements: {
                     archetype: 'remote_worker',
-                    count: remoteBuilderCount
+                    count: remoteBuilderCount,
+                    spawn: false
                 },
                 priority: remotePriority
             });

@@ -26,7 +26,8 @@ module.exports = {
             requirements: {
                 archetype: 'remote_hauler',
                 count: remoteDemand,
-                maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS
+                maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS,
+                spawn: false
             },
             priority: remotePriority
         });

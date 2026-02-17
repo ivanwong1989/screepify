@@ -47,6 +47,14 @@ module.exports = {
                     archetype: 'miner',
                     count: reqCount
                 },
+                spawnSlots: (() => {
+                    const slots = [];
+                    const count = Math.max(0, reqCount || 0);
+                    for (let i = 0; i < count; i++) {
+                        slots.push(`harvest:${room.name}:${source.id}:${i}`);
+                    }
+                    return slots;
+                })(),
                 data: {
                     hasContainer: source.hasContainer,
                     containerId: source.containerId,

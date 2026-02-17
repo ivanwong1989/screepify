@@ -168,6 +168,7 @@ module.exports = {
                 name: missionName,
                 type: 'remote_reserve',
                 archetype: 'reserver',
+                assignmentKey: `reserve:${room.name}:${targetRoom}`,
                 requirements: {
                     archetype: 'reserver',
                     count: 1,

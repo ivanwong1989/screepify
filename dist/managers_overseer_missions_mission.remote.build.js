@@ -8,11 +8,12 @@ module.exports = {
         if (!room.memory.overseer) room.memory.overseer = {};
         if (!room.memory.overseer.remoteBuildCache) room.memory.overseer.remoteBuildCache = {};
 
-        const entries = remoteUtils.getRemoteContext(room, {
+        // Clone cached entries to avoid leaking build-only additions into other missions this tick.
+        const entries = [...remoteUtils.getRemoteContext(room, {
             state: context.state,
             requireStorage: true,
             maxScoutAge: 4000
-        });
+        })];
 
         // Check for newly claimed rooms (often in skipRooms or filtered out of remote context)
         // We want to help build spawn and early infrastructure until RCL 2

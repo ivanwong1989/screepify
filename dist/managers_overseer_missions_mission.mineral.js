@@ -23,6 +23,9 @@ module.exports = {
                     archetype: 'mineral_miner',
                     count: 1
                 },
+                spawnSlots: [
+                    `mineral:${room.name}:${mineral.id}:0`
+                ],
                 data: {
                     containerId: mineral.containerId,
                     extractorId: mineral.extractorId,

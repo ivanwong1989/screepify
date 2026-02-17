@@ -4,232 +4,36 @@
  * 
  * @param {Room} room
  */
+const spawnContracts = require('managers_spawner_spawn.contracts');
+const spawnCensus = require('managers_spawner_spawn.census');
+const spawnPlanner = require('managers_spawner_spawn.planner');
+
 var managerSpawner = {
     run: function(room, allCreeps) {
         const missions = room._missions;
         if (!missions) return;
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
-        const PRESPAWN_TTL = 80;
-        const ECONOMY_ROLES = new Set(['miner', 'remote_miner', 'hauler', 'remote_hauler', 'worker', 'remote_worker', 'mineral_miner']);
-        room._spawnRequests = [];
+        room._spawnTicketsToRequest = [];
 
-        // 1. Identify Deficits
-        const spawnQueue = [];
-        const nearDeathByRole = Object.create(null);
-        const nearDeathByMission = Object.create(null);
-        const globalMissionCounts = Object.create(null);
-        const globalRoleCounts = Object.create(null);
-        const spawningMissionCounts = Object.create(null);
-        const spawningRoleCounts = Object.create(null);
+        // 1. Build contracts + fulfillment using tickets
+        const contractEntries = spawnContracts.buildContracts(room, missions);
+        debug('spawner', `[Spawner] ${room.name} contracts=${contractEntries.length}`);
+        if (contractEntries.length === 0) return;
 
-        // Track spawning creeps via spawn.spawning + Memory.creeps[name].
-        // spawnCreep stores Memory.creeps immediately, so this is robust even if Game.creeps timing differs.
-        const spawningNames = new Set();
-        for (const rn in Game.rooms) {
-            const r = Game.rooms[rn];
-            if (!r.controller || !r.controller.my) continue;
-            const spawns = r.find(FIND_MY_SPAWNS);
-            for (const s of spawns) {
-                if (!s.spawning) continue;
-                const cname = s.spawning.name;
-                spawningNames.add(cname);
-                const mem = Memory.creeps && Memory.creeps[cname];
-                if (!mem || mem.room !== room.name) continue;
-                if (mem.missionName) spawningMissionCounts[mem.missionName] = (spawningMissionCounts[mem.missionName] || 0) + 1;
-                if (mem.role) spawningRoleCounts[mem.role] = (spawningRoleCounts[mem.role] || 0) + 1;
-            }
-        }
-
-        // Use allCreeps if available to catch remote/spawning creeps
-        const creepsToAnalyze = allCreeps || myCreeps;
-
-        for (const creep of creepsToAnalyze) {
-            // Filter by home room if we are looking at the global list
-            if (allCreeps && (!creep.memory || creep.memory.room !== room.name)) {
-                // Debug: Log if we are skipping a creep that looks like it belongs to a fleet mission for this room
-                if (creep.memory && creep.memory.missionName && creep.memory.missionName.includes('fleet') && creep.memory.missionName.includes(room.name)) {
-                     // debug('spawner', `[GlobalFilter] Skipping ${creep.name} (MemRoom: ${creep.memory.room}) for ${room.name} (Mission: ${creep.memory.missionName})`);
-                }
-                continue;
-            }
-
-            // Avoid double counting if this creep is also represented via spawn.spawning/Memory.creeps
-            if (spawningNames.has(creep.name)) continue;
-
-            // Track global counts (includes spawning creeps)
-            const missionName = creep.memory && creep.memory.missionName;
-            if (missionName) {
-                globalMissionCounts[missionName] = (globalMissionCounts[missionName] || 0) + 1;
-            }
-            const role = creep.memory && creep.memory.role;
-            if (role) globalRoleCounts[role] = (globalRoleCounts[role] || 0) + 1;
-
-            if (!creep.ticksToLive || creep.ticksToLive > PRESPAWN_TTL) continue;
-            if (role) nearDeathByRole[role] = (nearDeathByRole[role] || 0) + 1;
-            if (missionName) nearDeathByMission[missionName] = (nearDeathByMission[missionName] || 0) + 1;
-        }
-        
-        missions.forEach(mission => {
-            // Census data provided by Overseer
-            if (!mission.census) return;
-            
-            const req = mission.requirements || {};
-            if (req.spawnFromFleet) return;
-            const current = mission.census;
-            const archetype = mission.archetype || req.archetype;
-            let nearDeathCount = 0;
-
-            if (archetype && ECONOMY_ROLES.has(archetype)) {
-                const roleMatch = mission.roleCensus;
-                if (roleMatch) {
-                    nearDeathCount = nearDeathByRole[roleMatch] || 0;
-                } else {
-                    nearDeathCount = nearDeathByMission[mission.name] || 0;
-                }
-            }
-
-            // Compare local census vs global scan using consistent keys.
-            // - Fleet missions (roleCensus): compare role-based counts.
-            // - Non-fleet missions: compare missionName-based counts.
-            const isFleet = !!mission.roleCensus;
-            const localCount = current.count || 0;
-            const globalCount = isFleet
-                ? (globalRoleCounts[mission.roleCensus] || 0)
-                : (globalMissionCounts[mission.name] || 0);
-            const inSpawnCount = isFleet
-                ? (spawningRoleCounts[mission.roleCensus] || 0)
-                : (spawningMissionCounts[mission.name] || 0);
-
-            const totalCount = Math.max(localCount, globalCount + inSpawnCount);
-            const effectiveCount = Math.max(0, totalCount - nearDeathCount);
-
-            if (req.count && effectiveCount < req.count && req.spawn !== false) {
-                if (mission.name.includes('fleet')) {
-                    debug('spawner',
-                        `[Spawner] Enqueue ${mission.name} for ${room.name}. ` +
-                        `Eff:${effectiveCount} (Local:${localCount}, Global:${globalCount}, Spawning:${inSpawnCount}, NearDeath:${nearDeathCount}) ` +
-                        `Req:${req.count}`
-                    );
-                }
-                spawnQueue.push(mission);
-            }
+        spawnCensus.pruneTickets(room, contractEntries);
+        const fulfillment = spawnCensus.getFulfillment(room, contractEntries, allCreeps || myCreeps);
+        debug('spawner', `[Spawner] ${room.name} fulfillment keys=${Object.keys(fulfillment).length}`);
+        const ticketToSpawn = spawnPlanner.plan(room, contractEntries, fulfillment, {
+            buildBody: (mission, budget) => this.generateBody(mission, budget),
+            calculateBodyCost: (body) => this.calculateBodyCost(body)
         });
-
-        // 2. Sort by Priority
-        spawnQueue.sort((a, b) => b.priority - a.priority);
-
-        if (spawnQueue.length > 0) {
-            debug('spawner', `[Spawner] Queue: ${spawnQueue.map(m => m.name).join(', ')}`);
-        }
-
-        // 3. Generate Request (Decoupled)
-        if (spawnQueue.length > 0) {
-            // We select the most important mission to request
-            const mission = this.selectMission(room, spawnQueue);
-            const request = this.createSpawnRequest(mission, room);
-            if (request) room._spawnRequests.push(request);
-        }
-    },
-
-    createSpawnRequest: function(mission, room) {
-        const state = room._state;
-        let budget = room.energyCapacityAvailable;
-        
-        // --- Contextual Economy Check ---
-        const cache = global.getRoomCache(room);
-        const myCreeps = cache.myCreeps || [];
-        
-        // Check for presence of active economy creeps (not spawning)
-        const hasMiners = myCreeps.some(c => c.memory.role === 'miner' && !c.spawning);
-        const hasHaulers = myCreeps.some(c => c.memory.role === 'hauler' && !c.spawning);
-        
-        if (!room.memory.spawner) room.memory.spawner = {};
-        
-        // Reset wait ticks if we switched missions
-        if (room.memory.spawner.lastMissionName !== mission.name) {
-            room.memory.spawner.lastMissionName = mission.name;
-            room.memory.spawner.waitTicks = 0;
-        }
-
-        // --- Budget Logic ---
-
-        // 1. Critical Bootstrap: If we lack fundamental economy roles, spawn immediately with what we have.
-        if (!hasMiners || !hasHaulers) {
-            budget = Math.max(room.energyAvailable, 200);
-            room.memory.spawner.waitTicks = 0;
-        }
-        // 2. Emergency State: Hostiles present, etc.
-        else if (state === 'EMERGENCY') {
-            budget = Math.max(room.energyAvailable, 200);
-            room.memory.spawner.waitTicks = 0;
-        }
-        // 3. Grace Period Logic: If we have economy but low energy, wait for refill.
-        else if (room.energyAvailable < room.energyCapacityAvailable) {
-            const GRACE_PERIOD = 100; // Ticks to wait for refill
-            room.memory.spawner.waitTicks++;
-            
-            if (room.memory.spawner.waitTicks > GRACE_PERIOD) {
-                budget = Math.max(room.energyAvailable, 200);
-                debug('spawner', `[Spawner] Grace period expired for ${mission.name} (${room.memory.spawner.waitTicks} ticks). Downgrading budget.`);
-            } else {
-                // Maintain full budget to force waiting for refill
-                budget = room.energyCapacityAvailable;
-                if (room.memory.spawner.waitTicks % 20 === 0) {
-                    debug('spawner', `[Spawner] Waiting for refill for ${mission.name} (${room.memory.spawner.waitTicks}/${GRACE_PERIOD}).`);
-                }
-            }
+        if (ticketToSpawn) {
+            debug('spawner', `[Spawner] ${room.name} planned ticket=${ticketToSpawn.ticketId} contract=${ticketToSpawn.contractId} role=${ticketToSpawn.role} prio=${ticketToSpawn.priority} cost=${ticketToSpawn.cost}`);
+            room._spawnTicketsToRequest.push(ticketToSpawn);
         } else {
-            // Energy is full, proceed with full budget
-            room.memory.spawner.waitTicks = 0;
+            debug('spawner', `[Spawner] ${room.name} no ticket planned`);
         }
-
-        const body = this.generateBody(mission, budget);
-        const cost = this.calculateBodyCost(body);
-
-        // Construct the request object
-        const memory = {
-            role: mission.archetype,
-            missionName: mission.name,
-            room: room.name,
-            taskState: 'init'
-        };
-
-        return {
-            missionId: mission.name,
-            priority: mission.priority,
-            body: body,
-            memory: memory,
-            homeRoom: room.name,
-            cost: cost
-        };
-    },
-
-    selectMission: function(room, spawnQueue) {
-        const history = room.memory.spawnHistory || [];
-        const MAX_CONSECUTIVE = 2;
-
-        if (history.length >= MAX_CONSECUTIVE) {
-            const lastArchetype = history[history.length - 1];
-            let consecutive = 0;
-            
-            // Check history for consecutive spawns of the same archetype
-            for (let i = history.length - 1; i >= 0; i--) {
-                if (history[i] === lastArchetype) consecutive++;
-                else break;
-            }
-
-            if (consecutive >= MAX_CONSECUTIVE) {
-                // Congestion detected: Try to find a mission with a different archetype
-                const alternative = spawnQueue.find(m => m.archetype !== lastArchetype);
-                if (alternative) {
-                    return alternative;
-                }
-            }
-        }
-
-        // Default to the highest priority mission
-        return spawnQueue[0];
     },
 
     checkBody: function(type, budget) {

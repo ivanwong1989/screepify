@@ -16,7 +16,7 @@ function tick() {
 
     // 5. Output to console (optional)
     if (Game.time % 10 === 0) {
-        console.log(`Average CPU over ${EMA_WINDOW} ticks: ${Memory.avgCpu.toFixed(2)}`);
+        //console.log(`Average CPU over ${EMA_WINDOW} ticks: ${Memory.avgCpu.toFixed(2)}`);
     }
 }
 
