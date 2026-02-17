@@ -8,7 +8,7 @@ module.exports = {
         if (!room.memory.overseer) room.memory.overseer = {};
         if (!room.memory.overseer.remoteRepairCache) room.memory.overseer.remoteRepairCache = {};
 
-        const entries = remoteUtils.getRemoteContext(room, {
+        const entries = remoteUtils.getRemoteEconomicContext(room, {
             state: context.state,
             requireStorage: true,
             maxScoutAge: 4000

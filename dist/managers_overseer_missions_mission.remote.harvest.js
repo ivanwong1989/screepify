@@ -5,7 +5,7 @@ module.exports = {
     generate: function(room, intel, context, missions) {
         if (context.state === 'EMERGENCY') return;
 
-        const entries = remoteUtils.getRemoteContext(room, {
+        const entries = remoteUtils.getRemoteEconomicContext(room, {
             state: context.state,
             requireStorage: true,
             maxScoutAge: 4000

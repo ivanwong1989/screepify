@@ -14,7 +14,7 @@ module.exports = {
         if (context.state === 'EMERGENCY') return;
         if (!room.storage) return;
 
-        const entries = remoteUtils.getRemoteContext(room, {
+        const entries = remoteUtils.getRemoteEconomicContext(room, {
             state: context.state,
             requireStorage: true,
             maxScoutAge: 4000

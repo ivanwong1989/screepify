@@ -169,6 +169,7 @@ function getRemoteContext(room, options = {}) {
     const maxScoutAge = Number.isFinite(options.maxScoutAge) ? options.maxScoutAge : 4000;
     const requireStorage = options.requireStorage !== false;
     const state = options.state || null;
+    const skipRooms = new Set(remoteMemory.skipRooms || []);
 
     const storageOk = !requireStorage || !!room.storage;
     const stateOk = state !== 'EMERGENCY';
@@ -177,6 +178,7 @@ function getRemoteContext(room, options = {}) {
     const remoteEnabled = globalEnabled && roomEnabled;
 
     for (const name of Object.keys(remoteMemory.rooms || {})) {
+        if (skipRooms.has(name)) continue;
         const entry = remoteMemory.rooms[name];
         if (!entry) continue;
         const visible = Game.rooms[name];
@@ -193,7 +195,12 @@ function getRemoteContext(room, options = {}) {
     return entries;
 }
 
+function getRemoteEconomicContext(room, options = {}) {
+    return getRemoteContext(room, options);
+}
+
 module.exports = {
     ensureRemoteMemory,
-    getRemoteContext
+    getRemoteContext,
+    getRemoteEconomicContext
 };

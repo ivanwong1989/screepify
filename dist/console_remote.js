@@ -28,18 +28,85 @@ function ensureRemoteRoomMemory(roomName) {
 function showRemoteHelp() {
     const lines = [
         'remote()                          - show this help',
+        'remote(\"econ\", ...)                - alias for remote() (auto-econ only)',
         'remote(\"status\")                   - show remote mission status',
         'remote(\"on\") / remote(\"off\")       - enable or disable remote missions globally',
         'remote(\"room\", roomName, \"on|off\")  - enable/disable remote missions for a room',
-        'remote(\"room\", roomName, \"status\")  - show remote mission status for a room'
+        'remote(\"room\", roomName, \"status\")  - show remote mission status for a room',
+        'remote(\"skip\", targetRoom)           - skip remote econ rooms (auto sponsor)',
+        'remote(\"skip\", sponsorRoom, targetRoom) - skip remote econ rooms for a sponsor',
+        'remote(\"unskip\", targetRoom)         - unskip remote econ rooms (auto sponsor)',
+        'remote(\"unskip\", sponsorRoom, targetRoom) - unskip remote econ rooms for a sponsor',
+        'remote(\"skip\", \"list\")             - list skipped rooms for all sponsors',
+        'remote(\"skip\", sponsorRoom, \"list\") - list skipped rooms for a sponsor',
+        'Note: remote() affects auto-econ remotes (harvest/haul/build/repair).',
+        'Claim/reserve are user missions and are not affected.'
     ];
     for (const line of lines) console.log(line);
     return 'Done';
 }
 
+function listSkipRooms(roomName) {
+    const ownedRooms = shared.getOwnedSpawnRoomsForMissionCreate();
+    const listRooms = roomName ? [roomName] : ownedRooms;
+    if (!listRooms || listRooms.length === 0) {
+        const msg = roomName ? `Unknown room: ${roomName}` : 'Owned rooms: (none)';
+        console.log(msg);
+        return msg;
+    }
+    const lines = [];
+    listRooms.sort().forEach(name => {
+        const remote = ensureRemoteRoomMemory(name);
+        const skipped = (remote && Array.isArray(remote.skipRooms)) ? remote.skipRooms.slice().sort() : [];
+        lines.push(`${name} skipRooms: ${skipped.length > 0 ? skipped.join(', ') : '(none)'}`);
+    });
+    lines.forEach(line => console.log(line));
+    return lines[0] || 'Done';
+}
+
+function resolveSkipArgs(args) {
+    const first = userMissions.normalizeRoomName(args[0]);
+    const second = userMissions.normalizeRoomName(args[1]);
+    if (first && (first.toLowerCase() === 'list' || first.toLowerCase() === 'ls' || first.toLowerCase() === 'status')) {
+        return { mode: 'list' };
+    }
+    if (second && (second.toLowerCase() === 'list' || second.toLowerCase() === 'ls' || second.toLowerCase() === 'status')) {
+        return { mode: 'list', sponsorRoom: first };
+    }
+
+    if (!second) {
+        const targetRoom = first;
+        if (!targetRoom) return null;
+        const sponsorRoom = shared.resolveSponsorRoomForTargetRoom(targetRoom);
+        return sponsorRoom ? { sponsorRoom, targetRoom } : { sponsorRoom: null, targetRoom };
+    }
+
+    return { sponsorRoom: first, targetRoom: second };
+}
+
+function addSkipRoom(remote, roomName) {
+    if (!remote || !roomName) return false;
+    if (!Array.isArray(remote.skipRooms)) remote.skipRooms = [];
+    if (!remote.skipRooms.includes(roomName)) remote.skipRooms.push(roomName);
+    if (remote.rooms && remote.rooms[roomName]) delete remote.rooms[roomName];
+    return true;
+}
+
+function removeSkipRoom(remote, roomName) {
+    if (!remote || !roomName || !Array.isArray(remote.skipRooms)) return false;
+    const before = remote.skipRooms.length;
+    remote.skipRooms = remote.skipRooms.filter(name => name !== roomName);
+    return remote.skipRooms.length !== before;
+}
+
 module.exports = function registerRemoteConsole() {
     global.remote = function(action, ...args) {
-        const cmd = action ? ('' + action).trim().toLowerCase() : 'help';
+        let cmd = action ? ('' + action).trim().toLowerCase() : 'help';
+        if (cmd === 'econ' || cmd === 'auto') {
+            if (args.length === 0) return showRemoteHelp();
+            cmd = ('' + args[0]).trim().toLowerCase();
+            args = args.slice(1);
+        }
         if (!cmd || cmd === 'help' || cmd === 'h') return showRemoteHelp();
 
         if (cmd === 'status' || cmd === 's') {
@@ -99,6 +166,34 @@ module.exports = function registerRemoteConsole() {
             }
 
             return 'Usage: remote(\"room\", \"W1N1\", \"on|off|status\")';
+        }
+
+        if (cmd === 'skip' || cmd === 'unskip') {
+            const skipArgs = resolveSkipArgs(args);
+            if (!skipArgs) return 'Usage: remote(\"skip\", targetRoom) OR remote(\"skip\", sponsorRoom, targetRoom) OR remote(\"skip\", \"list\")';
+            if (skipArgs.mode === 'list') {
+                return listSkipRooms(skipArgs.sponsorRoom || null);
+            }
+
+            const sponsorRoom = skipArgs.sponsorRoom;
+            const targetRoom = skipArgs.targetRoom;
+            if (!targetRoom) return 'Usage: remote(\"skip\", targetRoom) OR remote(\"skip\", sponsorRoom, targetRoom)';
+            if (!sponsorRoom) return `Unable to resolve sponsor room for ${targetRoom}`;
+
+            const remote = ensureRemoteRoomMemory(sponsorRoom);
+            if (!remote) return `Unknown room: ${sponsorRoom}`;
+
+            if (cmd === 'skip') {
+                addSkipRoom(remote, targetRoom);
+                const msg = `Skip remote econ for ${targetRoom} (sponsor ${sponsorRoom})`;
+                console.log(msg);
+                return msg;
+            }
+
+            removeSkipRoom(remote, targetRoom);
+            const msg = `Unskip remote econ for ${targetRoom} (sponsor ${sponsorRoom})`;
+            console.log(msg);
+            return msg;
         }
 
         return showRemoteHelp();

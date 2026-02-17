@@ -15,7 +15,7 @@ module.exports = function registerHelpConsole() {
                 'debugall          - clear category filter (log all)',
                 'economy()         - override per-room economy state (upgrade/stockpile)',
                 'market()          - manage terminal auto-trading',
-                'remote()          - manage remote mission toggles',
+                'remote()          - manage auto-econ remote missions (harvest/haul/build/repair)',
                 'allyAdd(\"Name\")    - add an ally by player name',
                 'allyRemove(\"Name\") - remove an ally by player name',
                 'allyList()        - show current allies',
