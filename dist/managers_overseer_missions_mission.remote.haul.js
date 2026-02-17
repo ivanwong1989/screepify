@@ -12,11 +12,16 @@ const toRoomPosition = (pos) => {
 module.exports = {
     generate: function(room, intel, context, missions) {
         if (context.state === 'EMERGENCY') return;
-        if (!room.storage) return;
+
+        const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
+        const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
+        const nonMiningContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
+        const dropoffTarget = room.storage || nonMiningContainers[0];
+
+        if (!dropoffTarget) return;
 
         const entries = remoteUtils.getRemoteEconomicContext(room, {
             state: context.state,
-            requireStorage: true,
             maxScoutAge: 4000
         });
 
@@ -34,7 +39,7 @@ module.exports = {
             room.memory.overseer.remoteHaulPathCache = { targetSignature: null, paths: {} };
         }
         const pathCache = room.memory.overseer.remoteHaulPathCache;
-        const targetSignature = `storage:${room.storage.id}`;
+        const targetSignature = `dropoff:${dropoffTarget.id}`;
         if (pathCache.targetSignature !== targetSignature) {
             pathCache.targetSignature = targetSignature;
             pathCache.paths = {};
@@ -74,7 +79,7 @@ module.exports = {
                     : `remote:haul:${name}:drop:${source.id}`;
                 const census = getMissionCensus(missionName);
 
-                const dropoffPos = room.storage.pos;
+                const dropoffPos = dropoffTarget.pos;
                 let pathLen = 1;
 
                 const cached = getCachedPath(pickupId);
@@ -107,8 +112,8 @@ module.exports = {
                         remoteRoom: name,
                         pickupId: pickupId,
                         pickupPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName },
-                        dropoffId: room.storage.id,
-                        dropoffPos: { x: room.storage.pos.x, y: room.storage.pos.y, roomName: room.storage.pos.roomName },
+                        dropoffId: dropoffTarget.id,
+                        dropoffPos: { x: dropoffTarget.pos.x, y: dropoffTarget.pos.y, roomName: dropoffTarget.pos.roomName },
                         resourceType: RESOURCE_ENERGY,
                         pickupMode: hasContainer ? 'container' : 'drop',
                         pickupRange: hasContainer ? 1 : 2

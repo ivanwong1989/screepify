@@ -10,7 +10,6 @@ module.exports = {
 
         const entries = remoteUtils.getRemoteEconomicContext(room, {
             state: context.state,
-            requireStorage: true,
             maxScoutAge: 4000
         });
 
