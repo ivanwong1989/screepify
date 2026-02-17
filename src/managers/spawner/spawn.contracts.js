@@ -122,7 +122,6 @@ const spawnContracts = {
     },
 
     getAssignmentKeyBase: function(mission, roomName) {
-        if (mission.assignmentKey) return mission.assignmentKey;
         if (mission.type === 'harvest') return `harvest:${roomName}:${mission.sourceId}`;
         if (mission.type === 'remote_reserve') return `reserve:${roomName}:${mission.data.targetRoom}`;
         if (mission.type === 'defend') return `defend:${roomName}:${mission.data.targetRoom}`;
