@@ -61,14 +61,20 @@ module.exports = {
             if (!enabled || !entry || !Array.isArray(entry.sourcesInfo)) return;
 
             entry.sourcesInfo.forEach(source => {
-                if (!source || !source.containerId || !source.containerPos) return;
+                if (!source || !source.id) return;
 
-                const missionName = `remote:haul:${name}:${source.containerId}`;
+                const hasContainer = !!(source.containerId && source.containerPos);
+                const pickupId = hasContainer ? source.containerId : source.id;
+                const pickupPos = hasContainer ? toRoomPosition(source.containerPos)
+                    : new RoomPosition(source.x, source.y, name);
+                if (!pickupPos) return;
+
+                const missionName = hasContainer
+                    ? `remote:haul:${name}:${source.containerId}`
+                    : `remote:haul:${name}:drop:${source.id}`;
                 const census = getMissionCensus(missionName);
 
-                const pickupPos = toRoomPosition(source.containerPos);
                 const dropoffPos = room.storage.pos;
-                const pickupId = source.containerId;
                 let pathLen = 1;
 
                 const cached = getCachedPath(pickupId);
@@ -84,8 +90,8 @@ module.exports = {
                 const requiredCarry = Math.ceil((ENERGY_PER_TICK * roundTrip * distanceScale) / 50);
                 const reqCount = Math.max(1, Math.ceil(requiredCarry / carryParts));
 
-                debug('mission.remote.haul', `[RemoteHaul] ${room.name} -> ${name} container=${source.containerId} ` +
-                    `path=${pathLen} carryParts=${carryParts} req=${reqCount}`);
+                debug('mission.remote.haul', `[RemoteHaul] ${room.name} -> ${name} mode=${hasContainer ? 'container' : 'drop'} ` +
+                    `pickup=${pickupId} path=${pathLen} carryParts=${carryParts} req=${reqCount}`);
 
                 missions.push({
                     name: missionName,
@@ -99,11 +105,13 @@ module.exports = {
                     },
                     data: {
                         remoteRoom: name,
-                        pickupId: source.containerId,
-                        pickupPos: source.containerPos,
+                        pickupId: pickupId,
+                        pickupPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName },
                         dropoffId: room.storage.id,
                         dropoffPos: { x: room.storage.pos.x, y: room.storage.pos.y, roomName: room.storage.pos.roomName },
-                        resourceType: RESOURCE_ENERGY
+                        resourceType: RESOURCE_ENERGY,
+                        pickupMode: hasContainer ? 'container' : 'drop',
+                        pickupRange: hasContainer ? 1 : 2
                     },
                     priority: 70,
                     census: census

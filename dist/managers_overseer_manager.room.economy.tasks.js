@@ -1135,6 +1135,7 @@ var managerTasks = {
         }
 
         const container = data.containerId ? Game.getObjectById(data.containerId) : null;
+        const dropMode = data.mode === 'drop' || (!container && !containerPos);
         if (container && !creep.pos.isEqualTo(container.pos)) {
             const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS);
             if (creepsOnContainer.length === 0 || (creepsOnContainer.length === 1 && creepsOnContainer[0].id === creep.id)) {
@@ -1148,6 +1149,9 @@ var managerTasks = {
         if (creep.memory.taskState === 'working' && creep.getActiveBodyparts(CARRY) > 0) {
             if (container && creep.pos.inRangeTo(container.pos, 1) && container.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
                 return { action: 'transfer', targetId: container.id, resourceType: RESOURCE_ENERGY };
+            }
+            if (dropMode) {
+                return { action: 'drop', resourceType: RESOURCE_ENERGY };
             }
             // Static mining: if no transfer target, fall through to harvest (mirrors local miner behavior).
         }
@@ -1163,6 +1167,8 @@ var managerTasks = {
         const resourceType = data.resourceType || RESOURCE_ENERGY;
         const pickupPos = this.toRoomPosition(data.pickupPos);
         const dropoffPos = this.toRoomPosition(data.dropoffPos);
+        const pickupMode = data.pickupMode || 'container';
+        const pickupRange = Number.isFinite(data.pickupRange) ? data.pickupRange : 1;
 
         this.updateState(creep, resourceType, { requireFull: true });
 
@@ -1207,9 +1213,19 @@ var managerTasks = {
         if (tombstone) return { action: 'withdraw', targetId: tombstone.id, resourceType: resourceType };
 
         const dropped = creep.pos.findClosestByRange(cache.dropped || [], {
-            filter: r => r.resourceType === resourceType && r.amount > 50
+            filter: r => {
+                if (r.resourceType !== resourceType || r.amount <= 50) return false;
+                if (pickupMode === 'drop' && pickupPos) {
+                    return r.pos.inRangeTo(pickupPos, pickupRange);
+                }
+                return true;
+            }
         });
         if (dropped) return { action: 'pickup', targetId: dropped.id };
+
+        if (pickupMode === 'drop' && pickupPos) {
+            return { action: 'move', targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName }, range: pickupRange };
+        }
 
         return null;
     },
