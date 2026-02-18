@@ -2,6 +2,7 @@
  * Admiral Missions: generate combat missions and compositions.
  */
 const drainerMission = require('managers_admiral_missions_mission.drainer');
+const flagAttackMission = require('managers_admiral_missions_mission.attack.flag');
 
 var admiralMissions = {
     generate: function(room, hostiles, threat, state, budget) {
@@ -52,6 +53,14 @@ var admiralMissions = {
                 getMissionCensus: () => ({ count: 0, workParts: 0, carryParts: 0 })
             };
             drainerMission.generate(room, null, drainerContext, missions);
+        }
+
+        if (flagAttackMission && typeof flagAttackMission.generate === 'function') {
+            const attackContext = {
+                budget,
+                getMissionCensus: () => ({ count: 0, workParts: 0, carryParts: 0 })
+            };
+            flagAttackMission.generate(room, null, attackContext, missions);
         }
 
         return missions;

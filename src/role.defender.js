@@ -104,7 +104,7 @@ function getHomeSpawnTarget(creep) {
     return spawns[0];
 }
 
-function moveToTarget(creep, target, range, visualizePathStyle) {
+function moveToTarget(creep, target, range, visualizePathStyle, extraOpts) {
     const moveRange = Number.isFinite(range) ? range : 1;
     const targetPos = target && target.pos ? target.pos : target;
     const borderDir = getBorderDirection(creep.pos);
@@ -137,6 +137,10 @@ function moveToTarget(creep, target, range, visualizePathStyle) {
 
     const opts = { range: moveRange };
     if (visualizePathStyle) opts.visualizePathStyle = visualizePathStyle;
+    if (extraOpts) {
+        if (extraOpts.ignoreCreeps) opts.ignoreCreeps = true;
+        if (Number.isFinite(extraOpts.reusePath)) opts.reusePath = extraOpts.reusePath;
+    }
     creep.moveTo(target, opts);
 }
 
@@ -193,7 +197,7 @@ var roleDefender = {
             if (debugCombat) {
                 logCombat(`[Defender] ${creep.name} moving to ${pos}`);
             }
-            moveToTarget(creep, pos, task.range, { stroke: '#ff0000' });
+            moveToTarget(creep, pos, task.range, { stroke: '#ff0000' }, task.moveOpts);
         } else if (task.action === 'move') {
             // Handle generic move tasks (e.g. Decongest/Parking)
             let target;
@@ -201,7 +205,7 @@ var roleDefender = {
             else if (task.targetName) target = Game.flags[task.targetName];
 
             if (target) {
-                moveToTarget(creep, target, task.range, { stroke: '#ffffff' });
+                moveToTarget(creep, target, task.range, { stroke: '#ffffff' }, task.moveOpts);
             }
         }
 

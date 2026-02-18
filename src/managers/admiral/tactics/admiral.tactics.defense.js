@@ -1,7 +1,7 @@
-﻿/**
- * Admiral Tactics: per-creep combat execution helpers.
+/**
+ * Admiral Defense Tactics: per-creep combat execution helpers.
  */
-var admiralTactics = {
+var admiralDefenseTactics = {
     selectPrimaryTarget: function(hostiles) {
         if (!hostiles.length) return null;
         // Priority: Healers > Ranged > Melee > Lowest HP
@@ -23,17 +23,17 @@ var admiralTactics = {
             for (let x = 0; x < 50; x++) {
                 // Penalty for edges to keep kiters in open space
                 if (x <= 1 || x >= 48 || y <= 1 || y >= 48) {
-                    costs.set(x, y, 10); 
+                    costs.set(x, y, 10);
                 }
             }
         }
 
         // Mark all creeps as impassable obstacles
         (cache.creeps || []).forEach(c => costs.set(c.pos.x, c.pos.y, 0xff));
-        (cache.structures || []).filter(s => 
-            s.structureType !== STRUCTURE_CONTAINER && 
-            s.structureType !== STRUCTURE_ROAD && 
-            s.structureType !== STRUCTURE_RAMPART // Added rampart check
+        (cache.structures || []).filter(s =>
+            s.structureType !== STRUCTURE_CONTAINER &&
+            s.structureType !== STRUCTURE_ROAD &&
+            s.structureType !== STRUCTURE_RAMPART
         ).forEach(s => costs.set(s.pos.x, s.pos.y, 0xff));
 
         return costs;
@@ -43,7 +43,7 @@ var admiralTactics = {
         const mission = (room._missions || []).find(m => m.name === creep.memory.missionName);
         if (!mission) return;
         const strategy = (mission.data && mission.data.strategy) || 'BALANCED';
-        
+
         let target = primaryTarget || creep.pos.findClosestByRange(hostiles);
         if (!target) return;
 
@@ -64,7 +64,7 @@ var admiralTactics = {
         // Ranged Attack: Can be done simultaneously with Heal
         if (hasRanged && range <= 3) {
             actions.push({ action: 'rangedAttack', targetId: target.id });
-        } 
+        }
         // Melee Attack: Mutually exclusive with Melee Heal
         else if (!hasRanged && range <= 1) {
             const healAction = actions.find(a => a.action === 'heal');
@@ -80,11 +80,11 @@ var admiralTactics = {
 
         // --- 2. MOVEMENT LOGIC ---
         if (strategy === 'KITE' && hasRanged) {
-            // Only flee if the target is actually a threat. 
+            // Only flee if the target is actually a threat.
             // If they are a pacifist (worker/scout), we close in to Range 3 to kill them.
             if (isDangerous && range < 3) {
-                const fleeResult = PathFinder.search(creep.pos, { pos: target.pos, range: 4 }, { 
-                    flee: true, 
+                const fleeResult = PathFinder.search(creep.pos, { pos: target.pos, range: 4 }, {
+                    flee: true,
                     maxRooms: 1,
                     roomCallback: (rn) => this.getTacticalMatrix(Game.rooms[rn] || room, hostiles)
                 });
@@ -103,8 +103,7 @@ var admiralTactics = {
         }
 
         // --- 3. COMMIT ---
-        // Ensure moveTarget is serialized safely for memory
-        creep.memory.task = { 
+        creep.memory.task = {
             actions,
             moveTarget: moveTarget ? { x: moveTarget.x, y: moveTarget.y, roomName: moveTarget.roomName || room.name } : null,
             range: 0
@@ -161,4 +160,4 @@ var admiralTactics = {
     }
 };
 
-module.exports = admiralTactics;
+module.exports = admiralDefenseTactics;

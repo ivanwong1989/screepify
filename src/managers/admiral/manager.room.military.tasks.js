@@ -1,4 +1,5 @@
-const admiralTactics = require('managers_admiral_tactics_admiral.tactics');
+const defenseTactics = require('managers_admiral_tactics_admiral.tactics.defense');
+const assaultTactics = require('managers_admiral_tactics_admiral.tactics.assault');
 
 const DRAIN_RETREAT_RATIO = 0.90;
 const DRAIN_REENGAGE_RATIO = 0.95;
@@ -140,6 +141,7 @@ var militaryTasks = {
         const creeps = localCreeps.concat(remote.assigned || [], remote.idle || []);
 
         const missions = allMissions.filter(m => m.type === 'defend' || m.type === 'patrol');
+        const assaultMissions = allMissions.filter(m => m.type === 'assault');
         const drainMissions = allMissions.filter(m => m.type === 'drain');
         const defenders = creeps.filter(c => c.memory.role === 'defender' || c.memory.role === 'brawler');
         const drainers = creeps.filter(c => c.memory.role === 'drainer');
@@ -147,7 +149,7 @@ var militaryTasks = {
         const hostiles = cache.hostiles || [];
 
         // Cleanup invalid missions
-        admiralTactics.cleanupMissions(defenders, allMissions);
+        defenseTactics.cleanupMissions(defenders, allMissions);
         cleanupMissionAssignments(drainers, allMissions);
 
         missions.forEach(mission => {
@@ -175,19 +177,38 @@ var militaryTasks = {
 
             // 2. Tactical Execution
             if (mission.type === 'defend') {
-                const primaryTarget = admiralTactics.selectPrimaryTarget(hostiles);
+                const primaryTarget = defenseTactics.selectPrimaryTarget(hostiles);
                 assigned.forEach(creep => {
                     if (!creep.spawning) {
-                        admiralTactics.executeTactics(creep, hostiles, assigned, room, primaryTarget);
+                        defenseTactics.executeTactics(creep, hostiles, assigned, room, primaryTarget);
                     }
                 });
             } else if (mission.type === 'patrol') {
                 assigned.forEach(creep => {
                     if (!creep.spawning) {
-                        admiralTactics.executePatrol(creep, assigned, room);
+                        defenseTactics.executePatrol(creep, assigned, room);
                     }
                 });
             }
+        });
+
+        assaultMissions.forEach(mission => {
+            let assigned = defenders.filter(c => c.memory.missionName === mission.name);
+            const needed = (mission.requirements.count || 0) - assigned.length;
+            if (needed > 0) {
+                const idleDefenders = defenders.filter(c => !c.memory.missionName && !c.spawning);
+                for (let i = 0; i < needed && i < idleDefenders.length; i++) {
+                    const idle = idleDefenders[i];
+                    idle.memory.missionName = mission.name;
+                    assigned.push(idle);
+                }
+            }
+
+            if (mission.census) mission.census.count = assigned.length;
+
+            assigned.forEach(creep => {
+                if (!creep.spawning) assaultTactics.executeAssault(creep, mission);
+            });
         });
 
         drainMissions.forEach(mission => {

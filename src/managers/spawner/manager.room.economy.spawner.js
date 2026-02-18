@@ -143,6 +143,10 @@ var managerSpawner = {
             budget = Math.min(budget, 1300);
         }        
         if (mission.requirements && mission.requirements.body) {
+            if (mission.requirements.bodyMode === 'fixed') {
+                const fixedBody = Array.isArray(mission.requirements.body) ? mission.requirements.body.slice() : [];
+                return this.sortBody(fixedBody);
+            }
             return this.generateMilitaryBody(budget, mission.requirements.body);
         }
         if (mission.archetype === 'miner') {

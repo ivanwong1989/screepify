@@ -20,8 +20,15 @@ module.exports = function registerHelpConsole() {
                 'allyRemove(\"Name\") - remove an ally by player name',
                 'allyList()        - show current allies',
                 'mission()         - manage user-controlled missions',
+                'attackBody()      - set/show attack flag creep body (auto/fixed)',
+                '  attackBody("auto: r m h") - auto repeats pattern to capacity (default)',
+                '  attackBody("fixed: r m h") - fixed exact body (no repeat)',
+                'attackBodyLeader()  - set/show leader body for assault flag duo (auto/fixed)',
+                'attackBodySupport() - set/show support body for assault flag duo (set to enable duo; auto/fixed)',
+                'assaultTuning()     - show/set assault tuning overrides (retreatAt, reengageAt, safeDamageRatio, damageBuffer, dangerRadius, supportRange)',
                 'flag directives:',
                 '  Parking*        - decongest parking flags',
+                '  W/A             - experimental attack mission flags (W=wait, A=attack)',
                 '  Dismantle flags are deprecated; use mission()'
             ];
             for (const line of lines) console.log(line);
