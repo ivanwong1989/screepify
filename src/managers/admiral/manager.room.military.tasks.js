@@ -144,12 +144,14 @@ var militaryTasks = {
         const assaultMissions = allMissions.filter(m => m.type === 'assault');
         const drainMissions = allMissions.filter(m => m.type === 'drain');
         const defenders = creeps.filter(c => c.memory.role === 'defender' || c.memory.role === 'brawler');
+        const assaulters = creeps.filter(c => c.memory.role === 'assault');
         const drainers = creeps.filter(c => c.memory.role === 'drainer');
 
         const hostiles = cache.hostiles || [];
 
         // Cleanup invalid missions
         defenseTactics.cleanupMissions(defenders, allMissions);
+        cleanupMissionAssignments(assaulters, allMissions);
         cleanupMissionAssignments(drainers, allMissions);
 
         missions.forEach(mission => {
@@ -193,12 +195,12 @@ var militaryTasks = {
         });
 
         assaultMissions.forEach(mission => {
-            let assigned = defenders.filter(c => c.memory.missionName === mission.name);
+            let assigned = assaulters.filter(c => c.memory.missionName === mission.name);
             const needed = (mission.requirements.count || 0) - assigned.length;
             if (needed > 0) {
-                const idleDefenders = defenders.filter(c => !c.memory.missionName && !c.spawning);
-                for (let i = 0; i < needed && i < idleDefenders.length; i++) {
-                    const idle = idleDefenders[i];
+                const idleAssaulters = assaulters.filter(c => !c.memory.missionName && !c.spawning);
+                for (let i = 0; i < needed && i < idleAssaulters.length; i++) {
+                    const idle = idleAssaulters[i];
                     idle.memory.missionName = mission.name;
                     assigned.push(idle);
                 }

@@ -359,7 +359,7 @@ var managerTasks = {
             if (m.type === 'defend' || m.type === 'patrol' || m.type === 'drain') continue;
 
             // Exclude combatants from economy missions
-            if (['defender', 'brawler', 'drainer'].includes(creep.memory.role)) continue;
+            if (['defender', 'brawler', 'drainer', 'assault'].includes(creep.memory.role)) continue;
 
             const home = creep.memory.room;
             const awayFromHome = home && creep.room && creep.room.name !== home;

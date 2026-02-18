@@ -159,10 +159,10 @@ module.exports = {
                 missions.push({
                     name: leaderMission,
                     type: 'assault',
-                    archetype: 'defender',
+                    archetype: 'assault',
                     priority: 90,
                     requirements: {
-                        archetype: 'defender',
+                        archetype: 'assault',
                         count: 1,
                         body: bodyConfig.leader,
                         bodyMode: bodyConfig.modes.leader,
@@ -184,10 +184,10 @@ module.exports = {
                 missions.push({
                     name: supportMission,
                     type: 'assault',
-                    archetype: 'defender',
+                    archetype: 'assault',
                     priority: 90,
                     requirements: {
-                        archetype: 'defender',
+                        archetype: 'assault',
                         count: 1,
                         body: bodyConfig.support,
                         bodyMode: bodyConfig.modes.support,
@@ -218,10 +218,10 @@ module.exports = {
                 missions.push({
                     name: missionName,
                     type: 'assault',
-                    archetype: 'defender',
+                    archetype: 'assault',
                     priority: 90,
                     requirements: {
-                        archetype: 'defender',
+                        archetype: 'assault',
                         count: 1,
                         body: bodyConfig.solo,
                         bodyMode: bodyConfig.modes.solo,

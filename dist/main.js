@@ -6,6 +6,7 @@ registerConsole();
 
 var roleUniversal = require('role.universal');
 var roleDefender = require('role.defender');
+var roleAssault = require('role.assault');
 var roleTower = require('role.tower');
 var runColony = require('runColony');
 var cpuEma = require('telemetry_cpuEma');
@@ -125,6 +126,8 @@ module.exports.loop = function() {
             var creep = Game.creeps[name];
             if (creep.memory.role === 'defender' || creep.memory.role === 'brawler' || creep.memory.role === 'drainer') {
                 roleDefender.run(creep);
+            } else if (creep.memory.role === 'assault') {
+                roleAssault.run(creep);
             } else if ([
                 'universal',
                 'miner',

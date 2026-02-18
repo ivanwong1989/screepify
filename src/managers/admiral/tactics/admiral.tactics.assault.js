@@ -415,6 +415,13 @@ function getExpectedIncomingDamage(pos, hostiles, towers, options) {
     return towerDamage + creepDamage;
 }
 
+function isAssaultStructure(structure) {
+    if (!structure) return false;
+    if (structure.structureType === STRUCTURE_WALL && !structure.owner) return true;
+    if (structure.owner && !structure.my && !isAlly(structure.owner)) return true;
+    return false;
+}
+
 function resolveAssaultStructureTarget(flag) {
     if (!flag || !flag.pos) return null;
     const room = Game.rooms[flag.pos.roomName];
@@ -422,7 +429,7 @@ function resolveAssaultStructureTarget(flag) {
 
     const underFlag = room.lookForAt(LOOK_STRUCTURES, flag.pos.x, flag.pos.y) || [];
     const hostileUnderFlag = underFlag
-        .filter(s => s && s.owner && !s.my && !isAlly(s.owner));
+        .filter(s => isAssaultStructure(s));
     if (hostileUnderFlag.length > 0) {
         hostileUnderFlag.sort((a, b) => {
             const pa = getStructurePriority(a);
@@ -443,7 +450,7 @@ function resolveAssaultStructureTarget(flag) {
     const structures = room.lookForAtArea(LOOK_STRUCTURES, top, left, bottom, right, true) || [];
     const hostileStructures = structures
         .map(entry => entry && entry.structure)
-        .filter(s => s && s.owner && !s.my && !isAlly(s.owner));
+        .filter(s => isAssaultStructure(s));
     if (hostileStructures.length > 0) {
         hostileStructures.sort((a, b) => {
             const pa = getStructurePriority(a);
