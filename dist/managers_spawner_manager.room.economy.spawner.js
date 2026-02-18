@@ -358,8 +358,8 @@ var managerSpawner = {
             [TOUGH]: 0, 
             [ATTACK]: 1, [RANGED_ATTACK]: 1, [WORK]: 1, 
             [CARRY]: 2, 
-            [MOVE]: 3, 
-            [HEAL]: 4 
+            [HEAL]: 3,
+            [MOVE]: 4 
         };
         return body.sort((a, b) => ((sortOrder[a] !== undefined ? sortOrder[a] : 99) - (sortOrder[b] !== undefined ? sortOrder[b] : 99)));
     },
