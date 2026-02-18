@@ -420,6 +420,19 @@ function resolveAssaultStructureTarget(flag) {
     const room = Game.rooms[flag.pos.roomName];
     if (!room) return null;
 
+    const underFlag = room.lookForAt(LOOK_STRUCTURES, flag.pos.x, flag.pos.y) || [];
+    const hostileUnderFlag = underFlag
+        .filter(s => s && s.owner && !s.my && !isAlly(s.owner));
+    if (hostileUnderFlag.length > 0) {
+        hostileUnderFlag.sort((a, b) => {
+            const pa = getStructurePriority(a);
+            const pb = getStructurePriority(b);
+            if (pa !== pb) return pa - pb;
+            return a.hits - b.hits;
+        });
+        return hostileUnderFlag[0];
+    }
+
     const x = flag.pos.x;
     const y = flag.pos.y;
     const top = Math.max(0, y - 1);
@@ -659,12 +672,44 @@ function getRetreatStep(creep, room, hostiles, towers) {
     return exitPos || null;
 }
 
-function getExitPosToward(creep, targetRoomName) {
+function getEntryPosForExit(exitPos, targetRoomName) {
+    if (!exitPos || !targetRoomName) return null;
+    let x = exitPos.x;
+    let y = exitPos.y;
+    if (exitPos.x === 0) x = 49;
+    else if (exitPos.x === 49) x = 0;
+    if (exitPos.y === 0) y = 49;
+    else if (exitPos.y === 49) y = 0;
+    return { x, y, roomName: targetRoomName };
+}
+
+function getExitPosToward(creep, targetRoomName, preferPos) {
     if (!creep || !targetRoomName) return null;
     if (!creep.room || creep.room.name === targetRoomName) return null;
     const exitDir = creep.room.findExitTo(targetRoomName);
     if (exitDir === ERR_NO_PATH || exitDir === ERR_INVALID_ARGS) return null;
-    return creep.pos.findClosestByRange(exitDir);
+    const exits = creep.room.find(exitDir);
+    if (!Array.isArray(exits) || exits.length === 0) return null;
+    const hasPrefer = preferPos && preferPos.roomName === targetRoomName;
+    if (!hasPrefer) return creep.pos.findClosestByRange(exits);
+
+    let best = null;
+    let bestDist = Infinity;
+    let bestCreepDist = Infinity;
+    for (const pos of exits) {
+        if (!pos) continue;
+        const entryPos = getEntryPosForExit(pos, targetRoomName);
+        if (!entryPos) continue;
+        const dist = getRange(entryPos, preferPos);
+        const creepDist = getRange(creep.pos, pos);
+        if (dist < bestDist || (dist === bestDist && creepDist < bestCreepDist)) {
+            best = pos;
+            bestDist = dist;
+            bestCreepDist = creepDist;
+        }
+    }
+
+    return best || creep.pos.findClosestByRange(exits);
 }
 
 function resolveAssaultState(creep, incomingDamage, sustainableDamage, options) {
@@ -734,7 +779,10 @@ function getAssaultMoveIntent(creep, context) {
                 moveTarget = null;
                 range = 0;
             } else {
-                const exitPos = getExitPosToward(creep, targetRoom);
+                const preferPos = activeFlag && activeFlag.pos && activeFlag.pos.roomName === targetRoom
+                    ? activeFlag.pos
+                    : null;
+                const exitPos = getExitPosToward(creep, targetRoom, preferPos);
                 if (exitPos) {
                     moveTarget = { x: exitPos.x, y: exitPos.y, roomName: exitPos.roomName };
                     range = 0;
@@ -778,7 +826,10 @@ function getAssaultMoveIntent(creep, context) {
             }
         }
     } else if (currentRoom && currentRoom.name !== targetRoomName) {
-        const exitPos = getExitPosToward(creep, targetRoomName);
+        const preferPos = activeFlag && activeFlag.pos && activeFlag.pos.roomName === targetRoomName
+            ? activeFlag.pos
+            : null;
+        const exitPos = getExitPosToward(creep, targetRoomName, preferPos);
         if (exitPos) {
             moveTarget = { x: exitPos.x, y: exitPos.y, roomName: exitPos.roomName };
             range = 0;
@@ -1023,6 +1074,7 @@ function executeAssault(creep, mission) {
     if (squadKey) creep.memory.assaultSquad = squadKey;
     creep.memory.assaultRole = assaultRole;
 
+    const prevState = creep.memory.assaultState;
     const squad = getMissionSquad(creep, squadKey, currentRoom ? currentRoom.name : null);
     const fullSquad = getMissionSquadAll(squadKey);
     const leader = getAssaultLeader(fullSquad.length > 0 ? fullSquad : squad);
@@ -1054,11 +1106,23 @@ function executeAssault(creep, mission) {
     const incomingDamage = currentRoom ? getExpectedIncomingDamage(creep.pos, hostiles, towers, { rangeBuffer: 1 }) : 0;
     const sustainableDamage = healPerTick + damageBuffer;
 
+    const isInAttackRoom = currentRoom && attackRoomName && currentRoom.name === attackRoomName;
+    const lastRoom = creep.memory._assaultLastRoom;
+    if (currentRoom && currentRoom.name !== lastRoom) {
+        creep.memory._assaultEnteredAt = Game.time;
+        creep.memory._assaultLastRoom = currentRoom.name;
+    }
+    const enteredAt = creep.memory._assaultEnteredAt;
+    const justEntered = Number.isFinite(enteredAt) && Game.time - enteredAt <= 2;
+
     let state = resolveAssaultState(creep, incomingDamage, sustainableDamage, {
         retreatAt,
         reengageAt,
         safeDamageRatio
     });
+    if (isInAttackRoom && justEntered && isBorderPos(creep.pos) && state === 'retreat') {
+        state = 'engage';
+    }
 
     if (!isLeader && leader && leader.memory) {
         const leaderState = leader.memory.assaultState;
@@ -1071,6 +1135,23 @@ function executeAssault(creep, mission) {
     const leaderRoom = leader && leader.pos ? leader.pos.roomName : null;
     const needsCohesion = assaultRole !== 'solo' && currentRoom && partnerRoom && partnerRoom !== currentRoom.name;
     const waypoints = getAssaultWaypointFlags(waitFlagName);
+    const waypointSignature = getAssaultWaypointSignature(waypoints);
+    const waypointOwner = leader || creep;
+    const waypointIndex = waypointOwner && waypointOwner.memory && Number.isFinite(waypointOwner.memory._assaultWaypointIndex)
+        ? waypointOwner.memory._assaultWaypointIndex
+        : 0;
+    const waypointSigMatches = waypointOwner && waypointOwner.memory
+        && waypointOwner.memory._assaultWaypointSig === waypointSignature;
+    const waypointsCompleted = waypointSigMatches && waypointIndex >= waypoints.length;
+    const shouldResumeLatestWaypoint = state === 'engage'
+        && (prevState === 'retreat' || prevState === 'heal')
+        && waypoints.length > 0
+        && waypointsCompleted
+        && currentRoom && attackRoomName && currentRoom.name !== attackRoomName;
+    if (shouldResumeLatestWaypoint && waypointOwner && waypointOwner.memory) {
+        waypointOwner.memory._assaultWaypointIndex = Math.max(0, waypoints.length - 1);
+        waypointOwner.memory._assaultWaypointSig = waypointSignature;
+    }
     const allowWaypointAdvance = state !== 'retreat' && (assaultRole === 'solo' || squadCount >= expectedSquadSize);
     const waypointState = resolveAssaultWaypointState(creep, leader, support, waypoints, supportRange, allowWaypointAdvance);
     const waypointFlag = waypointState && waypointState.waypoint ? waypointState.waypoint.flag : null;
@@ -1141,6 +1222,13 @@ function executeAssault(creep, mission) {
     const target = (targetRoom && attackFlag && currentRoom && currentRoom.name === targetRoom.name)
         ? selectAssaultTarget(creep, attackFlag, hostiles, dangerRadius)
         : null;
+
+    logAssault(creep, data, 'attackTarget', {
+        targetId: target && target.id,
+        targetType: target && target.structureType ? 'structure' : (target ? 'creep' : null),
+        structureType: target && target.structureType,
+        targetPos: target && target.pos ? toPlainPos(target.pos) : null
+    });
 
     if (target && state !== 'retreat') {
         const range = creep.pos.getRangeTo(target);
