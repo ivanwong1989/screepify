@@ -135,6 +135,11 @@ function formatBody(body) {
     return body.join(',');
 }
 
+function getBodyCost(body) {
+    if (!Array.isArray(body) || body.length === 0) return 0;
+    return body.reduce((sum, part) => sum + (BODYPART_COST[part] || 0), 0);
+}
+
 function setAttackBodyKey(key, modeKey, parts, label, defaultBody) {
     const memory = ensureAttackMemory();
     const current = Array.isArray(memory[key]) ? memory[key] : [];
@@ -152,7 +157,8 @@ function setAttackBodyKey(key, modeKey, parts, label, defaultBody) {
         delete memory[key];
         delete memory[modeKey];
         const fallback = Array.isArray(defaultBody) ? formatBody(defaultBody) : '(none)';
-        const msg = `${label} body reset to default (${fallback})`;
+        const cost = Array.isArray(defaultBody) ? getBodyCost(defaultBody) : 0;
+        const msg = `${label} body reset to default (${fallback}, cost=${cost})`;
         console.log(msg);
         return msg;
     }
@@ -173,7 +179,8 @@ function setAttackBodyKey(key, modeKey, parts, label, defaultBody) {
 
     if (parsed.hasBody) {
         memory[key] = parsed.body;
-        const msg = `${label} body set: ${formatBody(parsed.body)} (mode=${effectiveMode})`;
+        const cost = getBodyCost(parsed.body);
+        const msg = `${label} body set: ${formatBody(parsed.body)} (mode=${effectiveMode}, cost=${cost})`;
         console.log(msg);
         return msg;
     }
@@ -206,7 +213,7 @@ module.exports = function registerAttackConsole() {
         if (parsed.reset) {
             delete memory.supportBody;
             delete memory.supportBodyMode;
-            const msg = 'Attack support body cleared (duo disabled)';
+            const msg = 'Attack support body cleared (duo disabled, cost=0)';
             console.log(msg);
             return msg;
         }
@@ -228,7 +235,8 @@ module.exports = function registerAttackConsole() {
 
         if (parsed.hasBody) {
             memory.supportBody = parsed.body;
-            const msg = `Attack support body set: ${formatBody(parsed.body)} (mode=${effectiveMode})`;
+            const cost = getBodyCost(parsed.body);
+            const msg = `Attack support body set: ${formatBody(parsed.body)} (mode=${effectiveMode}, cost=${cost})`;
             console.log(msg);
             return msg;
         }

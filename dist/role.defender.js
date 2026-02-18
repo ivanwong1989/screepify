@@ -158,12 +158,13 @@ var roleDefender = {
         if (!getBorderDirection(creep.pos) && creep.memory._borderNudge) {
             delete creep.memory._borderNudge;
         }
+        let didBorderNudge = false;
         if (creep.memory._borderNudge && getBorderDirection(creep.pos)) {
             const nudgePos = getNudgePosition(creep);
             if (nudgePos) {
                 const nudgeOpts = { range: 0, reusePath: 0 };
                 creep.moveTo(nudgePos, nudgeOpts);
-                return;
+                didBorderNudge = true;
             }
         }
         
@@ -173,13 +174,15 @@ var roleDefender = {
             if (creep.room.name === creep.memory.room) {
                 delete creep.memory._travellingToHome;
             } else {
-                const homeSpawn = getHomeSpawnTarget(creep);
-                if (homeSpawn) {
-                    moveToTarget(creep, homeSpawn, 2);
-                } else if (Game.rooms[creep.memory.room] && Game.rooms[creep.memory.room].controller) {
-                    moveToTarget(creep, Game.rooms[creep.memory.room].controller, 2);
-                } else {
-                    moveToTarget(creep, new RoomPosition(25, 25, creep.memory.room), 20);
+                if (!didBorderNudge) {
+                    const homeSpawn = getHomeSpawnTarget(creep);
+                    if (homeSpawn) {
+                        moveToTarget(creep, homeSpawn, 2);
+                    } else if (Game.rooms[creep.memory.room] && Game.rooms[creep.memory.room].controller) {
+                        moveToTarget(creep, Game.rooms[creep.memory.room].controller, 2);
+                    } else {
+                        moveToTarget(creep, new RoomPosition(25, 25, creep.memory.room), 20);
+                    }
                 }
                 return;
             }
@@ -192,20 +195,22 @@ var roleDefender = {
         if (!task) return;
 
         // 1. Execute Movement (Basic command)
-        if (task.moveTarget) {
-            const pos = new RoomPosition(task.moveTarget.x, task.moveTarget.y, task.moveTarget.roomName);
-            if (debugCombat) {
-                logCombat(`[Defender] ${creep.name} moving to ${pos}`);
-            }
-            moveToTarget(creep, pos, task.range, { stroke: '#ff0000' }, task.moveOpts);
-        } else if (task.action === 'move') {
-            // Handle generic move tasks (e.g. Decongest/Parking)
-            let target;
-            if (task.targetId) target = Game.getObjectById(task.targetId);
-            else if (task.targetName) target = Game.flags[task.targetName];
+        if (!didBorderNudge) {
+            if (task.moveTarget) {
+                const pos = new RoomPosition(task.moveTarget.x, task.moveTarget.y, task.moveTarget.roomName);
+                if (debugCombat) {
+                    logCombat(`[Defender] ${creep.name} moving to ${pos}`);
+                }
+                moveToTarget(creep, pos, task.range, { stroke: '#ff0000' }, task.moveOpts);
+            } else if (task.action === 'move') {
+                // Handle generic move tasks (e.g. Decongest/Parking)
+                let target;
+                if (task.targetId) target = Game.getObjectById(task.targetId);
+                else if (task.targetName) target = Game.flags[task.targetName];
 
-            if (target) {
-                moveToTarget(creep, target, task.range, { stroke: '#ffffff' }, task.moveOpts);
+                if (target) {
+                    moveToTarget(creep, target, task.range, { stroke: '#ffffff' }, task.moveOpts);
+                }
             }
         }
 
