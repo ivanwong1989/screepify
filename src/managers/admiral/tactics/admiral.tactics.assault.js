@@ -40,6 +40,39 @@ function logAssault(creep, data, msg, extra) {
     }
 }
 
+function getAssaultSquadMemory() {
+    if (!Memory) return null;
+    if (!Memory.military) Memory.military = {};
+    if (!Memory.military.assaultSquads) Memory.military.assaultSquads = {};
+    return Memory.military.assaultSquads;
+}
+
+function getAssaultSquadState(squadKey) {
+    if (!squadKey || !Memory || !Memory.military || !Memory.military.assaultSquads) return null;
+    return Memory.military.assaultSquads[squadKey] || null;
+}
+
+function markAssaultSquadStarted(squadKey, leader, support) {
+    if (!squadKey || !leader || !support) return;
+    const squads = getAssaultSquadMemory();
+    if (!squads) return;
+    const state = squads[squadKey] || {};
+    if (!state.started) state.startedAt = Game.time;
+    state.started = true;
+    state.leaderName = leader.name;
+    state.supportName = support.name;
+    state.lastSeen = Game.time;
+    squads[squadKey] = state;
+}
+
+function isAssaultSquadLocked(squadKey, liveCount) {
+    if (!squadKey) return false;
+    const state = getAssaultSquadState(squadKey);
+    if (!state || !state.started) return false;
+    if (!Number.isFinite(liveCount) || liveCount <= 0) return false;
+    return true;
+}
+
 function isAlly(owner) {
     if (!owner || !owner.username) return false;
     if (!Array.isArray(Memory.allies)) return false;
@@ -775,7 +808,8 @@ function getAssaultMoveIntent(creep, context) {
         sustainableDamage,
         safeDamageRatio,
         assaultRole,
-        closeRangeStructures
+        closeRangeStructures,
+        ignoreCohesion
     } = context || {};
 
     let moveTarget = null;
@@ -783,8 +817,8 @@ function getAssaultMoveIntent(creep, context) {
     let holdPosition = false;
     const partnerRoom = partner && partner.pos ? partner.pos.roomName : null;
     const leaderRoom = leader && leader.pos ? leader.pos.roomName : null;
-    const needsCohesion = assaultRole !== 'solo' && currentRoom && partnerRoom && partnerRoom !== currentRoom.name;
-    const duoReadyForExit = assaultRole === 'solo' || !currentRoom || !leader || !partner
+    const needsCohesion = !ignoreCohesion && assaultRole !== 'solo' && currentRoom && partnerRoom && partnerRoom !== currentRoom.name;
+    const duoReadyForExit = ignoreCohesion || assaultRole === 'solo' || !currentRoom || !leader || !partner
         ? true
         : isDuoInRoomInterior(leader, partner, currentRoom.name);
 
@@ -1113,6 +1147,7 @@ function executeAssault(creep, mission) {
     const prevState = creep.memory.assaultState;
     const squad = getMissionSquad(creep, squadKey, currentRoom ? currentRoom.name : null);
     const fullSquad = getMissionSquadAll(squadKey);
+    const squadLock = isAssaultSquadLocked(squadKey, fullSquad.length);
     const leader = getAssaultLeader(fullSquad.length > 0 ? fullSquad : squad);
     const partner = getSquadPartner(creep, fullSquad.length > 0 ? fullSquad : squad);
     const support = leader ? (leader.id === creep.id ? partner : creep) : null;
@@ -1188,7 +1223,7 @@ function executeAssault(creep, mission) {
         waypointOwner.memory._assaultWaypointIndex = Math.max(0, waypoints.length - 1);
         waypointOwner.memory._assaultWaypointSig = waypointSignature;
     }
-    const allowWaypointAdvance = state !== 'retreat' && (assaultRole === 'solo' || squadCount >= expectedSquadSize);
+    const allowWaypointAdvance = state !== 'retreat' && (assaultRole === 'solo' || squadCount >= expectedSquadSize || squadLock);
     const waypointState = resolveAssaultWaypointState(creep, leader, support, waypoints, supportRange, allowWaypointAdvance);
     const waypointFlag = waypointState && waypointState.waypoint ? waypointState.waypoint.flag : null;
     const routeFlag = waypointFlag || attackFlag || waitFlag;
@@ -1212,7 +1247,7 @@ function executeAssault(creep, mission) {
     });
 
     const waitPos = data.waitPos || (waitFlag ? { x: waitFlag.pos.x, y: waitFlag.pos.y, roomName: waitFlag.pos.roomName } : null);
-    if (assaultRole !== 'solo' && waitPos && squadCount < expectedSquadSize) {
+    if (assaultRole !== 'solo' && waitPos && squadCount < expectedSquadSize && !squadLock) {
         delete creep.memory.assaultAssembled;
         logAssault(creep, data, 'regroup', {
             squadCount,
@@ -1228,14 +1263,17 @@ function executeAssault(creep, mission) {
         return;
     }
     const duoAssembled = isDuoAssembled(fullSquad.length > 0 ? fullSquad : squad, leader, waitPos, supportRange);
+    if (assaultRole !== 'solo' && duoAssembled && leader && support) {
+        markAssaultSquadStarted(squadKey, leader, support);
+    }
     if (assaultRole !== 'solo') {
         if (squadCount < expectedSquadSize) {
-            delete creep.memory.assaultAssembled;
+            if (!squadLock) delete creep.memory.assaultAssembled;
         } else if (duoAssembled) {
             creep.memory.assaultAssembled = true;
         }
     }
-    const hasAssembled = !!creep.memory.assaultAssembled;
+    const hasAssembled = squadLock || !!creep.memory.assaultAssembled;
     const inWaitRoom = waitPos && currentRoom && currentRoom.name === waitPos.roomName;
     if (assaultRole !== 'solo' && inWaitRoom && state !== 'retreat' && !hasAssembled) {
         let moveTarget = { x: waitPos.x, y: waitPos.y, roomName: waitPos.roomName };
@@ -1296,6 +1334,7 @@ function executeAssault(creep, mission) {
         }
     }
 
+    const ignoreCohesion = !!(squadLock && assaultRole !== 'solo' && squadCount < expectedSquadSize);
     const moveIntent = getAssaultMoveIntent(creep, {
         activeFlag: routeFlag,
         waitPos,
@@ -1314,7 +1353,8 @@ function executeAssault(creep, mission) {
         safeDamageRatio,
         assaultRole,
         assaultMode,
-        closeRangeStructures: data.closeRangeStructures
+        closeRangeStructures: data.closeRangeStructures,
+        ignoreCohesion
     });
 
     let moveTarget = moveIntent.moveTarget;

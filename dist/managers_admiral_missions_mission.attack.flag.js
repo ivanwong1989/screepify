@@ -37,6 +37,35 @@ const DEFAULT_ATTACK_BODY = [RANGED_ATTACK, MOVE, HEAL];
 const DEFAULT_SUPPORT_BODY = [HEAL, MOVE, MOVE];
 const DEFAULT_BODY_MODE = 'auto';
 
+function getAssaultSquadMemory() {
+    if (!Memory) return null;
+    if (!Memory.military) Memory.military = {};
+    if (!Memory.military.assaultSquads) Memory.military.assaultSquads = {};
+    return Memory.military.assaultSquads;
+}
+
+function getLiveAssaultSquadCreeps(squadKey) {
+    if (!squadKey) return [];
+    return Object.values(Game.creeps).filter(c =>
+        c && c.my && c.memory && c.memory.assaultSquad === squadKey
+    );
+}
+
+function refreshAssaultSquadState(squadKey, liveSquad) {
+    const squads = getAssaultSquadMemory();
+    if (!squads) return null;
+    const state = squads[squadKey];
+    if (state && (!liveSquad || liveSquad.length === 0)) {
+        delete squads[squadKey];
+        return null;
+    }
+    if (state) {
+        state.lastSeen = Game.time;
+        state.liveCount = liveSquad.length;
+    }
+    return state || null;
+}
+
 function normalizeBodyPart(part) {
     if (part === undefined || part === null) return null;
     if (typeof part === 'string') {
@@ -140,14 +169,26 @@ module.exports = {
         for (const entry of entries) {
             const squadKey = `assault:flag:${entry.waitFlagName}`;
             const useDuo = Array.isArray(bodyConfig.support) && bodyConfig.support.length > 0;
+            const liveSquad = getLiveAssaultSquadCreeps(squadKey);
+            const squadState = refreshAssaultSquadState(squadKey, liveSquad);
+            const lockActive = !!(squadState && squadState.started && liveSquad.length > 0);
+            const lockData = lockActive ? {
+                active: true,
+                startedAt: squadState.startedAt,
+                liveCount: liveSquad.length
+            } : { active: false };
 
             if (useDuo) {
                 const leaderMission = `${squadKey}:leader`;
                 const supportMission = `${squadKey}:support`;
                 const leaderCost = getBodyCost(bodyConfig.leader);
                 const supportCost = getBodyCost(bodyConfig.support);
-                const leaderSpawn = !leaderCost || (Number.isFinite(budget) && budget >= leaderCost);
-                const supportSpawn = !supportCost || (Number.isFinite(budget) && budget >= supportCost);
+                let leaderSpawn = !leaderCost || (Number.isFinite(budget) && budget >= leaderCost);
+                let supportSpawn = !supportCost || (Number.isFinite(budget) && budget >= supportCost);
+                if (lockActive) {
+                    leaderSpawn = false;
+                    supportSpawn = false;
+                }
 
                 const leaderCensus = typeof getMissionCensus === 'function'
                     ? getMissionCensus(leaderMission)
@@ -180,6 +221,7 @@ module.exports = {
                         assaultRole: 'leader',
                         squadKey,
                         closeRangeStructures: true,
+                        assaultLock: lockData,
                         assaultMode: entry.attackFlagName === 'AM' ? 'rangedMass' : undefined
                     },
                     census: leaderCensus
@@ -207,6 +249,7 @@ module.exports = {
                         assaultRole: 'support',
                         squadKey,
                         closeRangeStructures: true,
+                        assaultLock: lockData,
                         assaultMode: entry.attackFlagName === 'AM' ? 'rangedMass' : undefined
                     },
                     census: supportCensus

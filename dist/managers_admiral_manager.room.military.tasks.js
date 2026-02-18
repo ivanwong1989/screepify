@@ -197,8 +197,9 @@ var militaryTasks = {
 
         assaultMissions.forEach(mission => {
             let assigned = assaulters.filter(c => c.memory.missionName === mission.name);
+            const lockActive = mission.data && mission.data.assaultLock && mission.data.assaultLock.active;
             const needed = (mission.requirements.count || 0) - assigned.length;
-            if (needed > 0) {
+            if (needed > 0 && !lockActive) {
                 const idleAssaulters = assaulters.filter(c => !c.memory.missionName && !c.spawning);
                 for (let i = 0; i < needed && i < idleAssaulters.length; i++) {
                     const idle = idleAssaulters[i];
