@@ -246,6 +246,44 @@ module.exports = {
                 if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'scavenge');
             });
 
+            miningContainers.filter(c => c.store[RESOURCE_ENERGY] >= (carryParts * 50)).forEach(source => {
+                if (coveredSources.has(source.id)) return;
+                const bestSink = source.pos.findClosestByRange(inflowSinks);
+                if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'mining');
+            });
+        }
+
+        const mineralTarget = terminal || storage;
+        if (mineralTarget) {
+            const targetType = terminal ? 'terminal_stock' : 'consolidation';
+
+            const allStructureLists = Object.values(intel.structures || {});
+            const seenStructures = new Set();
+            allStructureLists.forEach(list => {
+                if (!Array.isArray(list)) return;
+                list.forEach(source => {
+                    if (!source || !source.store) return;
+                    if (source.id === mineralTarget.id) return;
+                    if (source.structureType === STRUCTURE_LAB) return;
+                    if (seenStructures.has(source.id)) return;
+                    seenStructures.add(source.id);
+                    for (const resourceType in source.store) {
+                        if (resourceType === RESOURCE_ENERGY) continue;
+                        if ((source.store[resourceType] || 0) <= 0) continue;
+                        const key = `${source.id}:${resourceType}`;
+                        if (coveredSourceResources.has(key)) continue;
+                        this.addLogisticsMission(activeMissions, source, mineralTarget, isEmergency, targetType, resourceType);
+                    }
+                });
+            });
+
+            intel.dropped.forEach(source => {
+                if (!source || source.resourceType === RESOURCE_ENERGY || source.amount <= 0) return;
+                const key = `${source.id}:${source.resourceType}`;
+                if (coveredSourceResources.has(key)) return;
+                this.addLogisticsMission(activeMissions, source, mineralTarget, isEmergency, 'scavenge', source.resourceType);
+            });
+
             const scavengeStores = [
                 ...intel.ruins,
                 ...intel.tombstones
@@ -258,15 +296,8 @@ module.exports = {
                     if ((store[resourceType] || 0) <= 0) continue;
                     const key = `${source.id}:${resourceType}`;
                     if (coveredSourceResources.has(key)) continue;
-                    const bestSink = source.pos.findClosestByRange(inflowSinks);
-                    if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'scavenge', resourceType);
+                    this.addLogisticsMission(activeMissions, source, mineralTarget, isEmergency, 'scavenge', resourceType);
                 }
-            });
-
-            miningContainers.filter(c => c.store[RESOURCE_ENERGY] >= (carryParts * 50)).forEach(source => {
-                if (coveredSources.has(source.id)) return;
-                const bestSink = source.pos.findClosestByRange(inflowSinks);
-                if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'mining');
             });
         }
 
