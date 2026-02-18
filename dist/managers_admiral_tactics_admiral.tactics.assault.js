@@ -481,8 +481,12 @@ function getStructurePriority(structure) {
     }
 }
 
-function selectAssaultTarget(creep, attackFlag, hostiles, dangerRadius) {
+function selectAssaultTarget(creep, attackFlag, hostiles, dangerRadius, options) {
     if (!creep) return null;
+    const mode = options && options.mode;
+    if (mode === 'dismantle') {
+        return attackFlag ? resolveAssaultStructureTarget(attackFlag) : null;
+    }
     const radius = Number.isFinite(dangerRadius) ? dangerRadius : DEFAULT_DANGER_RADIUS;
     const allHostiles = Array.isArray(hostiles) ? hostiles : [];
     const killboxHostiles = (attackFlag && attackFlag.pos)
@@ -762,7 +766,8 @@ function getAssaultMoveIntent(creep, context) {
         incomingDamage,
         sustainableDamage,
         safeDamageRatio,
-        assaultRole
+        assaultRole,
+        closeRangeStructures
     } = context || {};
 
     let moveTarget = null;
@@ -846,7 +851,8 @@ function getAssaultMoveIntent(creep, context) {
         }
     } else if (target) {
         const hasRanged = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
-        const desiredRange = hasRanged ? 3 : 1;
+        const isHarmlessStructure = !!(closeRangeStructures && target && target.structureType === STRUCTURE_WALL);
+        const desiredRange = isHarmlessStructure ? 1 : (hasRanged ? 3 : 1);
         const step = getApproachStep(creep, target.pos, desiredRange, currentRoom, hostiles, towers);
         if (step) {
             moveTarget = { x: step.x, y: step.y, roomName: step.roomName || currentRoom.name };
@@ -942,13 +948,15 @@ function getDuoMovePlan(options) {
         targetRoomName,
         targetRoom,
         dangerRadius,
+        assaultMode,
         supportRange,
         hostiles,
         towers,
         damageBuffer,
         retreatAt,
         reengageAt,
-        safeDamageRatio
+        safeDamageRatio,
+        closeRangeStructures
     } = options || {};
 
     if (!squadKey || !leader || !support || !currentRoom) return null;
@@ -972,7 +980,7 @@ function getDuoMovePlan(options) {
     });
 
     const target = (targetRoom && attackFlag && currentRoom && currentRoom.name === targetRoom.name)
-        ? selectAssaultTarget(leader, attackFlag, hostiles, dangerRadius)
+        ? selectAssaultTarget(leader, attackFlag, hostiles, dangerRadius, { mode: assaultMode })
         : null;
 
     const leaderIntent = getAssaultMoveIntent(leader, {
@@ -991,7 +999,8 @@ function getDuoMovePlan(options) {
         incomingDamage,
         sustainableDamage,
         safeDamageRatio,
-        assaultRole: leader.memory.assaultRole || 'leader'
+        assaultRole: leader.memory.assaultRole || 'leader',
+        closeRangeStructures
     });
 
     const leaderFatigued = leader.fatigue > 0;
@@ -1056,7 +1065,9 @@ function getDuoMovePlan(options) {
 function executeAssault(creep, mission) {
     const data = mission.data || {};
     const waitFlagName = data.waitFlagName || 'W';
+    const waypointFlagName = data.waypointFlagName || waitFlagName;
     const attackFlagName = data.attackFlagName || 'A';
+    const assaultMode = data.assaultMode || 'attack';
     const waitFlag = Game.flags[waitFlagName];
     const attackFlag = Game.flags[attackFlagName];
     const primaryFlag = attackFlag || waitFlag;
@@ -1141,7 +1152,7 @@ function executeAssault(creep, mission) {
     const partnerRoom = partner && partner.pos ? partner.pos.roomName : null;
     const leaderRoom = leader && leader.pos ? leader.pos.roomName : null;
     const needsCohesion = assaultRole !== 'solo' && currentRoom && partnerRoom && partnerRoom !== currentRoom.name;
-    const waypoints = getAssaultWaypointFlags(waitFlagName);
+    const waypoints = getAssaultWaypointFlags(waypointFlagName);
     const waypointSignature = getAssaultWaypointSignature(waypoints);
     const waypointOwner = leader || creep;
     const waypointIndex = waypointOwner && waypointOwner.memory && Number.isFinite(waypointOwner.memory._assaultWaypointIndex)
@@ -1227,7 +1238,7 @@ function executeAssault(creep, mission) {
     }
 
     const target = (targetRoom && attackFlag && currentRoom && currentRoom.name === targetRoom.name)
-        ? selectAssaultTarget(creep, attackFlag, hostiles, dangerRadius)
+        ? selectAssaultTarget(creep, attackFlag, hostiles, dangerRadius, { mode: assaultMode })
         : null;
 
     logAssault(creep, data, 'attackTarget', {
@@ -1239,11 +1250,17 @@ function executeAssault(creep, mission) {
 
     if (target && state !== 'retreat') {
         const range = creep.pos.getRangeTo(target);
-        if (creep.getActiveBodyparts(RANGED_ATTACK) > 0 && range <= 3) {
-            actions.push({ action: 'rangedAttack', targetId: target.id });
-        }
-        if (creep.getActiveBodyparts(ATTACK) > 0 && range <= 1) {
-            actions.push({ action: 'attack', targetId: target.id });
+        if (assaultMode === 'dismantle') {
+            if (creep.getActiveBodyparts(WORK) > 0 && range <= 1) {
+                actions.push({ action: 'dismantle', targetId: target.id });
+            }
+        } else {
+            if (creep.getActiveBodyparts(RANGED_ATTACK) > 0 && range <= 3) {
+                actions.push({ action: 'rangedAttack', targetId: target.id });
+            }
+            if (creep.getActiveBodyparts(ATTACK) > 0 && range <= 1) {
+                actions.push({ action: 'attack', targetId: target.id });
+            }
         }
     }
 
@@ -1273,7 +1290,9 @@ function executeAssault(creep, mission) {
         incomingDamage,
         sustainableDamage,
         safeDamageRatio,
-        assaultRole
+        assaultRole,
+        assaultMode,
+        closeRangeStructures: data.closeRangeStructures
     });
 
     let moveTarget = moveIntent.moveTarget;
@@ -1305,13 +1324,15 @@ function executeAssault(creep, mission) {
             targetRoomName: routeRoomName,
             targetRoom,
             dangerRadius,
+            assaultMode,
             supportRange,
             hostiles,
             towers,
             damageBuffer,
             retreatAt,
             reengageAt,
-            safeDamageRatio
+            safeDamageRatio,
+            closeRangeStructures: data.closeRangeStructures
         });
         if (duoPlan && duoPlan.moves && Object.prototype.hasOwnProperty.call(duoPlan.moves, creep.id)) {
             const move = duoPlan.moves[creep.id];

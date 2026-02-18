@@ -176,7 +176,8 @@ module.exports = {
                         targetRoom: entry.targetRoom,
                         sponsorRoom: room.name,
                         assaultRole: 'leader',
-                        squadKey
+                        squadKey,
+                        closeRangeStructures: true
                     },
                     census: leaderCensus
                 });
@@ -201,7 +202,8 @@ module.exports = {
                         targetRoom: entry.targetRoom,
                         sponsorRoom: room.name,
                         assaultRole: 'support',
-                        squadKey
+                        squadKey,
+                        closeRangeStructures: true
                     },
                     census: supportCensus
                 });
@@ -235,7 +237,8 @@ module.exports = {
                         targetRoom: entry.targetRoom,
                         sponsorRoom: room.name,
                         assaultRole: 'solo',
-                        squadKey
+                        squadKey,
+                        closeRangeStructures: true
                     },
                     census: census
                 });

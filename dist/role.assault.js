@@ -229,6 +229,7 @@ var roleAssault = {
                         case 'rangedAttack': creep.rangedAttack(target); break;
                         case 'heal': creep.heal(target); break;
                         case 'rangedHeal': creep.rangedHeal(target); break;
+                        case 'dismantle': creep.dismantle(target); break;
                     }
                 } else if (debugCombat) {
                     logCombat(`[Assault] ${creep.name} target ${act.targetId} missing/invisible`);

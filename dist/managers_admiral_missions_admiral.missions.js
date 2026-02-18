@@ -3,6 +3,7 @@
  */
 const drainerMission = require('managers_admiral_missions_mission.drainer');
 const flagAttackMission = require('managers_admiral_missions_mission.attack.flag');
+const flagDismantleMission = require('managers_admiral_missions_mission.dismantle.flag');
 
 var admiralMissions = {
     generate: function(room, hostiles, threat, state, budget) {
@@ -61,6 +62,14 @@ var admiralMissions = {
                 getMissionCensus: () => ({ count: 0, workParts: 0, carryParts: 0 })
             };
             flagAttackMission.generate(room, null, attackContext, missions);
+        }
+
+        if (flagDismantleMission && typeof flagDismantleMission.generate === 'function') {
+            const dismantleContext = {
+                budget,
+                getMissionCensus: () => ({ count: 0, workParts: 0, carryParts: 0 })
+            };
+            flagDismantleMission.generate(room, null, dismantleContext, missions);
         }
 
         return missions;
