@@ -180,7 +180,11 @@ function isWaypointReached(leader, partner, waypoint, supportRange) {
     if (partner) {
         if (!partner.pos || partner.pos.roomName !== waypoint.pos.roomName) return false;
         const range = Math.max(1, Math.floor(supportRange || 1));
-        if (getRange(leader.pos, partner.pos) > range) return false;
+        if (getRange(leader.pos, partner.pos) > range) {
+            const leaderStuck = leader.memory && (leader.memory._assaultStuckTicks || 0) >= DUO_STUCK_TICKS;
+            const partnerStuck = partner.memory && (partner.memory._assaultStuckTicks || 0) >= DUO_STUCK_TICKS;
+            if (!leaderStuck && !partnerStuck) return false;
+        }
     }
     return true;
 }
@@ -326,7 +330,11 @@ function getSupportCatchUpStep(support, leaderPos, supportRange, room, hostiles,
         ignoreDanger ? [] : hostiles,
         ignoreDanger ? [] : towers
     );
-    return step || support.pos;
+    if (!step) return support.pos;
+    const currentRange = getRange(support.pos, leaderPos);
+    const nextRange = getRange(step, leaderPos);
+    if (nextRange > currentRange) return support.pos;
+    return step;
 }
 
 function selectHealTarget(creep, squad) {
@@ -836,6 +844,12 @@ function getAssaultMoveIntent(creep, context) {
                 moveTarget = { x: step.x, y: step.y, roomName: step.roomName || currentRoom.name };
                 range = 0;
             }
+        } else if (!moveTarget && leader.memory && leader.memory.task && leader.memory.task.moveTarget) {
+            const leaderTarget = leader.memory.task.moveTarget;
+            if (leaderTarget && leaderTarget.roomName === currentRoom.name) {
+                moveTarget = { x: leaderTarget.x, y: leaderTarget.y, roomName: leaderTarget.roomName };
+                range = Math.max(1, Math.floor(supportRange || 1));
+            }
         }
     } else if (currentRoom && currentRoom.name !== targetRoomName) {
         const preferPos = activeFlag && activeFlag.pos && activeFlag.pos.roomName === targetRoomName
@@ -1005,9 +1019,13 @@ function getDuoMovePlan(options) {
 
     const leaderFatigued = leader.fatigue > 0;
     const supportFatigued = support.fatigue > 0;
+    const desiredRange = Math.max(1, Math.floor(supportRange || 1));
+    const currentRange = getRange(leader.pos, support.pos);
+    const allowLeaderMove = !leaderFatigued && !supportFatigued && currentRange <= desiredRange;
+    const allowSupportCatchUp = !supportFatigued && currentRange > desiredRange;
 
     let leaderStep = null;
-    if (!leaderFatigued && !supportFatigued &&
+    if (allowLeaderMove &&
         leaderIntent && leaderIntent.moveTarget && leaderIntent.moveTarget.roomName === currentRoom.name) {
         const positions = [leader.pos, support.pos];
         const leaderTarget = leaderIntent.moveTarget;
@@ -1035,11 +1053,11 @@ function getDuoMovePlan(options) {
             supportNext = catchStep || support.pos;
         }
     } else {
-        if (supportFatigued) {
-            supportNext = support.pos;
-        } else {
+        if (allowSupportCatchUp) {
             const catchStep = getSupportCatchUpStep(support, leader.pos, supportRange, currentRoom, hostiles, towers, { ignoreDanger: true });
             supportNext = catchStep || support.pos;
+        } else {
+            supportNext = support.pos;
         }
     }
     updateDuoBlockedState(leader, support, blocked);
@@ -1340,16 +1358,28 @@ function executeAssault(creep, mission) {
         });
         if (duoPlan && duoPlan.moves && Object.prototype.hasOwnProperty.call(duoPlan.moves, creep.id)) {
             const move = duoPlan.moves[creep.id];
-            moveTarget = move.moveTarget;
-            range = move.range;
-            moveOpts = move.moveOpts;
-            logAssault(creep, data, 'duoPlan', {
-                moveTarget,
-                range,
-                moveOpts,
-                leaderId: duoPlan.leaderId,
-                supportId: duoPlan.supportId
-            });
+            const intentHasMove = !!(moveIntent && moveIntent.moveTarget);
+            const planHasMove = !!(move && move.moveTarget);
+            const skipPlan = intentHasMove && !planHasMove;
+            if (skipPlan) {
+                logAssault(creep, data, 'duoPlanSkip', {
+                    intentMoveTarget: moveIntent && moveIntent.moveTarget,
+                    intentRange: moveIntent && moveIntent.range,
+                    leaderId: duoPlan.leaderId,
+                    supportId: duoPlan.supportId
+                });
+            } else {
+                moveTarget = move.moveTarget;
+                range = move.range;
+                moveOpts = move.moveOpts;
+                logAssault(creep, data, 'duoPlan', {
+                    moveTarget,
+                    range,
+                    moveOpts,
+                    leaderId: duoPlan.leaderId,
+                    supportId: duoPlan.supportId
+                });
+            }
         }
     }
 

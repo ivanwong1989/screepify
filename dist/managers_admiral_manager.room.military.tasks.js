@@ -30,8 +30,9 @@ function getRemoteCreepsByHomeRoom() {
     return byRoom;
 }
 
-function cleanupMissionAssignments(creeps, allMissions) {
+function cleanupMissionAssignments(creeps, allMissions, roomName) {
     creeps.forEach(creep => {
+        if (roomName && creep.memory && creep.memory.room && creep.memory.room !== roomName) return;
         if (creep.memory.missionName && !allMissions.find(m => m.name === creep.memory.missionName)) {
             delete creep.memory.missionName;
             delete creep.memory.task;
@@ -151,8 +152,8 @@ var militaryTasks = {
 
         // Cleanup invalid missions
         defenseTactics.cleanupMissions(defenders, allMissions);
-        cleanupMissionAssignments(assaulters, allMissions);
-        cleanupMissionAssignments(drainers, allMissions);
+        cleanupMissionAssignments(assaulters, allMissions, room.name);
+        cleanupMissionAssignments(drainers, allMissions, room.name);
 
         missions.forEach(mission => {
             let assigned = defenders.filter(c => c.memory.missionName === mission.name);
