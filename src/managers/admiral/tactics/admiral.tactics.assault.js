@@ -417,7 +417,7 @@ function getExpectedIncomingDamage(pos, hostiles, towers, options) {
 
 function isAssaultStructure(structure) {
     if (!structure) return false;
-    if (structure.structureType === STRUCTURE_WALL && !structure.owner) return true;
+    if ((structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_ROAD) && !structure.owner) return true;
     if (structure.owner && !structure.my && !isAlly(structure.owner)) return true;
     return false;
 }
@@ -1256,7 +1256,11 @@ function executeAssault(creep, mission) {
             }
         } else {
             if (creep.getActiveBodyparts(RANGED_ATTACK) > 0 && range <= 3) {
-                actions.push({ action: 'rangedAttack', targetId: target.id });
+                if (assaultMode === 'rangedMass' && target.structureType) {
+                    actions.push({ action: 'rangedMassAttack' });
+                } else {
+                    actions.push({ action: 'rangedAttack', targetId: target.id });
+                }
             }
             if (creep.getActiveBodyparts(ATTACK) > 0 && range <= 1) {
                 actions.push({ action: 'attack', targetId: target.id });

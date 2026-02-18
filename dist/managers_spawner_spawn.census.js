@@ -1,11 +1,24 @@
+const NEAR_DEATH_BUFFER = 20;
+
+const shouldIgnoreForNearDeath = (creep, role) => {
+    if (!creep || !role) return false;
+    if (role !== 'miner' && role !== 'hauler') return false;
+    if (!Number.isFinite(creep.ticksToLive)) return false;
+    const spawnTime = creep.body ? creep.body.length * 3 : 0;
+    const threshold = spawnTime + NEAR_DEATH_BUFFER;
+    return creep.ticksToLive <= threshold;
+};
+
 const spawnCensus = {
     pruneTickets: function(room, contractEntries) {
         if (!Memory.spawnTickets) return;
         const tickets = Memory.spawnTickets;
         const contractIds = new Set(contractEntries.map(e => e.contract.contractId));
         const desiredByContract = Object.create(null);
+        const roleByContract = Object.create(null);
         for (const entry of contractEntries) {
             desiredByContract[entry.contract.contractId] = entry.contract.desired || 0;
+            roleByContract[entry.contract.contractId] = entry.contract.role;
         }
         const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
             ? Memory.rooms[room.name].spawnTicketsByKey
@@ -25,6 +38,11 @@ const spawnCensus = {
         const countTicket = (ticketId, ticket) => {
             if (!isActiveTicket(ticket)) return;
             const contractId = ticket.contractId;
+            if (ticket.creepName) {
+                const role = roleByContract[contractId] || ticket.role;
+                const creep = Game.creeps[ticket.creepName];
+                if (shouldIgnoreForNearDeath(creep, role)) return;
+            }
             activeCounts[contractId] = (activeCounts[contractId] || 0) + 1;
             if (ticket.state === 'REQUESTED' && !ticket.creepName) {
                 if (!requestedByContract[contractId]) requestedByContract[contractId] = [];
@@ -104,11 +122,13 @@ const spawnCensus = {
         const contractIds = new Set(contractEntries.map(e => e.contract.contractId));
         const counts = Object.create(null);
         const countedCreepNamesByContract = Object.create(null);
+        const roleByContract = Object.create(null);
         debug('spawner', `[SpawnCensus] ${room.name} contracts=${contractEntries.length}`);
 
         for (const entry of contractEntries) {
             counts[entry.contract.contractId] = 0;
             countedCreepNamesByContract[entry.contract.contractId] = new Set();
+            roleByContract[entry.contract.contractId] = entry.contract.role;
         }
 
         let spawningNames = spawningNamesFallback;
@@ -148,6 +168,11 @@ const spawnCensus = {
 
         const countFulfillmentTicket = (ticketId, ticket, contractId) => {
             if (!isActiveTicket(ticket)) return;
+            if (ticket.creepName) {
+                const role = roleByContract[contractId] || ticket.role;
+                const creep = Game.creeps[ticket.creepName];
+                if (shouldIgnoreForNearDeath(creep, role)) return;
+            }
             counts[contractId] = (counts[contractId] || 0) + 1;
             if (ticket.creepName) {
                 countedCreepNamesByContract[contractId].add(ticket.creepName);
@@ -183,6 +208,8 @@ const spawnCensus = {
             if (!creep || !creep.my) continue;
             const contractId = creep.memory && creep.memory.contractId;
             if (contractId && contractIds.has(contractId)) {
+                const role = roleByContract[contractId] || creep.memory.role;
+                if (shouldIgnoreForNearDeath(creep, role)) continue;
                 const ticketId = creep.memory && creep.memory.ticketId;
                 const ticket = ticketId ? tickets[ticketId] : null;
                 if (ticket && ticket.contractId === contractId && isActiveTicket(ticket)) continue;
@@ -198,6 +225,7 @@ const spawnCensus = {
             if (!home || !role) continue;
             const poolContractId = poolIndex[`${home}|${role}`];
             if (!poolContractId || !contractIds.has(poolContractId)) continue;
+            if (shouldIgnoreForNearDeath(creep, role)) continue;
             const counted = countedCreepNamesByContract[poolContractId];
             if (counted && counted.has(creep.name)) continue;
             counts[poolContractId] = (counts[poolContractId] || 0) + 1;

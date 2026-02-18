@@ -218,7 +218,17 @@ var roleAssault = {
         const actions = task.actions || (task.action ? [{ action: task.action, targetId: task.targetId }] : []);
 
         actions.forEach(act => {
-            if (act.action && act.targetId) {
+            if (!act || !act.action) return;
+
+            if (act.action === 'rangedMassAttack') {
+                if (debugCombat) {
+                    logCombat(`[Assault] ${creep.name} executing rangedMassAttack`);
+                }
+                creep.rangedMassAttack();
+                return;
+            }
+
+            if (act.targetId) {
                 const target = Game.getObjectById(act.targetId);
                 if (target) {
                     if (debugCombat) {

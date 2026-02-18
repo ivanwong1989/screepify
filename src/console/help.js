@@ -28,7 +28,7 @@ module.exports = function registerHelpConsole() {
                 'assaultTuning()     - show/set assault tuning overrides (retreatAt, reengageAt, safeDamageRatio, damageBuffer, dangerRadius, supportRange)',
                 'flag directives:',
                 '  Parking*        - decongest parking flags',
-                '  W/A             - assault mission flags (W=wait, W1.. waypoints, A=attack)',
+                '  W/A/AM          - assault mission flags (W=wait, W1.. waypoints, A=attack, AM=mass attack)',
                 '  D/A             - assault dismantler flags (D=wait, W1.. waypoints, A=target)'
             ];
             for (const line of lines) console.log(line);

@@ -7,6 +7,7 @@ const shared = require('console_shared');
  * - W: wait/sponsor flag (required). Determines sponsor room and staging position.
  * - W1, W2, ...: optional waypoint flags (numeric suffix). Assault will traverse these in order before A.
  * - A: attack flag (optional). Determines target room and attack position.
+ * - AM: ranged-mass attack flag (optional). Uses ranged mass attack vs structures.
  *
  * Spawn modes:
  * - Solo (default): one assault mission with body from Memory.military.attack.body.
@@ -31,6 +32,7 @@ const shared = require('console_shared');
 
 const FLAG_WAIT = 'W';
 const FLAG_ATTACK = 'A';
+const FLAG_ATTACK_MASS = 'AM';
 const DEFAULT_ATTACK_BODY = [RANGED_ATTACK, MOVE, HEAL];
 const DEFAULT_SUPPORT_BODY = [HEAL, MOVE, MOVE];
 const DEFAULT_BODY_MODE = 'auto';
@@ -109,11 +111,11 @@ function buildFlagAttackCache() {
         return empty;
     }
 
-    const attackFlag = Game.flags[FLAG_ATTACK];
+    const attackFlag = Game.flags[FLAG_ATTACK_MASS] || Game.flags[FLAG_ATTACK];
     const entry = {
         sponsorRoom,
         waitFlagName: waitFlag.name,
-        attackFlagName: FLAG_ATTACK,
+        attackFlagName: attackFlag ? attackFlag.name : FLAG_ATTACK,
         waitPos: toPos(waitFlag.pos),
         attackPos: attackFlag ? toPos(attackFlag.pos) : null,
         targetRoom: attackFlag ? attackFlag.pos.roomName : waitFlag.pos.roomName
@@ -177,7 +179,8 @@ module.exports = {
                         sponsorRoom: room.name,
                         assaultRole: 'leader',
                         squadKey,
-                        closeRangeStructures: true
+                        closeRangeStructures: true,
+                        assaultMode: entry.attackFlagName === 'AM' ? 'rangedMass' : undefined
                     },
                     census: leaderCensus
                 });
@@ -203,7 +206,8 @@ module.exports = {
                         sponsorRoom: room.name,
                         assaultRole: 'support',
                         squadKey,
-                        closeRangeStructures: true
+                        closeRangeStructures: true,
+                        assaultMode: entry.attackFlagName === 'AM' ? 'rangedMass' : undefined
                     },
                     census: supportCensus
                 });
@@ -238,7 +242,8 @@ module.exports = {
                         sponsorRoom: room.name,
                         assaultRole: 'solo',
                         squadKey,
-                        closeRangeStructures: true
+                        closeRangeStructures: true,
+                        assaultMode: entry.attackFlagName === 'AM' ? 'rangedMass' : undefined
                     },
                     census: census
                 });
