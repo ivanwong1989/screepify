@@ -86,6 +86,22 @@ function getNudgePosition(creep) {
     return null;
 }
 
+function getHomeSpawnTarget(creep) {
+    if (!creep || !creep.memory || !creep.memory.room) return null;
+    const homeRoom = Game.rooms[creep.memory.room];
+    if (!homeRoom) return null;
+    let spawns;
+    if (global.getRoomCache) {
+        const cache = global.getRoomCache(homeRoom);
+        spawns = cache && cache.myStructuresByType && cache.myStructuresByType[STRUCTURE_SPAWN];
+    }
+    if (!spawns || spawns.length === 0) {
+        spawns = homeRoom.find(FIND_MY_SPAWNS);
+    }
+    if (!spawns || spawns.length === 0) return null;
+    return spawns[0];
+}
+
 function moveToTarget(creep, target, range) {
     const moveRange = Number.isFinite(range) ? range : 1;
     const targetPos = target && target.pos ? target.pos : target;
@@ -146,7 +162,14 @@ var roleUniversal = {
             if (creep.room.name === creep.memory.room) {
                 delete creep.memory._travellingToHome;
             } else {
-                moveToTarget(creep, new RoomPosition(25, 25, creep.memory.room), 20);
+                const homeSpawn = getHomeSpawnTarget(creep);
+                if (homeSpawn) {
+                    moveToTarget(creep, homeSpawn, 2);
+                } else if (Game.rooms[creep.memory.room] && Game.rooms[creep.memory.room].controller) {
+                    moveToTarget(creep, Game.rooms[creep.memory.room].controller, 2);
+                } else {
+                    moveToTarget(creep, new RoomPosition(25, 25, creep.memory.room), 20);
+                }
                 return;
             }
         }
