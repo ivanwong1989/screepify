@@ -11,6 +11,8 @@ var roleTower = require('role.tower');
 var runColony = require('runColony');
 var cpuEma = require('telemetry_cpuEma');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
+const taskDebug = require('task_core_debug');
+const actionArbiter = require('task_core_actionArbiter');
 
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
@@ -19,8 +21,19 @@ var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
 // This line monkey patches the global prototypes.
 //profiler.enable();
 module.exports.loop = function() {
+    taskDebug.beginTick();
     //profiler.wrap(function() {
         // Main.js logic should go here.
+
+        Memory.settings = Memory.settings || {};
+        Memory.settings.taskRefactor = Memory.settings.taskRefactor || {
+            enabled: false,
+            hooksOnly: false, // keep false for Phase 0 (Phase 2 will use this)
+            migrate: {
+                transfer:false, withdraw:false, pickup:false,
+                repair:false, build:false, upgrade:false, combat:false
+            }
+        };
 
         // --- Initialize Remote Memory ---
         if (!Memory.remoteRooms) Memory.remoteRooms = {};
@@ -123,6 +136,7 @@ module.exports.loop = function() {
         // Run creep logic globally, as they may be in any room
         for (var name in Game.creeps) {
             var creep = Game.creeps[name];
+            creep._actionState = actionArbiter.createActionState(creep);
             if (creep.memory.role === 'defender' || creep.memory.role === 'brawler' || creep.memory.role === 'drainer') {
                 roleDefender.run(creep);
             } else if (creep.memory.role === 'assault') {

@@ -2,6 +2,9 @@
  * Dedicated combat role for defenders.
  * Handles tactical movement and combat actions.
  */
+const actionArbiter = require('task_core_actionArbiter');
+const taskFacade = require('task_facade');
+
 function getBorderDirection(pos) {
     if (!pos) return null;
     if (pos.x === 0) return FIND_EXIT_LEFT;
@@ -115,6 +118,7 @@ function moveToTarget(creep, target, range, visualizePathStyle, extraOpts) {
         if (nudgePos) {
             const nudgeOpts = { range: 0, reusePath: 0 };
             if (visualizePathStyle) nudgeOpts.visualizePathStyle = visualizePathStyle;
+            if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.move);
             creep.moveTo(nudgePos, nudgeOpts);
             return;
         }
@@ -128,6 +132,7 @@ function moveToTarget(creep, target, range, visualizePathStyle, extraOpts) {
                 if (nudgePos) {
                     const nudgeOpts = { range: 0, reusePath: 0 };
                     if (visualizePathStyle) nudgeOpts.visualizePathStyle = visualizePathStyle;
+                    if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.move);
                     creep.moveTo(nudgePos, nudgeOpts);
                     return;
                 }
@@ -141,12 +146,20 @@ function moveToTarget(creep, target, range, visualizePathStyle, extraOpts) {
         if (extraOpts.ignoreCreeps) opts.ignoreCreeps = true;
         if (Number.isFinite(extraOpts.reusePath)) opts.reusePath = extraOpts.reusePath;
     }
+    if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.move);
     creep.moveTo(target, opts);
 }
 
 var roleDefender = {
     /** @param {Creep} creep **/
     run: function(creep) {
+        const context = {
+            roomName: creep.memory.room || (creep.room && creep.room.name),
+            role: creep.memory.role,
+            missionName: creep.memory.missionName
+        };
+
+        try {
         const task = creep.memory.task;
         const debugCombat = Memory.debugCombat;
         const lastRoom = creep.memory._lastRoom;
@@ -163,6 +176,7 @@ var roleDefender = {
             const nudgePos = getNudgePosition(creep);
             if (nudgePos) {
                 const nudgeOpts = { range: 0, reusePath: 0 };
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.move);
                 creep.moveTo(nudgePos, nudgeOpts);
                 didBorderNudge = true;
             }
@@ -225,16 +239,31 @@ var roleDefender = {
                         logCombat(`[Defender] ${creep.name} executing ${act.action} on ${target} (Range: ${creep.pos.getRangeTo(target)})`);
                     }
                     switch(act.action) {
-                        case 'attack': creep.attack(target); break;
-                        case 'rangedAttack': creep.rangedAttack(target); break;
-                        case 'heal': creep.heal(target); break;
-                        case 'rangedHeal': creep.rangedHeal(target); break;
+                        case 'attack':
+                            if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.attack);
+                            creep.attack(target);
+                            break;
+                        case 'rangedAttack':
+                            if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.attack);
+                            creep.rangedAttack(target);
+                            break;
+                        case 'heal':
+                            if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.heal);
+                            creep.heal(target);
+                            break;
+                        case 'rangedHeal':
+                            if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.heal);
+                            creep.rangedHeal(target);
+                            break;
                     }
                 } else if (debugCombat) {
                     logCombat(`[Defender] ${creep.name} target ${act.targetId} missing/invisible`);
                 }
             }
         });
+        } finally {
+            taskFacade.runAfterPrimary(creep, context);
+        }
     }
 };
 

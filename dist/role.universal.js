@@ -1,4 +1,6 @@
 const scoutUtils = require('managers_overseer_utils_overseer.scout');
+const actionArbiter = require('task_core_actionArbiter');
+const taskFacade = require('task_facade');
 
 function getBorderDirection(pos) {
     if (!pos) return null;
@@ -111,6 +113,7 @@ function moveToTarget(creep, target, range) {
     if (nudgeRequired) {
         const nudgePos = getNudgePosition(creep);
         if (nudgePos) {
+            if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.move);
             creep.moveTo(nudgePos, { range: 0, reusePath: 0 });
             return;
         }
@@ -122,6 +125,7 @@ function moveToTarget(creep, target, range) {
             if (exitDir !== ERR_NO_PATH && exitDir !== ERR_INVALID_ARGS && exitDir !== borderDir) {
                 const nudgePos = getNudgePosition(creep);
                 if (nudgePos) {
+                    if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.move);
                     creep.moveTo(nudgePos, { range: 0, reusePath: 0 });
                     return;
                 }
@@ -129,6 +133,7 @@ function moveToTarget(creep, target, range) {
         }
     }
 
+    if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.move);
     creep.moveTo(target, { range: moveRange, reusePath: 20 });
 }
 
@@ -139,6 +144,13 @@ var roleUniversal = {
      * @param {Creep} creep
      */
     run: function(creep) {
+        const context = {
+            roomName: creep.memory.room || (creep.room && creep.room.name),
+            role: creep.memory.role,
+            missionName: creep.memory.missionName
+        };
+
+        try {
         const lastRoom = creep.memory._lastRoom;
         if (lastRoom && lastRoom !== creep.room.name) {
             creep.memory._justEnteredRoom = Game.time;
@@ -151,6 +163,7 @@ var roleUniversal = {
         if (creep.memory._borderNudge && getBorderDirection(creep.pos)) {
             const nudgePos = getNudgePosition(creep);
             if (nudgePos) {
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.move);
                 creep.moveTo(nudgePos, { range: 0, reusePath: 0 });
                 return;
             }
@@ -219,58 +232,89 @@ var roleUniversal = {
                 }
                 break;
             case 'harvest':
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
                 if (creep.harvest(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
             case 'transfer':
+                // Attempt new executor if flagged; if not handled, fall back to old behavior.
+                const res = taskFacade.runPrimaryFromTask(creep, task, { moveToTarget });
+
+                if (res) {
+                    // New path handled the tick (move or transfer). Do NOT clear task here.
+                    console.log("oooo new executor transfer");
+                    break;
+                }
+
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.transfer);
                 if (creep.transfer(target, task.resourceType) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
-            case 'withdraw':
+            case 'withdraw': {
+                const res = taskFacade.runPrimaryFromTask(creep, task, { moveToTarget });
+                if (res) { console.log("oooo new executor withdraw"); break;}
+
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.transfer);
                 if (creep.withdraw(target, task.resourceType) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
-            case 'pickup':
+            }
+            case 'pickup': {
+                const res = taskFacade.runPrimaryFromTask(creep, task, { moveToTarget });
+                if (res) { console.log("oooo new executor pickup"); break;}
+
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.transfer);
                 if (creep.pickup(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
+            }
             case 'upgrade':
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
                 if (creep.upgradeController(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
             case 'build':
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
                 if (creep.build(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
             case 'repair':
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
                 if (creep.repair(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
             case 'dismantle':
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
                 if (creep.dismantle(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
             case 'reserve':
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.claim);
                 if (creep.reserveController(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
             case 'claim':
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.claim);
                 if (creep.claimController(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
             case 'drop':
+                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.transfer);
                 creep.drop(task.resourceType);
                 break;
+        }
+        } finally {
+            taskFacade.runAfterPrimary(creep, context);
         }
     }
 };
