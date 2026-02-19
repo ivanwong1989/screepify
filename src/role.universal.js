@@ -1,6 +1,7 @@
 const scoutUtils = require('managers_overseer_utils_overseer.scout');
 const actionArbiter = require('task_core_actionArbiter');
 const taskFacade = require('task_facade');
+const taskDebug = require('task_core_debug');
 
 function getBorderDirection(pos) {
     if (!pos) return null;
@@ -149,6 +150,7 @@ var roleUniversal = {
             role: creep.memory.role,
             missionName: creep.memory.missionName
         };
+        const roomName = (creep.memory.room || (creep.room && creep.room.name)) || 'unknown';
 
         try {
         const lastRoom = creep.memory._lastRoom;
@@ -243,9 +245,11 @@ var roleUniversal = {
 
                 if (res) {
                     // New path handled the tick (move or transfer). Do NOT clear task here.
-                    console.log("oooo new executor transfer");
                     break;
                 }
+                taskDebug.incGlobal('fallbacks');
+                taskDebug.incPerRoom(roomName, 'fallbacks');
+                taskDebug.incPerRole(roomName, creep.memory.role, 'fallbacks');
 
                 if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.transfer);
                 if (creep.transfer(target, task.resourceType) === ERR_NOT_IN_RANGE) {
@@ -254,7 +258,10 @@ var roleUniversal = {
                 break;
             case 'withdraw': {
                 const res = taskFacade.runPrimaryFromTask(creep, task, { moveToTarget });
-                if (res) { console.log("oooo new executor withdraw"); break;}
+                if (res) { break;}
+                taskDebug.incGlobal('fallbacks');
+                taskDebug.incPerRoom(roomName, 'fallbacks');
+                taskDebug.incPerRole(roomName, creep.memory.role, 'fallbacks');
 
                 if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.transfer);
                 if (creep.withdraw(target, task.resourceType) === ERR_NOT_IN_RANGE) {
@@ -264,7 +271,10 @@ var roleUniversal = {
             }
             case 'pickup': {
                 const res = taskFacade.runPrimaryFromTask(creep, task, { moveToTarget });
-                if (res) { console.log("oooo new executor pickup"); break;}
+                if (res) { break;}
+                taskDebug.incGlobal('fallbacks');
+                taskDebug.incPerRoom(roomName, 'fallbacks');
+                taskDebug.incPerRole(roomName, creep.memory.role, 'fallbacks');
 
                 if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.transfer);
                 if (creep.pickup(target) === ERR_NOT_IN_RANGE) {
@@ -273,21 +283,45 @@ var roleUniversal = {
                 break;
             }
             case 'upgrade':
-                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
-                if (creep.upgradeController(target) === ERR_NOT_IN_RANGE) {
-                    moveToTarget(creep, target, task.range);
+                {
+                    const res = taskFacade.runPrimaryFromTask(creep, task, { moveToTarget });
+                    if (res) { break; }
+                    taskDebug.incGlobal('fallbacks');
+                    taskDebug.incPerRoom(roomName, 'fallbacks');
+                    taskDebug.incPerRole(roomName, creep.memory.role, 'fallbacks');
+
+                    if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
+                    if (creep.upgradeController(target) === ERR_NOT_IN_RANGE) {
+                        moveToTarget(creep, target, task.range);
+                    }
                 }
                 break;
             case 'build':
-                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
-                if (creep.build(target) === ERR_NOT_IN_RANGE) {
-                    moveToTarget(creep, target, task.range);
+                {
+                    const res = taskFacade.runPrimaryFromTask(creep, task, { moveToTarget });
+                    if (res) { break; }
+                    taskDebug.incGlobal('fallbacks');
+                    taskDebug.incPerRoom(roomName, 'fallbacks');
+                    taskDebug.incPerRole(roomName, creep.memory.role, 'fallbacks');
+
+                    if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
+                    if (creep.build(target) === ERR_NOT_IN_RANGE) {
+                        moveToTarget(creep, target, task.range);
+                    }
                 }
                 break;
             case 'repair':
-                if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
-                if (creep.repair(target) === ERR_NOT_IN_RANGE) {
-                    moveToTarget(creep, target, task.range);
+                {
+                    const res = taskFacade.runPrimaryFromTask(creep, task, { moveToTarget });
+                    if (res) { break; }
+                    taskDebug.incGlobal('fallbacks');
+                    taskDebug.incPerRoom(roomName, 'fallbacks');
+                    taskDebug.incPerRole(roomName, creep.memory.role, 'fallbacks');
+
+                    if (creep._actionState) actionArbiter.claim(creep._actionState, actionArbiter.SLOTS.work);
+                    if (creep.repair(target) === ERR_NOT_IN_RANGE) {
+                        moveToTarget(creep, target, task.range);
+                    }
                 }
                 break;
             case 'dismantle':

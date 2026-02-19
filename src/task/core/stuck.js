@@ -10,10 +10,12 @@ function taskSig(task) {
   if (!task) return '';
   const t = task.action || '';
   const id = task.targetId || task.targetName || '';
-  const pos = task.targetPos ? `${task.targetPos.roomName}:${task.targetPos.x},${task.targetPos.y}` : '';
   const res = task.resourceType || '';
-  const amt = task.amount || '';
-  return `||||`;
+  const amt = (task.amount !== undefined && task.amount !== null) ? task.amount : '';
+  const range = Number.isFinite(task.range) ? task.range : '';
+  const pos = task.targetPos ? `${task.targetPos.roomName}:${task.targetPos.x},${task.targetPos.y}` : '';
+  const move = task.moveTarget ? `${task.moveTarget.roomName}:${task.moveTarget.x},${task.moveTarget.y}` : '';
+  return `${t}|${id}|${res}|${amt}|${range}|${pos}|${move}`;
 }
 
 function reset(mem) {
