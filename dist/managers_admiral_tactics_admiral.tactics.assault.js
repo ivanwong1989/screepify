@@ -1513,6 +1513,7 @@ function executeAssault(creep, mission) {
     const currentRoom = creep.room;
     const targetRoom = attackRoomName ? Game.rooms[attackRoomName] : null;
     const actions = [];
+    let plannedMove = null;
 
     updateAssaultStuckTracking(creep);
 
@@ -1562,8 +1563,7 @@ function executeAssault(creep, mission) {
         const plan = plans[key];
 
         if (plan && plan.moves && plan.moves[creep.id]) {
-            commitAssaultTask(creep, plan.moves[creep.id]);
-            return; // ✅ only return when we actually got a move
+            plannedMove = plan.moves[creep.id];
         }
 
         // ✅ No plan yet (likely support executed before leader this tick).
@@ -1833,6 +1833,12 @@ function executeAssault(creep, mission) {
                 moveOpts = duoPlan.moves[creep.id].moveOpts;
             }
         }
+    }
+
+    if (plannedMove) {
+        if (plannedMove.moveTarget) moveTarget = plannedMove.moveTarget;
+        if (plannedMove.range !== undefined && plannedMove.range !== null) range = plannedMove.range;
+        if (plannedMove.moveOpts) moveOpts = plannedMove.moveOpts;
     }
 
     const task = {
