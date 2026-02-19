@@ -18,11 +18,12 @@ const DUO_STUCK_TICKS = 2;
 const DUO_BLOCKED_TICKS = 2;
 const DUO_BREAK_TICKS = 3;
 const DEFAULT_KITE_RANGE = 3;
-const DEFAULT_KITE_TRIGGER_RANGE = 2;
-const DEFAULT_HEAL_KITE_TRIGGER_RANGE = 2;
+const DEFAULT_KITE_TRIGGER_RANGE = 3;
+const DEFAULT_HEAL_KITE_TRIGGER_RANGE = 3;
 const DEFAULT_SWAMP_KITE_BUFFER = 4;
 const DEFAULT_KITE_AVOID_SWAMP = true;
 const DEFAULT_KITE_AVOID_BORDERS = true;
+const DUO_MIN_MELEE_RANGE = 2;
 
 function shouldDebugAssault(creep, data) {
     if (data && data.debugAssault) return true;
@@ -443,6 +444,7 @@ function getDuoKiteStep(leader, support, room, hostiles, towers, supportRange, o
     const rangeLimit = Math.max(1, Math.floor(supportRange || 1));
     const squadIds = new Set([leader.id, support.id]);
     const currentTowerDamage = getTowerDamageAtPos(leader.pos, towers);
+    const supportAdjacent = getAdjacentCandidates(support.pos, true);
 
     const candidates = getAdjacentCandidates(leader.pos, false);
     let best = null;
@@ -455,37 +457,68 @@ function getDuoKiteStep(leader, support, room, hostiles, towers, supportRange, o
         if (!isWalkableForSquad(room, step.x, step.y, squadIds)) continue;
 
         const stepRange = getRange(step, meleeHostile.pos);
-        if (stepRange <= 1) continue;
+        if (stepRange <= DUO_MIN_MELEE_RANGE) continue;
         if (avoidBorders && isBorderPos(step)) continue;
         const leaderSwamp = avoidSwamp && isSwamp(room, step.x, step.y);
         if (leaderSwamp && stepRange < swampBuffer) continue;
         if (requireNonDecreasingRange && Number.isFinite(currentRange) && stepRange < currentRange) continue;
 
-        const supportStep = getSupportStepForLeaderMove(step, leader.pos, support.pos, room, rangeLimit, squadIds);
-        if (!supportStep) continue;
-        if (getRange(step, supportStep) > rangeLimit) continue;
-        if (avoidBorders && isBorderPos(supportStep)) continue;
-
-        const supportSwamp = avoidSwamp && isSwamp(room, supportStep.x, supportStep.y);
-        const supportRangeToMelee = getRange(supportStep, meleeHostile.pos);
-        if (supportSwamp && supportRangeToMelee < swampBuffer) continue;
-
-        let score = 0;
+        let baseScore = 0;
         if (stepRange < kiteRange) {
-            score += (kiteRange - stepRange) * 1000;
+            baseScore += (kiteRange - stepRange) * 1000;
         }
-        score += getExpectedIncomingDamage(step, hostiles || [], towers || [], { rangeBuffer: 1 });
-        if (leaderSwamp) score += 25;
-        if (supportSwamp) score += 15;
+        baseScore += getExpectedIncomingDamage(step, hostiles || [], towers || [], { rangeBuffer: 1 });
+        if (leaderSwamp) baseScore += 25;
 
         const towerDamageStep = getTowerDamageAtPos(step, towers);
         if (towerDamageStep > currentTowerDamage) {
-            score += (towerDamageStep - currentTowerDamage) * 0.5;
+            baseScore += (towerDamageStep - currentTowerDamage) * 0.5;
         }
 
+        const vacatedPos = (!samePos(step, leader.pos))
+            ? { x: leader.pos.x, y: leader.pos.y, roomName: leader.pos.roomName }
+            : null;
+        const vacatedKey = vacatedPos ? (vacatedPos.x * 50) + vacatedPos.y : null;
+
+        let bestSupport = null;
+        let bestSupportScore = Infinity;
+        for (const supportStep of supportAdjacent) {
+            if (!supportStep) continue;
+            if (supportStep.roomName !== support.pos.roomName) continue;
+            if (supportStep.x < 0 || supportStep.x > 49 || supportStep.y < 0 || supportStep.y > 49) continue;
+            if (!isWalkableForSquad(room, supportStep.x, supportStep.y, squadIds)) continue;
+            if (getRange(step, supportStep) > rangeLimit) continue;
+            if (avoidBorders && isBorderPos(supportStep)) continue;
+
+            const supportRangeToMelee = getRange(supportStep, meleeHostile.pos);
+            if (supportRangeToMelee <= DUO_MIN_MELEE_RANGE) continue;
+            const supportSwamp = avoidSwamp && isSwamp(room, supportStep.x, supportStep.y);
+            if (supportSwamp && supportRangeToMelee < swampBuffer) continue;
+
+            let supportScore = 0;
+            if (supportRangeToMelee < stepRange) {
+                supportScore += (stepRange - supportRangeToMelee) * 100;
+            }
+            supportScore += Math.abs(supportRangeToMelee - stepRange) * 25;
+            if (supportSwamp) supportScore += 15;
+            if (vacatedKey !== null && (supportStep.x * 50) + supportStep.y === vacatedKey) {
+                supportScore -= 0.5;
+            }
+
+            if (supportScore < bestSupportScore) {
+                bestSupportScore = supportScore;
+                bestSupport = supportStep;
+            }
+        }
+
+        if (!bestSupport) {
+            // Allow leader-only step if still safe
+            bestSupport = support.pos;
+        }
+        const score = baseScore + bestSupportScore;
         if (score < bestScore) {
             bestScore = score;
-            best = { leaderStep: step, supportStep };
+            best = { leaderStep: step, supportStep: bestSupport };
         }
     }
 
@@ -1359,9 +1392,21 @@ function getDuoMovePlan(options) {
         reengageAt,
         safeDamageRatio
     });
-    const meleeThreat = currentRoom ? getNearestMeleeHostile(leader.pos, hostiles) : null;
-    const meleeHostile = meleeThreat ? meleeThreat.hostile : null;
-    const meleeRange = meleeThreat ? meleeThreat.range : Infinity;
+    const leaderThreat = currentRoom ? getNearestMeleeHostile(leader.pos, hostiles) : null;
+    const supportThreat = currentRoom ? getNearestMeleeHostile(support.pos, hostiles) : null;
+    let meleeHostile = null;
+    let meleeRangeLeader = Infinity;
+    let meleeRangeSupport = Infinity;
+    if (leaderThreat && (!supportThreat || leaderThreat.range <= supportThreat.range)) {
+        meleeHostile = leaderThreat.hostile;
+        meleeRangeLeader = leaderThreat.range;
+        meleeRangeSupport = meleeHostile ? getRange(support.pos, meleeHostile.pos) : Infinity;
+    } else if (supportThreat) {
+        meleeHostile = supportThreat.hostile;
+        meleeRangeSupport = supportThreat.range;
+        meleeRangeLeader = meleeHostile ? getRange(leader.pos, meleeHostile.pos) : Infinity;
+    }
+    const meleeRange = Math.min(meleeRangeLeader, meleeRangeSupport);
 
     const target = (targetRoom && attackFlag && currentRoom && currentRoom.name === targetRoom.name)
         ? selectAssaultTarget(leader, attackFlag, hostiles, dangerRadius, { mode: assaultMode })
@@ -1375,10 +1420,16 @@ function getDuoMovePlan(options) {
     const allowSupportCatchUp = !supportFatigued && currentRange > desiredRange;
 
     let duoKitePlan = null;
-    const allowDuoKite = allowLeaderMove && (leaderState === 'engage' || leaderState === 'heal');
+    let duoKiteTriggered = false;
+    //const allowDuoKite = allowLeaderMove && (leaderState === 'engage' || leaderState === 'heal');
+    const allowDuoKite =
+        !leaderFatigued &&
+        !supportFatigued &&
+        (leaderState === 'engage' || leaderState === 'heal');
     if (allowDuoKite && meleeHostile) {
         const triggerRange = leaderState === 'heal' ? DEFAULT_HEAL_KITE_TRIGGER_RANGE : DEFAULT_KITE_TRIGGER_RANGE;
-        if (meleeRange <= triggerRange) {
+        duoKiteTriggered = meleeRange <= triggerRange;
+        if (duoKiteTriggered) {
             duoKitePlan = getDuoKiteStep(leader, support, currentRoom, hostiles, towers, supportRange, {
                 meleeHostile,
                 kiteRange: DEFAULT_KITE_RANGE,
@@ -1390,7 +1441,7 @@ function getDuoMovePlan(options) {
         }
     }
 
-    const leaderIntent = duoKitePlan ? null : getAssaultMoveIntent(leader, {
+    const leaderIntent = (duoKitePlan) ? null : getAssaultMoveIntent(leader, {
         activeFlag,
         waitPos,
         targetRoomName,
@@ -1471,7 +1522,7 @@ function getDuoMovePlan(options) {
             });
         }
     } else {
-        if (allowSupportCatchUp) {
+        if (allowSupportCatchUp && !duoKiteTriggered) {
             const catchStep = getSupportCatchUpStep(support, leader.pos, supportRange, currentRoom, hostiles, towers, { ignoreDanger: true });
             supportNext = catchStep || support.pos;
         } else {
