@@ -1,4 +1,5 @@
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
+const resolveUpgradeTarget = require('task_resolve_resolveUpgradeTarget');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
@@ -63,11 +64,14 @@ module.exports = {
             `workPerCreep=${workPerCreep} desired=${desiredCount} req=${upCount} ` +
             `spaces=${intel.availableControllerSpaces} state=${economyState}`);
 
+        const targetId = resolveUpgradeTarget(room, intel);
+        if (!targetId) return;
+
         missions.push({
             name: upName,
             type: 'upgrade',
             archetype: 'worker',
-            targetId: intel.controller.id,
+            targetId: targetId,
             data: { sourceIds: intel.allEnergySources.map(s => s.id) },
             pos: intel.controller.pos,
             requirements: { archetype: 'worker', count: upCount, spawn: spawnAllowed, spawnFromFleet: true },

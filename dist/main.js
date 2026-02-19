@@ -32,6 +32,14 @@ module.exports.loop = function() {
             migrate: {
                 transfer:false, withdraw:false, pickup:false,
                 repair:false, build:false, upgrade:false, combat:false
+            },
+            resolve: {
+                enabled: true,
+                energySource: true,
+                energySink: true,
+                buildTarget: true,
+                repairTarget: true,
+                upgradeTarget: true
             }
         };
 
