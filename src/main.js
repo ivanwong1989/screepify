@@ -96,7 +96,6 @@ module.exports.loop = function() {
             // Check if this is a valid colony (Owned controller + Spawns)
             if (room.controller && room.controller.my) {
                 const cache = global.getRoomCache(room);
-                // --- TOWER RUN LOGIC ---
                 const spawns = cache.myStructuresByType[STRUCTURE_SPAWN] || [];
                 if (spawns.length > 0) {
                     // Run Colony Logic for this room
@@ -106,7 +105,7 @@ module.exports.loop = function() {
                 // Run towers after Colony Logic (so Tasker has assigned tasks)
                 const towers = cache.myStructuresByType[STRUCTURE_TOWER] || [];
                 for (const tower of towers) {
-                    roleTower.run(tower);
+                    //roleTower.run(tower);
                 }
             }
         }

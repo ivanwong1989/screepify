@@ -903,23 +903,25 @@ function getAssaultCostMatrixDuo(room, hostiles, towers, supportRange, positions
 function getApproachStep(creep, targetPos, range, room, hostiles, towers) {
     if (!creep || !targetPos || !room) return null;
     if (targetPos.roomName && targetPos.roomName !== room.name) return targetPos;
+    if (creep.pos && creep.pos.getRangeTo(targetPos) <= range) return null;
     const search = PathFinder.search(creep.pos, { pos: targetPos, range: range }, {
         maxRooms: 1,
         roomCallback: () => getAssaultCostMatrix(room, hostiles, towers)
     });
     if (search.path && search.path.length > 0) return search.path[0];
-    return targetPos;
+    return null;
 }
 
 function getApproachStepDuo(creep, targetPos, range, room, hostiles, towers, supportRange, positions) {
     if (!creep || !targetPos || !room) return null;
     if (targetPos.roomName && targetPos.roomName !== room.name) return targetPos;
+    if (creep.pos && creep.pos.getRangeTo(targetPos) <= range) return null;
     const search = PathFinder.search(creep.pos, { pos: targetPos, range: range }, {
         maxRooms: 1,
         roomCallback: () => getAssaultCostMatrixDuo(room, hostiles, towers, supportRange, positions)
     });
     if (search.path && search.path.length > 0) return search.path[0];
-    return targetPos;
+    return null;
 }
 
 function getRetreatStep(creep, room, hostiles, towers) {
@@ -1196,7 +1198,11 @@ function getAssaultMoveIntent(creep, context) {
         const hasRanged = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
         const isHarmlessStructure = !!(closeRangeStructures && target && target.structureType === STRUCTURE_WALL);
         const desiredRange = isHarmlessStructure ? 1 : (hasRanged ? 3 : 1);
-        let step = getApproachStep(creep, target.pos, desiredRange, currentRoom, hostiles, towers);
+        const currentRange = creep.pos.getRangeTo(target.pos);
+        let step = null;
+        if (currentRange > desiredRange) {
+            step = getApproachStep(creep, target.pos, desiredRange, currentRoom, hostiles, towers);
+        }
         if (step && meleeHostile && meleeRange <= 3 && isSwamp(currentRoom, step.x, step.y)) {
             const kiteStep = getKiteStep(creep, meleeHostile, {
                 room: currentRoom,
@@ -1210,6 +1216,24 @@ function getAssaultMoveIntent(creep, context) {
                 includeStay: true
             });
             if (kiteStep) step = kiteStep;
+        }
+        if (step && meleeHostile) {
+            const nextRangeToMelee = getRange(step, meleeHostile.pos);
+            if (nextRangeToMelee <= 1) {
+                const safeKite = getKiteStep(creep, meleeHostile, {
+                    room: currentRoom,
+                    hostiles,
+                    towers,
+                    kiteRange: DEFAULT_KITE_RANGE,
+                    avoidBorders: DEFAULT_KITE_AVOID_BORDERS,
+                    avoidSwamp: DEFAULT_KITE_AVOID_SWAMP,
+                    swampBuffer: DEFAULT_SWAMP_KITE_BUFFER,
+                    requireNonDecreasingRange: true,
+                    includeStay: true
+                });
+                if (safeKite) step = safeKite;
+                else step = null;
+            }
         }
         if (step) {
             moveTarget = { x: step.x, y: step.y, roomName: step.roomName || currentRoom.name };
