@@ -1,4 +1,5 @@
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
+const managerTerminal = require('managers_structures_manager.terminal');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
@@ -251,6 +252,30 @@ module.exports = {
                 const bestSink = source.pos.findClosestByRange(inflowSinks);
                 if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'mining');
             });
+        }
+
+        if (storage && terminal) {
+            const baseCfg = managerTerminal.getConfig();
+            const roomOverride = (baseCfg.rooms && baseCfg.rooms[room.name]) || null;
+            const roomCfg = roomOverride ? Object.assign({}, baseCfg, roomOverride) : baseCfg;
+            const target = roomCfg.terminalEnergyTarget || 0;
+
+            if (target > 0) {
+                const cur = terminal.store[RESOURCE_ENERGY] || 0;
+                if (cur < target) {
+                    const stor = storage.store[RESOURCE_ENERGY] || 0;
+                    if (stor > 0) {
+                        const need = Math.min(target - cur, stor);
+                        if (need > 0) {
+                            const missionName = `haul:${storage.id}:${terminal.id}:${RESOURCE_ENERGY}`;
+                            if (!coveredTargets.has(terminal.id) && !activeMissions.has(missionName)) {
+                                this.addLogisticsMission(activeMissions, storage, terminal, isEmergency, 'terminal_stock', RESOURCE_ENERGY);
+                                debug('mission.logistics', `[TerminalStock] ${room.name} refill terminal energy cur=${cur} target=${target} need=${need}`);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         const mineralTarget = terminal || storage;

@@ -3,6 +3,8 @@ const DEFAULTS = Object.freeze({
     runEvery: 25,
     minCredits: 5000,
     energyReserve: 20000,
+    terminalEnergyTarget: 60000,
+    terminalEnergyMax: 80000,
     maxDealsPerRoom: 1,
     energyValue: 16,
     maxOverpayPct: 0.08,
@@ -97,6 +99,8 @@ function ensureMarketConfig() {
         cfg.runEvery = clampNumber(cfg.runEvery, DEFAULTS.runEvery, 1);
         cfg.minCredits = clampNumber(cfg.minCredits, DEFAULTS.minCredits, 0);
         cfg.energyReserve = clampNumber(cfg.energyReserve, DEFAULTS.energyReserve, 0);
+        cfg.terminalEnergyTarget = clampNumber(cfg.terminalEnergyTarget, DEFAULTS.terminalEnergyTarget, 0);
+        cfg.terminalEnergyMax = clampNumber(cfg.terminalEnergyMax, DEFAULTS.terminalEnergyMax, 0);
         cfg.maxDealsPerRoom = clampNumber(cfg.maxDealsPerRoom, DEFAULTS.maxDealsPerRoom, 0);
         cfg.energyValue = clampNumber(cfg.energyValue, DEFAULTS.energyValue, 0);
         cfg.maxOverpayPct = clampNumber(cfg.maxOverpayPct, DEFAULTS.maxOverpayPct, 0);
@@ -123,6 +127,8 @@ function ensureMarketConfig() {
     cfg.runEvery = clampNumber(cfg.runEvery, DEFAULTS.runEvery, 1);
     cfg.minCredits = clampNumber(cfg.minCredits, DEFAULTS.minCredits, 0);
     cfg.energyReserve = clampNumber(cfg.energyReserve, DEFAULTS.energyReserve, 0);
+    cfg.terminalEnergyTarget = clampNumber(cfg.terminalEnergyTarget, DEFAULTS.terminalEnergyTarget, 0);
+    cfg.terminalEnergyMax = clampNumber(cfg.terminalEnergyMax, DEFAULTS.terminalEnergyMax, 0);
     cfg.maxDealsPerRoom = clampNumber(cfg.maxDealsPerRoom, DEFAULTS.maxDealsPerRoom, 0);
     cfg.energyValue = clampNumber(cfg.energyValue, DEFAULTS.energyValue, 0);
     cfg.maxOverpayPct = clampNumber(cfg.maxOverpayPct, DEFAULTS.maxOverpayPct, 0);
@@ -204,6 +210,16 @@ function getRoomTotals(room) {
     };
     addStore(room.storage && room.storage.store);
     addStore(room.terminal && room.terminal.store);
+    return totals;
+}
+
+function getTerminalTotals(room) {
+    const totals = {};
+    if (!room || !room.terminal || !room.terminal.store) return totals;
+    const store = room.terminal.store;
+    for (const resourceType in store) {
+        totals[resourceType] = (totals[resourceType] || 0) + store[resourceType];
+    }
     return totals;
 }
 
@@ -820,7 +836,8 @@ function summarizeConfig(cfg) {
     const lines = [];
     lines.push(
         `Market auto=${cfg.enabled ? 'ON' : 'OFF'} runEvery=${cfg.runEvery} ` +
-        `energyReserve=${cfg.energyReserve} minCredits=${cfg.minCredits} maxDeals=${cfg.maxDealsPerRoom} ` +
+        `energyReserve=${cfg.energyReserve} terminalEnergyTarget=${cfg.terminalEnergyTarget} terminalEnergyMax=${cfg.terminalEnergyMax} ` +
+        `minCredits=${cfg.minCredits} maxDeals=${cfg.maxDealsPerRoom} ` +
         `energyValue=${cfg.energyValue} maxOverpayPct=${cfg.maxOverpayPct} sellBufferPct=${cfg.sellBufferPct}`
     );
 
@@ -935,9 +952,15 @@ const managerTerminal = {
             return { lines, summary: `No terminal in ${room.name}` };
         }
 
-        const totals = getRoomTotals(room);
-        lines.push(`Totals: storage+terminal resources=${Object.keys(totals).length}`);
+        const totals = getTerminalTotals(room);
+        lines.push(`Totals: terminal resources=${Object.keys(totals).length}`);
         lines.push(`Credits=${Game.market.credits} minCredits=${cfg.minCredits} energyValue=${cfg.energyValue}`);
+        const terminalEnergy = room.terminal.store[RESOURCE_ENERGY] || 0;
+        const energySpendable = terminalEnergy - cfg.energyReserve;
+        lines.push(
+            `Terminal energy: current=${terminalEnergy} reserve=${cfg.energyReserve} ` +
+            `spendable=${energySpendable} target=${cfg.terminalEnergyTarget} max=${cfg.terminalEnergyMax}`
+        );
 
         buildBuyExplanation(room, cfg, totals).forEach(line => lines.push(line));
         buildSellExplanation(room, cfg, totals).forEach(line => lines.push(line));
@@ -961,7 +984,7 @@ const managerTerminal = {
 
         if (room._state === 'EMERGENCY') return;
 
-        const totals = getRoomTotals(room);
+        const totals = getTerminalTotals(room);
 
         if (tryBuy(room, cfg, totals)) return;
         trySell(room, cfg, totals);
