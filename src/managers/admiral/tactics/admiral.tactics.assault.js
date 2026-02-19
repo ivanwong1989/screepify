@@ -218,12 +218,9 @@ function isWaypointReached(leader, partner, waypoint, supportRange) {
     if (getRange(leader.pos, waypoint.pos) > 1) return false;
     if (partner) {
         if (!partner.pos || partner.pos.roomName !== waypoint.pos.roomName) return false;
+        if (getRange(partner.pos, waypoint.pos) > 1) return false;
         const range = Math.max(1, Math.floor(supportRange || 1));
-        if (getRange(leader.pos, partner.pos) > range) {
-            const leaderStuck = leader.memory && (leader.memory._assaultStuckTicks || 0) >= DUO_STUCK_TICKS;
-            const partnerStuck = partner.memory && (partner.memory._assaultStuckTicks || 0) >= DUO_STUCK_TICKS;
-            if (!leaderStuck && !partnerStuck) return false;
-        }
+        if (getRange(leader.pos, partner.pos) > range) return false;
     }
     return true;
 }
@@ -286,6 +283,43 @@ function isSwamp(room, x, y) {
     return terrain === TERRAIN_MASK_SWAMP;
 }
 
+function getMoveTerrainCost(room, x, y) {
+    if (!room) return Infinity;
+    const terrain = room.getTerrain().get(x, y);
+    if (terrain === TERRAIN_MASK_WALL) return Infinity;
+    const structures = room.lookForAt(LOOK_STRUCTURES, x, y);
+    for (const structure of structures) {
+        if (structure && structure.structureType === STRUCTURE_ROAD) return 1;
+    }
+    if (terrain === TERRAIN_MASK_SWAMP) return 10;
+    return 2;
+}
+
+function predictWillHaveFatigueNextTick(creep, room, fromPos, toPos) {
+    if (!toPos || (fromPos && samePos(fromPos, toPos))) return false;
+    if (!creep) return false;
+    if (creep.fatigue > 0) return true;
+    const moveParts = creep.getActiveBodyparts(MOVE);
+    const totalParts = creep.body ? creep.body.length : 0;
+    const terrainCost = getMoveTerrainCost(room, toPos.x, toPos.y);
+    if (!Number.isFinite(terrainCost)) return true;
+    if (terrainCost === 1) return moveParts === 0;
+    if (terrainCost === 10) return moveParts * 2 < totalParts;
+    return moveParts * 2 < totalParts;
+}
+
+function predictDuoFatigueSync(leader, support, room, leaderFrom, leaderTo, supportFrom, supportTo) {
+    const leaderMoving = !!(leaderTo && (!leaderFrom || !samePos(leaderFrom, leaderTo)));
+    const supportMoving = !!(supportTo && (!supportFrom || !samePos(supportFrom, supportTo)));
+    const leaderWillFatigue = predictWillHaveFatigueNextTick(leader, room, leaderFrom, leaderTo);
+    const supportWillFatigue = predictWillHaveFatigueNextTick(support, room, supportFrom, supportTo);
+    const bothMoving = leaderMoving && supportMoving;
+    const bothFatigue = leaderWillFatigue && supportWillFatigue;
+    const bothNotFatigue = !leaderWillFatigue && !supportWillFatigue;
+    const syncOk = !bothMoving || bothFatigue || bothNotFatigue;
+    return { leaderWillFatigue, supportWillFatigue, syncOk };
+}
+
 function getAdjacentCandidates(pos, includeStay) {
     if (!pos) return [];
     const candidates = [];
@@ -342,8 +376,6 @@ function scoreKiteStep(step, meleeHostile, context) {
     let rangePenalty = 0;
     if (stepRange < desiredRange) {
         rangePenalty += (desiredRange - stepRange) * 1000;
-    } else {
-        rangePenalty += (desiredRange - stepRange) * 5;
     }
     const incomingDamage = getExpectedIncomingDamage(step, hostiles || [], towers || [], { rangeBuffer: 1 });
     const swampPenalty = isSwampTile ? 25 : 0;
@@ -390,6 +422,70 @@ function getKiteStep(creep, meleeHostile, context) {
         if (score < bestScore) {
             bestScore = score;
             best = step;
+        }
+    }
+
+    return best;
+}
+
+function getDuoKiteStep(leader, support, room, hostiles, towers, supportRange, options) {
+    if (!leader || !support || !room) return null;
+    if (!leader.pos || !support.pos) return null;
+    const meleeHostile = options && options.meleeHostile ? options.meleeHostile : null;
+    if (!meleeHostile || !meleeHostile.pos) return null;
+
+    const avoidBorders = options && options.avoidBorders !== false && DEFAULT_KITE_AVOID_BORDERS;
+    const avoidSwamp = options && options.avoidSwamp !== false && DEFAULT_KITE_AVOID_SWAMP;
+    const kiteRange = Number.isFinite(options && options.kiteRange) ? options.kiteRange : DEFAULT_KITE_RANGE;
+    const swampBuffer = Number.isFinite(options && options.swampBuffer) ? options.swampBuffer : DEFAULT_SWAMP_KITE_BUFFER;
+    const requireNonDecreasingRange = !!(options && options.requireNonDecreasingRange);
+    const currentRange = getRange(leader.pos, meleeHostile.pos);
+    const rangeLimit = Math.max(1, Math.floor(supportRange || 1));
+    const squadIds = new Set([leader.id, support.id]);
+    const currentTowerDamage = getTowerDamageAtPos(leader.pos, towers);
+
+    const candidates = getAdjacentCandidates(leader.pos, false);
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const step of candidates) {
+        if (!step) continue;
+        if (step.roomName !== leader.pos.roomName) continue;
+        if (step.x < 0 || step.x > 49 || step.y < 0 || step.y > 49) continue;
+        if (!isWalkableForSquad(room, step.x, step.y, squadIds)) continue;
+
+        const stepRange = getRange(step, meleeHostile.pos);
+        if (stepRange <= 1) continue;
+        if (avoidBorders && isBorderPos(step)) continue;
+        const leaderSwamp = avoidSwamp && isSwamp(room, step.x, step.y);
+        if (leaderSwamp && stepRange < swampBuffer) continue;
+        if (requireNonDecreasingRange && Number.isFinite(currentRange) && stepRange < currentRange) continue;
+
+        const supportStep = getSupportStepForLeaderMove(step, leader.pos, support.pos, room, rangeLimit, squadIds);
+        if (!supportStep) continue;
+        if (getRange(step, supportStep) > rangeLimit) continue;
+        if (avoidBorders && isBorderPos(supportStep)) continue;
+
+        const supportSwamp = avoidSwamp && isSwamp(room, supportStep.x, supportStep.y);
+        const supportRangeToMelee = getRange(supportStep, meleeHostile.pos);
+        if (supportSwamp && supportRangeToMelee < swampBuffer) continue;
+
+        let score = 0;
+        if (stepRange < kiteRange) {
+            score += (kiteRange - stepRange) * 1000;
+        }
+        score += getExpectedIncomingDamage(step, hostiles || [], towers || [], { rangeBuffer: 1 });
+        if (leaderSwamp) score += 25;
+        if (supportSwamp) score += 15;
+
+        const towerDamageStep = getTowerDamageAtPos(step, towers);
+        if (towerDamageStep > currentTowerDamage) {
+            score += (towerDamageStep - currentTowerDamage) * 0.5;
+        }
+
+        if (score < bestScore) {
+            bestScore = score;
+            best = { leaderStep: step, supportStep };
         }
     }
 
@@ -446,6 +542,15 @@ function getSupportStepForLeaderMove(leaderStep, leaderPos, supportPos, room, su
     const vacatedKey = leaderPos && !samePos(leaderStep, leaderPos)
         ? (leaderPos.x * 50) + leaderPos.y
         : null;
+    const vacatedPos = vacatedKey !== null
+        ? { x: leaderPos.x, y: leaderPos.y, roomName: leaderPos.roomName || leaderStep.roomName || room.name }
+        : null;
+    if (vacatedPos &&
+        isWalkableForSquad(room, vacatedPos.x, vacatedPos.y, squadIds) &&
+        getRange(vacatedPos, supportPos) <= 1 &&
+        getRange(vacatedPos, leaderStep) <= range) {
+        return vacatedPos;
+    }
 
     for (let dx = -range; dx <= range; dx++) {
         for (let dy = -range; dy <= range; dy++) {
@@ -580,7 +685,7 @@ function getExpectedIncomingDamage(pos, hostiles, towers, options) {
 
 function isAssaultStructure(structure) {
     if (!structure) return false;
-    if ((structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_ROAD) && !structure.owner) return true;
+    if ((structure.structureType === STRUCTURE_WALL) && !structure.owner) return true;
     if (structure.owner && !structure.my && !isAlly(structure.owner)) return true;
     return false;
 }
@@ -1230,12 +1335,38 @@ function getDuoMovePlan(options) {
         reengageAt,
         safeDamageRatio
     });
+    const meleeThreat = currentRoom ? getNearestMeleeHostile(leader.pos, hostiles) : null;
+    const meleeHostile = meleeThreat ? meleeThreat.hostile : null;
+    const meleeRange = meleeThreat ? meleeThreat.range : Infinity;
 
     const target = (targetRoom && attackFlag && currentRoom && currentRoom.name === targetRoom.name)
         ? selectAssaultTarget(leader, attackFlag, hostiles, dangerRadius, { mode: assaultMode })
         : null;
 
-    const leaderIntent = getAssaultMoveIntent(leader, {
+    const leaderFatigued = leader.fatigue > 0;
+    const supportFatigued = support.fatigue > 0;
+    const desiredRange = Math.max(1, Math.floor(supportRange || 1));
+    const currentRange = getRange(leader.pos, support.pos);
+    const allowLeaderMove = !leaderFatigued && !supportFatigued && currentRange <= desiredRange;
+    const allowSupportCatchUp = !supportFatigued && currentRange > desiredRange;
+
+    let duoKitePlan = null;
+    const allowDuoKite = allowLeaderMove && (leaderState === 'engage' || leaderState === 'heal');
+    if (allowDuoKite && meleeHostile) {
+        const triggerRange = leaderState === 'heal' ? DEFAULT_HEAL_KITE_TRIGGER_RANGE : DEFAULT_KITE_TRIGGER_RANGE;
+        if (meleeRange <= triggerRange) {
+            duoKitePlan = getDuoKiteStep(leader, support, currentRoom, hostiles, towers, supportRange, {
+                meleeHostile,
+                kiteRange: DEFAULT_KITE_RANGE,
+                avoidBorders: DEFAULT_KITE_AVOID_BORDERS,
+                avoidSwamp: DEFAULT_KITE_AVOID_SWAMP,
+                swampBuffer: DEFAULT_SWAMP_KITE_BUFFER,
+                requireNonDecreasingRange: true
+            });
+        }
+    }
+
+    const leaderIntent = duoKitePlan ? null : getAssaultMoveIntent(leader, {
         activeFlag,
         waitPos,
         targetRoomName,
@@ -1255,15 +1386,10 @@ function getDuoMovePlan(options) {
         closeRangeStructures
     });
 
-    const leaderFatigued = leader.fatigue > 0;
-    const supportFatigued = support.fatigue > 0;
-    const desiredRange = Math.max(1, Math.floor(supportRange || 1));
-    const currentRange = getRange(leader.pos, support.pos);
-    const allowLeaderMove = !leaderFatigued && !supportFatigued && currentRange <= desiredRange;
-    const allowSupportCatchUp = !supportFatigued && currentRange > desiredRange;
-
     let leaderStep = null;
-    if (allowLeaderMove &&
+    if (duoKitePlan && duoKitePlan.leaderStep) {
+        leaderStep = duoKitePlan.leaderStep;
+    } else if (allowLeaderMove &&
         leaderIntent && leaderIntent.moveTarget && leaderIntent.moveTarget.roomName === currentRoom.name) {
         const positions = [leader.pos, support.pos];
         const leaderTarget = leaderIntent.moveTarget;
@@ -1279,22 +1405,71 @@ function getDuoMovePlan(options) {
     let supportNext = support.pos;
 
     let blocked = false;
+    let usedKite = !!(duoKitePlan && duoKitePlan.leaderStep && duoKitePlan.supportStep);
+    let presetSupportStep = usedKite ? duoKitePlan.supportStep : null;
+
+    if (!usedKite &&
+        leaderStep &&
+        allowLeaderMove &&
+        (leaderState === 'engage' || leaderState === 'heal') &&
+        meleeHostile &&
+        meleeRange <= 3 &&
+        isSwamp(currentRoom, leaderStep.x, leaderStep.y)) {
+        const swampKitePlan = getDuoKiteStep(leader, support, currentRoom, hostiles, towers, supportRange, {
+            meleeHostile,
+            kiteRange: DEFAULT_KITE_RANGE,
+            avoidBorders: DEFAULT_KITE_AVOID_BORDERS,
+            avoidSwamp: DEFAULT_KITE_AVOID_SWAMP,
+            swampBuffer: DEFAULT_SWAMP_KITE_BUFFER,
+            requireNonDecreasingRange: true
+        });
+        if (swampKitePlan && swampKitePlan.leaderStep && swampKitePlan.supportStep) {
+            leaderStep = swampKitePlan.leaderStep;
+            presetSupportStep = swampKitePlan.supportStep;
+            usedKite = true;
+        }
+    }
+
     if (leaderStep) {
-        const supportStep = getSupportStepForLeaderMove(leaderStep, leader.pos, support.pos, currentRoom, supportRange, squadIds);
+        const supportStep = usedKite
+            ? presetSupportStep
+            : getSupportStepForLeaderMove(leaderStep, leader.pos, support.pos, currentRoom, supportRange, squadIds);
         if (supportStep) {
             leaderNext = leaderStep;
             supportNext = supportStep;
         } else {
             blocked = true;
             leaderNext = leader.pos;
-            const catchStep = getSupportCatchUpStep(support, leader.pos, supportRange, currentRoom, hostiles, towers, { ignoreDanger: true });
-            supportNext = catchStep || support.pos;
+            supportNext = support.pos;
+            logAssault(leader, null, 'hard clamp triggered: missing supportStep, cancel move', {
+                leaderId: leader.id,
+                supportId: support.id
+            });
         }
     } else {
         if (allowSupportCatchUp) {
             const catchStep = getSupportCatchUpStep(support, leader.pos, supportRange, currentRoom, hostiles, towers, { ignoreDanger: true });
             supportNext = catchStep || support.pos;
         } else {
+            supportNext = support.pos;
+        }
+    }
+
+    if (leaderNext && supportNext &&
+        !samePos(leaderNext, leader.pos) &&
+        !samePos(supportNext, support.pos)) {
+        const fatigueSync = predictDuoFatigueSync(
+            leader,
+            support,
+            currentRoom,
+            leader.pos,
+            leaderNext,
+            support.pos,
+            supportNext
+        );
+        if (!fatigueSync.syncOk && leaderState !== 'retreat') {
+            blocked = true;
+            leaderNext = leader.pos;
             supportNext = support.pos;
         }
     }
@@ -1381,6 +1556,20 @@ function executeAssault(creep, mission) {
     const incomingDamage = currentRoom ? getExpectedIncomingDamage(creep.pos, hostiles, towers, { rangeBuffer: 1 }) : 0;
     const sustainableDamage = healPerTick + damageBuffer;
 
+    if (assaultRole !== 'solo' && leader && partner && currentRoom && !isLeader) {
+        const plans = getAssaultSquadMovePlans();
+        const key = `${squadKey}:${currentRoom.name}`;
+        const plan = plans[key];
+
+        if (plan && plan.moves && plan.moves[creep.id]) {
+            commitAssaultTask(creep, plan.moves[creep.id]);
+            return; // ✅ only return when we actually got a move
+        }
+
+        // ✅ No plan yet (likely support executed before leader this tick).
+        // Fall through to normal moveIntent so support follows leader instead of freezing.
+    }
+
     const isInAttackRoom = currentRoom && attackRoomName && currentRoom.name === attackRoomName;
     const lastRoom = creep.memory._assaultLastRoom;
     if (currentRoom && currentRoom.name !== lastRoom) {
@@ -1432,6 +1621,37 @@ function executeAssault(creep, mission) {
     const waypointFlag = waypointState && waypointState.waypoint ? waypointState.waypoint.flag : null;
     const routeFlag = waypointFlag || attackFlag || waitFlag;
     const routeRoomName = routeFlag && routeFlag.pos ? routeFlag.pos.roomName : null;
+
+    if (waypointOwner && waypointOwner.memory) {
+        const prevIndex = Number.isFinite(waypointIndex) ? waypointIndex : 0;
+        const nextIndex = waypointState ? waypointState.index : prevIndex;
+        const advanced = nextIndex > prevIndex;
+        const waypointDebug = {
+            baseName: waypointFlagName,
+            signature: waypointSignature,
+            index: nextIndex,
+            completed: !!(waypointState && waypointState.completed),
+            allowAdvance: allowWaypointAdvance,
+            count: waypoints.length,
+            selectedFlagName: waypointFlag ? waypointFlag.name : null,
+            selectedPos: waypointFlag && waypointFlag.pos ? toPlainPos(waypointFlag.pos) : null,
+            routeFlagName: routeFlag ? routeFlag.name : null,
+            routeRoomName,
+            shouldResumeLatestWaypoint,
+            lastAdvanceAt: advanced ? Game.time : (waypointOwner.memory.assaultWaypoint && waypointOwner.memory.assaultWaypoint.lastAdvanceAt) || null,
+            updatedAt: Game.time
+        };
+        waypointOwner.memory.assaultWaypoint = waypointDebug;
+        if (leader && leader.id !== waypointOwner.id && leader.memory) {
+            leader.memory.assaultWaypoint = waypointDebug;
+        }
+        if (support && support.memory) {
+            support.memory.assaultWaypoint = waypointDebug;
+        }
+        if (creep && creep.memory && creep.id !== waypointOwner.id) {
+            creep.memory.assaultWaypoint = waypointDebug;
+        }
+    }
 
     logAssault(creep, data, 'state', {
         state,
@@ -1578,7 +1798,7 @@ function executeAssault(creep, mission) {
         isLeader
     });
 
-    if (assaultRole !== 'solo' && squadCount === 2 && leader && support && currentRoom) {
+    if (assaultRole !== 'solo' && squadCount === 2 && leader && support && currentRoom && isLeader) {
         const duoPlan = getDuoMovePlan({
             squadKey,
             leader,
@@ -1600,29 +1820,17 @@ function executeAssault(creep, mission) {
             safeDamageRatio,
             closeRangeStructures: data.closeRangeStructures
         });
-        if (duoPlan && duoPlan.moves && Object.prototype.hasOwnProperty.call(duoPlan.moves, creep.id)) {
-            const move = duoPlan.moves[creep.id];
-            const intentHasMove = !!(moveIntent && moveIntent.moveTarget);
-            const planHasMove = !!(move && move.moveTarget);
-            const skipPlan = intentHasMove && !planHasMove;
-            if (skipPlan) {
-                logAssault(creep, data, 'duoPlanSkip', {
-                    intentMoveTarget: moveIntent && moveIntent.moveTarget,
-                    intentRange: moveIntent && moveIntent.range,
-                    leaderId: duoPlan.leaderId,
-                    supportId: duoPlan.supportId
-                });
-            } else {
-                moveTarget = move.moveTarget;
-                range = move.range;
-                moveOpts = move.moveOpts;
-                logAssault(creep, data, 'duoPlan', {
-                    moveTarget,
-                    range,
-                    moveOpts,
-                    leaderId: duoPlan.leaderId,
-                    supportId: duoPlan.supportId
-                });
+        if (duoPlan && duoPlan.moves && duoPlan.moves[leader.id] && duoPlan.moves[support.id]) {
+            commitAssaultTask(leader, duoPlan.moves[leader.id]);
+            commitAssaultTask(support, duoPlan.moves[support.id]);
+            logAssault(creep, data, 'leader generated duo plan and committed for both', {
+                leaderId: duoPlan.leaderId,
+                supportId: duoPlan.supportId
+            });
+            if (duoPlan.moves[creep.id]) {
+                moveTarget = duoPlan.moves[creep.id].moveTarget;
+                range = duoPlan.moves[creep.id].range;
+                moveOpts = duoPlan.moves[creep.id].moveOpts;
             }
         }
     }
