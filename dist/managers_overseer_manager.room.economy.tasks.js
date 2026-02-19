@@ -1339,16 +1339,14 @@ var managerTasks = {
 
             if (target) {
                 if (target.store && target.store.getFreeCapacity(resourceType) === 0) {
-                    if (isSupply) {
-                        delete creep.memory.missionName;
-                        delete creep.memory.taskState;
-                        return null;
-                    }
-                    creep.say('wait');
-                    return { action: 'move', targetId: target.id, range: 1 };
+                    // Abort impossible transfer (prevents permanent waiting)
+                    delete creep.memory.missionName;
+                    delete creep.memory.taskState;
+                    return null;
                 }
                 return { action: 'transfer', targetId: target.id, resourceType: resourceType };
             }
+
 
             if (resourceType !== RESOURCE_ENERGY) {
                 delete creep.memory.missionName;
