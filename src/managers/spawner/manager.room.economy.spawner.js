@@ -353,7 +353,7 @@ var managerSpawner = {
         return this.sortBody(body);
     },
 
-    sortBody: function(body) {
+    sortBody: function (body) {
         const sortOrder = { 
             [TOUGH]: 0, 
             [ATTACK]: 1, [RANGED_ATTACK]: 1, [WORK]: 1, 
@@ -361,8 +361,23 @@ var managerSpawner = {
             [HEAL]: 3,
             [MOVE]: 4 
         };
-        return body.sort((a, b) => ((sortOrder[a] !== undefined ? sortOrder[a] : 99) - (sortOrder[b] !== undefined ? sortOrder[b] : 99)));
+
+        body.sort(function (a, b) {
+            var orderA = sortOrder[a] !== undefined ? sortOrder[a] : 99;
+            var orderB = sortOrder[b] !== undefined ? sortOrder[b] : 99;
+            return orderA - orderB;
+        });
+
+        // Ensure at least 1 HEAL at the end
+        var healIndex = body.indexOf(HEAL);
+        if (healIndex !== -1) {
+            body.splice(healIndex, 1); // remove one HEAL
+            body.push(HEAL);           // put it at the tail
+        }
+
+        return body;
     },
+
 
     calculateBodyCost: function(body) {
         return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
