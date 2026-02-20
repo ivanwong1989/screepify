@@ -24,7 +24,7 @@ const MISSION_DEFS = Object.freeze({
     transfer: {
         label: 'Transfer resources from a source structure to a target structure (user-directed logistics).',
         required: ['sourceId', 'targetId'],
-        optional: ['resourceType', 'sponsorRoom', 'priority', 'persist', 'label', 'sourceRoom', 'targetRoom']
+        optional: ['resourceType', 'sponsorRoom', 'priority', 'persist', 'label', 'sourceRoom', 'targetRoom', 'count']
     }
 });
 
@@ -147,7 +147,8 @@ function addMission(type, data) {
         resourceType: key === 'transfer' && data && data.resourceType ? ('' + data.resourceType).trim() : null,
         targetId: key === 'transfer' ? targetId : (data && data.targetId ? ('' + data.targetId) : null),
         persist: normalizeBool(data && data.persist, false),
-        label: data && data.label ? ('' + data.label).trim() : ''
+        label: data && data.label ? ('' + data.label).trim() : '',
+        count: key === 'transfer' ? (Number.isFinite(Number(data && data.count)) ? Math.max(1, Math.floor(Number(data.count))) : 1) : null
     };
 
     store.items[id] = mission;

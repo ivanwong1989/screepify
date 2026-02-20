@@ -41,8 +41,8 @@ function showMissionHelp() {
         'mission(\"add\",\"claim\", { roomName, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"reserve\", roomName, sponsorRoom?, priority?, persist?, label?)',
         'mission(\"add\",\"reserve\", { roomName, sponsorRoom, priority, persist, label })',
-        'mission(\"add\",\"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?)',
-        'mission(\"add\",\"transfer\", { sourceId, targetId, resourceType, sponsorRoom, priority, persist, label, sourceRoom, targetRoom })',
+        'mission(\"add\",\"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?)',
+        'mission(\"add\",\"transfer\", { sourceId, targetId, resourceType, sponsorRoom, priority, persist, label, count, sourceRoom, targetRoom })',
         'mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, sourceId, targetId, resourceType, sourceRoom })',
         'mission(\"enable\", id) / mission(\"disable\", id)',
         'mission(\"remove\", id)',
@@ -89,6 +89,13 @@ function normalizeMissionPatch(patch) {
         if (!next.targetRoom) next.targetRoom = pos.roomName;
     }
 
+    if ('count' in patch) {
+        const n = Number(patch.count);
+        if (Number.isFinite(n) && n >= 1) {
+            next.count = Math.floor(n);
+        }
+    }
+
     return next;
 }
 
@@ -124,7 +131,7 @@ module.exports = function registerMissionConsole() {
                 type = typeOrData;
             }
             const key = type ? ('' + type).trim().toLowerCase() : '';
-            if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?)';
+            if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?)';
 
             if (!data) {
                 if (key === 'dismantle') {
@@ -171,7 +178,8 @@ module.exports = function registerMissionConsole() {
                         sponsorRoom: args[3],
                         priority: args[4],
                         persist: args[5],
-                        label: args[6]
+                        label: args[6],
+                        count: args[7],
                     };
                 } else {
                     data = {};

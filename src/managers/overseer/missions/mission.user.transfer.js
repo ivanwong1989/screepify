@@ -114,7 +114,8 @@ function buildTransferMissionCache() {
             resourceType,
             priority: getMissionPriority(mission),
             persist: mission.persist === true,
-            remoteRoom
+            remoteRoom,
+            count: Number(mission.count) || 1
         });
     }
 
@@ -138,7 +139,7 @@ module.exports = {
                 archetype: 'hauler',
                 requirements: {
                     archetype: 'hauler',
-                    count: 1,
+                    count: entry.count,
                     spawn: false
                 },
                 targetId: entry.targetId,
