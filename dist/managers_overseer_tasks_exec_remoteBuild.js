@@ -62,6 +62,7 @@ module.exports = function execRemoteBuildTask(ctx) {
         homeRoom,
         homeRoomName,
         remoteRoomName: remoteRoom,
-        targetPos
+        targetPos,
+        opts: mission.data
     });
 };

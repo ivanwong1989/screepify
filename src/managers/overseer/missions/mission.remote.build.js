@@ -96,6 +96,7 @@ module.exports = {
             const containerIds = Array.isArray(entry.sourcesInfo)
                 ? entry.sourcesInfo.map(s => s.containerId).filter(id => id)
                 : [];
+            const prioritizeWithdraw = !!(entry && entry.prioritizeWithdraw);
 
             debug('mission.remote.build', `[RemoteBuild] ${room.name} -> ${name} targets=${selected.length}/${sites.length} ` +
                 `workPerCreep=${workPerCreep}`);
@@ -113,7 +114,8 @@ module.exports = {
                     data: {
                         remoteRoom: name,
                         sourceIds: sourceIds,
-                        containerIds: containerIds
+                        containerIds: containerIds,
+                        prioritizeWithdraw: prioritizeWithdraw
                     },
                     requirements: {
                         archetype: 'remote_worker',

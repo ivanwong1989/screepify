@@ -2,7 +2,7 @@ const helpers = require('managers_overseer_tasks_exec__helpers');
 const execGatherTask = require('managers_overseer_tasks_exec_gather');
 
 module.exports = function execRemoteEnergyGatherTask(ctx) {
-    const { creep, homeRoom, homeRoomName, remoteRoomName, targetPos } = ctx;
+    const { creep, homeRoom, homeRoomName, remoteRoomName, targetPos, opts } = ctx;
     const REMOTE_GATHER_RANGE = 20;
     const REMOTE_STICKY_TICKS = 25;
     const REMOTE_HOME_STICKY_TICKS = 40;
@@ -37,7 +37,8 @@ module.exports = function execRemoteEnergyGatherTask(ctx) {
                 }
             }
 
-            if (creep.getActiveBodyparts(WORK) > 0) {
+            const tryHarvest = () => {
+                if (creep.getActiveBodyparts(WORK) === 0) return null;
                 const cache = global.getRoomCache(creep.room);
                 const sources = cache.sourcesActive || creep.room.find(FIND_SOURCES_ACTIVE);
                 const nearbySources = sources.filter(s =>
@@ -55,21 +56,38 @@ module.exports = function execRemoteEnergyGatherTask(ctx) {
                     };
                     return { type: 'harvest', targetId: source.id };
                 }
-            }
+                return null;
+            };
 
-            const cache = global.getRoomCache(creep.room);
-            const containers = (cache.structuresByType[STRUCTURE_CONTAINER] || [])
-                .filter(c => (c.store[RESOURCE_ENERGY] || 0) > 0 && creep.pos.getRangeTo(c.pos) <= REMOTE_GATHER_RANGE);
-            const container = creep.pos.findClosestByRange(containers);
-            if (container) {
-                creep.memory._remoteEnergy = {
-                    mode: 'remote',
-                    action: 'withdraw',
-                    targetId: container.id,
-                    roomName: creep.room.name,
-                    until: now + REMOTE_STICKY_TICKS
-                };
-                return { type: 'withdraw', targetId: container.id, resourceType: RESOURCE_ENERGY };
+            const tryWithdraw = () => {
+                const cache = global.getRoomCache(creep.room);
+                const containers = (cache.structuresByType[STRUCTURE_CONTAINER] || []);
+                const storages = (cache.structuresByType[STRUCTURE_STORAGE] || []);
+                const candidates = containers.concat(storages).filter(c =>
+                    (c.store[RESOURCE_ENERGY] || 0) > 0 &&
+                    creep.pos.getRangeTo(c.pos) <= REMOTE_GATHER_RANGE
+                );
+                
+                const target = creep.pos.findClosestByRange(candidates);
+                if (target) {
+                    creep.memory._remoteEnergy = {
+                        mode: 'remote',
+                        action: 'withdraw',
+                        targetId: target.id,
+                        roomName: creep.room.name,
+                        until: now + REMOTE_STICKY_TICKS
+                    };
+                    return { type: 'withdraw', targetId: target.id, resourceType: RESOURCE_ENERGY };
+                }
+                return null;
+            };
+
+            if (opts && opts.prioritizeWithdraw) {
+                const result = tryWithdraw() || tryHarvest();
+                if (result) return result;
+            } else {
+                const result = tryHarvest() || tryWithdraw();
+                if (result) return result;
             }
 
             creep.memory._remoteEnergy = {
