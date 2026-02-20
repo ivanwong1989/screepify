@@ -9,6 +9,37 @@ const shouldIgnoreForNearDeath = (creep, role) => {
     return creep.ticksToLive <= threshold;
 };
 
+const getSpawningNamesCached = (spawningNamesFallback) => {
+    if (spawningNamesFallback) return spawningNamesFallback;
+    if (global._spawningNamesCache && global._spawningNamesCache.time === Game.time) {
+        return global._spawningNamesCache.names;
+    }
+    const names = new Set();
+    for (const rn in Game.rooms) {
+        const room = Game.rooms[rn];
+        if (!room.controller || !room.controller.my) continue;
+        const spawns = room.find(FIND_MY_SPAWNS);
+        for (const spawn of spawns) {
+            if (spawn.spawning) names.add(spawn.spawning.name);
+        }
+    }
+    return names;
+};
+
+const isTicketCreepMissing = (ticket, spawningNames) => {
+    if (!ticket || !ticket.creepName) return false;
+    if (spawningNames && spawningNames.has(ticket.creepName)) return false;
+    return !Game.creeps[ticket.creepName];
+};
+
+const resetDeadTicket = (ticket) => {
+    if (!ticket) return;
+    ticket.state = 'REQUESTED';
+    ticket.creepName = null;
+    ticket.spawnRoom = null;
+    ticket.expiresAt = Game.time + 50;
+};
+
 const spawnCensus = {
     pruneTickets: function(room, contractEntries) {
         if (!Memory.spawnTickets) return;
@@ -32,10 +63,17 @@ const spawnCensus = {
             return true;
         };
 
+        const spawningNames = getSpawningNamesCached(null);
+
         const activeCounts = Object.create(null);
         const requestedByContract = Object.create(null);
 
         const countTicket = (ticketId, ticket) => {
+            if (isTicketCreepMissing(ticket, spawningNames)) {
+                const oldName = ticket.creepName;
+                resetDeadTicket(ticket);
+                debug('spawner', `[SpawnCensus] ${room.name} earlyDeath reset ticket=${ticket.ticketId} contract=${ticket.contractId} oldName=${oldName}`);
+            }
             if (!isActiveTicket(ticket)) return;
             const contractId = ticket.contractId;
             if (ticket.creepName) {
@@ -131,21 +169,7 @@ const spawnCensus = {
             roleByContract[entry.contract.contractId] = entry.contract.role;
         }
 
-        let spawningNames = spawningNamesFallback;
-        if (!spawningNames && global._spawningNamesCache && global._spawningNamesCache.time === Game.time) {
-            spawningNames = global._spawningNamesCache.names;
-        }
-        if (!spawningNames) {
-            spawningNames = new Set();
-            for (const rn in Game.rooms) {
-                const r = Game.rooms[rn];
-                if (!r.controller || !r.controller.my) continue;
-                const spawns = r.find(FIND_MY_SPAWNS);
-                for (const s of spawns) {
-                    if (s.spawning) spawningNames.add(s.spawning.name);
-                }
-            }
-        }
+        const spawningNames = getSpawningNamesCached(spawningNamesFallback);
 
         const tickets = Memory.spawnTickets || {};
         const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
@@ -168,6 +192,12 @@ const spawnCensus = {
 
         const countFulfillmentTicket = (ticketId, ticket, contractId) => {
             if (!isActiveTicket(ticket)) return;
+            if (isTicketCreepMissing(ticket, spawningNames)) {
+                const oldName = ticket.creepName;
+                resetDeadTicket(ticket);
+                debug('spawner', `[SpawnCensus] ${room.name} earlyDeath reset ticket=${ticket.ticketId} contract=${ticket.contractId} oldName=${oldName}`);
+                return;
+            }
             if (ticket.creepName) {
                 const role = roleByContract[contractId] || ticket.role;
                 const creep = Game.creeps[ticket.creepName];
