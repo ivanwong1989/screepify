@@ -3,11 +3,15 @@ const shared = require('console_shared');
 /**
  * Assault Flag Mission (W/A)
  *
- * Flags:
+ * Flags (multiple sets supported):
  * - W: wait/sponsor flag (required). Determines sponsor room and staging position.
  * - W1, W2, ...: optional waypoint flags (numeric suffix). Assault will traverse these in order before A.
  * - A: attack flag (optional). Determines target room and attack position.
  * - AM: ranged-mass attack flag (optional). Uses ranged mass attack vs structures.
+ * - Y: wait/sponsor flag (required). Determines sponsor room and staging position.
+ * - Y1, Y2, ...: optional waypoint flags (numeric suffix). Assault will traverse these in order before B.
+ * - B: attack flag (optional). Determines target room and attack position.
+ * - BM: ranged-mass attack flag (optional). Uses ranged mass attack vs structures.
  *
  * Spawn modes:
  * - Solo (default): one assault mission with body from Memory.military.attack.body.
@@ -30,9 +34,10 @@ const shared = require('console_shared');
  * - waitFlagName, attackFlagName, waitPos, attackPos, targetRoom, sponsorRoom
  */
 
-const FLAG_WAIT = 'W';
-const FLAG_ATTACK = 'A';
-const FLAG_ATTACK_MASS = 'AM';
+const FLAG_SETS = [
+    { wait: 'W', attack: 'A', attackMass: 'AM' },
+    { wait: 'Y', attack: 'B', attackMass: 'BM' }
+];
 const DEFAULT_ATTACK_BODY = [RANGED_ATTACK, MOVE, HEAL];
 const DEFAULT_SUPPORT_BODY = [HEAL, MOVE, MOVE];
 const DEFAULT_BODY_MODE = 'auto';
@@ -126,32 +131,33 @@ function buildFlagAttackCache() {
     const cache = global._flagAttackMissionCache;
     if (cache && cache.time === Game.time) return cache;
 
-    const waitFlag = Game.flags[FLAG_WAIT];
-    if (!waitFlag) {
-        const empty = { time: Game.time, bySponsorRoom: {} };
-        global._flagAttackMissionCache = empty;
-        return empty;
-    }
-
-    const sponsorRoom = shared.resolveSponsorRoomForTargetPos(waitFlag.pos);
-    if (!sponsorRoom) {
-        const empty = { time: Game.time, bySponsorRoom: {} };
-        global._flagAttackMissionCache = empty;
-        return empty;
-    }
-
-    const attackFlag = Game.flags[FLAG_ATTACK_MASS] || Game.flags[FLAG_ATTACK];
-    const entry = {
-        sponsorRoom,
-        waitFlagName: waitFlag.name,
-        attackFlagName: attackFlag ? attackFlag.name : FLAG_ATTACK,
-        waitPos: toPos(waitFlag.pos),
-        attackPos: attackFlag ? toPos(attackFlag.pos) : null,
-        targetRoom: attackFlag ? attackFlag.pos.roomName : waitFlag.pos.roomName
-    };
-
     const bySponsorRoom = {};
-    bySponsorRoom[sponsorRoom] = [entry];
+    for (const set of FLAG_SETS) {
+        const waitFlag = Game.flags[set.wait];
+        if (!waitFlag) continue;
+
+        const sponsorRoom = shared.resolveSponsorRoomForTargetPos(waitFlag.pos);
+        if (!sponsorRoom) continue;
+
+        const attackFlag = Game.flags[set.attackMass] || Game.flags[set.attack];
+        const assaultMode = attackFlag && attackFlag.name === set.attackMass
+            ? 'rangedMass'
+            : undefined;
+
+        const entry = {
+            sponsorRoom,
+            waitFlagName: waitFlag.name,
+            attackFlagName: attackFlag ? attackFlag.name : set.attack,
+            waitPos: toPos(waitFlag.pos),
+            attackPos: attackFlag ? toPos(attackFlag.pos) : null,
+            targetRoom: attackFlag ? attackFlag.pos.roomName : waitFlag.pos.roomName,
+            assaultMode
+        };
+
+        if (!bySponsorRoom[sponsorRoom]) bySponsorRoom[sponsorRoom] = [];
+        bySponsorRoom[sponsorRoom].push(entry);
+    }
+
     const result = { time: Game.time, bySponsorRoom };
     global._flagAttackMissionCache = result;
     return result;
@@ -222,7 +228,7 @@ module.exports = {
                         squadKey,
                         closeRangeStructures: true,
                         assaultLock: lockData,
-                        assaultMode: entry.attackFlagName === 'AM' ? 'rangedMass' : undefined
+                        assaultMode: entry.assaultMode
                     },
                     census: leaderCensus
                 });
@@ -250,7 +256,7 @@ module.exports = {
                         squadKey,
                         closeRangeStructures: true,
                         assaultLock: lockData,
-                        assaultMode: entry.attackFlagName === 'AM' ? 'rangedMass' : undefined
+                        assaultMode: entry.assaultMode
                     },
                     census: supportCensus
                 });
@@ -286,7 +292,7 @@ module.exports = {
                         assaultRole: 'solo',
                         squadKey,
                         closeRangeStructures: true,
-                        assaultMode: entry.attackFlagName === 'AM' ? 'rangedMass' : undefined
+                        assaultMode: entry.assaultMode
                     },
                     census: census
                 });
