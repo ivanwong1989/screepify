@@ -1005,7 +1005,9 @@ function getExitPosToward(creep, targetRoomName, preferPos) {
     const exits = creep.room.find(exitDir);
     if (!Array.isArray(exits) || exits.length === 0) return null;
     const hasPrefer = preferPos && preferPos.roomName === targetRoomName;
-    if (!hasPrefer) return creep.pos.findClosestByRange(exits);
+    const resolvedPrefer = hasPrefer
+        ? preferPos
+        : { x: 25, y: 25, roomName: targetRoomName };
 
     let best = null;
     let bestDist = Infinity;
@@ -1014,7 +1016,7 @@ function getExitPosToward(creep, targetRoomName, preferPos) {
         if (!pos) continue;
         const entryPos = getEntryPosForExit(pos, targetRoomName);
         if (!entryPos) continue;
-        const dist = getRange(entryPos, preferPos);
+        const dist = getRange(entryPos, resolvedPrefer);
         const creepDist = getRange(creep.pos, pos);
         if (dist < bestDist || (dist === bestDist && creepDist < bestCreepDist)) {
             best = pos;
@@ -1023,7 +1025,18 @@ function getExitPosToward(creep, targetRoomName, preferPos) {
         }
     }
 
-    return best || creep.pos.findClosestByRange(exits);
+    const selected = best || creep.pos.findClosestByRange(exits);
+    if (selected) {
+        console.log(`[assault:${Game.time}] exitToward`, JSON.stringify({
+            creep: creep.name,
+            fromRoom: creep.room.name,
+            targetRoomName,
+            preferPos: hasPrefer ? toPlainPos(preferPos) : null,
+            resolvedPrefer,
+            selectedExit: toPlainPos(selected)
+        }));
+    }
+    return selected;
 }
 
 function resolveAssaultState(creep, incomingDamage, sustainableDamage, options) {
@@ -1745,7 +1758,66 @@ function executeAssault(creep, mission) {
         needsCohesion
     });
 
-    const waitPos = data.waitPos || (waitFlag ? { x: waitFlag.pos.x, y: waitFlag.pos.y, roomName: waitFlag.pos.roomName } : null);
+    const waitPos = waitFlag
+        ? { x: waitFlag.pos.x, y: waitFlag.pos.y, roomName: waitFlag.pos.roomName }
+        : (data.waitPos && Number.isFinite(data.waitPos.x) && Number.isFinite(data.waitPos.y)
+            ? { x: data.waitPos.x, y: data.waitPos.y, roomName: data.waitPos.roomName }
+            : null);
+    const duoAssembled = isDuoAssembled(fullSquad.length > 0 ? fullSquad : squad, leader, waitPos, supportRange);
+    const hasAssembled = squadLock || !!creep.memory.assaultAssembled || duoAssembled;
+
+    if (assaultRole !== 'solo' && waitPos && !hasAssembled && state !== 'retreat') {
+        if (currentRoom && currentRoom.name !== waitPos.roomName) {
+            const exitPos = getExitPosToward(creep, waitPos.roomName, waitPos);
+            console.log(`[assault:${Game.time}] pre-assembly`, JSON.stringify({
+                creep: creep.name,
+                role: assaultRole,
+                fromRoom: currentRoom && currentRoom.name,
+                waitPos,
+                exitPos: exitPos ? toPlainPos(exitPos) : null,
+                hasAssembled,
+                state
+            }));
+            if (exitPos) {
+                commitAssaultTask(creep, {
+                    actions,
+                    moveTarget: { x: exitPos.x, y: exitPos.y, roomName: exitPos.roomName },
+                    range: 0
+                });
+                return;
+            }
+        }
+        // Pre-assembly pairing step (support only) once inside the wait room.
+        if (currentRoom && currentRoom.name === waitPos.roomName && leader && partner && leader.pos && partner.pos) {
+            const iAmSupport = !isLeader;
+            if (iAmSupport && leader.pos.roomName === currentRoom.name) {
+                const desired = Math.max(1, Math.floor(supportRange || 1));
+                if (getRange(creep.pos, leader.pos) > desired) {
+                    commitAssaultTask(creep, {
+                        actions,
+                        moveTarget: { x: leader.pos.x, y: leader.pos.y, roomName: leader.pos.roomName },
+                        range: desired
+                    });
+                    return;
+                }
+            }
+        }
+        console.log(`[assault:${Game.time}] pre-assembly`, JSON.stringify({
+            creep: creep.name,
+            role: assaultRole,
+            fromRoom: currentRoom && currentRoom.name,
+            waitPos,
+            exitPos: null,
+            hasAssembled,
+            state
+        }));
+        commitAssaultTask(creep, {
+            actions,
+            moveTarget: { x: waitPos.x, y: waitPos.y, roomName: waitPos.roomName },
+            range: 1
+        });
+        return;
+    }
     if (assaultRole !== 'solo' && waitPos && squadCount < expectedSquadSize && !squadLock) {
         delete creep.memory.assaultAssembled;
         logAssault(creep, data, 'regroup', {
@@ -1761,7 +1833,6 @@ function executeAssault(creep, mission) {
         });
         return;
     }
-    const duoAssembled = isDuoAssembled(fullSquad.length > 0 ? fullSquad : squad, leader, waitPos, supportRange);
     if (assaultRole !== 'solo' && duoAssembled && leader && support) {
         markAssaultSquadStarted(squadKey, leader, support);
     }
@@ -1772,26 +1843,6 @@ function executeAssault(creep, mission) {
             creep.memory.assaultAssembled = true;
         }
     }
-    const hasAssembled = squadLock || !!creep.memory.assaultAssembled;
-    const inWaitRoom = waitPos && currentRoom && currentRoom.name === waitPos.roomName;
-    if (assaultRole !== 'solo' && inWaitRoom && state !== 'retreat' && !hasAssembled) {
-        let moveTarget = { x: waitPos.x, y: waitPos.y, roomName: waitPos.roomName };
-        let range = 1;
-        if (!isLeader && leader && leader.pos && leader.pos.roomName === currentRoom.name) {
-            const leaderRange = getRange(creep.pos, leader.pos);
-            if (leaderRange > supportRange) {
-                moveTarget = { x: leader.pos.x, y: leader.pos.y, roomName: leader.pos.roomName };
-                range = supportRange;
-            }
-        }
-        commitAssaultTask(creep, {
-            actions,
-            moveTarget,
-            range
-        });
-        return;
-    }
-
     const target = (targetRoom && attackFlag && currentRoom && currentRoom.name === targetRoom.name)
         ? selectAssaultTarget(creep, attackFlag, hostiles, dangerRadius, { mode: assaultMode })
         : null;
