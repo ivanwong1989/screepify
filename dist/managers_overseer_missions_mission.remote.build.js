@@ -117,7 +117,7 @@ module.exports = {
                     },
                     requirements: {
                         archetype: 'remote_worker',
-                        count: 1,
+                        count: 2,
                         spawnFromFleet: true
                     },
                     priority: 55
