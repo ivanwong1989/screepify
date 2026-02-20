@@ -13,7 +13,7 @@ module.exports = function execRemoteHaulTask(ctx) {
 
     if (creep.memory.taskState === 'working') {
         if (dropoffPos && creep.room.name !== dropoffPos.roomName) {
-            return { action: 'move', targetPos: { x: dropoffPos.x, y: dropoffPos.y, roomName: dropoffPos.roomName }, range: 1 };
+            return { type: 'move', targetPos: { x: dropoffPos.x, y: dropoffPos.y, roomName: dropoffPos.roomName }, range: 1 };
         }
 
         let target = data.dropoffId ? Game.getObjectById(data.dropoffId) : null;
@@ -29,27 +29,27 @@ module.exports = function execRemoteHaulTask(ctx) {
 
         if (target) {
             if (target.store && target.store.getFreeCapacity(resourceType) === 0) {
-                return { action: 'move', targetId: target.id, range: 1 };
+                return { type: 'move', targetId: target.id, range: 1 };
             }
-            return { action: 'transfer', targetId: target.id, resourceType: resourceType };
+            return { type: 'transfer', targetId: target.id, resourceType: resourceType };
         }
         return null;
     }
 
     if (pickupPos && creep.room.name !== pickupPos.roomName) {
-        return { action: 'move', targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName }, range: 1 };
+        return { type: 'move', targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName }, range: 1 };
     }
 
     const pickup = data.pickupId ? Game.getObjectById(data.pickupId) : null;
     if (pickup && pickup.store && (pickup.store[resourceType] || 0) > 0) {
-        return { action: 'withdraw', targetId: pickup.id, resourceType: resourceType };
+        return { type: 'withdraw', targetId: pickup.id, resourceType: resourceType };
     }
 
     const cache = global.getRoomCache(creep.room);
     const tombstone = creep.pos.findClosestByRange(cache.tombstones || [], {
         filter: t => t.store && (t.store[resourceType] || 0) > 50
     });
-    if (tombstone) return { action: 'withdraw', targetId: tombstone.id, resourceType: resourceType };
+    if (tombstone) return { type: 'withdraw', targetId: tombstone.id, resourceType: resourceType };
 
     const dropped = creep.pos.findClosestByRange(cache.dropped || [], {
         filter: r => {
@@ -60,10 +60,10 @@ module.exports = function execRemoteHaulTask(ctx) {
             return true;
         }
     });
-    if (dropped) return { action: 'pickup', targetId: dropped.id };
+    if (dropped) return { type: 'pickup', targetId: dropped.id };
 
     if (pickupMode === 'drop' && pickupPos) {
-        return { action: 'move', targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName }, range: pickupRange };
+        return { type: 'move', targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName }, range: pickupRange };
     }
 
     return null;

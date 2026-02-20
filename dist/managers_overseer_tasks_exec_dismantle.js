@@ -10,7 +10,7 @@ module.exports = function execDismantleTask(ctx) {
     if (mission.targetId) {
         const target = helpers.getCachedObject(creep.room, mission.targetId) || Game.getObjectById(mission.targetId);
         if (target) {
-            return { action: 'dismantle', targetId: target.id };
+            return { type: 'dismantle', targetId: target.id };
         }
     }
 
@@ -18,7 +18,7 @@ module.exports = function execDismantleTask(ctx) {
         const targetPos = flag.pos;
         if (creep.room.name !== targetPos.roomName) {
             return {
-                action: 'move',
+                type: 'move',
                 targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName },
                 range: 1
             };
@@ -26,7 +26,7 @@ module.exports = function execDismantleTask(ctx) {
 
         const structures = targetPos.lookFor(LOOK_STRUCTURES);
         if (structures && structures.length > 0) {
-            return { action: 'dismantle', targetId: structures[0].id };
+            return { type: 'dismantle', targetId: structures[0].id };
         }
 
         if (!flag.memory || flag.memory.persist !== true) {
@@ -38,7 +38,7 @@ module.exports = function execDismantleTask(ctx) {
     if (fallbackPos) {
         if (creep.room.name !== fallbackPos.roomName) {
             return {
-                action: 'move',
+                type: 'move',
                 targetPos: { x: fallbackPos.x, y: fallbackPos.y, roomName: fallbackPos.roomName },
                 range: 1
             };
@@ -46,7 +46,7 @@ module.exports = function execDismantleTask(ctx) {
 
         const structures = fallbackPos.lookFor(LOOK_STRUCTURES);
         if (structures && structures.length > 0) {
-            return { action: 'dismantle', targetId: structures[0].id };
+            return { type: 'dismantle', targetId: structures[0].id };
         }
     }
 

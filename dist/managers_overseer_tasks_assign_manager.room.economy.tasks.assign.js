@@ -29,6 +29,17 @@ const execScoutTask = require('managers_overseer_tasks_exec_scout');
  * 
  * @param {Room} room
  */
+/**
+ * @typedef {Object} TaskIntent
+ * @property {'move'|'withdraw'|'transfer'|'harvest'|'build'|'repair'|'upgrade'|'pickup'|'dismantle'|'reserve'|'claim'|'drop'} type
+ * @property {string=} targetId
+ * @property {string=} targetName
+ * @property {{x:number,y:number,roomName:string}=} targetPos
+ * @property {string=} resourceType
+ * @property {number=} amount
+ * @property {number=} range
+ * @property {Object=} meta
+ */
 var managerTasks = {
     getRemoteCreepsByHomeRoom: function() {
         const cache = global._remoteCreepsByHomeRoom;
@@ -521,15 +532,18 @@ var managerTasks = {
                 break;
         }
 
+        const intent = this.normalizeTaskIntent(task);
+        const legacyTask = this.toLegacyTask(intent);
+
         if (global.DEBUG_TASKS) {
-            const targetId = task ? (task.targetId || task.targetName || null) : null;
-            const resourceType = task && task.resourceType ? task.resourceType : null;
-            const action = task ? task.action : 'none';
+            const targetId = legacyTask ? (legacyTask.targetId || legacyTask.targetName || null) : null;
+            const resourceType = legacyTask && legacyTask.resourceType ? legacyTask.resourceType : null;
+            const action = legacyTask ? legacyTask.action : 'none';
             console.log(`[tasks] creep=${creep.name} mission=${mission.name} action=${action} targetId=${targetId} resourceType=${resourceType}`);
         }
 
-        if (task) {
-            creep.memory.task = task;
+        if (legacyTask) {
+            creep.memory.task = legacyTask;
         } else {
             delete creep.memory.task;
         }
@@ -657,6 +671,23 @@ var managerTasks = {
         const y = Number(pos.y);
         if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
         return new RoomPosition(x, y, pos.roomName);
+    },
+
+    normalizeTaskIntent: function(intent) {
+        if (!intent) return null;
+        if (intent.type) return intent;
+        if (intent.action) {
+            const { action, ...rest } = intent;
+            return { ...rest, type: action };
+        }
+        return intent;
+    },
+
+    toLegacyTask: function(intent) {
+        if (!intent) return null;
+        if (intent.action) return intent;
+        const { type, ...rest } = intent;
+        return { ...rest, action: type };
     },
 
 };

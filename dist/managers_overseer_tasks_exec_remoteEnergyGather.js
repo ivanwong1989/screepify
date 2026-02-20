@@ -27,11 +27,11 @@ module.exports = function execRemoteEnergyGatherTask(ctx) {
                         if (creep.getActiveBodyparts(WORK) > 0 &&
                             stickyTarget.energy > 0 &&
                             helpers.hasFreeHarvestSpot(creep, stickyTarget)) {
-                            return { action: 'harvest', targetId: stickyTarget.id };
+                            return { type: 'harvest', targetId: stickyTarget.id };
                         }
                     } else if (memory.action === 'withdraw') {
                         if (stickyTarget.store && (stickyTarget.store[RESOURCE_ENERGY] || 0) > 0) {
-                            return { action: 'withdraw', targetId: stickyTarget.id, resourceType: RESOURCE_ENERGY };
+                            return { type: 'withdraw', targetId: stickyTarget.id, resourceType: RESOURCE_ENERGY };
                         }
                     }
                 }
@@ -53,7 +53,7 @@ module.exports = function execRemoteEnergyGatherTask(ctx) {
                         roomName: creep.room.name,
                         until: now + REMOTE_STICKY_TICKS
                     };
-                    return { action: 'harvest', targetId: source.id };
+                    return { type: 'harvest', targetId: source.id };
                 }
             }
 
@@ -69,7 +69,7 @@ module.exports = function execRemoteEnergyGatherTask(ctx) {
                     roomName: creep.room.name,
                     until: now + REMOTE_STICKY_TICKS
                 };
-                return { action: 'withdraw', targetId: container.id, resourceType: RESOURCE_ENERGY };
+                return { type: 'withdraw', targetId: container.id, resourceType: RESOURCE_ENERGY };
             }
 
             creep.memory._remoteEnergy = {
@@ -84,14 +84,14 @@ module.exports = function execRemoteEnergyGatherTask(ctx) {
         const anchor = homeRoom && homeRoom.storage ? homeRoom.storage.pos
             : (homeRoom && homeRoom.controller ? homeRoom.controller.pos : null);
         const movePos = anchor || { x: 25, y: 25, roomName: homeRoomName };
-        return { action: 'move', targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName }, range: 3 };
+        return { type: 'move', targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName }, range: 3 };
     }
 
     const gatherRoom = homeRoom || creep.room;
     const task = execGatherTask({ creep, room: gatherRoom, options: {} });
     if (task) return task;
     if (targetPos && creep.room.name !== targetPos.roomName) {
-        return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
+        return { type: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
     }
     return null;
 };

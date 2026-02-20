@@ -5,7 +5,7 @@ module.exports = function execUpgradeTask(ctx) {
     const { creep, mission, room } = ctx;
     helpers.updateState(creep);
     if (creep.memory.taskState === 'working') {
-        return { action: 'upgrade', targetId: mission.targetId };
+        return { type: 'upgrade', targetId: mission.targetId };
     }
 
     const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;

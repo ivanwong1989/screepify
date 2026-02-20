@@ -34,29 +34,29 @@ module.exports = function execMineralTask(ctx) {
         const depositTarget = terminalHasSpace ? terminal : (storageHasSpace ? storage : (containerHasSpace ? container : null));
 
         if (depositTarget === container && creep.pos.inRangeTo(container.pos, 1)) {
-            return { action: 'transfer', targetId: container.id, resourceType: depositType };
+            return { type: 'transfer', targetId: container.id, resourceType: depositType };
         }
 
         if (creep.store.getFreeCapacity() === 0) {
             if (depositTarget) {
                 if (depositTarget === container) {
                     if (creep.pos.inRangeTo(container.pos, 1)) {
-                        return { action: 'transfer', targetId: container.id, resourceType: depositType };
+                        return { type: 'transfer', targetId: container.id, resourceType: depositType };
                     }
-                    return { action: 'move', targetId: container.id, range: 0 };
+                    return { type: 'move', targetId: container.id, range: 0 };
                 }
-                return { action: 'transfer', targetId: depositTarget.id, resourceType: depositType };
+                return { type: 'transfer', targetId: depositTarget.id, resourceType: depositType };
             }
-            return { action: 'drop', resourceType: depositType };
+            return { type: 'drop', resourceType: depositType };
         }
     }
 
     if (container && !creep.pos.isEqualTo(container.pos)) {
         const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS);
         if (creepsOnContainer.length === 0) {
-            return { action: 'move', targetId: container.id, range: 0 };
+            return { type: 'move', targetId: container.id, range: 0 };
         }
     }
 
-    return { action: 'harvest', targetId: mineral.id };
+    return { type: 'harvest', targetId: mineral.id };
 };

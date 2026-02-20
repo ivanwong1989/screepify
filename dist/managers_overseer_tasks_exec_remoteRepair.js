@@ -17,7 +17,7 @@ module.exports = function execRemoteRepairTask(ctx) {
     if (creep.memory.taskState === 'working') {
         if (creep.memory._remoteEnergy) delete creep.memory._remoteEnergy;
         if (targetPos && creep.room.name !== targetPos.roomName) {
-            return { action: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
+            return { type: 'move', targetPos: { x: targetPos.x, y: targetPos.y, roomName: targetPos.roomName }, range: 1 };
         }
 
         let target = null;
@@ -42,7 +42,7 @@ module.exports = function execRemoteRepairTask(ctx) {
             if (roomTargets.length > 0) target = creep.pos.findClosestByRange(roomTargets);
         }
 
-        if (target && target.hits < target.hitsMax) return { action: 'repair', targetId: target.id };
+        if (target && target.hits < target.hitsMax) return { type: 'repair', targetId: target.id };
 
         delete creep.memory.missionName;
         delete creep.memory.taskState;

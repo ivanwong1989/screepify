@@ -14,7 +14,7 @@ module.exports = function execClaimTask(ctx) {
     if (creep.room.name !== targetRoom) {
         const movePos = helpers.toRoomPosition(data.targetPos || mission.targetPos) || new RoomPosition(25, 25, targetRoom);
         return {
-            action: 'move',
+            type: 'move',
             targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName },
             range: 1
         };
@@ -41,5 +41,5 @@ module.exports = function execClaimTask(ctx) {
         return null;
     }
 
-    return { action: 'claim', targetId: controller.id, range: 1 };
+    return { type: 'claim', targetId: controller.id, range: 1 };
 };

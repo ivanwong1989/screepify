@@ -14,7 +14,7 @@ module.exports = function execReserveTask(ctx) {
     if (creep.room.name !== targetRoom) {
         const movePos = helpers.toRoomPosition(data.targetPos || mission.targetPos) || new RoomPosition(25, 25, targetRoom);
         return {
-            action: 'move',
+            type: 'move',
             targetPos: { x: movePos.x, y: movePos.y, roomName: movePos.roomName },
             range: 1
         };
@@ -43,5 +43,5 @@ module.exports = function execReserveTask(ctx) {
         return null;
     }
 
-    return { action: 'reserve', targetId: controller.id, range: 1 };
+    return { type: 'reserve', targetId: controller.id, range: 1 };
 };

@@ -40,7 +40,7 @@ module.exports = function execTransferTask(ctx) {
                 delete creep.memory.taskState;
                 return null;
             }
-            return { action: 'transfer', targetId: target.id, resourceType: resourceType };
+            return { type: 'transfer', targetId: target.id, resourceType: resourceType };
         }
 
         if (resourceType !== RESOURCE_ENERGY) {
@@ -58,7 +58,7 @@ module.exports = function execTransferTask(ctx) {
         const source = helpers.getCachedObject(creep.room, mission.data.sourceId);
         if (source && source.store && (source.store[resourceType] || 0) > 0) {
             if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
-            return { action: 'withdraw', targetId: source.id, resourceType: resourceType };
+            return { type: 'withdraw', targetId: source.id, resourceType: resourceType };
         }
         delete creep.memory.missionName;
         delete creep.memory.taskState;
@@ -91,7 +91,7 @@ module.exports = function execTransferTask(ctx) {
 
         if (ticks < EMPTY_SOURCE_TIMEOUT) {
             if (source) {
-                return { action: 'move', targetId: source.id, range: 1 };
+                return { type: 'move', targetId: source.id, range: 1 };
             }
             return null;
         }

@@ -7,7 +7,7 @@ module.exports = function execBuildTask(ctx) {
     if (creep.memory.taskState === 'working') {
         const targetId = mission.targetId || (mission.targetIds && mission.targetIds[0]);
         const target = targetId ? helpers.getCachedObject(creep.room, targetId) : null;
-        if (target) return { action: 'build', targetId: target.id };
+        if (target) return { type: 'build', targetId: target.id };
 
         delete creep.memory.missionName;
         delete creep.memory.taskState;

@@ -9,7 +9,7 @@ module.exports = function execHarvestTask(ctx) {
         if (container && !creep.pos.isEqualTo(container.pos)) {
             const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS);
             if (creepsOnContainer.length === 0) {
-                return { action: 'move', targetId: mission.data.containerId, range: 0 };
+                return { type: 'move', targetId: mission.data.containerId, range: 0 };
             }
         }
     }
@@ -27,7 +27,7 @@ module.exports = function execHarvestTask(ctx) {
         const transferTarget = linkTarget || containerTarget;
 
         if (transferTarget) {
-            return { action: 'transfer', targetId: transferTarget.id, resourceType: RESOURCE_ENERGY };
+            return { type: 'transfer', targetId: transferTarget.id, resourceType: RESOURCE_ENERGY };
         }
 
         const isStatic = (mission.data && mission.data.mode === 'static') ||
@@ -49,16 +49,16 @@ module.exports = function execHarvestTask(ctx) {
             }
 
             if (deliveryTarget) {
-                return { action: 'transfer', targetId: deliveryTarget.id, resourceType: RESOURCE_ENERGY };
+                return { type: 'transfer', targetId: deliveryTarget.id, resourceType: RESOURCE_ENERGY };
             }
 
             if (creep.room.controller && creep.room.controller.my) {
-                return { action: 'upgrade', targetId: creep.room.controller.id };
+                return { type: 'upgrade', targetId: creep.room.controller.id };
             }
 
             return null;
         }
     }
 
-    return { action: 'harvest', targetId: mission.sourceId };
+    return { type: 'harvest', targetId: mission.sourceId };
 };

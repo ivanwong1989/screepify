@@ -8,7 +8,7 @@ module.exports = function execRepairTask(ctx) {
         const targetId = mission.targetId || (mission.targetIds && mission.targetIds[0]);
         const target = targetId ? helpers.getCachedObject(creep.room, targetId) : null;
         if (target && target.hits < target.hitsMax) {
-            return { action: 'repair', targetId: target.id };
+            return { type: 'repair', targetId: target.id };
         }
 
         delete creep.memory.missionName;

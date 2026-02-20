@@ -12,7 +12,7 @@ module.exports = function execDecongestTask(ctx) {
                     creep.say('parked');
                     return null;
                 }
-                return { action: 'move', targetId: currentTarget.id };
+                return { type: 'move', targetId: currentTarget.id };
             }
         }
         if (creep.memory.task.targetName) {
@@ -24,7 +24,7 @@ module.exports = function execDecongestTask(ctx) {
                     creep.say('parked');
                     return null;
                 }
-                return { action: 'move', targetName: currentTarget.name };
+                return { type: 'move', targetName: currentTarget.name };
             }
         }
     }
@@ -46,9 +46,9 @@ module.exports = function execDecongestTask(ctx) {
                 return null;
             }
             if (target instanceof Flag) {
-                return { action: 'move', targetName: target.name };
+                return { type: 'move', targetName: target.name };
             }
-            return { action: 'move', targetId: target.id };
+            return { type: 'move', targetId: target.id };
         }
     }
     return null;
