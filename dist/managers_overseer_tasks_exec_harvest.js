@@ -17,6 +17,15 @@ function logContractError(creep, reason) {
     console.log(`[harvest] invalid mission contract for ${creep.name}: ${reason}`);
 }
 
+function getHarvestSlotIndex(creep) {
+    const bindId = creep.memory && creep.memory.bindId;
+    if (!bindId) return 0;
+    const parts = String(bindId).split(':');
+    const last = parts[parts.length - 1];
+    const i = Number(last);
+    return Number.isFinite(i) ? i : 0;
+}
+
 module.exports = function execHarvestTask(ctx) {
     const { creep, mission } = ctx;
     const data = mission && mission.data ? mission.data : null;
@@ -32,6 +41,7 @@ module.exports = function execHarvestTask(ctx) {
     const fallback = data.fallback || 'none';
     const resourceType = data.resourceType || RESOURCE_ENERGY;
     const dropoffRange = Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1;
+    const overflowPolicy = data.overflowPolicy || 'drop';
 
     if (!isValidId(sourceId)) {
         logContractError(creep, 'missing sourceId');
@@ -74,17 +84,50 @@ module.exports = function execHarvestTask(ctx) {
             return null;
         }
 
-        if (!creep.pos.isEqualTo(container.pos)) {
-            const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS)
-                .filter(c => c.id !== creep.id);
-            if (creepsOnContainer.length === 0) {
-                return { type: 'move', targetId: data.containerId, range: 0 };
+        const slotIndex = getHarvestSlotIndex(creep);
+        const roles = data.staticRolesBySlot || null;
+        const role = roles ? roles[String(slotIndex)] : 'container';
+
+        if (role === 'container') {
+            if (!creep.pos.isEqualTo(container.pos)) {
+                const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS)
+                    .filter(c => c.id !== creep.id);
+                if (creepsOnContainer.length === 0) {
+                    return { type: 'move', targetId: data.containerId, range: 0 };
+                }
+                return { type: 'move', targetId: data.containerId, range: 1 };
             }
-            return { type: 'move', targetId: data.containerId, range: 1 };
+
+            helpers.updateState(creep, resourceType, { allowPartialWork: true });
+            if (creep.memory.taskState === 'working' || creep.store.getFreeCapacity(resourceType) === 0) {
+                const transferTarget = getFirstValidDropoff(creep.room, dropoffIds, resourceType);
+                if (transferTarget) {
+                    return { type: 'transfer', targetId: transferTarget.id, resourceType, range: dropoffRange };
+                }
+                if (fallback === 'upgrade' && creep.room.controller && creep.room.controller.my) {
+                    return { type: 'upgrade', targetId: creep.room.controller.id };
+                }
+                return { type: 'harvest', targetId: sourceId };
+            }
+
+            return { type: 'harvest', targetId: sourceId };
+        }
+
+        if (creep.pos.isEqualTo(container.pos)) {
+            return { type: 'move', targetId: sourceId, range: 1 };
+        }
+
+        if (!creep.pos.inRangeTo(source.pos, 1)) {
+            return { type: 'move', targetId: sourceId, range: 1 };
         }
 
         helpers.updateState(creep, resourceType, { allowPartialWork: true });
         if (creep.memory.taskState === 'working' || creep.store.getFreeCapacity(resourceType) === 0) {
+            if (creep.pos.inRangeTo(container.pos, 1) && container.store.getFreeCapacity(resourceType) > 0) {
+                return { type: 'transfer', targetId: container.id, resourceType, range: 1 };
+            }
+            if (overflowPolicy === 'drop') return { type: 'drop', resourceType: resourceType };
+
             const transferTarget = getFirstValidDropoff(creep.room, dropoffIds, resourceType);
             if (transferTarget) {
                 return { type: 'transfer', targetId: transferTarget.id, resourceType, range: dropoffRange };
@@ -92,7 +135,6 @@ module.exports = function execHarvestTask(ctx) {
             if (fallback === 'upgrade' && creep.room.controller && creep.room.controller.my) {
                 return { type: 'upgrade', targetId: creep.room.controller.id };
             }
-            return { type: 'harvest', targetId: sourceId };
         }
 
         return { type: 'harvest', targetId: sourceId };

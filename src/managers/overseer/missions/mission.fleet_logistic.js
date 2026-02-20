@@ -12,10 +12,10 @@ module.exports = {
             const LINKED_SOURCE_MIN_CARRY = 3;
             const ENERGY_PER_TICK = 10;
             const TRANSFER_BUFFER_TICKS = 2;
-            const DISTANCE_SOFT_CAP = 14;
-            const DISTANCE_SCALE_PER_TILE = 0.15;
-            const EARLY_GAME_ENERGY_CAP = 800;
-            const EARLY_GAME_HAULER_MULTIPLIER = 1.25;
+            const DISTANCE_SOFT_CAP = 17;
+            const DISTANCE_SCALE_PER_TILE = 0.1;
+            const EARLY_GAME_ENERGY_CAP = 500;
+            const EARLY_GAME_HAULER_MULTIPLIER = 1.01;
             const LINK_SOURCE_RANGE = 2;
             const LINK_RECEIVER_RANGE = 3;
 
@@ -132,7 +132,7 @@ module.exports = {
                     totalRequiredCarryParts += Math.max(minCarry, requiredCarry);
                 });
 
-                const isEarlyGame = (room.controller && room.controller.level <= 3) ||
+                const isEarlyGame = (room.controller && room.controller.level < 2) ||
                     (!storage && intel.energyCapacityAvailable <= EARLY_GAME_ENERGY_CAP);
                 const scaledRequiredCarryParts = isEarlyGame
                     ? Math.ceil(totalRequiredCarryParts * EARLY_GAME_HAULER_MULTIPLIER)

@@ -1,5 +1,6 @@
 const helpers = require('managers_overseer_tasks_exec__helpers');
 const execGatherTask = require('managers_overseer_tasks_exec_gather');
+const vacateSource = require('managers_overseer_tasks_exec__policy_vacate_source');
 
 module.exports = function execBuildTask(ctx) {
     const { creep, mission, room } = ctx;
@@ -7,7 +8,21 @@ module.exports = function execBuildTask(ctx) {
     if (creep.memory.taskState === 'working') {
         const targetId = mission.targetId || (mission.targetIds && mission.targetIds[0]);
         const target = targetId ? helpers.getCachedObject(creep.room, targetId) : null;
-        if (target) return { type: 'build', targetId: target.id };
+        if (target) {
+            const move = vacateSource.getVacateSourceMoveIntent(
+                creep,
+                'build',
+                target,
+                3,
+                {
+                    allowRolesNearSource: ['miner', 'staticMiner', 'remoteHarvester', 'remote_miner', 'harvester_remote'],
+                    forbidRangeFromSource: 1,
+                    useOccupancyCheck: true
+                }
+            );
+            if (move) return move;
+            return { type: 'build', targetId: target.id };
+        }
 
         delete creep.memory.missionName;
         delete creep.memory.taskState;

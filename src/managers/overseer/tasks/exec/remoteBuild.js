@@ -1,5 +1,6 @@
 const helpers = require('managers_overseer_tasks_exec__helpers');
 const execRemoteEnergyGather = require('managers_overseer_tasks_exec_remoteEnergyGather');
+const vacateSource = require('managers_overseer_tasks_exec__policy_vacate_source');
 
 module.exports = function execRemoteBuildTask(ctx) {
     const { creep, mission, room } = ctx;
@@ -35,7 +36,21 @@ module.exports = function execRemoteBuildTask(ctx) {
             if (roomSites.length > 0) target = creep.pos.findClosestByRange(roomSites);
         }
 
-        if (target) return { type: 'build', targetId: target.id };
+        if (target) {
+            const move = vacateSource.getVacateSourceMoveIntent(
+                creep,
+                'build',
+                target,
+                3,
+                {
+                    allowRolesNearSource: ['miner', 'staticMiner', 'remoteHarvester', 'remote_miner', 'harvester_remote'],
+                    forbidRangeFromSource: 1,
+                    useOccupancyCheck: true
+                }
+            );
+            if (move) return move;
+            return { type: 'build', targetId: target.id };
+        }
 
         delete creep.memory.missionName;
         delete creep.memory.taskState;

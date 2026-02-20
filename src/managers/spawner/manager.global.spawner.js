@@ -1,6 +1,10 @@
 module.exports = {
     run: function(allTickets) {
         if (!allTickets || allTickets.length === 0) return;
+        const spawnDistanceCache = require('managers_spawner_spawnDistanceCache');
+        spawnDistanceCache.syncSpawnRegistry();
+        spawnDistanceCache.enqueueMissingPairs();
+        spawnDistanceCache.processQueue({ maxPairsPerTick: 2 });
 
         // 1. Sort tickets by priority
         allTickets.sort((a, b) => b.priority - a.priority);
@@ -37,6 +41,7 @@ module.exports = {
     },
 
     findBestSpawn: function(ticket, availableSpawns) {
+        const spawnDistanceCache = require('managers_spawner_spawnDistanceCache');
         
         // Filter 1: Capable of spawning (Energy Capacity)
         // We check capacity, not current available, because if it's local we might be waiting for refill (Grace Period handled in local manager, but we double check here)
@@ -52,20 +57,45 @@ module.exports = {
         // Filter 3: Remote Spawns
         // We only consider remote spawns if they are ready to spawn NOW.
         // We don't want to wait on a remote room's energy regeneration.
+        const homeRoom = Game.rooms[ticket.homeRoom];
+        const homeSpawns = homeRoom ? homeRoom.find(FIND_MY_SPAWNS) : [];
         const remoteCandidates = candidates.filter(s => {
             if (s.room.name === ticket.homeRoom) return false;
             if (s.room.energyAvailable < ticket.cost) return false;
             if (s.room._state === 'EMERGENCY') return false;
-            const dist = Game.map.getRoomLinearDistance(ticket.homeRoom, s.room.name);
-            return dist <= 2; // Allow adjacent + 1
+
+            if (homeSpawns.length === 0) {
+                const distFallback = Game.map.getRoomLinearDistance(ticket.homeRoom, s.room.name);
+                return distFallback <= 2;
+            }
+
+            let best = null;
+            for (const homeSpawn of homeSpawns) {
+                const dist = spawnDistanceCache.getDistance(homeSpawn.id, s.id);
+                if (dist === undefined) continue;
+                if (dist === null) continue;
+                if (!best || dist.rooms < best.rooms || (dist.rooms === best.rooms && dist.stepsApprox < best.stepsApprox)) {
+                    best = dist;
+                }
+            }
+
+            if (!best) return false;
+            return best.rooms <= 2;
         });
 
         if (remoteCandidates.length > 0) {
             // Sort by distance, then by energy available
             remoteCandidates.sort((a, b) => {
-                const distA = Game.map.getRoomLinearDistance(ticket.homeRoom, a.room.name);
-                const distB = Game.map.getRoomLinearDistance(ticket.homeRoom, b.room.name);
-                if (distA !== distB) return distA - distB;
+                const distA = this.getBestSpawnDistance(ticket, a, homeSpawns, spawnDistanceCache);
+                const distB = this.getBestSpawnDistance(ticket, b, homeSpawns, spawnDistanceCache);
+                if (distA && distB) {
+                    if (distA.rooms !== distB.rooms) return distA.rooms - distB.rooms;
+                    if (distA.stepsApprox !== distB.stepsApprox) return distA.stepsApprox - distB.stepsApprox;
+                } else if (distA && !distB) {
+                    return -1;
+                } else if (!distA && distB) {
+                    return 1;
+                }
                 return b.room.energyAvailable - a.room.energyAvailable;
             });
             return remoteCandidates[0];
@@ -74,6 +104,19 @@ module.exports = {
         return null;
 
         //return availableSpawns.find(s => s.room.name === ticket.homeRoom && s.room.energyAvailable >= ticket.cost);
+    },
+
+    getBestSpawnDistance: function(ticket, candidateSpawn, homeSpawns, spawnDistanceCache) {
+        if (!homeSpawns || homeSpawns.length === 0) return null;
+        let best = null;
+        for (const homeSpawn of homeSpawns) {
+            const dist = spawnDistanceCache.getDistance(homeSpawn.id, candidateSpawn.id);
+            if (dist === undefined || dist === null) continue;
+            if (!best || dist.rooms < best.rooms || (dist.rooms === best.rooms && dist.stepsApprox < best.stepsApprox)) {
+                best = dist;
+            }
+        }
+        return best;
     },
 
     executeSpawn: function(spawn, ticket) {

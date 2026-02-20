@@ -65,6 +65,18 @@ module.exports = {
                 if (reqCount === 0 && targetWork > 0) reqCount = 1;
             }
 
+            if (mode === 'static' && reqCount > 1) {
+                // 1 container tile can only host 1 miner. The rest become overflow miners.
+                // Keep reqCount as-is (still allowed), but define roles.
+                // NOTE: This assumes source.availableSpaces >= reqCount is already enforced.
+            }
+
+            const staticRolesBySlot = {};
+            if (mode === 'static' && reqCount > 1) {
+                staticRolesBySlot["0"] = "container";
+                for (let i = 1; i < reqCount; i++) staticRolesBySlot[String(i)] = "overflow";
+            }
+
             debug('mission.harvest', `[Harvest] ${room.name} ${source.id} mode=${mode} ` +
                 `count=${census.count} workParts=${census.workParts}/${targetWork} ` +
                 `workPerCreep=${workPerCreep} desired=${desiredCount} req=${reqCount} ` +
@@ -103,7 +115,9 @@ module.exports = {
                     dropoffIds: dropoffIds,
                     fallback: fallback,
                     containerId: containerId,
-                    dropoffRange: dropoffRange
+                    dropoffRange: dropoffRange,
+                    staticRolesBySlot: staticRolesBySlot,
+                    overflowPolicy: "drop"
                 },
                 priority: isEmergency ? 1000 : 100
             });

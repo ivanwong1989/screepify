@@ -28,7 +28,7 @@ module.exports = {
 
             const remoteRoom = Game.rooms[roomName];
             const isMy = remoteRoom && remoteRoom.controller && remoteRoom.controller.my;
-            const needsHelp = isMy && (remoteRoom.controller.level < 3 || remoteRoom.find(FIND_MY_SPAWNS).length === 0);
+            const needsHelp = isMy && (remoteRoom.controller.level < 2 || remoteRoom.find(FIND_MY_SPAWNS).length === 0);
             if (needsHelp) {
                 const sources = remoteRoom.find(FIND_SOURCES);
                 const sourcesInfo = sources.map(s => ({ id: s.id, x: s.pos.x, y: s.pos.y }));
