@@ -1,64 +1,115 @@
 const helpers = require('managers_overseer_tasks_exec__helpers');
 
+function isValidId(value) {
+    return typeof value === 'string' && value.length > 0;
+}
+
+function getFirstValidDropoff(room, dropoffIds, resourceType) {
+    for (const id of dropoffIds) {
+        const target = helpers.getCachedObject(room, id);
+        if (!target || !target.store) continue;
+        if (target.store.getFreeCapacity(resourceType) > 0) return target;
+    }
+    return null;
+}
+
+function logContractError(creep, reason) {
+    console.log(`[harvest] invalid mission contract for ${creep.name}: ${reason}`);
+}
+
 module.exports = function execHarvestTask(ctx) {
     const { creep, mission } = ctx;
-    const cache = global.getRoomCache(creep.room);
-
-    if (mission.data && mission.data.containerId) {
-        const container = helpers.getCachedObject(creep.room, mission.data.containerId);
-        if (container && !creep.pos.isEqualTo(container.pos)) {
-            const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS);
-            if (creepsOnContainer.length === 0) {
-                return { type: 'move', targetId: mission.data.containerId, range: 0 };
-            }
-        }
+    const data = mission && mission.data ? mission.data : null;
+    if (!data) {
+        logContractError(creep, 'missing data');
+        helpers.unassignMission(creep);
+        return null;
     }
 
-    helpers.updateState(creep);
-    if (creep.memory.taskState === 'working' && creep.getActiveBodyparts(CARRY) > 0) {
-        const nearbyContainers = (cache.structuresByType[STRUCTURE_CONTAINER] || [])
-            .filter(s => creep.pos.inRangeTo(s.pos, 1));
-        const nearbyLinks = (cache.structuresByType[STRUCTURE_LINK] || [])
-            .filter(s => creep.pos.inRangeTo(s.pos, 1));
-        const nearby = nearbyContainers.concat(nearbyLinks);
+    const sourceId = data.sourceId;
+    const mode = data.mode;
+    const dropoffIds = Array.isArray(data.dropoffIds) ? data.dropoffIds : null;
+    const fallback = data.fallback || 'none';
+    const resourceType = data.resourceType || RESOURCE_ENERGY;
+    const dropoffRange = Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1;
 
-        const linkTarget = nearbyLinks.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-        const containerTarget = nearbyContainers.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-        const transferTarget = linkTarget || containerTarget;
+    if (!isValidId(sourceId)) {
+        logContractError(creep, 'missing sourceId');
+        helpers.unassignMission(creep);
+        return null;
+    }
+    if (mode !== 'static' && mode !== 'mobile') {
+        logContractError(creep, `invalid mode ${mode}`);
+        helpers.unassignMission(creep);
+        return null;
+    }
+    if (!dropoffIds || !dropoffIds.every(isValidId)) {
+        logContractError(creep, 'invalid dropoffIds');
+        helpers.unassignMission(creep);
+        return null;
+    }
+    if (fallback !== 'none' && fallback !== 'upgrade') {
+        logContractError(creep, `invalid fallback ${fallback}`);
+        helpers.unassignMission(creep);
+        return null;
+    }
+    if (mode === 'static' && (!isValidId(data.containerId) || dropoffIds.length === 0)) {
+        logContractError(creep, 'missing containerId for static mode');
+        helpers.unassignMission(creep);
+        return null;
+    }
 
-        if (transferTarget) {
-            return { type: 'transfer', targetId: transferTarget.id, resourceType: RESOURCE_ENERGY };
-        }
+    const source = helpers.getCachedObject(creep.room, sourceId);
+    if (!source) {
+        logContractError(creep, 'source not found');
+        helpers.unassignMission(creep);
+        return null;
+    }
 
-        const isStatic = (mission.data && mission.data.mode === 'static') ||
-            (nearby.length > 0 && (!mission.data || mission.data.mode !== 'mobile'));
-
-        if (!isStatic) {
-            const primaryTargets = [
-                ...(cache.myStructuresByType[STRUCTURE_SPAWN] || []),
-                ...(cache.myStructuresByType[STRUCTURE_EXTENSION] || [])
-            ].filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-            let deliveryTarget = creep.pos.findClosestByRange(primaryTargets);
-
-            if (!deliveryTarget) {
-                const secondaryTargets = [
-                    ...(cache.myStructuresByType[STRUCTURE_TOWER] || []).filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 50),
-                    ...(cache.myStructuresByType[STRUCTURE_STORAGE] || []).filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
-                ];
-                deliveryTarget = creep.pos.findClosestByRange(secondaryTargets);
-            }
-
-            if (deliveryTarget) {
-                return { type: 'transfer', targetId: deliveryTarget.id, resourceType: RESOURCE_ENERGY };
-            }
-
-            if (creep.room.controller && creep.room.controller.my) {
-                return { type: 'upgrade', targetId: creep.room.controller.id };
-            }
-
+    if (mode === 'static') {
+        const container = helpers.getCachedObject(creep.room, data.containerId);
+        if (!container) {
+            logContractError(creep, 'container not found');
+            helpers.unassignMission(creep);
             return null;
         }
+
+        if (!creep.pos.isEqualTo(container.pos)) {
+            const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS)
+                .filter(c => c.id !== creep.id);
+            if (creepsOnContainer.length === 0) {
+                return { type: 'move', targetId: data.containerId, range: 0 };
+            }
+            return { type: 'move', targetId: data.containerId, range: 1 };
+        }
+
+        helpers.updateState(creep, resourceType, { allowPartialWork: true });
+        if (creep.memory.taskState === 'working' || creep.store.getFreeCapacity(resourceType) === 0) {
+            const transferTarget = getFirstValidDropoff(creep.room, dropoffIds, resourceType);
+            if (transferTarget) {
+                return { type: 'transfer', targetId: transferTarget.id, resourceType, range: dropoffRange };
+            }
+            if (fallback === 'upgrade' && creep.room.controller && creep.room.controller.my) {
+                return { type: 'upgrade', targetId: creep.room.controller.id };
+            }
+            return { type: 'harvest', targetId: sourceId };
+        }
+
+        return { type: 'harvest', targetId: sourceId };
     }
 
-    return { type: 'harvest', targetId: mission.sourceId };
+    helpers.updateState(creep, resourceType, { allowPartialWork: true });
+    if (creep.memory.taskState !== 'working') {
+        return { type: 'harvest', targetId: sourceId };
+    }
+
+    const transferTarget = getFirstValidDropoff(creep.room, dropoffIds, resourceType);
+    if (transferTarget) {
+        return { type: 'transfer', targetId: transferTarget.id, resourceType, range: dropoffRange };
+    }
+    if (fallback === 'upgrade' && creep.room.controller && creep.room.controller.my) {
+        return { type: 'upgrade', targetId: creep.room.controller.id };
+    }
+
+    return { type: 'move', targetId: sourceId, range: 1 };
 };

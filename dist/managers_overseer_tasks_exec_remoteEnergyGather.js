@@ -3,7 +3,7 @@ const execGatherTask = require('managers_overseer_tasks_exec_gather');
 
 module.exports = function execRemoteEnergyGatherTask(ctx) {
     const { creep, homeRoom, homeRoomName, remoteRoomName, targetPos } = ctx;
-    const REMOTE_GATHER_RANGE = 6;
+    const REMOTE_GATHER_RANGE = 20;
     const REMOTE_STICKY_TICKS = 25;
     const REMOTE_HOME_STICKY_TICKS = 40;
     const now = Game.time;

@@ -545,6 +545,7 @@ var managerTasks = {
         if (legacyTask) {
             creep.memory.task = legacyTask;
         } else {
+            //console.log(`[tasks] creep=${creep.name} mission=${mission.name} no task produced`);
             delete creep.memory.task;
         }
     },

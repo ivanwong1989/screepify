@@ -57,6 +57,10 @@ const overseerIntel = {
         
         const sources = (cache.sources || []).map(source => {
             const nearbyContainers = containers.filter(c => c.pos.inRangeTo(source.pos, 1));
+            const nearbyLinks = source.pos.findInRange(FIND_STRUCTURES, 2, {
+                filter: s => s.structureType === STRUCTURE_LINK
+            });
+            const link = nearbyLinks.length > 0 ? nearbyLinks[0] : null;
 
             let availableSpaces = 0;
             for (let x = -1; x <= 1; x++) {
@@ -74,6 +78,7 @@ const overseerIntel = {
                 energyCapacity: source.energyCapacity,
                 hasContainer: nearbyContainers.length > 0,
                 containerId: nearbyContainers.length > 0 ? nearbyContainers[0].id : null,
+                linkId: link ? link.id : null,
                 availableSpaces: availableSpaces
             };
         });

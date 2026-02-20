@@ -5,6 +5,10 @@ module.exports = {
         const { state, budget, getMissionCensus, efficientSources } = context;
         const isEmergency = state === 'EMERGENCY';
         let availableHaulerCapacity = intel.haulerCapacity;
+        const spawns = intel.structures[STRUCTURE_SPAWN] || [];
+        const extensions = intel.structures[STRUCTURE_EXTENSION] || [];
+        const towers = intel.structures[STRUCTURE_TOWER] || [];
+        const storage = room.storage;
 
         intel.sources.forEach(source => {
             const isEfficient = efficientSources.has(source.id);
@@ -12,6 +16,35 @@ module.exports = {
             const canDropMine = (source.hasContainer || hasCap) && isEfficient;
             
             if (canDropMine && !source.hasContainer) availableHaulerCapacity -= 300;
+
+            const hasContainer = !!source.containerId;
+            let mode = canDropMine ? 'static' : 'mobile';
+            if (mode === 'static' && !hasContainer) mode = 'mobile';
+
+            let containerId = hasContainer ? source.containerId : null;
+            let dropoffIds = [];
+            let fallback = 'none';
+            let dropoffRange = 1;
+
+            if (mode === 'static') {
+                const linkId = source.linkId || null;
+                if (linkId) dropoffIds.push(linkId);
+                if (containerId) dropoffIds.push(containerId);
+                fallback = 'none';
+            } else {
+                const spawnExt = [
+                    ...spawns.filter(s => s.store && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0).map(s => s.id),
+                    ...extensions.filter(e => e.store && e.store.getFreeCapacity(RESOURCE_ENERGY) > 0).map(e => e.id)
+                ];
+                const towerIds = towers
+                    .filter(t => t.store && t.store.getFreeCapacity(RESOURCE_ENERGY) >= 50)
+                    .map(t => t.id);
+                const storageIds = (storage && storage.store && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+                    ? [storage.id]
+                    : [];
+                dropoffIds = [...spawnExt, ...towerIds, ...storageIds];
+                fallback = 'upgrade';
+            }
 
             const missionName = `harvest:${source.id}`;
             const census = getMissionCensus(missionName);
@@ -32,10 +65,19 @@ module.exports = {
                 if (reqCount === 0 && targetWork > 0) reqCount = 1;
             }
 
-            debug('mission.harvest', `[Harvest] ${room.name} ${source.id} mode=${canDropMine ? 'static' : 'mobile'} ` +
+            debug('mission.harvest', `[Harvest] ${room.name} ${source.id} mode=${mode} ` +
                 `count=${census.count} workParts=${census.workParts}/${targetWork} ` +
                 `workPerCreep=${workPerCreep} desired=${desiredCount} req=${reqCount} ` +
                 `spaces=${source.availableSpaces}`);
+
+            const hasValidSource = !!source.id;
+            const hasValidMode = mode === 'static' || mode === 'mobile';
+            const hasValidStatic = mode !== 'static' || (containerId && dropoffIds.length > 0);
+            const hasValidMobile = mode !== 'mobile' || Array.isArray(dropoffIds);
+            if (!hasValidSource || !hasValidMode || !hasValidStatic || !hasValidMobile) {
+                debug('mission.harvest', `[Harvest] ${room.name} ${source.id} blocked: invalid contract`);
+                return;
+            }
 
             missions.push({
                 name: missionName,
@@ -56,9 +98,12 @@ module.exports = {
                     return slots;
                 })(),
                 data: {
-                    hasContainer: source.hasContainer,
-                    containerId: source.containerId,
-                    mode: canDropMine ? 'static' : 'mobile'
+                    sourceId: source.id,
+                    mode: mode,
+                    dropoffIds: dropoffIds,
+                    fallback: fallback,
+                    containerId: containerId,
+                    dropoffRange: dropoffRange
                 },
                 priority: isEmergency ? 1000 : 100
             });

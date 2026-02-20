@@ -60,9 +60,16 @@ function hasFreeHarvestSpot(creep, source) {
     return false;
 }
 
+function unassignMission(creep) {
+    if (!creep || !creep.memory) return;
+    delete creep.memory.missionName;
+    delete creep.memory.taskState;
+}
+
 module.exports = {
     toRoomPosition,
     getCachedObject,
     updateState,
-    hasFreeHarvestSpot
+    hasFreeHarvestSpot,
+    unassignMission
 };
