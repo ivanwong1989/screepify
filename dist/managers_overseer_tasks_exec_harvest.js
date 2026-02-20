@@ -86,7 +86,7 @@ module.exports = function execHarvestTask(ctx) {
 
         const slotIndex = getHarvestSlotIndex(creep);
         const roles = data.staticRolesBySlot || null;
-        const role = roles ? roles[String(slotIndex)] : 'container';
+        const role = (roles && roles[String(slotIndex)]) || 'container';
 
         if (role === 'container') {
             if (!creep.pos.isEqualTo(container.pos)) {

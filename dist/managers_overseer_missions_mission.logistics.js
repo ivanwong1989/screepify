@@ -13,6 +13,7 @@ module.exports = {
         const coveredSources = new Set();
         const coveredSourceResources = new Set();
         const coveredTargets = new Set();
+        const coveredRouteSlots = new Set();
 
         const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
         const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
@@ -40,7 +41,10 @@ module.exports = {
                 if (parts.length >= 3) {
                     const sourceId = parts[1];
                     const targetId = parts[2];
-                    const resourceType = parts[3];
+                    const lastPart = parts[parts.length - 1];
+                    const hasSlot = lastPart && lastPart.startsWith('s');
+                    const slot = hasSlot ? lastPart : null;
+                    const resourceType = parts[3] && !parts[3].startsWith('s') ? parts[3] : undefined;
                     const source = Game.getObjectById(sourceId);
                     const target = Game.getObjectById(targetId);
                     
@@ -62,8 +66,11 @@ module.exports = {
                             type = miningContainerIds.has(source.id) ? 'mining' : 'scavenge';
                         }
 
+                        const baseName = `haul:${sourceId}:${targetId}`;
+                        const routeKey = resourceType ? `${baseName}:${resourceType}` : baseName;
+                        const fullMissionName = slot ? `${routeKey}:${slot}` : routeKey;
                         const mission = {
-                            name: c.memory.missionName,
+                            name: fullMissionName,
                             type: 'transfer',
                             archetype: 'hauler',
                             targetId: targetId,
@@ -71,7 +78,8 @@ module.exports = {
                             requirements: { archetype: 'hauler', count: 1, spawn: false },
                             priority: this.getLogisticsPriority(type, target, isEmergency)
                         };
-                        activeMissions.set(c.memory.missionName, mission);
+                        activeMissions.set(fullMissionName, mission);
+                        coveredRouteSlots.add(fullMissionName);
                         coveredSources.add(sourceId);
                         if (resourceType) coveredSourceResources.add(`${sourceId}:${resourceType}`);
                         coveredTargets.add(targetId);
@@ -104,15 +112,13 @@ module.exports = {
                 ...intel.tombstones.filter(t => t.store[RESOURCE_ENERGY] > 0)
             ];
             scavengeSources.forEach(source => {
-                if (coveredSources.has(source.id)) return;
                 const bestSink = source.pos.findClosestByRange(inflowSinks);
-                if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'scavenge');
+                if (bestSink) this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, bestSink, isEmergency, 'scavenge', RESOURCE_ENERGY, carryParts);
             });
 
             miningContainers.filter(c => c.store[RESOURCE_ENERGY] >= (carryParts * 50)).forEach(source => {
-                if (coveredSources.has(source.id)) return;
                 const bestSink = source.pos.findClosestByRange(inflowSinks);
-                if (bestSink) this.addLogisticsMission(activeMissions, source, bestSink, isEmergency, 'mining');
+                if (bestSink) this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, bestSink, isEmergency, 'mining', RESOURCE_ENERGY, carryParts);
             });
         }
 
@@ -130,8 +136,8 @@ module.exports = {
                         const need = Math.min(target - cur, stor);
                         if (need > 0) {
                             const missionName = `haul:${storage.id}:${terminal.id}:${RESOURCE_ENERGY}`;
-                            if (!coveredTargets.has(terminal.id) && !activeMissions.has(missionName)) {
-                                this.addLogisticsMission(activeMissions, storage, terminal, isEmergency, 'terminal_stock', RESOURCE_ENERGY);
+                            if (!activeMissions.has(missionName)) {
+                                this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, storage, terminal, isEmergency, 'terminal_stock', RESOURCE_ENERGY, carryParts, need);
                                 debug('mission.logistics', `[TerminalStock] ${room.name} refill terminal energy cur=${cur} target=${target} need=${need}`);
                             }
                         }
@@ -157,18 +163,14 @@ module.exports = {
                     for (const resourceType in source.store) {
                         if (resourceType === RESOURCE_ENERGY) continue;
                         if ((source.store[resourceType] || 0) <= 0) continue;
-                        const key = `${source.id}:${resourceType}`;
-                        if (coveredSourceResources.has(key)) continue;
-                        this.addLogisticsMission(activeMissions, source, mineralTarget, isEmergency, targetType, resourceType);
+                        this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, mineralTarget, isEmergency, targetType, resourceType, carryParts);
                     }
                 });
             });
 
             intel.dropped.forEach(source => {
                 if (!source || source.resourceType === RESOURCE_ENERGY || source.amount <= 0) return;
-                const key = `${source.id}:${source.resourceType}`;
-                if (coveredSourceResources.has(key)) return;
-                this.addLogisticsMission(activeMissions, source, mineralTarget, isEmergency, 'scavenge', source.resourceType);
+                this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, mineralTarget, isEmergency, 'scavenge', source.resourceType, carryParts);
             });
 
             const scavengeStores = [
@@ -181,42 +183,70 @@ module.exports = {
                 for (const resourceType in store) {
                     if (resourceType === RESOURCE_ENERGY) continue;
                     if ((store[resourceType] || 0) <= 0) continue;
-                    const key = `${source.id}:${resourceType}`;
-                    if (coveredSourceResources.has(key)) continue;
-                    this.addLogisticsMission(activeMissions, source, mineralTarget, isEmergency, 'scavenge', resourceType);
+                    this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, mineralTarget, isEmergency, 'scavenge', resourceType, carryParts);
                 }
             });
         }
 
         if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
             nonMiningContainers.filter(c => c.store[RESOURCE_ENERGY] >= 500 && c.id !== intel.controllerContainerId).forEach(source => {
-                if (coveredSources.has(source.id)) return;
-                this.addLogisticsMission(activeMissions, source, storage, isEmergency, 'consolidation');
+                this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, storage, isEmergency, 'consolidation', RESOURCE_ENERGY, carryParts);
             });
 
             links.filter(l => l.store[RESOURCE_ENERGY] > 0 && (l.pos.inRangeTo(storage.pos, 3) || spawns.some(s => l.pos.inRangeTo(s.pos, 3)))).forEach(link => {
-                if (coveredSources.has(link.id)) return;
                 if (room.controller && link.pos.inRangeTo(room.controller.pos, 3)) return;
-                this.addLogisticsMission(activeMissions, link, storage, isEmergency, 'link_out');
+                this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, link, storage, isEmergency, 'link_out', RESOURCE_ENERGY, carryParts);
             });
         }
 
         for (const m of activeMissions.values()) missions.push(m);
     },
 
-    addLogisticsMission: function(activeMissions, source, target, isEmergency, type, resourceType) {
+    getHaulSlotsForRoute: function(source, target, resourceType, carryParts, explicitNeed) {
+        const cap = Math.max(50, carryParts * 50);
+        let amount = 0;
+        if (explicitNeed !== undefined && explicitNeed !== null) {
+            amount = explicitNeed;
+        } else if (source && source.store) {
+            const type = resourceType || RESOURCE_ENERGY;
+            amount = source.store[type] || 0;
+        } else if (source && source.amount !== undefined && source.amount !== null) {
+            amount = source.amount || 0;
+        }
+
+        if (amount < cap * 0.5) return 0;
+
+        const dist = source.pos.getRangeTo(target.pos);
+        const travelTicks = dist * 2 + 10;
+        const roundTrip = travelTicks * 2 + 10;
+        const demandTrips = amount / cap;
+        const desiredClearTicks = 100;
+
+        let slots = Math.ceil((demandTrips * roundTrip) / desiredClearTicks);
+        slots = Math.max(slots, 1);
+        return Math.min(Math.max(slots, 0), 3);
+    },
+
+    addLogisticsMissionsForRoute: function(activeMissions, coveredRouteSlots, source, target, isEmergency, type, resourceType, carryParts, explicitNeed) {
         const baseName = `haul:${source.id}:${target.id}`;
-        const missionName = resourceType ? `${baseName}:${resourceType}` : baseName;
-        if (activeMissions.has(missionName)) return;
-        activeMissions.set(missionName, {
-            name: missionName,
-            type: 'transfer',
-            archetype: 'hauler',
-            targetId: target.id,
-            data: { sourceId: source.id, resourceType: resourceType },
-            requirements: { archetype: 'hauler', count: 1, spawn: false },
-            priority: this.getLogisticsPriority(type, target, isEmergency)
-        });
+        const routeKey = resourceType ? `${baseName}:${resourceType}` : baseName;
+        const slots = this.getHaulSlotsForRoute(source, target, resourceType, carryParts, explicitNeed);
+        if (slots <= 0) return;
+
+        for (let i = 0; i < slots; i += 1) {
+            const missionName = `${routeKey}:s${i}`;
+            if (activeMissions.has(missionName)) continue;
+            if (coveredRouteSlots.has(missionName)) continue;
+            activeMissions.set(missionName, {
+                name: missionName,
+                type: 'transfer',
+                archetype: 'hauler',
+                targetId: target.id,
+                data: { sourceId: source.id, resourceType: resourceType },
+                requirements: { archetype: 'hauler', count: 1, spawn: false },
+                priority: this.getLogisticsPriority(type, target, isEmergency)
+            });
+        }
     },
 
     addSupplyMission: function(activeMissions, target, isEmergency) {
