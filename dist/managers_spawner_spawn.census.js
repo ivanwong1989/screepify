@@ -243,11 +243,6 @@ const spawnCensus = {
                 if (ticket.state === 'REQUESTED' || ticket.state === 'SPAWNING') {
                     ticket.state = 'EN_ROUTE';
                 }
-            } else if (ticket.creepName) {
-                ticket.creepName = null;
-                ticket.spawnRoom = null;
-                ticket.state = 'REQUESTED';
-                ticket.expiresAt = Math.max(ticket.expiresAt || 0, Game.time + 3);
             }
         };
 
