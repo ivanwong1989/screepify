@@ -105,7 +105,7 @@ module.exports.loop = function() {
                 // Run towers after Colony Logic (so Tasker has assigned tasks)
                 const towers = cache.myStructuresByType[STRUCTURE_TOWER] || [];
                 for (const tower of towers) {
-                    //roleTower.run(tower);
+                    roleTower.run(tower);
                 }
             }
         }
