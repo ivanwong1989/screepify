@@ -163,7 +163,7 @@ var managerSpawner = {
             return this.generateReserverBody(budget);
         } else if (mission.archetype === 'claimer') {
             return this.generateClaimerBody(budget);
-        } else if (mission.archetype === 'hauler' || mission.archetype === 'remote_hauler') {
+        } else if (mission.archetype === 'hauler' || mission.archetype === 'remote_hauler' || mission.archetype === 'user_hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             return this.generateHaulerBody(budget, maxCarryParts);
         } else if (mission.archetype == 'remote_worker') {

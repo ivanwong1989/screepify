@@ -136,11 +136,11 @@ module.exports = {
             missions.push({
                 name: `userhaul:${nameSuffix}`,
                 type: 'transfer',
-                archetype: 'hauler',
+                archetype: 'user_hauler',
                 requirements: {
-                    archetype: 'hauler',
+                    archetype: 'user_hauler',
                     count: entry.count,
-                    spawn: false
+                    spawn: true
                 },
                 targetId: entry.targetId,
                 data: {

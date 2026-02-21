@@ -36,14 +36,15 @@ function logAssault(creep, data, msg, extra) {
     if (!shouldDebugAssault(creep, data)) return;
     const name = creep && creep.name ? creep.name : 'unknown';
     const prefix = `[assault:${Game.time}] ${name} `;
+    const consoleLog = console['log'];
     if (!extra) {
-        console.log(prefix + msg);
+        consoleLog(prefix + msg);
         return;
     }
     try {
-        console.log(prefix + msg + ' ' + JSON.stringify(extra));
+        consoleLog(prefix + msg + ' ' + JSON.stringify(extra));
     } catch (err) {
-        console.log(prefix + msg);
+        consoleLog(prefix + msg);
     }
 }
 
@@ -1027,14 +1028,14 @@ function getExitPosToward(creep, targetRoomName, preferPos) {
 
     const selected = best || creep.pos.findClosestByRange(exits);
     if (selected) {
-        console.log(`[assault:${Game.time}] exitToward`, JSON.stringify({
+        logAssault(creep, null, 'exitToward', {
             creep: creep.name,
             fromRoom: creep.room.name,
             targetRoomName,
             preferPos: hasPrefer ? toPlainPos(preferPos) : null,
             resolvedPrefer,
             selectedExit: toPlainPos(selected)
-        }));
+        });
     }
     return selected;
 }
@@ -1769,7 +1770,7 @@ function executeAssault(creep, mission) {
     if (assaultRole !== 'solo' && waitPos && !hasAssembled && state !== 'retreat') {
         if (currentRoom && currentRoom.name !== waitPos.roomName) {
             const exitPos = getExitPosToward(creep, waitPos.roomName, waitPos);
-            console.log(`[assault:${Game.time}] pre-assembly`, JSON.stringify({
+            logAssault(creep, data, 'pre-assembly', {
                 creep: creep.name,
                 role: assaultRole,
                 fromRoom: currentRoom && currentRoom.name,
@@ -1777,7 +1778,7 @@ function executeAssault(creep, mission) {
                 exitPos: exitPos ? toPlainPos(exitPos) : null,
                 hasAssembled,
                 state
-            }));
+            });
             if (exitPos) {
                 commitAssaultTask(creep, {
                     actions,
@@ -1802,7 +1803,7 @@ function executeAssault(creep, mission) {
                 }
             }
         }
-        console.log(`[assault:${Game.time}] pre-assembly`, JSON.stringify({
+        logAssault(creep, data, 'pre-assembly', {
             creep: creep.name,
             role: assaultRole,
             fromRoom: currentRoom && currentRoom.name,
@@ -1810,7 +1811,7 @@ function executeAssault(creep, mission) {
             exitPos: null,
             hasAssembled,
             state
-        }));
+        });
         commitAssaultTask(creep, {
             actions,
             moveTarget: { x: waitPos.x, y: waitPos.y, roomName: waitPos.roomName },

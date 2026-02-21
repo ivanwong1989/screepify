@@ -135,6 +135,7 @@ module.exports.loop = function() {
                 'mobile_miner',
                 'scout',
                 'hauler',
+                'user_hauler',
                 'remote_hauler',
                 'upgrader',
                 'builder',

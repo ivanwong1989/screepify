@@ -200,7 +200,7 @@ const overseerUtils = {
                 y,
                 { align: 'left', color: '#aaccff', font: 0.5 }
             );
-            y += 0.6;
+            y += 1.0;
         }
         const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
         sortedMissions.forEach(m => {
@@ -208,8 +208,8 @@ const overseerUtils = {
             const required = m.requirements ? m.requirements.count : 0;
             const filled = assigned >= required;
             const color = filled ? '#aaffaa' : '#ffaaaa';
-            room.visual.text(`[${m.priority}] ${m.name} (${assigned}/${required})`, 1, y, {align: 'left', font: 0.4, color: color});
-            y += 0.6;
+            room.visual.text(`[${m.priority}] ${m.name} (${assigned}/${required})`, 1, y, {align: 'left', font: 0.7, color: color});
+            y += 1.0;
 
             if (m.pos) {
                 let label = `${m.type}${m.type === 'harvest' && m.data && m.data.mode ? ` (${m.data.mode})` : ''}`;
