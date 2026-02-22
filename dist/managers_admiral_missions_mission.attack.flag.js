@@ -127,6 +127,19 @@ function toPos(pos) {
     return { x: pos.x, y: pos.y, roomName: pos.roomName };
 }
 
+function getWaypointFlagNames(prefix) {
+    const result = [];
+    for (const name in Game.flags) {
+        if (!Object.prototype.hasOwnProperty.call(Game.flags, name)) continue;
+        if (!name.startsWith(prefix)) continue;
+        const suffix = name.slice(prefix.length);
+        if (!/^\d+$/.test(suffix)) continue;
+        result.push({ name, order: Number(suffix) });
+    }
+    result.sort((a, b) => a.order - b.order);
+    return result.map(e => e.name);
+}
+
 function buildFlagAttackCache() {
     const cache = global._flagAttackMissionCache;
     if (cache && cache.time === Game.time) return cache;
@@ -151,7 +164,8 @@ function buildFlagAttackCache() {
             waitPos: toPos(waitFlag.pos),
             attackPos: attackFlag ? toPos(attackFlag.pos) : null,
             targetRoom: attackFlag ? attackFlag.pos.roomName : waitFlag.pos.roomName,
-            assaultMode
+            assaultMode,
+            waypointFlagNames: getWaypointFlagNames(set.wait)
         };
 
         if (!bySponsorRoom[sponsorRoom]) bySponsorRoom[sponsorRoom] = [];
@@ -161,6 +175,40 @@ function buildFlagAttackCache() {
     const result = { time: Game.time, bySponsorRoom };
     global._flagAttackMissionCache = result;
     return result;
+}
+
+function buildAssaultMissionData(entry, roomName, squadKey, mode, assaultRole, lockData) {
+    const centerPos = entry.attackPos || entry.waitPos;
+    return {
+        ownerRoom: roomName,
+        squadKey,
+        mode,
+        flags: {
+            wait: entry.waitFlagName,
+            attack: entry.attackFlagName,
+            assembly: null,
+            waypoints: entry.waypointFlagNames || []
+        },
+        ao: {
+            targetRoom: entry.targetRoom,
+            radius: 0,
+            centerPos
+        },
+        duo: {
+            supportBodyProfile: null
+        },
+        // Legacy fields for current assault tactics (Phase 3 will remove)
+        waitFlagName: entry.waitFlagName,
+        attackFlagName: entry.attackFlagName,
+        waitPos: entry.waitPos,
+        attackPos: entry.attackPos,
+        targetRoom: entry.targetRoom,
+        sponsorRoom: roomName,
+        assaultRole,
+        closeRangeStructures: true,
+        assaultLock: lockData,
+        assaultMode: entry.assaultMode
+    };
 }
 
 module.exports = {
@@ -217,19 +265,7 @@ module.exports = {
                         bodyMode: bodyConfig.modes.leader,
                         spawn: leaderSpawn
                     },
-                    data: {
-                        waitFlagName: entry.waitFlagName,
-                        attackFlagName: entry.attackFlagName,
-                        waitPos: entry.waitPos,
-                        attackPos: entry.attackPos,
-                        targetRoom: entry.targetRoom,
-                        sponsorRoom: room.name,
-                        assaultRole: 'leader',
-                        squadKey,
-                        closeRangeStructures: true,
-                        assaultLock: lockData,
-                        assaultMode: entry.assaultMode
-                    },
+                    data: buildAssaultMissionData(entry, room.name, squadKey, 'DUO', 'leader', lockData),
                     census: leaderCensus
                 });
 
@@ -245,19 +281,7 @@ module.exports = {
                         bodyMode: bodyConfig.modes.support,
                         spawn: supportSpawn
                     },
-                    data: {
-                        waitFlagName: entry.waitFlagName,
-                        attackFlagName: entry.attackFlagName,
-                        waitPos: entry.waitPos,
-                        attackPos: entry.attackPos,
-                        targetRoom: entry.targetRoom,
-                        sponsorRoom: room.name,
-                        assaultRole: 'support',
-                        squadKey,
-                        closeRangeStructures: true,
-                        assaultLock: lockData,
-                        assaultMode: entry.assaultMode
-                    },
+                    data: buildAssaultMissionData(entry, room.name, squadKey, 'DUO', 'support', lockData),
                     census: supportCensus
                 });
             } else {
@@ -282,18 +306,7 @@ module.exports = {
                         bodyMode: bodyConfig.modes.solo,
                         spawn: spawnAllowed
                     },
-                    data: {
-                        waitFlagName: entry.waitFlagName,
-                        attackFlagName: entry.attackFlagName,
-                        waitPos: entry.waitPos,
-                        attackPos: entry.attackPos,
-                        targetRoom: entry.targetRoom,
-                        sponsorRoom: room.name,
-                        assaultRole: 'solo',
-                        squadKey,
-                        closeRangeStructures: true,
-                        assaultMode: entry.assaultMode
-                    },
+                    data: buildAssaultMissionData(entry, room.name, squadKey, 'SOLO', 'solo', null),
                     census: census
                 });
             }

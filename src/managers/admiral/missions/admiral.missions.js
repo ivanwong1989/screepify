@@ -1,9 +1,18 @@
 ﻿/**
  * Admiral Missions: generate combat missions and compositions.
  */
-const drainerMission = require('managers_admiral_missions_mission.drainer');
 const flagAttackMission = require('managers_admiral_missions_mission.attack.flag');
-const flagDismantleMission = require('managers_admiral_missions_mission.dismantle.flag');
+
+function getMissionCensusByName(missionName) {
+    let count = 0;
+    for (const name in Game.creeps) {
+        const c = Game.creeps[name];
+        if (!c || !c.my || !c.memory) continue;
+        if (c.memory.missionName !== missionName) continue;
+        count += 1;
+    }
+    return { count, workParts: 0, carryParts: 0 };
+}
 
 var admiralMissions = {
     generate: function(room, hostiles, threat, state, budget) {
@@ -22,6 +31,17 @@ var admiralMissions = {
                     body: response.bodyPattern 
                 },
                 data: { 
+                    ownerRoom: room.name,
+                    defendRoom: room.name,
+                    anchorPos: (() => {
+                        const anchor = (cache.myStructuresByType[STRUCTURE_SPAWN] || [])[0] || room.controller;
+                        return anchor ? { x: anchor.pos.x, y: anchor.pos.y, roomName: anchor.pos.roomName } : null;
+                    })(),
+                    rules: {
+                        engageRange: 3,
+                        kiteRange: 4
+                    },
+                    // Legacy fields for current defense tactics (Phase 4 will remove)
                     targetIds: hostiles.map(h => h.id),
                     strategy: response.strategy,
                     formation: response.formation // Specifies if creeps should move as DUO/QUAD
@@ -30,46 +50,12 @@ var admiralMissions = {
             });
         }
 
-        // Patrol Mission
-        // Ensure idle defenders have a mission so they don't drift or get confused
-        const defenderCount = (cache.myCreeps || []).filter(c => 
-            ['defender', 'brawler'].includes(c.memory.role)
-        ).length;
-
-        if (defenderCount > 0) {
-            missions.push({
-                name: `patrol_${room.name}_perimeter`,
-                type: 'patrol',
-                archetype: 'defender',
-                priority: 10,
-                requirements: { count: defenderCount, spawn: false },
-                data: { },
-                census: { count: 0, workParts: 0, carryParts: 0 }
-            });
-        }
-
-        if (drainerMission && typeof drainerMission.generate === 'function') {
-            const drainerContext = {
-                budget,
-                getMissionCensus: () => ({ count: 0, workParts: 0, carryParts: 0 })
-            };
-            drainerMission.generate(room, null, drainerContext, missions);
-        }
-
         if (flagAttackMission && typeof flagAttackMission.generate === 'function') {
             const attackContext = {
                 budget,
-                getMissionCensus: () => ({ count: 0, workParts: 0, carryParts: 0 })
+                getMissionCensus: (missionName) => getMissionCensusByName(missionName)
             };
             flagAttackMission.generate(room, null, attackContext, missions);
-        }
-
-        if (flagDismantleMission && typeof flagDismantleMission.generate === 'function') {
-            const dismantleContext = {
-                budget,
-                getMissionCensus: () => ({ count: 0, workParts: 0, carryParts: 0 })
-            };
-            flagDismantleMission.generate(room, null, dismantleContext, missions);
         }
 
         return missions;

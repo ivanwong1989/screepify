@@ -1,3 +1,5 @@
+const assaultMemory = require('managers_admiral_tactics_assault_common_memory');
+
 const spawnContracts = {
     buildContracts: function(room, missions) {
         const entries = [];
@@ -8,6 +10,15 @@ const spawnContracts = {
         (missions || []).forEach(mission => {
             const req = mission.requirements || {};
             if (req.spawn === false) return;
+
+            if (mission.type === 'assault' && mission.data && mission.data.mode === 'DUO') {
+                const runtimeKey = mission.data.squadKey || mission.name;
+                const runtime = assaultMemory.getDuoRuntime(runtimeKey);
+                if (runtime && runtime.assembled && runtime.assembled.done) {
+                    debug('spawner', `[SpawnContracts] duo gate mission=${mission.name} assembled=1 -> skip`);
+                    return;
+                }
+            }
 
             const role = mission.archetype || req.archetype;
             if (!role) return;

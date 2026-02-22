@@ -1,241 +1,211 @@
 const defenseTactics = require('managers_admiral_tactics_admiral.tactics.defense');
 const assaultTactics = require('managers_admiral_tactics_admiral.tactics.assault');
 
-const DRAIN_RETREAT_RATIO = 0.90;
-const DRAIN_REENGAGE_RATIO = 0.95;
-const DRAIN_TARGET_RANGE = 1;
-const DRAIN_SAFE_RANGE = 2;
-
-function getRemoteCreepsByHomeRoom() {
-    const cache = global._remoteCreepsByHomeRoom;
-    if (cache && cache.time === Game.time) return cache.byRoom;
-
-    const byRoom = {};
-    const creeps = Object.values(Game.creeps);
-    for (const creep of creeps) {
-        if (!creep || !creep.my) continue;
-        const memory = creep.memory || {};
-        const home = memory.room;
-        if (!home) continue;
-        if (creep.room && creep.room.name === home) continue;
-
-        if (!byRoom[home]) {
-            byRoom[home] = { assigned: [], idle: [] };
-        }
-        if (memory.missionName) byRoom[home].assigned.push(creep);
-        else byRoom[home].idle.push(creep);
-    }
-
-    global._remoteCreepsByHomeRoom = { time: Game.time, byRoom };
-    return byRoom;
+function isMilitaryRole(role) {
+    return role === 'defender' || role === 'brawler' || role === 'assault' || role === 'drainer';
 }
 
-function cleanupMissionAssignments(creeps, allMissions, roomName) {
-    creeps.forEach(creep => {
-        if (roomName && creep.memory && creep.memory.room && creep.memory.room !== roomName) return;
-        if (creep.memory.missionName && !allMissions.find(m => m.name === creep.memory.missionName)) {
-            delete creep.memory.missionName;
-            delete creep.memory.task;
-            delete creep.memory.taskState;
-            delete creep.memory.drainState;
+function getOwnedCreeps(roomName) {
+    return Object.values(Game.creeps).filter(c =>
+        c && c.my && c.memory && c.memory.room === roomName
+    );
+}
+
+function selectMissions(room) {
+    const allMissions = room._missions || [];
+    return allMissions.filter(m => m.type === 'defend' || m.type === 'assault');
+}
+
+function isEligibleForMission(creep, mission) {
+    if (!creep || !mission) return false;
+    const role = creep.memory && creep.memory.role;
+    if (mission.type === 'defend') return role === 'defender' || role === 'brawler';
+    if (mission.type === 'assault') return role === 'assault';
+    return false;
+}
+
+function sortMissions(a, b) {
+    const pa = Number.isFinite(a.priority) ? a.priority : 0;
+    const pb = Number.isFinite(b.priority) ? b.priority : 0;
+    if (pa !== pb) return pb - pa;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+}
+
+function sortCreepsByName(a, b) {
+    return String(a.name || '').localeCompare(String(b.name || ''));
+}
+
+function isDuoMission(mission) {
+    return mission && mission.type === 'assault' && mission.data && mission.data.mode === 'DUO';
+}
+
+function pickDuoPair(creeps) {
+    const list = Array.isArray(creeps) ? creeps.slice() : [];
+    if (list.length === 0) return { leader: null, support: null };
+    let leader = list.find(c => c.memory && c.memory.assaultRole === 'leader') || null;
+    let support = list.find(c => c.memory && c.memory.assaultRole === 'support') || null;
+
+    if (leader && support && leader.id === support.id) support = null;
+    if (!leader && support) leader = list.find(c => c.id !== support.id) || null;
+    if (!support && leader) support = list.find(c => c.id !== leader.id) || null;
+
+    if (!leader && !support) {
+        list.sort(sortCreepsByName);
+        leader = list[0] || null;
+        support = list[1] || null;
+    } else if (leader && support && String(leader.name || '') > String(support.name || '')) {
+        const swap = leader;
+        leader = support;
+        support = swap;
+    }
+
+    return { leader, support };
+}
+
+function runDuoAssaultMissions(missions, assignments, context) {
+    const duoBySquad = Object.create(null);
+    const handled = new Set();
+
+    missions.forEach(mission => {
+        if (!isDuoMission(mission)) return;
+        const squadKey = mission.data && mission.data.squadKey ? mission.data.squadKey : mission.name;
+        if (!duoBySquad[squadKey]) duoBySquad[squadKey] = [];
+        duoBySquad[squadKey].push(mission);
+    });
+
+    Object.keys(duoBySquad).forEach(squadKey => {
+        const squadMissions = duoBySquad[squadKey];
+        const assigned = [];
+        squadMissions.forEach(m => {
+            handled.add(m.name);
+            const list = assignments[m.name] || [];
+            list.forEach(c => assigned.push(c));
+        });
+
+        const pair = pickDuoPair(assigned);
+        const representative = squadMissions.find(m => m.data && m.data.assaultRole === 'leader') || squadMissions[0];
+        const plan = assaultTactics.planForPair(representative, pair.leader, pair.support, context);
+        if (pair.leader && plan && plan.leaderTask) {
+            pair.leader.memory.task = plan.leaderTask;
+        }
+        if (pair.support && plan && plan.supportTask) {
+            pair.support.memory.task = plan.supportTask;
         }
     });
+
+    return handled;
 }
 
-function normalizeTargetPos(pos, fallbackRoom) {
-    if (!pos) return null;
-    if (pos instanceof RoomPosition) return { x: pos.x, y: pos.y, roomName: pos.roomName };
-    const roomName = pos.roomName || fallbackRoom;
-    const x = Number(pos.x);
-    const y = Number(pos.y);
-    if (!roomName || !Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y, roomName };
-}
+function allocateCreeps(room, missions) {
+    const ownedCreeps = getOwnedCreeps(room.name).filter(c => !c.spawning && isMilitaryRole(c.memory && c.memory.role));
+    const assignments = Object.create(null);
+    const assignedIds = new Set();
+    const missionNames = new Set(missions.map(m => m.name));
 
-function getRoomCenterPos(roomName) {
-    if (!roomName) return null;
-    return { x: 25, y: 25, roomName };
-}
+    const sortedMissions = missions.slice().sort(sortMissions);
+    for (const mission of sortedMissions) {
+        const needed = Math.max(0, (mission.requirements && mission.requirements.count) || 0);
+        if (!assignments[mission.name]) assignments[mission.name] = [];
 
-function getExitPosToward(creep, targetRoom) {
-    if (!targetRoom || creep.room.name === targetRoom) return null;
-    const exitDir = creep.room.findExitTo(targetRoom);
-    if (exitDir === ERR_NO_PATH || exitDir === ERR_INVALID_ARGS) return null;
-    return creep.pos.findClosestByRange(exitDir);
-}
+        let preassigned = ownedCreeps.filter(c =>
+            c.memory && c.memory.missionName === mission.name && isEligibleForMission(c, mission)
+        );
+        preassigned.sort(sortCreepsByName);
+        if (preassigned.length > needed) preassigned = preassigned.slice(0, needed);
 
-function inRange(creep, pos, range) {
-    if (!pos || creep.room.name !== pos.roomName) return false;
-    return creep.pos.getRangeTo(pos.x, pos.y) <= range;
-}
-
-function executeDrain(creep, mission) {
-    const data = mission.data || {};
-    const targetPos = normalizeTargetPos(data.targetPos || mission.targetPos || mission.pos, data.targetRoom);
-    const targetRoom = data.targetRoom || (targetPos && targetPos.roomName);
-    const safeRoom = data.safeRoom || data.sponsorRoom || creep.memory.room;
-    const retreatAt = Number.isFinite(data.retreatAt) ? data.retreatAt : DRAIN_RETREAT_RATIO;
-    const reengageAt = Number.isFinite(data.reengageAt) ? data.reengageAt : DRAIN_REENGAGE_RATIO;
-    const targetRange = Number.isFinite(data.targetRange) ? data.targetRange : DRAIN_TARGET_RANGE;
-
-    let state = creep.memory.drainState || 'drain';
-    if (state !== 'recover' && creep.hits <= creep.hitsMax * retreatAt) {
-        state = 'recover';
-    }
-    if (state === 'recover') {
-        if (creep.room.name !== targetRoom && creep.hits >= creep.hitsMax * reengageAt) {
-            state = 'drain';
+        for (const creep of preassigned) {
+            if (assignedIds.has(creep.id)) continue;
+            assignments[mission.name].push(creep);
+            assignedIds.add(creep.id);
         }
-    }
-    creep.memory.drainState = state;
 
-    let moveTarget = null;
-    let range = targetRange;
+        const remaining = needed - assignments[mission.name].length;
+        if (remaining <= 0) continue;
 
-    if (state === 'drain') {
-        if (targetPos) {
-            if (!inRange(creep, targetPos, targetRange)) {
-                moveTarget = targetPos;
-            }
-        } else if (targetRoom) {
-            moveTarget = getRoomCenterPos(targetRoom);
-            range = DRAIN_TARGET_RANGE;
-        }
-    } else {
-        if (targetRoom && creep.room.name === targetRoom) {
-            const exitPos = getExitPosToward(creep, safeRoom || targetRoom);
-            if (exitPos) {
-                moveTarget = exitPos;
-                range = 0;
-            }
-        } else if (targetRoom) {
-            const edgePos = getExitPosToward(creep, targetRoom);
-            if (edgePos) {
-                moveTarget = edgePos;
-                range = DRAIN_SAFE_RANGE;
-            }
+        const candidates = ownedCreeps.filter(c =>
+            !assignedIds.has(c.id) && isEligibleForMission(c, mission)
+        );
+        candidates.sort((a, b) => {
+            const aMission = a.memory && a.memory.missionName;
+            const bMission = b.memory && b.memory.missionName;
+            const aPref = aMission === mission.name ? 0 : (aMission ? 2 : 1);
+            const bPref = bMission === mission.name ? 0 : (bMission ? 2 : 1);
+            if (aPref !== bPref) return aPref - bPref;
+            return sortCreepsByName(a, b);
+        });
+
+        for (let i = 0; i < remaining && i < candidates.length; i++) {
+            const creep = candidates[i];
+            assignments[mission.name].push(creep);
+            assignedIds.add(creep.id);
         }
     }
 
-    const actions = [];
-    if (creep.getActiveBodyparts(HEAL) > 0) {
-        actions.push({ action: 'heal', targetId: creep.id });
+    for (const missionName of Object.keys(assignments)) {
+        const list = assignments[missionName];
+        for (const creep of list) {
+            if (creep.memory) creep.memory.missionName = missionName;
+        }
     }
 
-    creep.memory.task = {
-        actions,
-        moveTarget: moveTarget ? { x: moveTarget.x, y: moveTarget.y, roomName: moveTarget.roomName } : null,
-        range: range
-    };
+    ownedCreeps.forEach(creep => {
+        const memory = creep.memory || {};
+        if (!memory.missionName) return;
+        if (!isMilitaryRole(memory.role)) return;
+        if (!missionNames.has(memory.missionName)) {
+            delete memory.missionName;
+            delete memory.task;
+            delete memory.taskState;
+            delete memory.drainState;
+            return;
+        }
+        if (!assignedIds.has(creep.id)) {
+            delete memory.missionName;
+            delete memory.task;
+            delete memory.taskState;
+            delete memory.drainState;
+        }
+    });
+
+    return assignments;
+}
+
+function runMission(mission, assignedCreeps, context) {
+    if (!mission || !assignedCreeps || assignedCreeps.length === 0) return;
+    const room = context.room;
+    if (mission.type === 'defend') {
+        const hostiles = context.hostiles || [];
+        const primaryTarget = defenseTactics.selectPrimaryTarget(hostiles);
+        assignedCreeps.forEach(creep => {
+            if (!creep.spawning) {
+                defenseTactics.executeTactics(creep, hostiles, assignedCreeps, room, primaryTarget);
+            }
+        });
+        return;
+    }
+
+    if (mission.type === 'assault') {
+        assignedCreeps.forEach(creep => {
+            if (!creep.spawning) assaultTactics.executeAssault(creep, mission);
+        });
+    }
 }
 
 /**
- * Enhanced Military Tasker for Admiral Missions
+ * Military Tasker (Phase 2 refactor)
  */
 var militaryTasks = {
     run: function(room) {
-        const allMissions = room._missions || [];
+        const missions = selectMissions(room);
+        const assignments = allocateCreeps(room, missions);
         const cache = global.getRoomCache(room);
-        const localCreeps = cache.myCreeps || [];
-        const remoteByHome = getRemoteCreepsByHomeRoom();
-        const remote = remoteByHome[room.name] || { assigned: [], idle: [] };
-        const creeps = localCreeps.concat(remote.assigned || [], remote.idle || []);
-
-        const missions = allMissions.filter(m => m.type === 'defend' || m.type === 'patrol');
-        const assaultMissions = allMissions.filter(m => m.type === 'assault');
-        const drainMissions = allMissions.filter(m => m.type === 'drain');
-        const defenders = creeps.filter(c => c.memory.role === 'defender' || c.memory.role === 'brawler');
-        const assaulters = creeps.filter(c => c.memory.role === 'assault');
-        const drainers = creeps.filter(c => c.memory.role === 'drainer');
-
         const hostiles = cache.hostiles || [];
+        const handledDuoMissions = runDuoAssaultMissions(missions, assignments, { room, hostiles });
 
-        // Cleanup invalid missions
-        defenseTactics.cleanupMissions(defenders, allMissions);
-        cleanupMissionAssignments(assaulters, allMissions, room.name);
-        cleanupMissionAssignments(drainers, allMissions, room.name);
-
-        missions.forEach(mission => {
-            let assigned = defenders.filter(c => c.memory.missionName === mission.name);
-
-            // 1. Assignment Logic
-            const needed = (mission.requirements.count || 0) - assigned.length;
-            if (needed > 0) {
-                // Allow reassignment from patrol to defend
-                const idleDefenders = defenders.filter(c =>
-                    (!c.memory.missionName ||
-                     c.memory.missionName.includes('decongest') ||
-                     (mission.type === 'defend' && c.memory.missionName.includes('patrol')))
-                    && !c.spawning
-                );
-                for (let i = 0; i < needed && i < idleDefenders.length; i++) {
-                    const idle = idleDefenders[i];
-                    idle.memory.missionName = mission.name;
-                    idle.say('def');
-                    assigned.push(idle);
-                }
-            }
-
-            if (mission.census) mission.census.count = assigned.length;
-
-            // 2. Tactical Execution
-            if (mission.type === 'defend') {
-                const primaryTarget = defenseTactics.selectPrimaryTarget(hostiles);
-                assigned.forEach(creep => {
-                    if (!creep.spawning) {
-                        defenseTactics.executeTactics(creep, hostiles, assigned, room, primaryTarget);
-                    }
-                });
-            } else if (mission.type === 'patrol') {
-                assigned.forEach(creep => {
-                    if (!creep.spawning) {
-                        defenseTactics.executePatrol(creep, assigned, room);
-                    }
-                });
-            }
-        });
-
-        assaultMissions.forEach(mission => {
-            let assigned = assaulters.filter(c => c.memory.missionName === mission.name);
-            const lockActive = mission.data && mission.data.assaultLock && mission.data.assaultLock.active;
-            const needed = (mission.requirements.count || 0) - assigned.length;
-            if (needed > 0 && !lockActive) {
-                const idleAssaulters = assaulters.filter(c => !c.memory.missionName && !c.spawning);
-                for (let i = 0; i < needed && i < idleAssaulters.length; i++) {
-                    const idle = idleAssaulters[i];
-                    idle.memory.missionName = mission.name;
-                    assigned.push(idle);
-                }
-            }
-
-            if (mission.census) mission.census.count = assigned.length;
-
-            assigned.forEach(creep => {
-                if (!creep.spawning) assaultTactics.executeAssault(creep, mission);
-            });
-        });
-
-        drainMissions.forEach(mission => {
-            let assigned = drainers.filter(c => c.memory.missionName === mission.name);
-            const needed = (mission.requirements.count || 0) - assigned.length;
-            if (needed > 0) {
-                const idleDrainers = drainers.filter(c => !c.memory.missionName && !c.spawning);
-                for (let i = 0; i < needed && i < idleDrainers.length; i++) {
-                    const idle = idleDrainers[i];
-                    idle.memory.missionName = mission.name;
-                    delete idle.memory.task;
-                    delete idle.memory.taskState;
-                    idle.memory.drainState = 'drain';
-                    assigned.push(idle);
-                }
-            }
-
-            if (mission.census) mission.census.count = assigned.length;
-
-            assigned.forEach(creep => {
-                if (!creep.spawning) executeDrain(creep, mission);
-            });
-        });
+        for (const mission of missions) {
+            if (handledDuoMissions.has(mission.name)) continue;
+            runMission(mission, assignments[mission.name] || [], { room, hostiles });
+        }
     }
 };
 
