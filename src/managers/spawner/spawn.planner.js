@@ -83,6 +83,15 @@ const spawnPlanner = {
 
         if (contract.bindMode !== 'pool' && mission && mission.name) {
             memory.missionName = mission.name;
+            // --- mission-specific identity (IMPORTANT for duo roles) ---
+            if (mission && mission.data) {
+            // assault duo/solo identity
+            if (mission.data.assaultRole) memory.assaultRole = mission.data.assaultRole;     // 'leader' | 'support' | 'solo'
+            if (mission.data.squadKey)    memory.assaultSquad = mission.data.squadKey;       // shared squad key
+
+            // optional: keep handy context for debugging
+            if (mission.data.mode)        memory.assaultMode = mission.data.mode;            // 'DUO' | 'SOLO' (if present)
+            }
         }
 
         const spawnTicket = {
