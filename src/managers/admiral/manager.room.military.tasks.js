@@ -1,6 +1,7 @@
 const defenseTactics = require('managers_admiral_tactics_admiral.tactics.defense');
 const assaultTactics = require('managers_admiral_tactics_admiral.tactics.assault');
 const assaultCombatMatrix = require('managers_admiral_tactics_assault_common_combatMatrix');
+const combatVis = require('managers_admiral_utils_admiral.visuals.combat');
 
 function isMilitaryRole(role) {
     return role === 'defender' || role === 'brawler' || role === 'assault' || role === 'drainer';
@@ -201,39 +202,45 @@ var militaryTasks = {
         const assignments = allocateCreeps(room, missions);
         const cache = global.getRoomCache(room);
         const hostiles = cache.hostiles || [];
+        // 1) build callback ONCE
+        const roomCallback = assaultCombatMatrix.makeAssaultCombatRoomCallback({
+            hostiles,
+            onlyOverlayInRoomName: room.name, // keep overlay local (safe + cheap)
+            base: {
+                plainCost: 2,
+                swampCost: 10,
+                roadCost: 1,
+                avoidBorders: true,
+                borderCost: 100,
+                considerCreeps: false,
+            },
+            threat: {
+                meleeMinCost: 70,
+                rangedMinCostNear: 80,
+                rangedMinCostFar: 45,
+
+                towerMinCostNear: 220,
+                towerMinCostMid: 140,
+                towerMinCostFar: 70,
+
+                ignoreHarmless: true,
+            },
+        });
+
+        // 2) visualize it (behind a toggle)
+        if (Memory.visuals && Memory.visuals.combatMatrix) {
+            combatVis.drawCombatMatrix(room, roomCallback, {
+                step: 1,       // 1 to avoid visuals bug
+                minCost: Memory.visuals.combatMinCost || 20 // hide low costs
+                // showNumbers: !!Memory.visuals.combatNumbers,
+                // numberThreshold: Memory.visuals.combatNumberThreshold || 120,
+            });
+        }
+
         const handledDuoMissions = runDuoAssaultMissions(missions, assignments, {
             room,
             hostiles,
-            runtime: {
-                roomCallback: assaultCombatMatrix.makeAssaultCombatRoomCallback({
-                    hostiles,
-                    onlyOverlayInRoomName: room.name, // keep overlay local (safe + cheap)
-                    base: {
-                        // combat baseline: keep sane movement costs
-                        plainCost: 2,
-                        swampCost: 10,
-                        roadCost: 1,
-                        avoidBorders: true,
-                        borderCost: 10,
-
-                        // in combat, I recommend NOT treating creeps as obstacles
-                        // (your formation logic + replans handle body-blocking)
-                        considerCreeps: false,
-                    },
-                    threat: {
-                        // tweak freely later
-                        meleeMinCost: 70,
-                        rangedMinCostNear: 80,
-                        rangedMinCostFar: 45,
-
-                        towerMinCostNear: 220,
-                        towerMinCostMid: 140,
-                        towerMinCostFar: 70,
-
-                        ignoreHarmless: true,
-                    },
-                })
-            }
+            runtime: { roomCallback }   
         });
 
         for (const mission of missions) {

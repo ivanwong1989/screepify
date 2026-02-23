@@ -125,11 +125,22 @@ function buildBaseMatrix(room, opts) {
     if (avoidBorders) {
         for (let i = 0; i < 50; i++) {
             // x borders
-            costs.set(0, i, clamp255(costs.get(0, i) + borderCost));
-            costs.set(49, i, clamp255(costs.get(49, i) + borderCost));
+            {
+                const c0 = costs.get(0, i);
+                if (c0 !== 255) costs.set(0, i, clamp255(c0 + borderCost));
+
+                const c49 = costs.get(49, i);
+                if (c49 !== 255) costs.set(49, i, clamp255(c49 + borderCost));
+            }
+
             // y borders
-            costs.set(i, 0, clamp255(costs.get(i, 0) + borderCost));
-            costs.set(i, 49, clamp255(costs.get(i, 49) + borderCost));
+            {
+                const cY0 = costs.get(i, 0);
+                if (cY0 !== 255) costs.set(i, 0, clamp255(cY0 + borderCost));
+
+                const cY49 = costs.get(i, 49);
+                if (cY49 !== 255) costs.set(i, 49, clamp255(cY49 + borderCost));
+            }
         }
     }
 
