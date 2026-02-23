@@ -10,6 +10,8 @@
  * - For non-visible rooms, return undefined so PF falls back.
  */
 
+const { getHostilesInRoom, filterOutAllies } = require('managers_admiral_tactics_assault_common_threat');
+
 function clamp255(v) {
     if (v <= 0) return 0;
     if (v >= 254) return 254; // 255 is treated as impassable
@@ -22,16 +24,26 @@ function posKey(x, y) {
 
 // Precompute offsets for small radii (fast + no allocations per tick)
 const OFFSETS_R1 = [];
+const OFFSETS_R2 = [];
 const OFFSETS_R3 = [];
 (function buildOffsets() {
     for (let dx = -3; dx <= 3; dx++) {
         for (let dy = -3; dy <= 3; dy++) {
             const d = Math.max(Math.abs(dx), Math.abs(dy));
             if (d <= 1) OFFSETS_R1.push([dx, dy, d]);
+            if (d <= 2) OFFSETS_R2.push([dx, dy, d]);
             if (d <= 3) OFFSETS_R3.push([dx, dy, d]);
         }
     }
 })();
+
+// Possible 1-tick enemy centers (stay + 8 neighbors). Used for "prediction envelope" overlay.
+const OFFSETS_STEP = [
+    [0, 0],
+    [-1, -1], [-1, 0], [-1, 1],
+    [0, -1],           [0, 1],
+    [1, -1],  [1, 0],  [1, 1],
+];
 
 function addMax(costs, x, y, minCost) {
     if (x <= 0 || x >= 49 || y <= 0 || y >= 49) return; // avoid exits by default (your border system handles exits)
@@ -68,6 +80,34 @@ function buildBaseMatrix(room, opts) {
 
     const costs = new PathFinder.CostMatrix();
     const terrain = room.getTerrain();
+
+    function clamp01(v, fallback) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return fallback;
+        if (n <= 0) return 0;
+        if (n >= 1) return 1;
+        return n;
+    }
+
+    function getLastVectorPredictedCenter(h) {
+        if (!h || !h.id || !h.pos) return null;
+        const map = global._enemyLastPos;
+        if (!map) return null;
+        const rec = map[h.id];
+        // rec is updated during roomCache build for the *current* tick, so we need previous tick.
+        // We store only the latest, so vector uses a cached "prev" if present.
+        const prev = rec && rec.prev && rec.prev.time === Game.time - 1 ? rec.prev : null;
+        if (!prev) return null;
+        if (prev.roomName !== h.pos.roomName) return null;
+        const dx = h.pos.x - prev.x;
+        const dy = h.pos.y - prev.y;
+        if (dx === 0 && dy === 0) return null;
+        const cx = h.pos.x + dx;
+        const cy = h.pos.y + dy;
+        if (cx < 0 || cx > 49 || cy < 0 || cy > 49) return null;
+        if (terrain.get(cx, cy) & TERRAIN_MASK_WALL) return null;
+        return { x: cx, y: cy };
+    }
 
     // Terrain baseline
     for (let x = 0; x < 50; x++) {
@@ -161,9 +201,75 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
 
         // if you want to ignore “harmless” hostiles (e.g. no attack parts)
         ignoreHarmless = true,
+
+        // Prediction envelope: also paint danger from where the enemy could be after 1 move this tick.
+        // This reduces "surprise" hits without inflating true ranges.
+        predictEnemyStep = true,
+        predictScale = 0.6,
+
+        // Prediction bias: if we saw the hostile move last tick, bias the envelope toward its
+        // observed motion vector ("most likely next tile"). This makes prediction feel intentional.
+        predictUseLastVector = true,
+        // Weighting inside the 1-tick prediction envelope
+        predictUniformWeight = 0.35,   // 0..1, applies to all 8 neighbors
+        predictVectorWeight = 1.0,     // 0..1, extra weight at the vector-predicted tile
+        predictVectorSpreadWeight = 0.55, // 0..1, weight around the vector tile (its neighbors)
     } = opts || {};
 
     // --- Enemy creeps ---
+    // Note: costmatrix is built at start-of-tick using current positions.
+    // Enemies can move at end-of-tick, so we optionally add a 1-step "envelope" as medium-weight danger.
+    const terrain = room.getTerrain();
+
+    function clamp01(v, fallback) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return fallback;
+        if (n <= 0) return 0;
+        if (n >= 1) return 1;
+        return n;
+    }
+
+    function getLastVectorPredictedCenter(h) {
+        if (!h || !h.id || !h.pos) return null;
+        const map = global._enemyLastPos;
+        if (!map) return null;
+        const rec = map[h.id];
+        // rec is updated during roomCache build for the *current* tick, so we need previous tick.
+        // We store only the latest, so vector uses a cached "prev" if present.
+        const prev = rec && rec.prev && rec.prev.time === Game.time - 1 ? rec.prev : null;
+        if (!prev) return null;
+        if (prev.roomName !== h.pos.roomName) return null;
+        const dx = h.pos.x - prev.x;
+        const dy = h.pos.y - prev.y;
+        if (dx === 0 && dy === 0) return null;
+        const cx = h.pos.x + dx;
+        const cy = h.pos.y + dy;
+        if (cx < 0 || cx > 49 || cy < 0 || cy > 49) return null;
+        if (terrain.get(cx, cy) & TERRAIN_MASK_WALL) return null;
+        return { x: cx, y: cy };
+    }
+
+    function applyCreepThreatAt(cx, cy, meleeCost, rangedNearCost, rangedFarCost) {
+        // Skip impossible centers (shouldn't happen for current pos, but can for predicted)
+        if (cx < 0 || cx > 49 || cy < 0 || cy > 49) return;
+        if (terrain.get(cx, cy) & TERRAIN_MASK_WALL) return;
+
+        // melee (range 2) – models "enemy can step 1 + hit" (prediction-lite for melee)
+        for (const [dx, dy] of OFFSETS_R2) {
+            const x = cx + dx, y = cy + dy;
+            if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+            addMax(costs, x, y, meleeCost);
+        }
+
+        // ranged (range 3) – stronger near
+        for (const [dx, dy, d] of OFFSETS_R3) {
+            const x = cx + dx, y = cy + dy;
+            if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+            const c = (d <= 1) ? rangedNearCost : (d === 2 ? (rangedFarCost + 15) : rangedFarCost);
+            addMax(costs, x, y, c);
+        }
+    }
+
     if (hostiles && hostiles.length) {
         for (const h of hostiles) {
             if (!h || !h.pos) continue;
@@ -176,19 +282,61 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
 
             const hx = h.pos.x, hy = h.pos.y;
 
-            // melee (range 1)
-            for (const [dx, dy, d] of OFFSETS_R1) {
-                const x = hx + dx, y = hy + dy;
-                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
-                addMax(costs, x, y, meleeMinCost);
-            }
+            // 1) True/current center (full weight)
+            applyCreepThreatAt(hx, hy, meleeMinCost, rangedMinCostNear, rangedMinCostFar);
 
-            // ranged (range 3) – stronger near
-            for (const [dx, dy, d] of OFFSETS_R3) {
-                const x = hx + dx, y = hy + dy;
-                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
-                const c = (d <= 1) ? rangedMinCostNear : (d === 2 ? (rangedMinCostFar + 15) : rangedMinCostFar);
-                addMax(costs, x, y, c);
+            // 2) Predicted 1-step envelope (medium weight)
+            // Old behaviour: uniform 8-neighbour envelope. New: still keep a soft uniform envelope,
+            // but bias *hard* toward the hostile's observed motion vector (if available).
+            if (predictEnemyStep && predictScale > 0) {
+                const uniformW = clamp01(predictUniformWeight, 0.35);
+                const vecW = clamp01(predictVectorWeight, 1.0);
+                const vecSpreadW = clamp01(predictVectorSpreadWeight, 0.55);
+                const useVec = !!predictUseLastVector;
+
+                function scaledCosts(weight) {
+                    const w = Math.max(0, Math.min(1, Number(weight) || 0));
+                    const scale = predictScale * w;
+                    return {
+                        melee: Math.max(1, Math.floor(meleeMinCost * scale)),
+                        rngNear: Math.max(1, Math.floor(rangedMinCostNear * scale)),
+                        rngFar: Math.max(1, Math.floor(rangedMinCostFar * scale)),
+                    };
+                }
+
+                // 2a) Soft uniform envelope around current position (optional; keeps behaviour stable)
+                if (uniformW > 0) {
+                    const c = scaledCosts(uniformW);
+                    for (const [sx, sy] of OFFSETS_STEP) {
+                        if (sx === 0 && sy === 0) continue; // already applied current center
+                        const cx = hx + sx, cy = hy + sy;
+                        if (cx < 0 || cx > 49 || cy < 0 || cy > 49) continue;
+                        if (terrain.get(cx, cy) & TERRAIN_MASK_WALL) continue;
+                        applyCreepThreatAt(cx, cy, c.melee, c.rngNear, c.rngFar);
+                    }
+                }
+
+                if (useVec && (vecW > 0 || vecSpreadW > 0)) {
+                    const vecCenter = getLastVectorPredictedCenter(h);
+                    if (vecCenter) {
+                        // 2b) Strong bias on the "most likely" next center (vector-based)
+                        if (vecW > 0) {
+                            const c = scaledCosts(vecW);
+                            applyCreepThreatAt(vecCenter.x, vecCenter.y, c.melee, c.rngNear, c.rngFar);
+                        }
+
+                        // 2c) And a medium envelope around that vector tile (prevents being tricked by 1-tile sidestep)
+                        if (vecSpreadW > 0) {
+                            const c = scaledCosts(vecSpreadW);
+                            for (const [sx, sy] of OFFSETS_STEP) {
+                                const cx = vecCenter.x + sx, cy = vecCenter.y + sy;
+                                if (cx < 0 || cx > 49 || cy < 0 || cy > 49) continue;
+                                if (terrain.get(cx, cy) & TERRAIN_MASK_WALL) continue;
+                                applyCreepThreatAt(cx, cy, c.melee, c.rngNear, c.rngFar);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -254,10 +402,18 @@ function makeAssaultCombatRoomCallback(opts) {
             // If you passed a single hostiles array, it probably matches only one room anyway
             hs = hostiles;
         } else {
-            hs = room.find(FIND_HOSTILE_CREEPS);
+            // Prefer roomCache hostiles (filters allies). Fallback filters allies manually.
+            hs = getHostilesInRoom(room);
         }
 
-        if (hs && hs.length) applyThreatOverlay(room, costs, hs, threat);
+        // Safety: if caller supplied hostiles arrays, still ensure allies are excluded.
+        if (hs && hs.length) hs = filterOutAllies(hs);
+
+        if (hs && hs.length) {
+            //const h0 = hs[0];
+            //console.log(`[CM] t=${Game.time} room=${roomName} h0=${h0.name || h0.id} pos=${h0.pos.x},${h0.pos.y}`);
+            applyThreatOverlay(room, costs, hs, threat);
+        }
 
         cache[roomName] = costs;
         return costs;

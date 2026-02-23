@@ -9,6 +9,18 @@ function getRoomCache(room) {
     const cache = room._cache; // Local tick cache (on room object)
     const heap = global._roomCache[room.name]; // Heap cache (persistent)
     const now = Game.time;
+
+    // --- Hostile movement tracking (heap, short-lived) ---
+    // Used by combatMatrix prediction to bias enemy "next tile".
+    if (!global._enemyLastPos) global._enemyLastPos = {};
+    // --- HARD INVALIDATION PER TICK ---
+    // If room._cache persists across ticks for any reason, force refresh.
+    if (cache.dynamic && cache.dynamic.time !== now) delete cache.dynamic;
+    if (cache.current && cache.current.time !== now) delete cache.current;
+
+    // Static hydration should track heap.static.time (not Game.time)
+    if (cache.static && heap.static && cache.static.time !== heap.static.time) delete cache.static;
+    
     const staticInterval = 15;
 
     if (!Array.isArray(Memory.allies)) Memory.allies = [];
@@ -75,6 +87,25 @@ function getRoomCache(room) {
         const creeps = room.find(FIND_CREEPS);
         const myCreeps = creeps.filter(c => c.my);
         const hostiles = creeps.filter(c => !c.my && !isAlly(c.owner));
+
+        // Track last hostile positions (for 1-tick motion vector prediction)
+        try {
+            const map = global._enemyLastPos;
+            // light pruning: every 50 ticks, drop entries older than 5 ticks
+            if (now % 50 === 0) {
+                for (const id in map) {
+                    const rec = map[id];
+                    if (!rec || (now - rec.time) > 5) delete map[id];
+                }
+            }
+            for (const h of hostiles) {
+                if (!h || !h.id || !h.pos) continue;
+                const existing = map[h.id];
+                map[h.id] = { x: h.pos.x, y: h.pos.y, roomName: h.pos.roomName, time: now, prev: existing && existing.time === now - 1 ? { x: existing.x, y: existing.y, roomName: existing.roomName, time: existing.time } : (existing && existing.prev ? existing.prev : null) };
+            }
+        } catch (e) {
+            // do nothing
+        }
         const dropped = room.find(FIND_DROPPED_RESOURCES);
         const ruins = room.find(FIND_RUINS);
         const tombstones = room.find(FIND_TOMBSTONES);

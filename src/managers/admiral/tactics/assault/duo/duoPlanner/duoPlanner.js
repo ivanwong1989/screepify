@@ -273,10 +273,37 @@ function isGoalReached(leaderPos, goal) {
     return leaderPos.getRangeTo(goal.pos) <= range;
 }
 
-function computeSupportTo(room, leader, support, leaderTo, leaderDir, formation, movePlan) {
+function readMatrixCost(matrix, x, y) {
+    if (!matrix || typeof matrix.get !== 'function') return 0;
+    const v = matrix.get(x, y);
+    return Number.isFinite(v) ? v : 0;
+}
+
+function getCombatMatrix(runtime, roomName) {
+    if (!runtime || !runtime.roomCallback || !roomName) return null;
+    try {
+        const m = runtime.roomCallback(roomName);
+        // roomCallback can return false to block the room in PF; treat that as no matrix for scoring
+        if (m === false) return null;
+        return m || null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function computeSupportTo(room, leader, support, leaderTo, leaderDir, formation, movePlan, runtime) {
     if (!room || !leader || !support || !leaderTo) return null;
+
+    // If no combat matrix is available, keep legacy behaviour (stable + cheap).
+    const combatMatrix = getCombatMatrix(runtime, room.name);
+    const useCombat = !!combatMatrix;
+
+    const leaderToCombatCost = useCombat ? readMatrixCost(combatMatrix, leaderTo.x, leaderTo.y) : 0;
+
     const offset = formation && formation.supportOffset ? formation.supportOffset : 'auto';
     let preferredDirs = pickSupportOffsets(leaderDir, offset);
+
+    // Preserve your "tight corridors" heuristic for auto offset
     if (offset === 'auto') {
         let passableAdj = 0;
         for (const dir of DIRS) {
@@ -288,21 +315,103 @@ function computeSupportTo(room, leader, support, leaderTo, leaderDir, formation,
             preferredDirs = [OPPOSITE_DIR[leaderDir]];
         }
     }
-    for (const dir of preferredDirs) {
+
+    // Score candidates instead of picking first-passable.
+    // Lower score wins. We only use combat scoring if we have a matrix.
+    //
+    // ✅ IMPORTANT: Cohesion is enforced later by isCohesionOk(leaderTo, supportTo, ...)
+    // so here we just pick the best adjacent tile that is passable.
+    const candidates = [];
+    // Heuristic thresholds (based on combatMatrix defaults)
+    // - rangedMinCostFar ~ 40 (range-3 edge)
+    // - meleeMinCost ~ 60
+    // If we have any tiles safer than these, we won't step into the danger band.
+    const RANGED_DANGER_COST = 40;
+    const MELEE_DANGER_COST = 60;
+
+    function consider(pos, preferencePenalty, extraPenalty = 0) {
+        if (!pos) return;
+
+        // ✅ NEW: support must be able to reach supportTo in ONE tick
+        // (otherwise support.move(dir) will NOT land on supportTo)
+        const stepRange = support.pos.getRangeTo(pos);
+        if (stepRange > 1) return;          // cannot reach in one move
+        // optionally: allow staying put if already on it (range==0)
+        if (stepRange !== 1 && !isSamePos(support.pos, pos)) return;
+
+        if (!isPassableForSupport(room, pos, leader, support, movePlan)) return;
+
+        let score = 0;
+        let combatCost = 0;
+
+        if (useCombat) {
+            // CostMatrix: 0..255. Treat 255 as hard-avoid even if passable logic allowed it.
+            const c = readMatrixCost(combatMatrix, pos.x, pos.y);
+            if (c >= 255) return;
+            combatCost = c;
+            // Make combat cost dominate small preference penalties.
+            // Linear is usually fine, but we upweight so "red" tiles are strongly disfavored.
+            score += c * 10;
+
+            // Extra nudge: don't pick a support tile that is *more dangerous* than where the leader is stepping.
+            // This helps avoid the classic 'support backpacks into danger behind the leader'.
+            if (c > leaderToCombatCost) score += (c - leaderToCombatCost) * 20;
+        }
+
+        // Keep legacy offset preference as a mild bias so behaviour doesn't flip-flop.
+        score += (Number.isFinite(preferencePenalty) ? preferencePenalty : 0);
+        score += (Number.isFinite(extraPenalty) ? extraPenalty : 0);
+
+        candidates.push({ pos, score, combatCost });
+    }
+
+    // 1) Preferred offsets first (low preference penalty)
+    for (let i = 0; i < preferredDirs.length; i++) {
+        const dir = preferredDirs[i];
         const pos = dirToPos(leaderTo, dir);
-        if (!pos) continue;
-        if (!isPassableForSupport(room, pos, leader, support, movePlan)) continue;
-        return pos;
+        const behindPenalty = (dir === OPPOSITE_DIR[leaderDir]) ? 5 : 0;
+        consider(pos, i, behindPenalty); // 0,1,2...
     }
+
+    // 2) Any adjacent to leaderTo (slightly higher penalty than preferred)
     const adjacent = getAdjacentTo(leaderTo);
-    for (const pos of adjacent) {
-        if (!isPassableForSupport(room, pos, leader, support, movePlan)) continue;
-        return pos;
+    for (let i = 0; i < adjacent.length; i++) {
+        const pos = adjacent[i];
+        consider(pos, 10 + i, 0);
     }
+
+    // 3) Rare edge case: support already on leaderTo
     if (isSamePos(support.pos, leaderTo) && isPassableForSupport(room, support.pos, leader, support, movePlan)) {
-        return support.pos;
+        consider(support.pos, 50, 0);
     }
-    return null;
+
+    if (candidates.length === 0) return null;
+
+    // Prefer staying out of threat bands if *any* adjacent offers it.
+    // 1) If any adjacent is < ranged danger, only consider those.
+    // 2) Else if any adjacent is < melee danger, only consider those.
+    if (useCombat) {
+        const minCost = Math.min(...candidates.map(c => c.combatCost));
+        // If we can stay fully out of ranged threat overlay, do it.
+        if (minCost < RANGED_DANGER_COST) {
+            const filtered = candidates.filter(c => c.combatCost < RANGED_DANGER_COST);
+            if (filtered.length > 0) {
+                candidates.length = 0;
+                for (const c of filtered) candidates.push(c);
+            }
+        } else if (minCost < MELEE_DANGER_COST) {
+            const filtered = candidates.filter(c => c.combatCost < MELEE_DANGER_COST);
+            if (filtered.length > 0) {
+                candidates.length = 0;
+                for (const c of filtered) candidates.push(c);
+            }
+        }
+    }
+
+    // Pick lowest score; tie-break: keep earlier candidates (preference order)
+    candidates.sort((a, b) => a.score - b.score);
+
+    return candidates[0].pos;
 }
 
 function buildStepResult(leader, support, leaderTo, supportTo) {
@@ -592,7 +701,9 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
                 if (preferRoads) {
                     const cur = costs.get(x, y);
                     // ✅ Do NOT overwrite higher (threat) costs
-                    if (cur !== 255 && (cur === 0 || cur > roadCost)) costs.set(x, y, roadCost);
+                    // Only make roads cheaper when the tile is 'baseline' (not already a threat overlay).
+                    // Threat overlays (combat matrix) are typically >= 20. Do NOT erase them.
+                    if (cur !== 255 && (cur === 0 || cur < 20) && cur > roadCost) costs.set(x, y, roadCost);
                 }
                 continue;
             }
@@ -621,7 +732,11 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
 
             // roads/containers/ramparts are OK; most other sites block
             if (cs.structureType === STRUCTURE_ROAD) {
-                if (preferRoads) costs.set(x, y, roadCost);
+                if (preferRoads) {
+                    const cur = costs.get(x, y);
+                    // Same rule as structures: don't erase combat/threat overlay values.
+                    if (cur !== 255 && (cur === 0 || cur < 20) && cur > roadCost) costs.set(x, y, roadCost);
+                }
                 continue;
             }
             if (cs.structureType === STRUCTURE_CONTAINER) continue;
@@ -1609,8 +1724,23 @@ let usedPath = false;
             continue;
         }
 
-        const supportTo = computeSupportTo(room, leader, support, leaderTo, leaderDir, formation, tentative);
+        let supportTo = computeSupportTo(room, leader, support, leaderTo, leaderDir, formation, tentative, runtime);
         if (!supportTo) { pushReject(option, 'support-null'); continue; }
+
+        // PRE-CROSS STAGING FIX:
+        // If leader is about to step onto an edge tile (to cross rooms), we *prefer* support trailing
+        // into leader's vacated tile. This prevents "avoid borders" or combat scoring from choosing a
+        // different adjacent tile that breaks the handshake.
+        if (needsPreCrossStaging(room.name, goalPos, leaderTo)) {
+            const supportReadyNow = support.pos.getRangeTo(leader.pos) <= 1;
+            if (supportReadyNow) {
+                const trailPos = leader.pos; // support steps into leader's vacated tile
+                const trailPlan = buildMovePlan(leader, support, leaderTo, trailPos);
+                if (isPassableForSupport(room, trailPos, leader, support, trailPlan)) {
+                    supportTo = trailPos;
+                }
+            }
+        }
 
         // PRE-CROSS STAGING: don't let leader step onto edge until support is ready to trail
         if (needsPreCrossStaging(room.name, goalPos, leaderTo)) {

@@ -1,6 +1,36 @@
+function getAlliesLower() {
+    if (!Array.isArray(Memory.allies)) Memory.allies = [];
+    return Memory.allies.map(a => ('' + a).toLowerCase());
+}
+
+function isAllyOwner(owner, alliesLower) {
+    if (!owner || !owner.username) return false;
+    const list = alliesLower || getAlliesLower();
+    return list.includes(('' + owner.username).toLowerCase());
+}
+
+function filterOutAllies(objs) {
+    if (!objs || !objs.length) return [];
+    const alliesLower = getAlliesLower();
+    return objs.filter(o => !isAllyOwner(o && o.owner, alliesLower));
+}
+
 function getHostilesInRoom(room) {
     if (!room) return [];
-    return room.find(FIND_HOSTILE_CREEPS) || [];
+
+    // Prefer the central cache if available (it already filters allies)
+    try {
+        if (global.getRoomCache) {
+            const cache = global.getRoomCache(room);
+            if (cache && Array.isArray(cache.hostiles)) return cache.hostiles;
+        }
+    } catch (e) {
+        // fall back to raw find
+    }
+
+    // Fallback: raw hostiles, but filter allies out
+    const raw = room.find(FIND_HOSTILE_CREEPS) || [];
+    return filterOutAllies(raw);
 }
 
 function getBodyPartsCount(creep, type) {
@@ -97,5 +127,8 @@ function evaluateThreat(leader, support) {
 }
 
 module.exports = {
-    evaluateThreat
+    evaluateThreat,
+    getHostilesInRoom,
+    filterOutAllies,
+    isAllyOwner
 };

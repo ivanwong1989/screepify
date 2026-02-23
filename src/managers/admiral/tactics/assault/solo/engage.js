@@ -1,13 +1,25 @@
+const { getHostilesInRoom, filterOutAllies } = require('managers_admiral_tactics_assault_common_threat');
+
 function selectTarget(creep, flags, ao) {
     if (!creep || !creep.room) return null;
-    const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+    const hostiles = getHostilesInRoom(creep.room);
     if (hostiles && hostiles.length > 0) {
         return creep.pos.findClosestByRange(hostiles);
     }
 
-    const hostileStructures = creep.room.find(FIND_HOSTILE_STRUCTURES, {
-        filter: s => s.structureType !== STRUCTURE_CONTROLLER
-    });
+    let hostileStructures = null;
+    try {
+        if (global.getRoomCache) {
+            const cache = global.getRoomCache(creep.room);
+            if (cache && Array.isArray(cache.hostileStructures)) hostileStructures = cache.hostileStructures;
+        }
+    } catch (e) {
+        // ignore
+    }
+    if (!hostileStructures) {
+        hostileStructures = filterOutAllies(creep.room.find(FIND_HOSTILE_STRUCTURES));
+    }
+    hostileStructures = hostileStructures.filter(s => s.structureType !== STRUCTURE_CONTROLLER);
     if (hostileStructures && hostileStructures.length > 0) {
         return creep.pos.findClosestByRange(hostileStructures);
     }

@@ -123,6 +123,8 @@ Object.defineProperty(global, 'debugviscombaton', {
         Memory.visuals.combatMatrix = true;
         Memory.visuals.combatStep = 1;
         Memory.visuals.combatMinCost = 20;
+        Memory.visuals.combatNumbers = true;
+        Memory.visuals.combatNumberThreshold = 40;
 
         console.log('Debug visuals combat mode ENABLED');
         return 'Debug visuals combat mode ENABLED';
@@ -136,6 +138,8 @@ Object.defineProperty(global, 'debugviscombatoff', {
             delete Memory.visuals.combatMatrix;
             delete Memory.visuals.combatStep;
             delete Memory.visuals.combatMinCost;
+            delete Memory.visuals.combatNumbers;
+            delete Memory.visuals.combatNumberThreshold;
 
             // Optional cleanup
             if (Object.keys(Memory.visuals).length === 0) {

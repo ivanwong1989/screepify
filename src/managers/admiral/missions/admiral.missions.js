@@ -19,7 +19,7 @@ var admiralMissions = {
         const missions = [];
         const cache = global.getRoomCache(room);
 
-        if (state === 'DEFEND' || state === 'SIEGE') {
+/*         if (state === 'DEFEND' || state === 'SIEGE') {
             const response = this.calculateResponse(threat, budget, room);
             missions.push({
                 name: `defend_${room.name}_${response.strategy}`,
@@ -48,7 +48,7 @@ var admiralMissions = {
                 },
                 census: { count: 0, workParts: 0, carryParts: 0 }
             });
-        }
+        } */
 
         if (flagAttackMission && typeof flagAttackMission.generate === 'function') {
             const attackContext = {

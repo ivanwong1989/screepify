@@ -248,9 +248,9 @@ var militaryTasks = {
         if (Memory.visuals && Memory.visuals.combatMatrix) {
             combatVis.drawCombatMatrix(room, roomCallback, {
                 step: 1,       // 1 to avoid visuals bug
-                minCost: Memory.visuals.combatMinCost || 20 // hide low costs
-                // showNumbers: !!Memory.visuals.combatNumbers,
-                // numberThreshold: Memory.visuals.combatNumberThreshold || 120,
+                minCost: Memory.visuals.combatMinCost || 20, // hide low costs
+                showNumbers: !!Memory.visuals.combatNumbers,
+                numberThreshold: Memory.visuals.combatNumberThreshold || 120,
             });
         }
 

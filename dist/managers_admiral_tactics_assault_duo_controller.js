@@ -274,6 +274,11 @@ function planForPair(mission, leaderInput, supportInput, context) {
     const mFlags = (mData && mData.flags) ? mData.flags : null;
     const attackKey = (mFlags && mFlags.attack != null) ? mFlags.attack : null;
 
+    // --- Option A: Only allow ENGAGE targeting if attack directive exists ---
+    const hasAttackDirective =
+    !!flags.attackPos ||          // resolved attack position
+    !!flags.attackFlag;           // resolved attack flag object
+
     logDuo(runtime, mission,
     'AO/Flag dbg: mission.flags.attack=' + JSON.stringify(attackKey) +
     ' resolvedAttackFlag=' + (flags && flags.attackFlag ? flags.attackFlag.name : 'null') +
@@ -375,9 +380,15 @@ function planForPair(mission, leaderInput, supportInput, context) {
     const engageActor = leader || support;
 
     // AO-aware target selection (engage.js now filters by AO)
-    const target = (runtime.phase === 'ENGAGE' && engageActor)
-        ? engage.selectTarget(engageActor, flags, ao)
-        : null;
+    const target =
+        runtime.phase === 'ENGAGE' && engageActor && hasAttackDirective
+            ? engage.selectTarget(engageActor, flags, ao)
+            : null;
+
+    // If leader is in immediate melee contact, allow temporary split movement so it can break contact
+    // while support catches up. This prevents 'leader pinned beside enemy while regroup forces HOLD'.
+    const inMeleeDanger = !!(target && leader && leader.pos && leader.pos.getRangeTo(target) <= 1);
+    if (inMeleeDanger) splitRetreat = true;
 
     // --- AO awareness for movement goal ---
     const aoCenter = ao && ao.centerPos ? toRoomPos(ao.centerPos) : null;
@@ -488,7 +499,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
     } else {
         const avoidMelee = !!(target && leader && leader.pos.getRangeTo(target) <= 1);
         runtime.regroup = hasPair ? (move.mode === 'REGROUP' || !move.cohesive) : baseRegroup;
-        const suppressCombat = runtime.phase === 'ASSEMBLE' || runtime.regroup;
+        const suppressCombat = runtime.phase === 'RETREAT';
         if (leader) {
             leaderTask = actionPlan.planLeader(leader, runtime, target, routeTarget, {
                 suppressCombat
@@ -550,7 +561,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
         const hasTargetPos = target ? 1 : 0;
         const hasRouteTarget = routeTarget ? 1 : 0;
         const predictedSeparation = 0;
-        const suppressCombat = runtime.phase === 'ASSEMBLE' || runtime.phase === 'ROUTE' || runtime.regroup ? 1 : 0;
+        const suppressCombat = (runtime.phase === 'ASSEMBLE' || runtime.phase === 'ROUTE' || runtime.phase === 'RETREAT') ? 1 : 0;
         const lfat = leader ? leader.fatigue || 0 : 0;
         const sfat = support ? support.fatigue || 0 : 0;
         const rej = (move && move.debug && move.debug.rejects)
