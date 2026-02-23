@@ -10,6 +10,41 @@ const ASSAULT_TUNING_KEYS = [
     'supportRange'
 ];
 
+
+function printAssaultTuningHelp() {
+    const lines = [
+        'assaultTuning — Assault mission tuning',
+        '',
+        'GLOBAL TUNING (stored in Memory.military.attack):',
+        '  assaultTuning()',
+        '  assaultTuning("show")',
+        '      Show current global assault tuning values',
+        '',
+        '  assaultTuning({ dangerRadius: 3, supportRange: 2 })',
+        '      dangerRadius  : distance to trigger kiting (ranged)',
+        '      supportRange  : allowed leader-support spacing',
+        '      retreatAt     : HP ratio to retreat (0–1)',
+        '      reengageAt    : HP ratio to reengage (0–1)',
+        '      safeDamageRatio, damageBuffer',
+        '',
+        'PER-FLAG AO (stored in Flag.memory):',
+        '  assaultTuning({ aoRadius: 7 }, "AttackFlag")',
+        '      Set AO radius for a specific attack flag',
+        '',
+        '  assaultTuning("ao show AttackFlag")',
+        '  assaultTuning("ao 7 AttackFlag")',
+        '  assaultTuning("ao clear AttackFlag")',
+        '',
+        'NOTES:',
+        '  • mission.data.ao.radius overrides flag AO radius',
+        '  • aoRadius = 0 means "no AO boundary"',
+        '  • AO radius is enforced only during ENGAGE',
+    ];
+
+    lines.forEach(l => console.log(l));
+    return lines.join('\n');
+}
+
 function normalizeBodyPart(part) {
     if (part === undefined || part === null) return null;
     if (typeof part === 'string') {
@@ -190,6 +225,53 @@ function setAttackBodyKey(key, modeKey, parts, label, defaultBody) {
     return msg;
 }
 
+function getFlagByName(name) {
+    if (!name || typeof name !== 'string') return null;
+    const n = name.trim();
+    if (!n) return null;
+    return (typeof Game !== 'undefined' && Game.flags) ? Game.flags[n] : null;
+}
+
+function setFlagAoRadius(flagName, radiusValue) {
+    const flag = getFlagByName(flagName);
+    if (!flag) {
+        const msg = `assaultTuning: flag not found: ${flagName}`;
+        console.log(msg);
+        return msg;
+    }
+    if (!flag.memory) flag.memory = {}; // usually exists, but safe
+
+    if (radiusValue === undefined) {
+        const cur = flag.memory.aoRadius;
+        const msg = `AO radius for flag ${flag.name}: ${Number.isFinite(cur) ? cur : '(default/none)'}`;
+        console.log(msg);
+        return msg;
+    }
+
+    if (radiusValue === null) {
+        delete flag.memory.aoRadius;
+        const msg = `AO radius cleared for flag ${flag.name}`;
+        console.log(msg);
+        return msg;
+    }
+
+    const r = Number(radiusValue);
+    if (!Number.isFinite(r) || r < 0) {
+        const msg = `assaultTuning: invalid aoRadius (must be >=0 number): ${radiusValue}`;
+        console.log(msg);
+        return msg;
+    }
+
+    // clamp to something sensible; room range is 0..49-ish, but AO > 25 is silly
+    const clamped = Math.min(25, Math.floor(r));
+    flag.memory.aoRadius = clamped;
+
+    const msg = `AO radius set for flag ${flag.name}: ${clamped}`;
+    console.log(msg);
+    return msg;
+}
+
+
 module.exports = function registerAttackConsole() {
     global.attackBody = function(parts) {
         return setAttackBodyKey('body', 'bodyMode', parts, 'Attack', DEFAULT_ATTACK_BODY);
@@ -246,36 +328,83 @@ module.exports = function registerAttackConsole() {
         return msg;
     };
 
-    global.assaultTuning = function(input) {
+    global.assaultTuning = function(input, flagName) {
         const memory = ensureAttackMemory();
-        const lower = (typeof input === 'string') ? input.trim().toLowerCase() : '';
 
-        if (input === undefined || input === null || lower === 'show') {
-            const lines = ['Assault tuning overrides (Memory.military.attack):'];
-            for (const key of ASSAULT_TUNING_KEYS) {
-                const value = memory[key];
-                if (Number.isFinite(value)) lines.push(`  ${key}: ${value}`);
-                else lines.push(`  ${key}: (default)`);
-            }
-            lines.forEach(line => console.log(line));
-            return lines.join('\n');
-        }
+        // ---- NEW: string shortcuts for AO ----
+        if (typeof input === 'string') {
+            const raw = input.trim();
+            const lower = raw.toLowerCase();
 
-        if (lower === 'reset' || lower === 'clear' || lower === 'default') {
-            for (const key of ASSAULT_TUNING_KEYS) {
-                delete memory[key];
+            // existing show/reset support remains
+            if (!raw || lower === 'show') {
+                return printAssaultTuningHelp();
             }
-            const msg = 'Assault tuning overrides cleared (defaults restored).';
+
+            if (lower === 'reset' || lower === 'clear' || lower === 'default') {
+                for (const key of ASSAULT_TUNING_KEYS) delete memory[key];
+                const msg = 'Assault tuning overrides cleared (defaults restored).';
+                console.log(msg);
+                return msg;
+            }
+
+            // NEW: "ao ..." commands
+            // examples:
+            //  "ao show FlagName"
+            //  "ao 7 FlagName"
+            //  "ao:7 FlagName"
+            //  "ao clear FlagName"
+            const aoMatch = raw.match(/^ao(?::|\s+)?(show|clear|reset|\d+)?(?:\s+(.+))?$/i);
+            if (aoMatch) {
+                const op = (aoMatch[1] || 'show').toLowerCase();
+                const name = (aoMatch[2] || flagName || '').trim();
+                if (!name) {
+                    const msg = 'Usage: assaultTuning("ao 7 FlagName") OR assaultTuning({aoRadius:7}, "FlagName")';
+                    console.log(msg);
+                    return msg;
+                }
+                if (op === 'show') return setFlagAoRadius(name, undefined);
+                if (op === 'clear' || op === 'reset') return setFlagAoRadius(name, null);
+                // numeric
+                return setFlagAoRadius(name, Number(op));
+            }
+
+            // fall through: unknown string usage
+            const msg = 'Usage: assaultTuning() OR assaultTuning({ dangerRadius: 3 }) OR assaultTuning({ aoRadius: 7 }, "FlagName") OR assaultTuning("ao 7 FlagName")';
             console.log(msg);
             return msg;
+        }
+
+        // ---- Object input: support new aoRadius with optional flagName ----
+        if (input === undefined || input === null) {
+            return printAssaultTuningHelp();
         }
 
         if (typeof input !== 'object' || Array.isArray(input)) {
-            const msg = 'Usage: assaultTuning() OR assaultTuning({ retreatAt: 0.6, damageBuffer: 50 }) OR assaultTuning("reset")';
+            const msg = 'Usage: assaultTuning() OR assaultTuning({ retreatAt: 0.6, damageBuffer: 50 }) OR assaultTuning({ aoRadius: 7 }, "FlagName") OR assaultTuning("ao 7 FlagName")';
             console.log(msg);
             return msg;
         }
 
+        // NEW: handle aoRadius per flag if provided
+        if (Object.prototype.hasOwnProperty.call(input, 'aoRadius')) {
+            const name = (flagName || '').trim();
+            if (!name) {
+                const msg = 'assaultTuning: to set aoRadius, provide flag name: assaultTuning({ aoRadius: 7 }, "FlagName")';
+                console.log(msg);
+                return msg;
+            }
+            const v = input.aoRadius;
+            if (v === undefined) {
+                return setFlagAoRadius(name, undefined);
+            } else if (v === null) {
+                return setFlagAoRadius(name, null);
+            } else {
+                return setFlagAoRadius(name, v);
+            }
+        }
+
+        // existing global tuning behavior unchanged
         let changed = 0;
         for (const key of ASSAULT_TUNING_KEYS) {
             if (!Object.prototype.hasOwnProperty.call(input, key)) continue;
@@ -291,7 +420,7 @@ module.exports = function registerAttackConsole() {
 
         const msg = changed > 0
             ? 'Assault tuning overrides updated.'
-            : 'No valid tuning keys provided. Use: assaultTuning({ retreatAt: 0.6, damageBuffer: 50 })';
+            : 'No valid tuning keys provided. Use: assaultTuning({ retreatAt: 0.6, damageBuffer: 50 }) OR assaultTuning({ aoRadius: 7 }, "FlagName")';
         console.log(msg);
         return msg;
     };

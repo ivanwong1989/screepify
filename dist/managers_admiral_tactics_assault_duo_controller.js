@@ -12,6 +12,27 @@ const REENGAGE_AT = 0.7;
 const COHESION_RANGE = 1;
 const WIPE_TTL = 15;
 
+
+// ---- Assault tuning (optional, safe defaults) ----
+// Uses Memory.military.attack (set by assaultTuning(...) in console)
+function getAttackTuning() {
+    const m = (typeof Memory !== 'undefined' && Memory.military && Memory.military.attack)
+        ? Memory.military.attack
+        : null;
+    return m || {};
+}
+
+// Read number with fallback; clamps optional
+function tunedNumber(key, fallback, min, max) {
+    const t = getAttackTuning();
+    const v = t ? t[key] : undefined;
+    let n = Number(v);
+    if (!Number.isFinite(n)) n = fallback;
+    if (Number.isFinite(min)) n = Math.max(min, n);
+    if (Number.isFinite(max)) n = Math.min(max, n);
+    return n;
+}
+
 function formatPos(pos) {
     if (!pos) return 'null';
     const roomName = pos.roomName || (pos.room && pos.room.name) || 'unknown';
@@ -155,6 +176,90 @@ function shouldExitRetreat(runtime, leader, support, flags) {
     return leader.pos.inRangeTo(flags.waitPos.x, flags.waitPos.y, 2) && support.pos.inRangeTo(flags.waitPos.x, flags.waitPos.y, 2);
 }
 
+function toRoomPos(p) {
+    if (!p) return null;
+    if (p instanceof RoomPosition) return p;
+    return new RoomPosition(p.x, p.y, p.roomName || (p.room && p.room.name));
+}
+
+function aoRadius(ao) {
+    const r = ao ? Number(ao.radius) : 0;
+    return Number.isFinite(r) ? r : 0;
+}
+
+function inAOPos(pos, ao) {
+    if (!ao || !ao.centerPos) return true;
+    const r = aoRadius(ao);
+    if (r <= 0) return true;
+    const c = toRoomPos(ao.centerPos);
+    if (!c || !pos) return true;
+    if (pos.roomName !== c.roomName) return false;
+    return c.getRangeTo(pos) <= r;
+}
+
+// Pick a "kite anchor" point away from target, but still generally within AO.
+// This is intentionally simple (basic plug), not perfect kiting AI.
+function computeKiteAnchor(leader, target, ao) {
+    if (!leader || !target) return null;
+    if (leader.room.name !== target.pos.roomName) return null;
+
+    const lx = leader.pos.x, ly = leader.pos.y;
+    const tx = target.pos.x, ty = target.pos.y;
+
+    const dx = lx - tx;
+    const dy = ly - ty;
+
+    // Normalize to a direction (-1/0/1)
+    const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+    const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+
+    // Try to retreat ~4 tiles away in that direction
+    let ax = Math.max(1, Math.min(48, lx + sx * 4));
+    let ay = Math.max(1, Math.min(48, ly + sy * 4));
+
+    const cand = new RoomPosition(ax, ay, leader.room.name);
+
+    // If AO exists, bias anchor toward staying inside it (if outside, go back to center)
+    if (ao && ao.centerPos && aoRadius(ao) > 0) {
+        if (!inAOPos(cand, ao)) {
+            const c = toRoomPos(ao.centerPos);
+            return c;
+        }
+    }
+    return cand;
+}
+
+function decideCombatIntent(runtime, leader, support, target, ao) {
+    // Default: follow routeTarget behavior handled elsewhere
+    if (runtime.phase !== 'ENGAGE') return { mode: 'TRAVEL' };
+
+    // If no target, "hold AO" (stick near attackPos/center)
+    if (!target) return { mode: 'HOLD_AO' };
+
+    const hasRanged = leader && leader.getActiveBodyparts(RANGED_ATTACK) > 0;
+    const desired = hasRanged ? 3 : 1;
+
+    // If too close to the target, enter basic kite
+    const dist = leader ? leader.pos.getRangeTo(target) : 999;
+    // dangerRadius: when ranged and target is within this range, we enter KITE
+    const dangerRadius = tunedNumber('dangerRadius', 2, 1, 6);
+    const tooClose = hasRanged && dist <= dangerRadius;
+
+    if (tooClose) {
+        return {
+            mode: 'KITE',
+            desiredRange: desired + 1
+        };
+    }
+
+    return {
+        mode: 'ENGAGE',
+        desiredRange: desired
+    };
+}
+
+
+
 
 function planForPair(mission, leaderInput, supportInput, context) {
     const runtimeKey = mission && mission.data && mission.data.squadKey ? mission.data.squadKey : mission.name;
@@ -162,6 +267,18 @@ function planForPair(mission, leaderInput, supportInput, context) {
     if (!runtime.debug) runtime.debug = {};
     const flags = flagsResolver.resolveFlags(mission);
     const ao = aoResolver.resolveAO(mission, flags);
+    const m = mission;
+    const mData = (m && m.data) ? m.data : null;
+    const mFlags = (mData && mData.flags) ? mData.flags : null;
+    const attackKey = (mFlags && mFlags.attack != null) ? mFlags.attack : null;
+
+    logDuo(runtime, mission,
+    'AO/Flag dbg: mission.flags.attack=' + JSON.stringify(attackKey) +
+    ' resolvedAttackFlag=' + (flags && flags.attackFlag ? flags.attackFlag.name : 'null') +
+    ' attackAoOverride=' + (flags ? flags.attackAoRadiusOverride : 'n/a') +
+    ' ao.radius=' + (ao ? ao.radius : 'n/a') +
+    ' center=' + formatPos(ao && ao.centerPos ? ao.centerPos : null)
+    );
     const now = typeof Game !== 'undefined' ? Game.time : 0;
 
     const resolved = resolveLeaderSupport(leaderInput, supportInput);
@@ -209,7 +326,8 @@ function planForPair(mission, leaderInput, supportInput, context) {
     }
 
     const threat = threatEval.evaluateThreat(leader, support);
-    let cohesionRange = COHESION_RANGE;
+    // baseline cohesion from tuning; fallback = COHESION_RANGE
+    let cohesionRange = tunedNumber('supportRange', COHESION_RANGE, 1, 3);
     let splitRetreat = false;
     if (runtime.phase === 'RETREAT' || (threat && threat.level >= 2)) {
         cohesionRange = 3;
@@ -219,7 +337,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
         splitRetreat = true;
     }
     if (runtime.phase === 'ASSEMBLE' || runtime.phase === 'ROUTE') {
-        cohesionRange = COHESION_RANGE;
+        cohesionRange = tunedNumber('supportRange', COHESION_RANGE, 1, 3);
         splitRetreat = false;
     }
 
@@ -251,16 +369,83 @@ function planForPair(mission, leaderInput, supportInput, context) {
 
     const routeTarget = getRouteTarget(runtime, flags, ao);
     const rallyPos = flags.assemblyPos || flags.waitPos || routeTarget;
+
     const engageActor = leader || support;
-    const target = runtime.phase === 'ENGAGE' && engageActor ? engage.selectTarget(engageActor, flags, ao) : null;
+
+    // AO-aware target selection (engage.js now filters by AO)
+    const target = (runtime.phase === 'ENGAGE' && engageActor)
+        ? engage.selectTarget(engageActor, flags, ao)
+        : null;
+
+    // --- AO awareness for movement goal ---
+    const aoCenter = ao && ao.centerPos ? toRoomPos(ao.centerPos) : null;
+    const aoR = aoRadius(ao);
+
+    // Determine whether duo is "inside AO" (both members when present)
+    const leaderInAO = leader ? inAOPos(leader.pos, ao) : true;
+    const supportInAO = support ? inAOPos(support.pos, ao) : true;
+    const pairInAO = leaderInAO && supportInAO;
+
+    // Decide combat intent (basic plug)
+    const intent = decideCombatIntent(runtime, leader, support, target, ao);
+
+    // Select planner goal for this tick
+    let goalPos = routeTarget;
+    let goalRange = 1;
+
+    // IMPORTANT:
+    // - ao.radius is an *engagement/selection* radius ("enemies inside this bubble matter").
+    // - It must NOT be used as the "stop X tiles away from the AO flag" distance.
+    //   HOLD behavior should keep the duo tight to the AO center (on/adjacent), otherwise
+    //   large radii (A10/A12) cause the squad to stop on an arbitrary ring.
+    const holdCenterRange = tunedNumber('holdCenterRange', 1, 0, 3);
+
+    if (runtime.phase === 'ENGAGE') {
+        // If AO is defined and we're not inside, force return to AO first
+        if (aoCenter && aoR > 0 && !pairInAO) {
+            goalPos = aoCenter;
+            // Go *to* the AO center (tight). Radius is for engagement, not for stopping distance.
+            goalRange = holdCenterRange;
+        } else if (target) {
+            const hasRanged = leader && leader.getActiveBodyparts(RANGED_ATTACK) > 0;
+            const desired = (intent && intent.desiredRange) || (hasRanged ? 3 : 1);
+
+            if (intent.mode === 'KITE') {
+                // Move away while maintaining formation
+                const anchor = computeKiteAnchor(leader || support, target, ao);
+                if (anchor) {
+                    goalPos = anchor;
+                    goalRange = 0;
+                } else {
+                    // fallback: just keep distance band
+                    goalPos = target.pos;
+                    goalRange = desired;
+                }
+            } else {
+                // ENGAGE: maintain band around target
+                goalPos = target.pos;
+                goalRange = desired;
+            }
+        } else if (aoCenter && aoR > 0) {
+            // No target: hold AO center-ish
+            goalPos = aoCenter;
+            goalRange = holdCenterRange;
+        } else {
+            // No AO: fall back to attackPos/center
+            goalPos = flags.attackPos || routeTarget;
+            goalRange = 1;
+        }
+    }
+
+    // Pass the chosen goal into planner
     const move = duoPlanner.plan({
         leader,
         support,
         memoryKey: `duo:${runtimeKey}`,
         goal: {
-            pos: routeTarget,
+            pos: goalPos,
             type: 'RANGE',
-            range: 1
+            range: goalRange
         },
         formation: {
             cohesionRange,
@@ -280,8 +465,8 @@ function planForPair(mission, leaderInput, supportInput, context) {
         },
         debug: true
     });
-    const hasPair = !!(leader && support);
 
+    const hasPair = !!(leader && support);
     let leaderTask = null;
     let supportTask = null;
     if (runtime.phase === 'ASSEMBLE' || runtime.phase === 'ROUTE') {
@@ -357,7 +542,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
         const leaderNext = move.step ? move.step.leaderTo : null;
         const supportNext = move.step ? move.step.supportTo : null;
         const spinCount = runtime.formation && Number.isFinite(runtime.formation.spinCount) ? runtime.formation.spinCount : 0;
-        const cohesive = move ? (move.cohesive ? 1 : 0) : (leader && support ? (leader.pos.getRangeTo(support.pos) <= COHESION_RANGE ? 1 : 0) : 0);
+        const cohesive = move ? (move.cohesive ? 1 : 0) : (leader && support ? (leader.pos.getRangeTo(support.pos) <= cohesionRange ? 1 : 0) : 0);
         const allowStep = move && move.step && (move.step.leaderDir || move.step.supportDir) ? 1 : 0;
         const mode = move ? move.mode : runtime.phase;
         const hasTargetPos = target ? 1 : 0;
@@ -394,10 +579,12 @@ function planForPair(mission, leaderInput, supportInput, context) {
         const who =
         ` L=${lName}[${lId}] isLeader=${lIsLeader} role=${lRole} @${lPos}` +
         ` | S=${sName}[${sId}] isLeader=${sIsLeader} role=${sRole} @${sPos}`;
+        const goalLabel = goalPos ? `${goalPos.roomName}:${goalPos.x},${goalPos.y} r=${goalRange}` : 'none';
+        const intentLabel = intent ? (intent.mode || 'none') : 'none';
         logDuo(
             runtime,
             mission,
-            `phase=${runtime.phase} mode=${mode} allowStep=${allowStep} assembled=${runtime.assembled.done ? 1 : 0} spawnAllow=${runtime.spawn.allow ? 1 : 0} cohesive=${cohesive} dist=${dist} regroup=${runtime.regroup ? 1 : 0} hasTargetPos=${hasTargetPos} hasRouteTarget=${hasRouteTarget} predSep=${predictedSeparation} suppress=${suppressCombat} Lfat=${lfat} Sfat=${sfat} Lnext=${formatPos(leaderNext)} Snext=${formatPos(supportNext)} spin=${spinCount} rally=${formatPos(rallyPos)} routeTarget=${formatPos(routeTarget)} waypoint=${waypointIndex}/${waypoints.length} leader=${formatCreep(leader)} support=${formatCreep(support)} target=${targetLabel} rej=${rej} reason=${reason} who=${who}`
+            `phase=${runtime.phase} mode=${mode} allowStep=${allowStep} assembled=${runtime.assembled.done ? 1 : 0} spawnAllow=${runtime.spawn.allow ? 1 : 0} cohesive=${cohesive} dist=${dist} regroup=${runtime.regroup ? 1 : 0} hasTargetPos=${hasTargetPos} hasRouteTarget=${hasRouteTarget} predSep=${predictedSeparation} suppress=${suppressCombat} Lfat=${lfat} Sfat=${sfat} Lnext=${formatPos(leaderNext)} Snext=${formatPos(supportNext)} spin=${spinCount} rally=${formatPos(rallyPos)} routeTarget=${formatPos(routeTarget)} goal=${goalLabel} intent=${intentLabel} waypoint=${waypointIndex}/${waypoints.length} leader=${formatCreep(leader)} support=${formatCreep(support)} target=${targetLabel} rej=${rej} reason=${reason} who=${who}`
         );
     }
 

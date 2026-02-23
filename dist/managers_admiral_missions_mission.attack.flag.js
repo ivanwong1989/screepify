@@ -197,7 +197,6 @@ function buildAssaultMissionData(entry, roomName, squadKey, mode, assaultRole, l
         duo: {
             supportBodyProfile: null
         },
-        // Legacy fields for current assault tactics (Phase 3 will remove)
         waitFlagName: entry.waitFlagName,
         attackFlagName: entry.attackFlagName,
         waitPos: entry.waitPos,
