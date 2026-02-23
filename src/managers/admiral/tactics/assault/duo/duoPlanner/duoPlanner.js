@@ -485,6 +485,7 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
         plainCost = 2,
         swampCost = 10,
         roadCost = 1,
+        creepCost = 50,
 
         // If true, we’ll compute a full matrix even when runtimeCallback returns undefined.
         // If false, we only return a matrix when needed (preferRoads/considerCreeps/avoidBorders).
@@ -588,7 +589,11 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
             const x = s.pos.x, y = s.pos.y;
 
             if (s.structureType === STRUCTURE_ROAD) {
-                if (preferRoads) costs.set(x, y, roadCost);
+                if (preferRoads) {
+                    const cur = costs.get(x, y);
+                    // ✅ Do NOT overwrite higher (threat) costs
+                    if (cur !== 255 && (cur === 0 || cur > roadCost)) costs.set(x, y, roadCost);
+                }
                 continue;
             }
 
@@ -639,7 +644,9 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
 
                 // Treat creeps as high-cost obstacles (not hard walls).
                 // This avoids long stalls in 1-tile chokes (e.g., miners at sources).
-                costs.set(c.pos.x, c.pos.y, 50);
+                const cx = c.pos.x, cy = c.pos.y;
+                const cur = costs.get(cx, cy);
+                if (cur !== 255 && cur < creepCost) costs.set(cx, cy, creepCost);
             }
         }
 

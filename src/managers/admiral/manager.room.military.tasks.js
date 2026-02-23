@@ -1,5 +1,6 @@
 const defenseTactics = require('managers_admiral_tactics_admiral.tactics.defense');
 const assaultTactics = require('managers_admiral_tactics_admiral.tactics.assault');
+const assaultCombatMatrix = require('managers_admiral_tactics_assault_common_combatMatrix');
 
 function isMilitaryRole(role) {
     return role === 'defender' || role === 'brawler' || role === 'assault' || role === 'drainer';
@@ -200,7 +201,40 @@ var militaryTasks = {
         const assignments = allocateCreeps(room, missions);
         const cache = global.getRoomCache(room);
         const hostiles = cache.hostiles || [];
-        const handledDuoMissions = runDuoAssaultMissions(missions, assignments, { room, hostiles });
+        const handledDuoMissions = runDuoAssaultMissions(missions, assignments, {
+            room,
+            hostiles,
+            runtime: {
+                roomCallback: assaultCombatMatrix.makeAssaultCombatRoomCallback({
+                    hostiles,
+                    onlyOverlayInRoomName: room.name, // keep overlay local (safe + cheap)
+                    base: {
+                        // combat baseline: keep sane movement costs
+                        plainCost: 2,
+                        swampCost: 10,
+                        roadCost: 1,
+                        avoidBorders: true,
+                        borderCost: 10,
+
+                        // in combat, I recommend NOT treating creeps as obstacles
+                        // (your formation logic + replans handle body-blocking)
+                        considerCreeps: false,
+                    },
+                    threat: {
+                        // tweak freely later
+                        meleeMinCost: 70,
+                        rangedMinCostNear: 80,
+                        rangedMinCostFar: 45,
+
+                        towerMinCostNear: 220,
+                        towerMinCostMid: 140,
+                        towerMinCostFar: 70,
+
+                        ignoreHarmless: true,
+                    },
+                })
+            }
+        });
 
         for (const mission of missions) {
             if (handledDuoMissions.has(mission.name)) continue;
