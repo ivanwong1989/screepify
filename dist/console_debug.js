@@ -116,6 +116,39 @@ module.exports = function registerDebugConsole() {
         configurable: true
     });
 
+Object.defineProperty(global, 'debugviscombaton', {
+    get: function () {
+        if (!Memory.visuals) Memory.visuals = {};
+
+        Memory.visuals.combatMatrix = true;
+        Memory.visuals.combatStep = 1;
+        Memory.visuals.combatMinCost = 20;
+
+        console.log('Debug visuals combat mode ENABLED');
+        return 'Debug visuals combat mode ENABLED';
+    },
+    configurable: true
+});
+
+Object.defineProperty(global, 'debugviscombatoff', {
+    get: function () {
+        if (Memory.visuals) {
+            delete Memory.visuals.combatMatrix;
+            delete Memory.visuals.combatStep;
+            delete Memory.visuals.combatMinCost;
+
+            // Optional cleanup
+            if (Object.keys(Memory.visuals).length === 0) {
+                delete Memory.visuals;
+            }
+        }
+
+        console.log('Debug visuals combat mode DISABLED');
+        return 'Debug visuals combat mode DISABLED';
+    },
+    configurable: true
+});
+
     Object.defineProperty(global, 'debugoncombat', {
         get: function() {
             Memory.debugCombat = true;

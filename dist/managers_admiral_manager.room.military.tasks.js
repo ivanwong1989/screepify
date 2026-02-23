@@ -1,6 +1,7 @@
 const defenseTactics = require('managers_admiral_tactics_admiral.tactics.defense');
 const assaultTactics = require('managers_admiral_tactics_admiral.tactics.assault');
 const assaultCombatMatrix = require('managers_admiral_tactics_assault_common_combatMatrix');
+const assaultMemory = require('managers_admiral_tactics_assault_common_memory');
 const combatVis = require('managers_admiral_utils_admiral.visuals.combat');
 
 function isMilitaryRole(role) {
@@ -124,9 +125,25 @@ function allocateCreeps(room, missions) {
         const remaining = needed - assignments[mission.name].length;
         if (remaining <= 0) continue;
 
-        const candidates = ownedCreeps.filter(c =>
-            !assignedIds.has(c.id) && isEligibleForMission(c, mission)
-        );
+        // IMPORTANT: do NOT "steal" creeps that are already bound to another live mission.
+        // This was causing DUO squads (e.g. W) to hijack other DUO squads (e.g. Y) because
+        // missions are allocated in name order and early missions would grab later ones.
+        //
+        // Allow reassignment only if:
+        // - creep has no missionName, OR
+        // - creep is already assigned to this mission, OR
+        // - creep's missionName is stale (no longer exists on the board this tick)
+        const candidates = ownedCreeps.filter(c => {
+            if (assignedIds.has(c.id)) return false;
+            if (!isEligibleForMission(c, mission)) return false;
+            const cur = c.memory && c.memory.missionName;
+            if (!cur) return true;
+            if (cur === mission.name) return true;
+            // If the mission is still live, keep ownership.
+            if (missionNames.has(cur)) return false;
+            // Otherwise it's stale and can be reclaimed.
+            return true;
+        });
         candidates.sort((a, b) => {
             const aMission = a.memory && a.memory.missionName;
             const bMission = b.memory && b.memory.missionName;
@@ -247,6 +264,10 @@ var militaryTasks = {
             if (handledDuoMissions.has(mission.name)) continue;
             runMission(mission, assignments[mission.name] || [], { room, hostiles });
         }
+
+        // GC: if a DUO assault mission no longer exists on the mission board,
+        // its runtime will not be touched and will be removed within 1 tick.
+        assaultMemory.gcDuoRuntimesForOwner(room.name, 1);
     }
 };
 

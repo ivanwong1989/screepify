@@ -10,7 +10,7 @@ const threatEval = require('managers_admiral_tactics_assault_common_threat');
 const RETREAT_AT = 0.3;
 const REENGAGE_AT = 0.7;
 const COHESION_RANGE = 1;
-const WIPE_TTL = 15;
+const WIPE_TTL = 4;
 
 
 // ---- Assault tuning (optional, safe defaults) ----
@@ -264,6 +264,8 @@ function decideCombatIntent(runtime, leader, support, target, ao) {
 function planForPair(mission, leaderInput, supportInput, context) {
     const runtimeKey = mission && mission.data && mission.data.squadKey ? mission.data.squadKey : mission.name;
     let runtime = memory.getDuoRuntime(runtimeKey);
+    // Heartbeat: if mission exists on the board, touch runtime so GC won't delete it
+    memory.touchDuoRuntime(runtime, mission, runtimeKey);
     if (!runtime.debug) runtime.debug = {};
     const flags = flagsResolver.resolveFlags(mission);
     const ao = aoResolver.resolveAO(mission, flags);

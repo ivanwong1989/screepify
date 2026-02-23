@@ -21,6 +21,11 @@ function initLegacyRuntimeEntry() {
 function initDuoRuntimeEntry() {
     return {
         version: 1,
+        meta: {
+            lastSeenTick: 0,
+            ownerRoom: null,
+            runtimeKey: null
+        },
         phase: 'ASSEMBLE',
         assembled: {
             done: false,
@@ -63,6 +68,39 @@ function getRuntime(missionName) {
     return root[missionName];
 }
 
+function touchDuoRuntime(runtime, mission, runtimeKey) {
+    if (!runtime) return;
+    if (!runtime.meta) runtime.meta = {};
+    runtime.meta.lastSeenTick = (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+
+    const ownerRoom =
+        (mission && mission.data && (mission.data.sponsorRoom || mission.data.ownerRoom)) || null;
+
+    if (ownerRoom) runtime.meta.ownerRoom = ownerRoom;
+    if (runtimeKey) runtime.meta.runtimeKey = runtimeKey;
+}
+
+function gcDuoRuntimesForOwner(ownerRoom, graceTicks) {
+    const root = ensureRoot();
+    if (!root || !ownerRoom) return;
+
+    const g = Number.isFinite(graceTicks) ? graceTicks : 1;
+    const now = (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+    const cutoff = now - g;
+
+    for (const key in root) {
+        const entry = root[key];
+        if (!entry || entry.version !== 1) continue;
+        const meta = entry.meta;
+        if (!meta || meta.ownerRoom !== ownerRoom) continue;
+
+        const last = Number.isFinite(meta.lastSeenTick) ? meta.lastSeenTick : -Infinity;
+        if (last < cutoff) {
+            delete root[key];
+        }
+    }
+}
+
 function resetRuntime(missionName) {
     const root = ensureRoot();
     if (!root || !missionName) return initLegacyRuntimeEntry();
@@ -73,6 +111,8 @@ function resetRuntime(missionName) {
 module.exports = {
     getRuntime,
     resetRuntime,
+    touchDuoRuntime,
+    gcDuoRuntimesForOwner,
     getDuoRuntime: function(missionName) {
         const root = ensureRoot();
         if (!root || !missionName) return initDuoRuntimeEntry();
