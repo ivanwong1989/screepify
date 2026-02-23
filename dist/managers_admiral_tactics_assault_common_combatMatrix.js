@@ -75,6 +75,7 @@ function buildBaseMatrix(room, opts) {
         borderCost = 10,
         considerCreeps = false,   // we usually don't want "creeps as obstacles" in combat
         creepCost = 50,
+        portalCost = 1,
         ignoreCreepIds = null,
     } = opts || {};
 
@@ -143,6 +144,12 @@ function buildBaseMatrix(room, opts) {
         if (s.structureType === STRUCTURE_RAMPART) {
             if (s.my || s.isPublic) continue;
             costs.set(x, y, 255);
+            continue;
+        }
+
+        // Portals
+        if (s.structureType === STRUCTURE_PORTAL) {
+            costs.set(x, y, portalCost);
             continue;
         }
 

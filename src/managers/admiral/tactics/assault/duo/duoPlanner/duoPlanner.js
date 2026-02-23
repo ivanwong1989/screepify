@@ -70,6 +70,7 @@ function isWalkableStructure(structure) {
     if (!structure) return true;
     if (structure.structureType === STRUCTURE_ROAD) return true;
     if (structure.structureType === STRUCTURE_CONTAINER) return true;
+    if (structure.structureType === STRUCTURE_PORTAL) return true;
     if (structure.structureType === STRUCTURE_RAMPART) {
         if (structure.my) return true;
         return structure.isPublic === true;
@@ -431,14 +432,36 @@ function shouldHoldForFatigue(leader, support) {
     return false;
 }
 
-function pickExitTile(room, toRoomName, referencePos) {
+function isBlockedByStructureAt(room, pos) {
+    if (!room || !pos) return false;
+    const structures = room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
+    if (!structures || structures.length === 0) return false;
+    for (const s of structures) {
+        if (s.structureType === STRUCTURE_WALL) return true;
+        if (s.structureType === STRUCTURE_RAMPART) {
+            if (!s.my && !s.isPublic) return true;
+        }
+    }
+    return false;
+}
+
+function isValidExitTile(room, pos) {
+    if (!room || !pos) return false;
+    if (pos.roomName !== room.name) return false;
+    if (!isExitTile(pos)) return false;
+    const terrain = room.getTerrain().get(pos.x, pos.y);
+    if (terrain === TERRAIN_MASK_WALL) return false;
+    if (isBlockedByStructureAt(room, pos)) return false;
+    return true;
+}
+
+function pickExitTileByProjection(room, toRoomName, referencePos) {
     if (!room || !toRoomName) return null;
     const exitDir = room.findExitTo(toRoomName);
     if (exitDir === ERR_NO_PATH || exitDir === ERR_INVALID_ARGS) return null;
     const exits = room.find(exitDir);
     if (!exits || exits.length === 0) return null;
-    let best = exits[0];
-    let bestRange = Infinity;
+
     // If referencePos is in another room (common in split-regroup), do NOT fall back to (25,25).
     // Instead, project the reference coordinate onto the relevant border so we pick an aligned exit
     // and avoid "walking the full length of the border".
@@ -459,14 +482,83 @@ function pickExitTile(room, toRoomName, referencePos) {
         ref = new RoomPosition(25, 25, room.name);
     }
 
+    // Prefer valid exit tiles (not boxed by walls/ramparts) if we have vision.
+    const candidates = [];
+    const fallback = [];
     for (const pos of exits) {
+        const p = new RoomPosition(pos.x, pos.y, room.name);
+        if (isValidExitTile(room, p)) candidates.push(p);
+        else fallback.push(p);
+    }
+    const list = candidates.length > 0 ? candidates : fallback;
+
+    let best = list[0];
+    let bestRange = Infinity;
+    for (const pos of list) {
         const range = ref.getRangeTo(pos);
         if (range < bestRange) {
             bestRange = range;
             best = pos;
         }
     }
-    return new RoomPosition(best.x, best.y, room.name);
+    return best ? new RoomPosition(best.x, best.y, room.name) : null;
+}
+
+function pickExitTileByPF(room, toRoomName, fromPos, targetPos, movement, runtime, ignoreCreepIds) {
+    if (!room || !toRoomName || !fromPos || !targetPos) return null;
+
+    // Use PF to compute a cross-room path, then extract the last step in THIS room before the room changes.
+    // This gives a "valid" exit lane that PF prefers, without changing your border-crossing handshake.
+    const goal = { pos: targetPos, range: 1, key: `exitpf:${targetPos.roomName}:${targetPos.x}:${targetPos.y}` };
+
+    const extra = {
+        considerCreeps: true,
+        ignoreCreepIds: ignoreCreepIds || null,
+        // Important: do NOT penalize borders here, because we *want* PF to walk onto the edge when needed.
+        avoidBorders: false,
+        maxRooms: 2
+    };
+
+    const result = computePathSteps(fromPos, goal, movement || {}, runtime || null, extra);
+    if (!result || !result.pf || !result.pf.path || result.pf.path.length === 0) return null;
+
+    const path = result.pf.path;
+    const fromRoomName = room.name;
+
+    for (let i = 0; i < path.length; i++) {
+        const step = path[i];
+        if (step.roomName !== fromRoomName) {
+            const prev = i > 0 ? path[i - 1] : null;
+            if (!prev || prev.roomName !== fromRoomName) return null;
+            const exitPos = new RoomPosition(prev.x, prev.y, fromRoomName);
+            if (!isExitTile(exitPos)) return null;
+            if (!isValidExitTile(room, exitPos)) return null;
+            return exitPos;
+        }
+    }
+
+    // If we never left the room in the path (PF incomplete / maxRooms / etc), fall back.
+    return null;
+}
+
+function pickExitTile(room, toRoomName, referencePos, opts) {
+    if (!room || !toRoomName) return null;
+
+    const options = opts || {};
+    const fromPos = options.fromPos || null;
+    const targetPos = options.targetPos || null;
+    const movement = options.movement || null;
+    const runtime = options.runtime || null;
+    const ignoreCreepIds = options.ignoreCreepIds || null;
+
+    // 1) Prefer PF-derived exit lanes when we have enough info.
+    if (fromPos && targetPos) {
+        const pfExit = pickExitTileByPF(room, toRoomName, fromPos, targetPos, movement, runtime, ignoreCreepIds);
+        if (pfExit) return pfExit;
+    }
+
+    // 2) Fallback: projection scoring (fast, deterministic)
+    return pickExitTileByProjection(room, toRoomName, referencePos);
 }
 
 function serializePos(pos) {
@@ -595,6 +687,7 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
         swampCost = 10,
         roadCost = 1,
         creepCost = 50,
+        portalCost = 1,
 
         // If true, we’ll compute a full matrix even when runtimeCallback returns undefined.
         // If false, we only return a matrix when needed (preferRoads/considerCreeps/avoidBorders).
@@ -719,6 +812,12 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
                 if (s.my) continue;
                 if (s.isPublic) continue;
                 costs.set(x, y, 255);
+                continue;
+            }
+
+            // Portals
+            if (s.structureType === STRUCTURE_PORTAL) {
+                costs.set(x, y, portalCost);
                 continue;
             }
 
@@ -1042,7 +1141,7 @@ function planSplitToGoalRoom(leader, support, goalPos, memory, movement, runtime
     // If one is already in the goal room, DO NOT pull it out to meet the other.
     // Instead: keep it moving toward goalPos (or holding), while the other crosses into goal room.
     if (leaderInGoalRoom && !supportInGoalRoom) {
-        const supportExit = pickExitTile(supportRoom, goalRoomName, support.pos);
+        const supportExit = pickExitTile(supportRoom, goalRoomName, goalPos, { fromPos: support.pos, targetPos: goalPos, movement, runtime, ignoreCreepIds: buildIgnoreSet(leader, support) });
         if (!supportExit) return null;
 
         const leaderStep = pfStepToward(memory, 'split_goal_leader', leader, goalPos, 1, movement, runtime, extra, null);
@@ -1057,7 +1156,7 @@ function planSplitToGoalRoom(leader, support, goalPos, memory, movement, runtime
     }
 
     if (supportInGoalRoom && !leaderInGoalRoom) {
-        const leaderExit = pickExitTile(leaderRoom, goalRoomName, leader.pos);
+        const leaderExit = pickExitTile(leaderRoom, goalRoomName, goalPos, { fromPos: leader.pos, targetPos: goalPos, movement, runtime, ignoreCreepIds: buildIgnoreSet(leader, support) });
         if (!leaderExit) return null;
 
         const supportStep = pfStepToward(memory, 'split_goal_support', support, goalPos, 1, movement, runtime, extra, null);
@@ -1099,7 +1198,16 @@ function planSplitRegroup(leader, support, goalPos, memory, movement, runtime) {
     if (memory && memory.regroupLeaderExit && memory.regroupSupportExit) {
         const cachedLeader = deserializePos(memory.regroupLeaderExit);
         const cachedSupport = deserializePos(memory.regroupSupportExit);
-        if (cachedLeader && cachedSupport && cachedLeader.roomName === leaderRoom.name && cachedSupport.roomName === supportRoom.name) {
+
+        // Validate cache against current rooms + visibility (constructed walls/ramparts can change).
+        if (
+            cachedLeader &&
+            cachedSupport &&
+            cachedLeader.roomName === leaderRoom.name &&
+            cachedSupport.roomName === supportRoom.name &&
+            isValidExitTile(leaderRoom, cachedLeader) &&
+            isValidExitTile(supportRoom, cachedSupport)
+        ) {
             leaderExit = cachedLeader;
             supportExit = cachedSupport;
         }
@@ -1108,8 +1216,8 @@ function planSplitRegroup(leader, support, goalPos, memory, movement, runtime) {
     if (!leaderExit || !supportExit) {
         const leaderRef = goalPos && goalPos.roomName === leaderRoom.name ? goalPos : support.pos;
         const supportRef = goalPos && goalPos.roomName === supportRoom.name ? goalPos : leader.pos;
-        leaderExit = pickExitTile(leaderRoom, supportRoom.name, leaderRef);
-        supportExit = pickExitTile(supportRoom, leaderRoom.name, supportRef);
+        leaderExit = pickExitTile(leaderRoom, supportRoom.name, leaderRef, { fromPos: leader.pos, targetPos: leaderRef, movement, runtime, ignoreCreepIds: buildIgnoreSet(leader, support) });
+        supportExit = pickExitTile(supportRoom, leaderRoom.name, supportRef, { fromPos: support.pos, targetPos: supportRef, movement, runtime, ignoreCreepIds: buildIgnoreSet(leader, support) });
         if (memory) {
             memory.regroupLeaderExit = serializePos(leaderExit);
             memory.regroupSupportExit = serializePos(supportExit);
