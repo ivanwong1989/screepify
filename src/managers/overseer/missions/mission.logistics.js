@@ -205,6 +205,7 @@ module.exports = {
     getHaulSlotsForRoute: function(source, target, resourceType, carryParts, explicitNeed) {
         const cap = Math.max(50, carryParts * 50);
         let amount = 0;
+        const isNonEnergy = resourceType && resourceType !== RESOURCE_ENERGY;
         if (explicitNeed !== undefined && explicitNeed !== null) {
             amount = explicitNeed;
         } else if (source && source.store) {
@@ -214,7 +215,8 @@ module.exports = {
             amount = source.amount || 0;
         }
 
-        if (amount < cap * 0.5) return 0;
+        if (amount <= 0) return 0;
+        if (!isNonEnergy && amount < cap * 0.5) return 0;
 
         const dist = source.pos.getRangeTo(target.pos);
         const travelTicks = dist * 2 + 10;

@@ -16,6 +16,7 @@ module.exports = function registerHelpConsole() {
                 'debugcats()       - list enabled and available debug categories',
                 'debugall          - clear category filter (log all)',
                 'economy()         - override per-room economy state (upgrade/stockpile)',
+                'lab()             - manage lab reactions/boosts',
                 'market()          - manage terminal auto-trading',
                 'remote()          - manage auto-econ remote missions (harvest/haul/build/repair)',
                 'allyAdd(\"Name\")    - add an ally by player name',

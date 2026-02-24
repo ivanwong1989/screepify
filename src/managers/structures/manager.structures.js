@@ -1,4 +1,5 @@
 const managerLinks = require('managers_structures_manager.links');
+const managerLabs = require('managers_structures_manager.labs');
 const managerRamparts = require('managers_structures_manager.ramparts');
 const managerTerminal = require('managers_structures_manager.terminal');
 
@@ -14,10 +15,11 @@ const managerStructures = {
         // 2. Run Rampart Access Control
         managerRamparts.run(room);
 
-        // 3. Run Market (Terminal)
+        // 3. Run Lab Manager
+        managerLabs.run(room);
+
+        // 4. Run Market (Terminal)
         managerTerminal.run(room);
-        
-        // Future: Lab management can be added here
     }
 };
 

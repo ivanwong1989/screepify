@@ -49,6 +49,17 @@ function getTargetFree(target, resourceType) {
     return 0;
 }
 
+function isMissionAssigned(missionId) {
+    if (!missionId) return false;
+    const missionPrefix = `userhaul:${missionId}`;
+    for (const creep of Object.values(Game.creeps)) {
+        if (!creep || !creep.my) continue;
+        const missionName = creep.memory && creep.memory.missionName;
+        if (missionName && missionName.startsWith(missionPrefix)) return true;
+    }
+    return false;
+}
+
 function buildTransferMissionCache() {
     const cache = global._transferMissionCache;
     if (cache && cache.time === Game.time) return cache;
@@ -99,11 +110,13 @@ function buildTransferMissionCache() {
 
         const sourceAmount = getSourceAmount(source, resourceType);
         const targetFree = getTargetFree(target, resourceType);
+        const assigned = isMissionAssigned(mission.id);
         if ((sourceAmount <= 0 || targetFree <= 0) && mission.persist !== true) {
             userMissions.removeMission(mission.id);
             continue;
         }
-        if (sourceAmount <= 0 || targetFree <= 0) continue;
+        if (targetFree <= 0) continue;
+        if (sourceAmount <= 0 && !(mission.persist === true && assigned)) continue;
 
         if (!bySponsorRoom[sponsorRoom]) bySponsorRoom[sponsorRoom] = [];
         bySponsorRoom[sponsorRoom].push({

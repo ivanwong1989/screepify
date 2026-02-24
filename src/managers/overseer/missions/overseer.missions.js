@@ -14,6 +14,7 @@ const missionModules = {
     mineral: require('managers_overseer_missions_mission.mineral'),
     fleetLogistic: require('managers_overseer_missions_mission.fleet_logistic'),
     logistics: require('managers_overseer_missions_mission.logistics'),
+    labs: require('managers_overseer_missions_mission.labs'),
     upgrade: require('managers_overseer_missions_mission.upgrade'),
     build: require('managers_overseer_missions_mission.build'),
     repair: require('managers_overseer_missions_mission.repair'),
@@ -72,6 +73,7 @@ const overseerMissions = {
         missionModules.mineral.generate(room, intel, context, missions);
         missionModules.fleetLogistic.generate(room, intel, context, missions);
         missionModules.logistics.generate(room, intel, context, missions);
+        missionModules.labs.generate(room, intel, context, missions);
         missionModules.repair.generate(room, intel, context, missions);
         missionModules.upgrade.generate(room, intel, context, missions);
         missionModules.build.generate(room, intel, context, missions);
