@@ -144,7 +144,8 @@ module.exports.loop = function() {
                 'remote_worker',
                 'dismantler',
                 'reserver',
-                'claimer'
+                'claimer',
+                'move2flag'
             ].includes(creep.memory.role)) {
                 roleUniversal.run(creep);
             }

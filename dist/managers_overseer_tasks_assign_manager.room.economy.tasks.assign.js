@@ -8,6 +8,7 @@ const execTransferTask = require('managers_overseer_tasks_exec_transfer');
 const execRemoteHaulTask = require('managers_overseer_tasks_exec_remoteHaul');
 const execRemoteBuildTask = require('managers_overseer_tasks_exec_remoteBuild');
 const execRemoteRepairTask = require('managers_overseer_tasks_exec_remoteRepair');
+const execRemoteMove2FlagTask = require('managers_overseer_tasks_exec_remoteMove2Flag');
 const execDecongestTask = require('managers_overseer_tasks_exec_decongest');
 const execDismantleTask = require('managers_overseer_tasks_exec_dismantle');
 const execReserveTask = require('managers_overseer_tasks_exec_reserve');
@@ -529,6 +530,9 @@ var managerTasks = {
                 break;
             case 'scout':
                 task = execScoutTask({ creep, mission, room });
+                break;
+            case 'move2flag':
+                task = execRemoteMove2FlagTask({ creep, mission, room});
                 break;
         }
 
