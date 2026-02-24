@@ -22,6 +22,15 @@ module.exports.loop = function() {
     //profiler.wrap(function() {
         // Main.js logic should go here.
 
+        // --- Quick dirty shard detection and pixel farm for now --- 
+        // --- shard-specific pixel logic ---
+        if (Game.shard && Game.shard.name === 'shard2') {
+            if (Game.cpu.bucket >= 10000) {
+                Game.cpu.generatePixel();
+            }
+        }
+        // --- END Quick dirty shard detection and pixel farm for now ---
+
         // --- Initialize Remote Memory ---
         if (!Memory.remoteRooms) Memory.remoteRooms = {};
         if (!Memory.spawnTickets) Memory.spawnTickets = {};
@@ -152,6 +161,8 @@ module.exports.loop = function() {
         }
 
         cpuEma.tick();
+
+
 
     //});
 };

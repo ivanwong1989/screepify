@@ -36,14 +36,35 @@ const BASIC_MINERALS = Object.freeze([
     RESOURCE_CATALYST
 ]);
 
-const DEFAULT_STOCK_TARGETS = Object.freeze(
+const DEFAULT_RESOURCE_CONFIG = Object.freeze(
     BASIC_MINERALS.reduce((acc, type) => {
-        acc[type] = 1000;
+        acc[type] = {
+            target: 500,
+            buy: DEFAULT_BASIC_BUY
+        };
         return acc;
     }, {
-        [RESOURCE_LEMERGIUM_OXIDE]: 1500,
-        [RESOURCE_ENERGY]: 80000
+        [RESOURCE_LEMERGIUM_OXIDE]: {
+            target: 1500,
+            buy: DEFAULT_BUY
+        },
+        [RESOURCE_GHODIUM]: {
+            target: 500,
+            buy: DEFAULT_BUY
+        },
+        [RESOURCE_ENERGY]: {
+            target: 800000,
+            sell: DEFAULT_SELL_ENERGY
+        }
     })
+);
+
+const DEFAULT_STOCK_TARGETS = Object.freeze(
+    Object.keys(DEFAULT_RESOURCE_CONFIG).reduce((acc, type) => {
+        const spec = DEFAULT_RESOURCE_CONFIG[type];
+        if (spec && typeof spec.target === 'number') acc[type] = spec.target;
+        return acc;
+    }, {})
 );
 
 function clampNumber(value, fallback, min) {
@@ -109,14 +130,16 @@ function ensureMarketConfig() {
         if (!cfg.sell || typeof cfg.sell !== 'object') cfg.sell = {};
         if (!cfg.rooms || typeof cfg.rooms !== 'object') cfg.rooms = {};
         if (!cfg.stockTargets || typeof cfg.stockTargets !== 'object') cfg.stockTargets = {};
-        if (!cfg.buy[RESOURCE_LEMERGIUM_OXIDE]) cfg.buy[RESOURCE_LEMERGIUM_OXIDE] = Object.assign({}, DEFAULT_BUY);
-        BASIC_MINERALS.forEach(type => {
-            if (!cfg.buy[type]) cfg.buy[type] = Object.assign({}, DEFAULT_BASIC_BUY);
-        });
-        if (!cfg.sell[RESOURCE_ENERGY]) cfg.sell[RESOURCE_ENERGY] = Object.assign({}, DEFAULT_SELL_ENERGY);
-        for (const resourceType of Object.keys(DEFAULT_STOCK_TARGETS)) {
-            if (!(resourceType in cfg.stockTargets)) {
-                cfg.stockTargets[resourceType] = DEFAULT_STOCK_TARGETS[resourceType];
+        for (const resourceType of Object.keys(DEFAULT_RESOURCE_CONFIG)) {
+            const spec = DEFAULT_RESOURCE_CONFIG[resourceType];
+            if (spec.buy && !cfg.buy[resourceType]) {
+                cfg.buy[resourceType] = Object.assign({}, spec.buy);
+            }
+            if (spec.sell && !cfg.sell[resourceType]) {
+                cfg.sell[resourceType] = Object.assign({}, spec.sell);
+            }
+            if (typeof spec.target === 'number' && !(resourceType in cfg.stockTargets)) {
+                cfg.stockTargets[resourceType] = spec.target;
             }
         }
         mergeLegacyStockTargets(cfg, cfg.stockTargets);
@@ -137,14 +160,16 @@ function ensureMarketConfig() {
     if (!cfg.sell || typeof cfg.sell !== 'object') cfg.sell = {};
     if (!cfg.rooms || typeof cfg.rooms !== 'object') cfg.rooms = {};
     if (!cfg.stockTargets || typeof cfg.stockTargets !== 'object') cfg.stockTargets = {};
-    if (!cfg.buy[RESOURCE_LEMERGIUM_OXIDE]) cfg.buy[RESOURCE_LEMERGIUM_OXIDE] = Object.assign({}, DEFAULT_BUY);
-    BASIC_MINERALS.forEach(type => {
-        if (!cfg.buy[type]) cfg.buy[type] = Object.assign({}, DEFAULT_BASIC_BUY);
-    });
-    if (!cfg.sell[RESOURCE_ENERGY]) cfg.sell[RESOURCE_ENERGY] = Object.assign({}, DEFAULT_SELL_ENERGY);
-    for (const resourceType of Object.keys(DEFAULT_STOCK_TARGETS)) {
-        if (!(resourceType in cfg.stockTargets)) {
-            cfg.stockTargets[resourceType] = DEFAULT_STOCK_TARGETS[resourceType];
+    for (const resourceType of Object.keys(DEFAULT_RESOURCE_CONFIG)) {
+        const spec = DEFAULT_RESOURCE_CONFIG[resourceType];
+        if (spec.buy && !cfg.buy[resourceType]) {
+            cfg.buy[resourceType] = Object.assign({}, spec.buy);
+        }
+        if (spec.sell && !cfg.sell[resourceType]) {
+            cfg.sell[resourceType] = Object.assign({}, spec.sell);
+        }
+        if (typeof spec.target === 'number' && !(resourceType in cfg.stockTargets)) {
+            cfg.stockTargets[resourceType] = spec.target;
         }
     }
     mergeLegacyStockTargets(cfg, cfg.stockTargets);
