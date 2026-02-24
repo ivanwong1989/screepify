@@ -7,9 +7,9 @@ const missionModules = {
     remoteRepair: require('managers_overseer_missions_mission.remote.repair'),
     remoteHarvest: require('managers_overseer_missions_mission.remote.harvest'),
     remoteHaul: require('managers_overseer_missions_mission.remote.haul'),
-    remoteReserve: require('managers_overseer_missions_mission.remote.reserve'),
-    remoteClaim: require('managers_overseer_missions_mission.remote.claim'),
-    remoteMove2Flag: require('managers_overseer_missions_mission.remote.move2flag'),
+    userRemoteReserve: require('managers_overseer_missions_mission.user.remote.reserve'),
+    userRemoteClaim: require('managers_overseer_missions_mission.user.remote.claim'),
+    userRemoteMove2Flag: require('managers_overseer_missions_mission.user.remote.move2flag'),
     harvest: require('managers_overseer_missions_mission.harvest'),
     mineral: require('managers_overseer_missions_mission.mineral'),
     fleetLogistic: require('managers_overseer_missions_mission.fleet_logistic'),
@@ -18,7 +18,7 @@ const missionModules = {
     build: require('managers_overseer_missions_mission.build'),
     repair: require('managers_overseer_missions_mission.repair'),
     decongest: require('managers_overseer_missions_mission.decongest'),
-    dismantle: require('managers_overseer_missions_mission.dismantle'),
+    userDismantle: require('managers_overseer_missions_mission.user.dismantle'),
     userTransfer: require('managers_overseer_missions_mission.user.transfer')
 };
 
@@ -65,9 +65,9 @@ const overseerMissions = {
         missionModules.remoteRepair.generate(room, intel, context, missions);
         missionModules.remoteHarvest.generate(room, intel, context, missions);
         missionModules.remoteHaul.generate(room, intel, context, missions);
-        missionModules.remoteReserve.generate(room, intel, context, missions);
-        missionModules.remoteClaim.generate(room, intel, context, missions);
-        missionModules.remoteMove2Flag.generate(room, intel, context, missions);
+        missionModules.userRemoteReserve.generate(room, intel, context, missions);
+        missionModules.userRemoteClaim.generate(room, intel, context, missions);
+        missionModules.userRemoteMove2Flag.generate(room, intel, context, missions);
         missionModules.harvest.generate(room, intel, context, missions);
         missionModules.mineral.generate(room, intel, context, missions);
         missionModules.fleetLogistic.generate(room, intel, context, missions);
@@ -76,7 +76,7 @@ const overseerMissions = {
         missionModules.upgrade.generate(room, intel, context, missions);
         missionModules.build.generate(room, intel, context, missions);
         missionModules.decongest.generate(room, intel, context, missions);
-        missionModules.dismantle.generate(room, intel, context, missions);
+        missionModules.userDismantle.generate(room, intel, context, missions);
         missionModules.userTransfer.generate(room, intel, context, missions);
 
         return missions;

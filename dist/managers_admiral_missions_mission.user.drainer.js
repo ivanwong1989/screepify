@@ -124,7 +124,7 @@ module.exports = {
             const census = typeof getMissionCensus === 'function' ? getMissionCensus(missionName) : { count: 0, workParts: 0, carryParts: 0 };
             const targetPos = entry.targetPos || { x: 25, y: 25, roomName: entry.targetRoom };
 
-            debug('mission.drainer', `[Drainer] ${room.name} -> ${entry.targetRoom} target=${targetPos.x},${targetPos.y} spawn=${spawnAllowed}`);
+            debug('mission.user.drainer', `[Drainer] ${room.name} -> ${entry.targetRoom} target=${targetPos.x},${targetPos.y} spawn=${spawnAllowed}`);
 
             missions.push({
                 name: missionName,

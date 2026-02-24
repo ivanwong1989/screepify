@@ -25,6 +25,11 @@ const MISSION_DEFS = Object.freeze({
         label: 'Transfer resources from a source structure to a target structure (user-directed logistics).',
         required: ['sourceId', 'targetId'],
         optional: ['resourceType', 'sponsorRoom', 'priority', 'persist', 'label', 'sourceRoom', 'targetRoom', 'count']
+    },
+    move2flag: {
+        label: 'Move a single creep along flag waypoints to a target flag (user-directed).',
+        required: ['flagName'],
+        optional: ['sponsorRoom', 'priority', 'persist', 'label']
     }
 });
 
@@ -115,6 +120,8 @@ function addMission(type, data) {
     const x = clampPosCoord(data && data.x);
     const y = clampPosCoord(data && data.y);
     const finalTargetPos = targetPos || (roomName && x !== null && y !== null ? { x, y, roomName } : null);
+    const flagNameRaw = data && (data.flagName || data.flag || data.flagId);
+    const flagName = flagNameRaw ? ('' + flagNameRaw).trim() : '';
 
     if (key === 'dismantle' && !finalTargetPos) {
         return { error: 'Missing target position (roomName, x, y).' };
@@ -130,6 +137,9 @@ function addMission(type, data) {
     }
     if (key === 'transfer' && (!sourceId || !targetId)) {
         return { error: 'Missing sourceId or targetId.' };
+    }
+    if (key === 'move2flag' && !flagName) {
+        return { error: 'Missing flagName.' };
     }
 
     const id = buildId(store);
@@ -148,7 +158,8 @@ function addMission(type, data) {
         targetId: key === 'transfer' ? targetId : (data && data.targetId ? ('' + data.targetId) : null),
         persist: normalizeBool(data && data.persist, false),
         label: data && data.label ? ('' + data.label).trim() : '',
-        count: key === 'transfer' ? (Number.isFinite(Number(data && data.count)) ? Math.max(1, Math.floor(Number(data.count))) : 1) : null
+        count: key === 'transfer' ? (Number.isFinite(Number(data && data.count)) ? Math.max(1, Math.floor(Number(data.count))) : 1) : null,
+        flagName: key === 'move2flag' ? flagName : null
     };
 
     store.items[id] = mission;

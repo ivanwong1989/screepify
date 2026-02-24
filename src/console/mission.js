@@ -1,7 +1,8 @@
 var userMissions = require('userMissions');
 var shared = require('console_shared');
 
-function formatMissionTarget(pos, targetRoom) {
+function formatMissionTarget(pos, targetRoom, flagName) {
+    if (flagName) return `flag:${flagName}`;
     if (pos && pos.roomName !== undefined && pos.x !== undefined && pos.y !== undefined) {
         return `${pos.roomName}:${pos.x},${pos.y}`;
     }
@@ -18,7 +19,7 @@ function listUserMissions() {
     console.log(`User missions (${all.length}):`);
     for (const m of all) {
         const enabled = m.enabled === false ? 'off' : 'on';
-        const target = formatMissionTarget(m.targetPos, m.targetRoom);
+        const target = formatMissionTarget(m.targetPos, m.targetRoom, m.flagName);
         const sponsor = m.sponsorRoom || '(auto)';
         const label = m.label ? ` label="${m.label}"` : '';
         console.log(`${m.id} type=${m.type} ${enabled} sponsor=${sponsor} target=${target} priority=${m.priority}${label}`);
@@ -43,7 +44,9 @@ function showMissionHelp() {
         'mission(\"add\",\"reserve\", { roomName, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?)',
         'mission(\"add\",\"transfer\", { sourceId, targetId, resourceType, sponsorRoom, priority, persist, label, count, sourceRoom, targetRoom })',
-        'mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, sourceId, targetId, resourceType, sourceRoom })',
+        'mission(\"add\",\"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?)',
+        'mission(\"add\",\"move2flag\", { flagName, sponsorRoom, priority, persist, label })',
+        'mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, sourceId, targetId, resourceType, sourceRoom, flagName })',
         'mission(\"enable\", id) / mission(\"disable\", id)',
         'mission(\"remove\", id)',
         `available types: ${types.join(', ') || '(none)'}`
@@ -76,6 +79,9 @@ function normalizeMissionPatch(patch) {
     if ('sourceRoom' in patch) {
         const sourceRoom = userMissions.normalizeRoomName(patch.sourceRoom);
         next.sourceRoom = sourceRoom || null;
+    }
+    if ('flagName' in patch) {
+        next.flagName = patch.flagName ? ('' + patch.flagName).trim() : null;
     }
     if ('roomName' in patch || 'targetRoom' in patch) {
         const targetRoom = userMissions.normalizeRoomName(patch.roomName || patch.targetRoom);
@@ -131,7 +137,7 @@ module.exports = function registerMissionConsole() {
                 type = typeOrData;
             }
             const key = type ? ('' + type).trim().toLowerCase() : '';
-            if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?)';
+            if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?) OR mission(\"add\", \"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?)';
 
             if (!data) {
                 if (key === 'dismantle') {
@@ -180,6 +186,14 @@ module.exports = function registerMissionConsole() {
                         persist: args[5],
                         label: args[6],
                         count: args[7],
+                    };
+                } else if (key === 'move2flag') {
+                    data = {
+                        flagName: args[0],
+                        sponsorRoom: args[1],
+                        priority: args[2],
+                        persist: args[3],
+                        label: args[4]
                     };
                 } else {
                     data = {};
@@ -233,12 +247,19 @@ module.exports = function registerMissionConsole() {
                     const sourceRoom = shared.resolveRoomNameForObjectId(data.sourceId);
                     if (sourceRoom) data.sourceRoom = sourceRoom;
                 }
+            } else if (key === 'move2flag') {
+                if (!data.flagName) data.flagName = 'M';
+                const flag = Game.flags[data.flagName];
+                if (!data.sponsorRoom && flag && flag.pos) {
+                    const sponsorRoom = shared.resolveSponsorRoomForTargetPos(flag.pos);
+                    if (sponsorRoom) data.sponsorRoom = sponsorRoom;
+                }
             }
 
             const result = userMissions.addMission(key, data);
             if (result && result.error) return result.error;
             const mission = result.mission;
-            console.log(`Added mission ${mission.id} type=${mission.type} target=${formatMissionTarget(mission.targetPos, mission.targetRoom)}`);
+            console.log(`Added mission ${mission.id} type=${mission.type} target=${formatMissionTarget(mission.targetPos, mission.targetRoom, mission.flagName)}`);
             return mission.id;
         }
 
