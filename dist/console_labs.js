@@ -27,6 +27,11 @@ function showLabHelp() {
         'lab("roomReverse", roomName, product, opts?)        - set per-room mode=reverse + product',
 
         '',
+        'Boost shortcuts:',
+        'lab("boost", { XGH2O:"labId" })                 - global boost mode',
+        'lab("roomBoost", "W1N1", { XGH2O:"labId" })     - per-room boost mode',
+
+        '',
         'Examples:',
         'lab("react", "H", "O", { inputLabs:["id1","id2"], inputTarget:2000 })',
         'lab("roomReact", "W1N1", "ZK", "UL", { inputLabs:["id1","id2"] })',
@@ -227,6 +232,43 @@ module.exports = function registerLabConsole() {
                 mode: 'reverse',
                 reverse: Object.assign({ product: product }, (opts && typeof opts === 'object') ? opts : {})
             };
+
+            managerLabs.applyRoomPatch(roomName, patch);
+            const msg = managerLabs.summarizeRoom(roomName);
+            console.log(msg);
+            return msg;
+        }
+
+        if (cmd === 'boost') {
+            const boostMap = args[0];
+            const opts = args[1];
+
+            if (!boostMap || typeof boostMap !== 'object')
+                return 'Usage: lab("boost", { XGH2O: "labId1" }, { boostTarget: 2000 })';
+
+            const patch = Object.assign({
+                mode: 'boost',
+                boosts: boostMap
+            }, (opts && typeof opts === 'object') ? opts : {});
+
+            managerLabs.applyPatch(patch);
+            const msg = managerLabs.summarize();
+            console.log(msg);
+            return msg;
+        }
+
+        if (cmd === 'roomboost') {
+            const roomName = args[0];
+            const boostMap = args[1];
+            const opts = args[2];
+
+            if (!roomName || !boostMap || typeof boostMap !== 'object')
+                return 'Usage: lab("roomBoost", "W1N1", { XGH2O: "labId1" })';
+
+            const patch = Object.assign({
+                mode: 'boost',
+                boosts: boostMap
+            }, (opts && typeof opts === 'object') ? opts : {});
 
             managerLabs.applyRoomPatch(roomName, patch);
             const msg = managerLabs.summarizeRoom(roomName);
