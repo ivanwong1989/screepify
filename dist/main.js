@@ -10,6 +10,7 @@ var roleAssault = require('role.assault');
 var roleTower = require('role.tower');
 var runColony = require('runColony');
 var cpuEma = require('telemetry_cpuEma');
+var sparkStats = require('utils_sparkStats');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
 
 function computeCpuMode() {
@@ -172,8 +173,32 @@ module.exports.loop = function() {
             }
         }
 
+        // cpu EMA counted
         cpuEma.tick();
+        
+        // Sparkline stats 
+        if (Game.time % 5 === 0) {
+            sparkStats.pushSeries('cpu.now', Game.cpu.getUsed(), { maxLen: 60 });
+            sparkStats.pushSeries('cpu.ema', Memory.avgCpu, { maxLen: 60 });
+            sparkStats.pushSeries('cpu.bucket', Game.cpu.bucket, { maxLen: 60 });
 
+            // Total stored energy
+            let energy = 0;
+            for (const rName in Game.rooms) {
+                const room = Game.rooms[rName];
+                if (!room.controller || !room.controller.my) continue;
+                const storage = room.storage;
+                if (storage) energy += storage.store.energy || 0;
+            }
+            sparkStats.pushSeries('energy.storage', energy, { maxLen: 60 });
+        }
+
+        if (Memory.sparkStatsPrint !== false && Game.time % 20 === 0) {
+            console.log(sparkStats.printSeries('cpu.now', { label: 'CPU used' }));
+            console.log(sparkStats.printSeries('cpu.ema', { label: 'CPU ema', min: 0, max: Game.cpu.limit }));
+            console.log(sparkStats.printSeries('cpu.bucket', { label: 'CPU bucket', min: 0, max: 10000 }));
+            console.log(sparkStats.printSeries('energy.storage', { label: 'Storage E' }));
+        }
 
 
     //});

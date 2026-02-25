@@ -117,6 +117,24 @@ module.exports = function registerDebugConsole() {
         configurable: true
     });
 
+    Object.defineProperty(global, 'sparkstatson', {
+        get: function() {
+            Memory.sparkStatsPrint = true;
+            console.log('Sparkline stats printing ENABLED');
+            return 'Sparkline stats printing ENABLED';
+        },
+        configurable: true
+    });
+
+    Object.defineProperty(global, 'sparkstatsoff', {
+        get: function() {
+            Memory.sparkStatsPrint = false;
+            console.log('Sparkline stats printing DISABLED');
+            return 'Sparkline stats printing DISABLED';
+        },
+        configurable: true
+    });
+
 Object.defineProperty(global, 'debugviscombaton', {
     get: function () {
         if (!Memory.visuals) Memory.visuals = {};
