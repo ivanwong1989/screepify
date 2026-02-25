@@ -130,6 +130,7 @@ var managerSpawner = {
 
     generateBody: function(mission, budget) {
         const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
+        // --- HACKISH BODY BUDGET RESTRICTION, TO IMPROVE LATER ---
         if (archetype === 'remote_worker' || archetype === 'remote_hauler') {
             budget = Math.min(budget, 1200);
         }
@@ -137,11 +138,12 @@ var managerSpawner = {
             budget = Math.min(budget, 2100);
         }
         if (archetype === 'worker') {
-            budget = Math.min(budget, 1300);
+            budget = Math.min(budget, 1700);
         }
         if (archetype === 'hauler' || archetype == 'user_hauler') {
             budget = Math.min(budget, 1300);
-        }        
+        } 
+        // --- BODY BUDGET END ---       
         if (mission.requirements && mission.requirements.body) {
             if (mission.requirements.bodyMode === 'fixed') {
                 const fixedBody = Array.isArray(mission.requirements.body) ? mission.requirements.body.slice() : [];
@@ -266,9 +268,8 @@ var managerSpawner = {
         const segment = [WORK, MOVE];
         let body = [];
         let cost = 0;
-        const MAX_COST = 1500;
 
-        while (cost + 250 <= budget && body.length + 3 <= 50 && cost < MAX_COST) {
+        while (cost + 250 <= budget && body.length + 3 <= 50) {
             body = body.concat(segment);
             cost += 250;
         }

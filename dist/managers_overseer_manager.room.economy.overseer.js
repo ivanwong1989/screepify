@@ -81,7 +81,7 @@ var managerOverseer = {
         }
 
         // 3. Determine Room State
-        const state = overseerIntel.determineState(room, intel);
+        const opState = overseerIntel.determineOpState(room, intel);
         const economyState = overseerIntel.determineEconomyState(room, intel);
 
         // 4. Build Census (include remote creeps assigned to this home room)
@@ -96,7 +96,7 @@ var managerOverseer = {
         const censusCreeps = localOwned.concat(remote.assigned || [], remote.idle || []);
 
         // 5. Generate Missions
-        const missions = overseerMissions.generate(room, intel, state, economyState, censusCreeps);
+        const missions = overseerMissions.generate(room, intel, opState, economyState, censusCreeps);
 
         // 6. Analyze Census (Match Creeps to Missions)
         overseerUtils.analyzeCensus(missions, censusCreeps);
@@ -106,7 +106,7 @@ var managerOverseer = {
 
         // 8. Publish Missions (Contract for Tasker and Spawner)
         room._missions = missions;
-        room._state = state;
+        room._opState = opState;
         room._economyState = economyState;
 
         // Avoid dumping full mission objects into persistent memory by default.
@@ -116,7 +116,7 @@ var managerOverseer = {
         } else {
             delete room.memory.overseer.missions;
         }
-        room.memory.overseer.state = state;
+        room.memory.overseer.opState = opState;
         room.memory.overseer.economyState = economyState;
     }
 };

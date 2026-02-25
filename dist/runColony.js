@@ -29,10 +29,10 @@ module.exports = {
 
         // 2.5 Unified Room State Summary (non-breaking, additive)
         room._roomState = {
-            ops: room._state,
+            ops: room._opState,
             economy: room._economyState,
             combat: room._combatState,
-            overall: deriveOverallState(room._state, room._combatState)
+            overall: deriveOverallState(room._opState, room._combatState)
         };
 
         // 3. Tasks: Generate missions, assign creeps, and request spawns if needed

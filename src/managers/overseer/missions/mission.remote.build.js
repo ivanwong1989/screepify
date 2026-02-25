@@ -3,14 +3,14 @@ const remoteUtils = require('managers_overseer_utils_overseer.remote');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        if (context.state === 'EMERGENCY') return;
+        if (context.opState === 'EMERGENCY') return;
 
         if (!room.memory.overseer) room.memory.overseer = {};
         if (!room.memory.overseer.remoteBuildCache) room.memory.overseer.remoteBuildCache = {};
 
         // Clone cached entries to avoid leaking build-only additions into other missions this tick.
         const entries = [...remoteUtils.getRemoteEconomicContext(room, {
-            state: context.state,
+            opState: context.opState,
             maxScoutAge: 4000
         })];
 

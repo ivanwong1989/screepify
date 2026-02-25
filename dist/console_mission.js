@@ -35,17 +35,17 @@ function showMissionHelp() {
         'mission(\"types\")                  - list available user mission types',
         'mission(\"list\")                   - list user missions',
         'mission(\"add\",\"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?)',
-        'mission(\"add\",\"dismantle\", { roomName, x, y, sponsorRoom, priority, persist, label })',
+        'mission(\"add\", { type: \"dismantle\", roomName, x, y, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?)',
-        'mission(\"add\",\"drainer\", { roomName, x, y, sponsorRoom, priority, persist, label })',
+        'mission(\"add\", { type: \"drainer\", roomName, x, y, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"claim\", roomName, sponsorRoom?, priority?, persist?, label?)',
-        'mission(\"add\",\"claim\", { roomName, sponsorRoom, priority, persist, label })',
+        'mission(\"add\", { type: \"claim\", roomName, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"reserve\", roomName, sponsorRoom?, priority?, persist?, label?)',
-        'mission(\"add\",\"reserve\", { roomName, sponsorRoom, priority, persist, label })',
+        'mission(\"add\", { type: \"reserve\", roomName, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?)',
-        'mission(\"add\",\"transfer\", { sourceId, targetId, resourceType, sponsorRoom, priority, persist, label, count, sourceRoom, targetRoom })',
+        'mission(\"add\", { type: \"transfer\", sourceId, targetId, resourceType, sponsorRoom, priority, persist, label, count, sourceRoom, targetRoom })',
         'mission(\"add\",\"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?)',
-        'mission(\"add\",\"move2flag\", { flagName, sponsorRoom, priority, persist, label })',
+        'mission(\"add\", { type: \"move2flag\", flagName, sponsorRoom, priority, persist, label })',
         'mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, sourceId, targetId, resourceType, sourceRoom, flagName })',
         'mission(\"enable\", id) / mission(\"disable\", id)',
         'mission(\"remove\", id)',
@@ -137,7 +137,7 @@ module.exports = function registerMissionConsole() {
                 type = typeOrData;
             }
             const key = type ? ('' + type).trim().toLowerCase() : '';
-            if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?) OR mission(\"add\", \"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?)';
+            if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?) OR mission(\"add\", \"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", { type, ... })';
 
             if (!data) {
                 if (key === 'dismantle') {
@@ -266,7 +266,7 @@ module.exports = function registerMissionConsole() {
         if (cmd === 'set' || cmd === 'update') {
             const id = typeOrData ? ('' + typeOrData).trim() : '';
             const patch = normalizeMissionPatch(args[0]);
-            if (!id || !patch) return 'Usage: mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom })';
+            if (!id || !patch) return 'Usage: mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, sourceId, targetId, resourceType, sourceRoom, flagName, count })';
             const updated = userMissions.updateMission(id, patch);
             if (!updated) return `Unknown mission id: ${id}`;
             return `Updated mission ${id}`;

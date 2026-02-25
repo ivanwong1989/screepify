@@ -62,7 +62,7 @@ module.exports = {
         const remoteCandidates = candidates.filter(s => {
             if (s.room.name === ticket.homeRoom) return false;
             if (s.room.energyAvailable < ticket.cost) return false;
-            if (s.room._state === 'EMERGENCY') return false;
+            if (s.room._opState === 'EMERGENCY') return false;
 
             if (homeSpawns.length === 0) {
                 const distFallback = Game.map.getRoomLinearDistance(ticket.homeRoom, s.room.name);

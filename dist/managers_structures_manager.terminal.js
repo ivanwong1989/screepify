@@ -362,7 +362,7 @@ function getRunStatus(room, cfg) {
     if (room && !shouldRunThisTick(room.name, cfg.runEvery)) {
         reasons.push(`runEvery=${cfg.runEvery} not scheduled`);
     }
-    if (room && room._state === 'EMERGENCY') reasons.push('room emergency');
+    if (room && room._opState === 'EMERGENCY') reasons.push('room emergency');
     return { ok: reasons.length === 0, reasons };
 }
 
@@ -1007,7 +1007,7 @@ const managerTerminal = {
         if (room.terminal.cooldown && room.terminal.cooldown > 0) return;
         if (!shouldRunThisTick(room.name, cfg.runEvery)) return;
 
-        if (room._state === 'EMERGENCY') return;
+        if (room._opState === 'EMERGENCY') return;
 
         const totals = getTerminalTotals(room);
 

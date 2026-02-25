@@ -452,7 +452,7 @@ const managerLabs = {
 
         const cfg = getRoomConfig(base, room.name);
         if (!cfg.enabled) return [];
-        if (room._state === 'EMERGENCY') return [];
+        if (room._opState === 'EMERGENCY') return [];
 
         return buildLabLogisticsMissions(room, cfg);
     },
@@ -466,7 +466,7 @@ const managerLabs = {
         const cfg = getRoomConfig(base, room.name);
         if (!cfg.enabled) return;
         if (!shouldRunThisTick(room.name, cfg.runEvery)) return;
-        if (room._state === 'EMERGENCY') return;
+        if (room._opState === 'EMERGENCY') return;
 
         const cache = global.getRoomCache(room);
         const labs = cache.myStructuresByType[STRUCTURE_LAB] || [];

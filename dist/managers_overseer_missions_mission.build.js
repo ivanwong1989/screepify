@@ -41,8 +41,8 @@ const getBuildQueue = function(room, sites) {
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { state, budget } = context;
-        if (intel.constructionSites.length === 0 || state === 'EMERGENCY') return;
+        const { opState, budget } = context;
+        if (intel.constructionSites.length === 0 || opState === 'EMERGENCY') return;
 
         const buildStats = managerSpawner.checkBody('worker', budget);
         const buildTarget = 5;

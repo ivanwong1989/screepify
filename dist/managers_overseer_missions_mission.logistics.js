@@ -3,8 +3,8 @@ const managerTerminal = require('managers_structures_manager.terminal');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { state, budget, efficientSources } = context;
-        const isEmergency = state === 'EMERGENCY';
+        const { opState, budget, efficientSources } = context;
+        const isEmergency = opState === 'EMERGENCY';
         const enableHaulers = efficientSources.size > 0;
 
         if (!enableHaulers) return;

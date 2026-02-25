@@ -2,8 +2,8 @@ const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { state, economyState, budget, getMissionCensus, economyFlow } = context;
-        if (!intel.controller || !intel.controller.my || state === 'EMERGENCY') return;
+        const { opState, economyState, budget, getMissionCensus, economyFlow } = context;
+        if (!intel.controller || !intel.controller.my || opState === 'EMERGENCY') return;
 
         const ticksToDowngrade = intel.controller.ticksToDowngrade || 0;
         const CRITICAL_DOWNGRADE_TICKS = 5000;

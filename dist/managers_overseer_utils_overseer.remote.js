@@ -165,10 +165,10 @@ function getRemoteContext(room, options = {}) {
     const myUser = getMyUsername(room);
     const allies = getAllies();
     const maxScoutAge = Number.isFinite(options.maxScoutAge) ? options.maxScoutAge : 4000;
-    const state = options.state || null;
+    const opState = options.opState || null;
     const skipRooms = new Set(remoteMemory.skipRooms || []);
 
-    const stateOk = state !== 'EMERGENCY';
+    const stateOk = opState !== 'EMERGENCY';
     const globalEnabled = Memory.remoteMissionsEnabled !== false;
     const roomEnabled = remoteMemory.enabled !== false;
     const remoteEnabled = globalEnabled && roomEnabled;

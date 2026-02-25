@@ -9,7 +9,7 @@ module.exports = {
             MIN_SCOUT_INTERVAL,
             memoryInterval !== null ? memoryInterval : DEFAULT_SCOUT_INTERVAL
         );
-        if (context.state === 'EMERGENCY') return;
+        if (context.opState === 'EMERGENCY') return;
 
         const exits = Game.map.describeExits(room.name);
         if (!exits) return;

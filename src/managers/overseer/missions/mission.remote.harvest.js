@@ -3,10 +3,10 @@ const remoteUtils = require('managers_overseer_utils_overseer.remote');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        if (context.state === 'EMERGENCY') return;
+        if (context.opState === 'EMERGENCY') return;
 
         const entries = remoteUtils.getRemoteEconomicContext(room, {
-            state: context.state,
+            opState: context.opState,
             maxScoutAge: 4000
         });
 

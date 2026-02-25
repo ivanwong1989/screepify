@@ -121,7 +121,7 @@ const spawnPlanner = {
     },
 
     computeBudget: function(room, mission) {
-        const state = room._state;
+        const opState = room._opState;
         let budget = room.energyCapacityAvailable;
 
         const cache = global.getRoomCache(room);
@@ -142,7 +142,7 @@ const spawnPlanner = {
             budget = Math.max(room.energyAvailable, 200);
             room.memory.spawner.waitTicks = 0;
             debug('spawner', `[SpawnPlanner] ${room.name} bootstrap budget=${budget}`);
-        } else if (state === 'EMERGENCY') {
+        } else if (opState === 'EMERGENCY') {
             budget = Math.max(room.energyAvailable, 200);
             room.memory.spawner.waitTicks = 0;
             debug('spawner', `[SpawnPlanner] ${room.name} emergency budget=${budget}`);

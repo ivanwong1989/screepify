@@ -2,8 +2,8 @@ const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { state, budget, getMissionCensus } = context;
-        if (state === 'EMERGENCY') return;
+        const { opState, budget, getMissionCensus } = context;
+        if (opState === 'EMERGENCY') return;
 
         const REPAIR_SCAN_INTERVAL = 7; // ticks
         const CRITICAL_WALL_HITS = 5000;

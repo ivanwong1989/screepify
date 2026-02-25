@@ -11,7 +11,7 @@ const toRoomPosition = (pos) => {
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        if (context.state === 'EMERGENCY') return;
+        if (context.opState === 'EMERGENCY') return;
 
         const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
         const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
@@ -21,7 +21,7 @@ module.exports = {
         if (!dropoffTarget) return;
 
         const entries = remoteUtils.getRemoteEconomicContext(room, {
-            state: context.state,
+            opState: context.opState,
             maxScoutAge: 4000
         });
 

@@ -24,10 +24,10 @@ const missionModules = {
 };
 
 const overseerMissions = {
-    generate: function(room, intel, state, economyState, censusCreeps) {
+    generate: function(room, intel, opState, economyState, censusCreeps) {
         const missions = [];
         let budget = intel.energyCapacityAvailable;
-        if (state === 'EMERGENCY') budget = Math.max(intel.energyAvailable, 300);
+        if (opState === 'EMERGENCY') budget = Math.max(intel.energyAvailable, 300);
 
         const allCensusCreeps = Array.isArray(censusCreeps) ? censusCreeps : intel.myCreeps;
         const creepsByMission = allCensusCreeps.reduce((acc, c) => {
@@ -57,7 +57,7 @@ const overseerMissions = {
         });
 
         const economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || null;
-        const context = { state, economyState, budget, getMissionCensus, efficientSources, economyFlow };
+        const context = { opState, economyState, budget, getMissionCensus, efficientSources, economyFlow };
 
         // Run all mission generators
         missionModules.tower.generate(room, intel, context, missions);

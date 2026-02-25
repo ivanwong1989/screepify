@@ -2,8 +2,8 @@ const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { state, budget, getMissionCensus, efficientSources } = context;
-        const isEmergency = state === 'EMERGENCY';
+        const { opState, budget, getMissionCensus, efficientSources } = context;
+        const isEmergency = opState === 'EMERGENCY';
         let availableHaulerCapacity = intel.haulerCapacity;
         const spawns = intel.structures[STRUCTURE_SPAWN] || [];
         const extensions = intel.structures[STRUCTURE_EXTENSION] || [];

@@ -142,7 +142,7 @@ const overseerIntel = {
         };
     },
 
-    determineState: function(room, intel) {
+    determineOpState: function(room, intel) {
         if (intel.myCreeps.length === 0) {
             debug('overseer', `[Overseer] ${room.name} State: EMERGENCY (Zero Population)`);
             return 'EMERGENCY';

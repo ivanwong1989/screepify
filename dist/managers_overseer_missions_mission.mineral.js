@@ -1,7 +1,7 @@
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { state } = context;
-        if (state === 'EMERGENCY') return;
+        const { opState } = context;
+        if (opState === 'EMERGENCY') return;
         if (!intel.minerals || intel.minerals.length === 0) return;
 
         intel.minerals.forEach(mineral => {
