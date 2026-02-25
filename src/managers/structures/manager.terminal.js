@@ -130,6 +130,7 @@ function ensureMarketConfig() {
         if (!cfg.sell || typeof cfg.sell !== 'object') cfg.sell = {};
         if (!cfg.rooms || typeof cfg.rooms !== 'object') cfg.rooms = {};
         if (!cfg.stockTargets || typeof cfg.stockTargets !== 'object') cfg.stockTargets = {};
+        if (!cfg.manualOrders || typeof cfg.manualOrders !== 'object') cfg.manualOrders = {};
         for (const resourceType of Object.keys(DEFAULT_RESOURCE_CONFIG)) {
             const spec = DEFAULT_RESOURCE_CONFIG[resourceType];
             if (spec.buy && !cfg.buy[resourceType]) {
@@ -160,6 +161,7 @@ function ensureMarketConfig() {
     if (!cfg.sell || typeof cfg.sell !== 'object') cfg.sell = {};
     if (!cfg.rooms || typeof cfg.rooms !== 'object') cfg.rooms = {};
     if (!cfg.stockTargets || typeof cfg.stockTargets !== 'object') cfg.stockTargets = {};
+    if (!cfg.manualOrders || typeof cfg.manualOrders !== 'object') cfg.manualOrders = {};
     for (const resourceType of Object.keys(DEFAULT_RESOURCE_CONFIG)) {
         const spec = DEFAULT_RESOURCE_CONFIG[resourceType];
         if (spec.buy && !cfg.buy[resourceType]) {
@@ -184,6 +186,40 @@ function ensureMarketConfig() {
     }
 
     return cfg;
+}
+
+function normalizeManualOrderMeta(meta) {
+    const m = (meta && typeof meta === 'object') ? meta : {};
+    return {
+        id: ('' + (m.id || '')).trim(),
+        type: ('' + (m.type || '')).trim(),
+        resourceType: ('' + (m.resourceType || '')).trim(),
+        roomName: ('' + (m.roomName || '')).trim(),
+        price: Number.isFinite(Number(m.price)) ? Number(m.price) : undefined,
+        totalAmount: Number.isFinite(Number(m.totalAmount)) ? Number(m.totalAmount) : undefined,
+        tag: ('' + (m.tag || '')).trim(),
+        note: ('' + (m.note || '')).trim(),
+        created: Number.isFinite(Number(m.created)) ? Number(m.created) : Game.time,
+        active: (m.active !== false)
+    };
+}
+
+function cleanupManualOrders(cfg) {
+    if (!cfg || !cfg.manualOrders || typeof cfg.manualOrders !== 'object') return;
+    const live = Game.market && Game.market.orders ? Game.market.orders : {};
+    for (const id of Object.keys(cfg.manualOrders)) {
+        const rec = cfg.manualOrders[id];
+        if (!rec || typeof rec !== 'object') {
+            delete cfg.manualOrders[id];
+            continue;
+        }
+        if (!live[id]) {
+            // Keep record, but mark inactive if order no longer exists.
+            rec.active = false;
+        } else {
+            rec.active = true;
+        }
+    }
 }
 
 function mergePatch(target, patch) {
@@ -933,6 +969,52 @@ const managerTerminal = {
         return summarizeConfig(merged);
     },
 
+    // ---- Manual Market Orders (created via console) ----
+    trackManualOrder: function(orderId, meta) {
+        const cfg = ensureMarketConfig();
+        cleanupManualOrders(cfg);
+        const id = ('' + orderId).trim();
+        if (!id) return { ok: false, error: 'missing order id' };
+        const rec = normalizeManualOrderMeta(Object.assign({}, meta, { id }));
+        cfg.manualOrders[id] = Object.assign(cfg.manualOrders[id] || {}, rec, { active: true });
+        return { ok: true, id };
+    },
+
+    untrackManualOrder: function(orderId) {
+        const cfg = ensureMarketConfig();
+        const id = ('' + orderId).trim();
+        if (!id) return { ok: false, error: 'missing order id' };
+        delete cfg.manualOrders[id];
+        return { ok: true, id };
+    },
+
+    listManualOrders: function() {
+        const cfg = ensureMarketConfig();
+        cleanupManualOrders(cfg);
+        const items = [];
+        for (const id of Object.keys(cfg.manualOrders)) {
+            const rec = cfg.manualOrders[id];
+            if (!rec || typeof rec !== 'object') continue;
+            items.push(Object.assign({}, rec, { id }));
+        }
+        items.sort((a, b) => (b.created || 0) - (a.created || 0));
+        return items;
+    },
+
+    cancelManualOrder: function(orderId) {
+        const id = ('' + orderId).trim();
+        if (!id) return { ok: false, error: 'missing order id' };
+        if (!Game.market) return { ok: false, error: 'market unavailable' };
+        const res = Game.market.cancelOrder(id);
+        if (res !== OK) return { ok: false, error: `cancelOrder=${res}` };
+        // keep record but mark inactive (or let cleanup do it)
+        const cfg = ensureMarketConfig();
+        if (cfg.manualOrders && cfg.manualOrders[id]) cfg.manualOrders[id].active = false;
+        return { ok: true, id };
+    },
+    // --- manual order create end
+
+
     getStockTargets: function(roomName) {
         const cfg = ensureMarketConfig();
         const merged = getRoomConfig(cfg, roomName);
@@ -1000,6 +1082,9 @@ const managerTerminal = {
 
         const base = ensureMarketConfig();
         if (!base.enabled) return;
+
+        // keep manual order records tidy (cheap)
+        cleanupManualOrders(base);
 
         const cfg = getRoomConfig(base, room.name);
         if (!cfg.enabled) return;
