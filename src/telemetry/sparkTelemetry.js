@@ -5,11 +5,10 @@ const sparkStats = require('utils_sparkStats');
 function clamp(n, lo, hi) { return n < lo ? lo : (n > hi ? hi : n); }
 
 function getCfg() {
-    // Backward compatible: if you already toggle this
-    const enabled = (Memory.sparkStatsPrint !== false);
 
     // Central config (override anytime from console)
     if (!Memory.telemetry) Memory.telemetry = {};
+    if (!Memory.telemetry.sparkStatsPrint) Memory.telemetry.sparkStatsPrint = {};
     const t = Memory.telemetry;
 
     // defaults
@@ -18,8 +17,9 @@ function getCfg() {
     if (typeof t.printEvery !== 'number') t.printEvery = 20;    // ticks
     if (typeof t.maxLen !== 'number') t.maxLen = 60;
 
-    // combine toggles
-    t.enabled = t.enabled && enabled;
+    // check that we need telemetry enabled, and also sparkStatsPrint enabled.
+    // in future when we have more telemetry, the telemetry enabled will be the master switch
+    if(t.sparkStatsPrint === true && t.enabled === true) t.enabled = true;
 
     // Energy scaling config (optional)
     if (typeof t.energyTarget !== 'number') t.energyTarget = 800000; // empire target

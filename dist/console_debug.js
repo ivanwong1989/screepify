@@ -119,7 +119,8 @@ module.exports = function registerDebugConsole() {
 
     Object.defineProperty(global, 'sparkstatson', {
         get: function() {
-            Memory.sparkStatsPrint = true;
+            Memory.telemetry.sparkStatsPrint = true;
+            Memory.telemetry.enabled = true;
             console.log('Sparkline stats printing ENABLED');
             return 'Sparkline stats printing ENABLED';
         },
@@ -128,7 +129,8 @@ module.exports = function registerDebugConsole() {
 
     Object.defineProperty(global, 'sparkstatsoff', {
         get: function() {
-            Memory.sparkStatsPrint = false;
+            Memory.telemetry.sparkStatsPrint = false;
+            Memory.telemetry.enabled = false;
             console.log('Sparkline stats printing DISABLED');
             return 'Sparkline stats printing DISABLED';
         },
