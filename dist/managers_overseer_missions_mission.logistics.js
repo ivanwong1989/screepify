@@ -92,7 +92,8 @@ module.exports = {
         const refillSinks = [
             ...(intel.structures[STRUCTURE_SPAWN] || []),
             ...(intel.structures[STRUCTURE_EXTENSION] || []),
-            ...(intel.structures[STRUCTURE_TOWER] || [])
+            ...(intel.structures[STRUCTURE_TOWER] || []),
+            ...(intel.structures[STRUCTURE_LAB] || [])
         ].filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
 
         refillSinks.forEach(target => {
