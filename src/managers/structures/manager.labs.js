@@ -1,3 +1,6 @@
+var reverseLabs = require('managers_structures_labs.reverse');
+
+
 const DEFAULTS = Object.freeze({
     enabled: true,
     runEvery: 5,
@@ -454,6 +457,14 @@ const managerLabs = {
         if (!cfg.enabled) return [];
         if (room._opState === 'EMERGENCY') return [];
 
+        // Special reverse split off because we don't want to destabilize existing lab manager.
+        // Future to re-unify reverse reaction into this file.
+        if (cfg.mode && cfg.mode.toLowerCase() === 'reverse') {
+            const cache = global.getRoomCache(room);
+            const labs = cache.myStructuresByType[STRUCTURE_LAB] || [];
+            return reverseLabs.getReverseLogisticsMissions(room, cfg, labs);
+        }
+
         return buildLabLogisticsMissions(room, cfg);
     },
 
@@ -487,6 +498,12 @@ const managerLabs = {
             outputIds = labs
                 .map(l => l.id)
                 .filter(id => !inputIds.includes(id) && !boostLabIds.has(id));
+        }
+
+        // Reverse mode branch out
+        if (mode === 'reverse') {
+            reverseLabs.runReverse(room, cfg, labs);
+            return;
         }
 
         if (mode === 'react') {
