@@ -10,6 +10,11 @@ function showMarketHelp() {
         'market(\"room\", roomName, \"on|off\") - enable/disable per-room trading',
         'market(\"room\", roomName, \"report\") - show mineral totals (ledger + terminal)',
         'market(\"calc\", roomName, \"force\"?) - show buy/sell calc details for a room',
+        'market(\"order\", \"buy\", room, resource, price, amount, \"tag\"?)  - create & track a BUY order',
+        'market(\"order\", \"sell\", room, resource, price, amount, \"tag\"?) - create & track a SELL order',
+        'market(\"orders\")                 - list tracked manual orders',
+        'market(\"order\", \"cancel\", orderId)  - cancel an order (and mark inactive)',
+        'market(\"order\", \"untrack\", orderId) - stop tracking (does not cancel)',
         'example: market(\"set\", { stockTargets: { LO: 2000 }, buy: { LO: { maxPrice: 1.5 } } })',
         'example: market(\"set\", { stockTargets: { energy: 100000 }, sell: { energy: { minPrice: 0.01 } } })',
         'example: market(\"set\", { energyValue: 16, maxOverpayPct: 0.08, sellBufferPct: 0.05 })'
@@ -65,6 +70,102 @@ function marketReport(roomName) {
     lines.forEach(line => console.log(line));
     return `Reported minerals for ${roomName}`;
 }
+
+
+function toNumber(x) {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : NaN;
+}
+
+function findNewOrderId(beforeIds, afterIds) {
+    const before = new Set(beforeIds || []);
+    const created = (afterIds || []).filter(id => !before.has(id));
+    if (created.length === 1) return created[0];
+    return null;
+}
+
+function printManualOrders() {
+    const items = managerMarket.listManualOrders();
+    if (!items || items.length === 0) {
+        console.log('No tracked manual orders.');
+        return 'No tracked manual orders.';
+    }
+    console.log(`Tracked manual orders: ${items.length}`);
+    for (const rec of items.slice(0, 50)) {
+        const active = rec.active ? 'active' : 'inactive';
+        console.log(
+            `${rec.id} ${active} type=${rec.type} resource=${rec.resourceType} room=${rec.roomName} ` +
+            `price=${rec.price} total=${rec.totalAmount} tag=${rec.tag || ''}`
+        );
+    }
+    if (items.length > 50) console.log(`(+${items.length - 50} more)`);
+    return `Listed ${items.length} manual orders`;
+}
+
+function createAndTrackOrder(kind, roomName, resourceType, price, amount, tag) {
+    if (!Game.market) return 'Market not available.';
+    const room = Game.rooms[roomName];
+    if (!room) return `Unknown room: ${roomName}`;
+    if (!room.controller || !room.controller.my) return `Room not owned: ${roomName}`;
+    if (!room.terminal) return `No terminal in room: ${roomName}`;
+
+    const type = ('' + kind).toLowerCase() === 'sell' ? ORDER_SELL : ORDER_BUY;
+    const p = toNumber(price);
+    const a = Math.floor(toNumber(amount));
+    if (!resourceType) return 'Usage: market("order", "buy|sell", room, resource, price, amount, "tag"?)';
+    if (!Number.isFinite(p) || p <= 0) return `Invalid price: ${price}`;
+    if (!Number.isFinite(a) || a <= 0) return `Invalid amount: ${amount}`;
+
+    if (type === ORDER_SELL) {
+        const have = room.terminal.store[resourceType] || 0;
+        if (have <= 0) console.log(`[Market] Warning: terminal has 0 ${resourceType} (sell order can exist, but deals will fail without stock)`);
+    }
+
+    const beforeIds = Object.keys(Game.market.orders || {});
+    const res = Game.market.createOrder({
+        type,
+        resourceType,
+        price: p,
+        totalAmount: a,
+        roomName
+    });
+    if (res !== OK) return `createOrder failed: ${res}`;
+
+    const afterIds = Object.keys(Game.market.orders || {});
+    let newId = findNewOrderId(beforeIds, afterIds);
+
+    // Fallback: try to find a matching order (rarely needed)
+    if (!newId) {
+        for (const id of afterIds) {
+            if (beforeIds.includes(id)) continue;
+            const o = Game.market.orders[id];
+            if (!o) continue;
+            if (o.type === type && o.resourceType === resourceType && o.roomName === roomName && o.price === p) {
+                newId = id;
+                break;
+            }
+        }
+    }
+
+    if (!newId) {
+        console.log('[Market] Order created but could not reliably detect new order id; not tracking.');
+        return 'Order created but could not detect id (not tracked).';
+    }
+
+    managerMarket.trackManualOrder(newId, {
+        type,
+        resourceType,
+        roomName,
+        price: p,
+        totalAmount: a,
+        tag: tag || '',
+        created: Game.time
+    });
+
+    console.log(`[Market] Created & tracked order id=${newId} type=${type} ${resourceType} price=${p} total=${a} room=${roomName} tag=${tag || ''}`);
+    return `Created order ${newId}`;
+}
+
 
 module.exports = function registerMarketConsole() {
     global.market = function(action, ...args) {
@@ -130,6 +231,43 @@ module.exports = function registerMarketConsole() {
             return result && result.summary ? result.summary : 'Done';
         }
 
+
+        if (cmd === 'orders' || cmd === 'manualorders' || cmd === 'o') {
+            return printManualOrders();
+        }
+
+        if (cmd === 'order') {
+            const sub = args[0] ? ('' + args[0]).trim().toLowerCase() : '';
+
+            if (sub === 'buy' || sub === 'sell') {
+                const roomName = args[1];
+                const resourceType = args[2];
+                const price = args[3];
+                const amount = args[4];
+                const tag = args[5];
+                return createAndTrackOrder(sub, roomName, resourceType, price, amount, tag);
+            }
+
+            if (sub === 'cancel') {
+                const id = args[1];
+                if (!id) return 'Usage: market("order", "cancel", orderId)';
+                const r = managerMarket.cancelManualOrder(id);
+                const msg = r && r.ok ? `Canceled order ${r.id}` : `Cancel failed: ${r.error || 'unknown'}`;
+                console.log(msg);
+                return msg;
+            }
+
+            if (sub === 'untrack' || sub === 'rm' || sub === 'remove') {
+                const id = args[1];
+                if (!id) return 'Usage: market("order", "untrack", orderId)';
+                const r = managerMarket.untrackManualOrder(id);
+                const msg = r && r.ok ? `Untracked order ${r.id}` : `Untrack failed: ${r.error || 'unknown'}`;
+                console.log(msg);
+                return msg;
+            }
+            
+            return showMarketHelp();
+        }
         return showMarketHelp();
     };
 };

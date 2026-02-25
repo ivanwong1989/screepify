@@ -9,10 +9,18 @@ var roleDefender = require('role.defender');
 var roleAssault = require('role.assault');
 var roleTower = require('role.tower');
 var runColony = require('runColony');
-var cpuEma = require('telemetry_cpuEma');
-var sparkStats = require('utils_sparkStats');
+var telemetry = require('telemetry_index');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
+var safemodeManager = require('managers_safemode_safemodeManager');
 
+
+
+// CONSTANTS
+const SAFE_MODE_ROOMS = new Set([
+    'W44S28'
+]);
+
+// Helpers
 function computeCpuMode() {
   const limit = Game.cpu.limit;
   const used = Game.cpu.getUsed();      // used so far this tick
@@ -118,6 +126,16 @@ module.exports.loop = function() {
             // Check if this is a valid colony (Owned controller + Spawns)
             if (room.controller && room.controller.my) {
                 const cache = global.getRoomCache(room);
+                
+                // --- SAFE MODE (cheap + conservative) ---
+                if (SAFE_MODE_ROOMS.has(room.name)) {
+                    safemodeManager.run(room, cache, {
+                        weakRampartHits: 5000,       // tweak later if needed
+                        hostileNearSpawnRange: 1,
+                        minRetryInterval: 5
+                    });
+                }
+
                 const spawns = cache.myStructuresByType[STRUCTURE_SPAWN] || [];
                 if (spawns.length > 0) {
                     // Run Colony Logic for this room
@@ -173,32 +191,9 @@ module.exports.loop = function() {
             }
         }
 
-        // cpu EMA counted
-        cpuEma.tick();
-        
-        // Sparkline stats 
-        if (Game.time % 5 === 0) {
-            sparkStats.pushSeries('cpu.now', Game.cpu.getUsed(), { maxLen: 60 });
-            sparkStats.pushSeries('cpu.ema', Memory.avgCpu, { maxLen: 60 });
-            sparkStats.pushSeries('cpu.bucket', Game.cpu.bucket, { maxLen: 60 });
-
-            // Total stored energy
-            let energy = 0;
-            for (const rName in Game.rooms) {
-                const room = Game.rooms[rName];
-                if (!room.controller || !room.controller.my) continue;
-                const storage = room.storage;
-                if (storage) energy += storage.store.energy || 0;
-            }
-            sparkStats.pushSeries('energy.storage', energy, { maxLen: 60 });
-        }
-
-        if (Memory.sparkStatsPrint !== false && Game.time % 20 === 0) {
-            console.log(sparkStats.printSeries('cpu.now', { label: 'CPU used' }));
-            console.log(sparkStats.printSeries('cpu.ema', { label: 'CPU ema', min: 0, max: Game.cpu.limit }));
-            console.log(sparkStats.printSeries('cpu.bucket', { label: 'CPU bucket', min: 0, max: 10000 }));
-            console.log(sparkStats.printSeries('energy.storage', { label: 'Storage E' }));
-        }
+        // Telemetry collection and printing
+        telemetry.tick();
+        telemetry.print();
 
 
     //});

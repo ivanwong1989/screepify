@@ -11,7 +11,16 @@ var roleTower = require('role.tower');
 var runColony = require('runColony');
 var telemetry = require('telemetry_index');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
+var safemodeManager = require('managers_safemode_safemodeManager');
 
+
+
+// CONSTANTS
+const SAFE_MODE_ROOMS = new Set([
+    'W44S28'
+]);
+
+// Helpers
 function computeCpuMode() {
   const limit = Game.cpu.limit;
   const used = Game.cpu.getUsed();      // used so far this tick
@@ -117,6 +126,16 @@ module.exports.loop = function() {
             // Check if this is a valid colony (Owned controller + Spawns)
             if (room.controller && room.controller.my) {
                 const cache = global.getRoomCache(room);
+                
+                // --- SAFE MODE (cheap + conservative) ---
+                if (SAFE_MODE_ROOMS.has(room.name)) {
+                    safemodeManager.run(room, cache, {
+                        weakRampartHits: 5000,       // tweak later if needed
+                        hostileNearSpawnRange: 1,
+                        minRetryInterval: 5
+                    });
+                }
+
                 const spawns = cache.myStructuresByType[STRUCTURE_SPAWN] || [];
                 if (spawns.length > 0) {
                     // Run Colony Logic for this room
