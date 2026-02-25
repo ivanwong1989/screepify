@@ -24,6 +24,11 @@ function getCfg() {
     // Energy scaling config (optional)
     if (typeof t.energyTarget !== 'number') t.energyTarget = 800000; // empire target
     if (typeof t.energyMode !== 'string') t.energyMode = 'pct'; // 'abs' | 'pct' | 'delta'
+    // Normalize user input from console (trim/case-insensitive)
+    t.energyMode = String(t.energyMode).trim().toLowerCase();
+    if (t.energyMode !== 'abs' && t.energyMode !== 'pct' && t.energyMode !== 'delta') {
+        t.energyMode = 'pct';
+    }
 
     return t;
 }
@@ -66,6 +71,7 @@ function sample() {
 function print() {
     const cfg = getCfg();
     if (!cfg.enabled) return;
+    if (Game.shard && Game.shard.name !== 'shard3') return;
     if (Game.time % cfg.printEvery !== 0) return;
 
     console.log(sparkStats.printSeries('cpu.now', { label: 'CPU used' }));

@@ -5,16 +5,23 @@ const route = require('managers_admiral_tactics_assault_solo_route');
 const engage = require('managers_admiral_tactics_assault_solo_engage');
 const actionPlan = require('managers_admiral_tactics_assault_solo_actionPlan');
 
+// 🔥 SOLO MICRO PLANNER
+const soloPlanner = require('managers_admiral_tactics_assault_solo_soloPlanner_soloPlanner');
+
 const RETREAT_AT = 0.3;
 const REENGAGE_AT = 0.7;
 
 function advanceWaypoint(creep, runtime, waypoints) {
     if (!Array.isArray(waypoints) || waypoints.length === 0) return;
+
     let index = Number(runtime.waypointIndex) || 0;
     if (index >= waypoints.length) return;
+
     const wp = waypoints[index];
-    if (wp.roomName === creep.room.name && creep.pos.inRangeTo(wp.x, wp.y, 1)) {
-        runtime.waypointIndex = Math.min(index + 1, waypoints.length);
+
+    if (wp.roomName === creep.room.name &&
+        creep.pos.inRangeTo(wp.x, wp.y, 1)) {
+        runtime.waypointIndex = index + 1;
     }
 }
 
@@ -24,55 +31,101 @@ function isInRange(creep, pos, range) {
 }
 
 function shouldRetreat(creep) {
-    return creep.hitsMax > 0 && (creep.hits / creep.hitsMax) <= RETREAT_AT;
+    return creep.hitsMax > 0 &&
+        (creep.hits / creep.hitsMax) <= RETREAT_AT;
 }
 
 function shouldReengage(creep) {
-    return creep.hitsMax > 0 && (creep.hits / creep.hitsMax) >= REENGAGE_AT;
+    return creep.hitsMax > 0 &&
+        (creep.hits / creep.hitsMax) >= REENGAGE_AT;
 }
 
 function updatePhase(creep, runtime, flags, ao) {
     const waypoints = flags.waypointPositions || [];
 
+    if (!runtime.phase) runtime.phase = 'RENDEZVOUS';
+
+    // RENDEZVOUS → STAGE
     if (runtime.phase === 'RENDEZVOUS') {
         if (!flags.waitPos || isInRange(creep, flags.waitPos, 1)) {
             runtime.phase = 'STAGE';
         }
     }
 
+    // STAGE → ENGAGE
     if (runtime.phase === 'STAGE') {
         advanceWaypoint(creep, runtime, waypoints);
-        const waypointDone = (Number(runtime.waypointIndex) || 0) >= waypoints.length;
+
+        const waypointDone =
+            (Number(runtime.waypointIndex) || 0) >= waypoints.length;
+
         if (waypointDone) {
-            if (!flags.assemblyPos || isInRange(creep, flags.assemblyPos, 1)) {
+            if (!flags.assemblyPos ||
+                isInRange(creep, flags.assemblyPos, 1)) {
                 runtime.phase = 'ENGAGE';
             }
         }
     }
 
+    // ENGAGE → RETREAT
     if (runtime.phase === 'ENGAGE') {
-        if (shouldRetreat(creep)) runtime.phase = 'RETREAT';
+        if (shouldRetreat(creep)) {
+            runtime.phase = 'RETREAT';
+        }
     }
 
+    // RETREAT → STAGE
     if (runtime.phase === 'RETREAT') {
-        if (shouldReengage(creep) && flags.waitPos && isInRange(creep, flags.waitPos, 2)) {
-            runtime.phase = 'STAGE';
-        } else if (shouldReengage(creep) && !flags.waitPos && ao.centerPos && isInRange(creep, ao.centerPos, 3)) {
-            runtime.phase = 'STAGE';
+        if (shouldReengage(creep)) {
+            if (flags.waitPos && isInRange(creep, flags.waitPos, 2)) {
+                runtime.phase = 'STAGE';
+            } else if (!flags.waitPos &&
+                ao.centerPos &&
+                isInRange(creep, ao.centerPos, 3)) {
+                runtime.phase = 'STAGE';
+            }
         }
     }
 }
 
 function run(creep, mission, context) {
     const runtime = memory.getRuntime(mission.name);
-    const flags = flagsResolver.resolveFlags(mission);
+
+    const flags = flagsResolver.resolveFlags(mission); // handles W/Y automatically
     const ao = aoResolver.resolveAO(mission, flags);
 
     updatePhase(creep, runtime, flags, ao);
 
+    // Cross-room / waypoint routing
     const routeTarget = route.getRouteTarget(creep, runtime, flags, ao);
-    const target = runtime.phase === 'ENGAGE' ? engage.selectTarget(creep, flags, ao) : null;
-    return actionPlan.plan(creep, runtime, target, routeTarget);
+
+    // AO-bounded target selection
+    const target =
+        runtime.phase === 'ENGAGE'
+            ? engage.selectTarget(creep, flags, ao)
+            : null;
+
+    // 🧠 SOLO MICRO PLANNING (combat matrix + predictive avoidance)
+    const movePlan =
+        soloPlanner.plan(creep, runtime, target, routeTarget);
+
+    // Let actionPlan handle attack/heal logic.
+    // routeTarget stays the "strategic" destination.
+    // movePlan (optional) overrides movement for 1-tick micro.
+    const plan = actionPlan.plan(
+        creep,
+        runtime,
+        target,
+        routeTarget,
+        movePlan // <-- 5th param
+    );
+
+    // Preserve micro-step precision
+    if (movePlan && movePlan.moveTarget) {
+        plan.range = movePlan.range;
+    }
+
+    return plan;
 }
 
 module.exports = {

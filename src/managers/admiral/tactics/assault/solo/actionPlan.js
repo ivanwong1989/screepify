@@ -1,5 +1,7 @@
 function buildActions(creep, target) {
     const actions = [];
+
+    // Always self-heal if possible
     if (creep.getActiveBodyparts(HEAL) > 0) {
         actions.push({ action: 'heal', targetId: creep.id });
     }
@@ -19,10 +21,16 @@ function buildActions(creep, target) {
     return actions;
 }
 
-function plan(creep, runtime, target, routeTarget) {
+/**
+ * Enhanced plan:
+ * - Keeps original behavior
+ * - Allows soloPlanner to override movement cleanly
+ */
+function plan(creep, runtime, target, routeTarget, moveOverride) {
     let moveTarget = routeTarget;
     let range = 1;
 
+    // Default behavior
     if (runtime.phase === 'ENGAGE' && target) {
         moveTarget = target.pos;
         range = creep.getActiveBodyparts(RANGED_ATTACK) > 0 ? 3 : 1;
@@ -30,8 +38,19 @@ function plan(creep, runtime, target, routeTarget) {
         range = runtime.phase === 'RETREAT' ? 2 : 1;
     }
 
+    // ✅ Movement override from soloPlanner
+    if (moveOverride && moveOverride.moveTarget) {
+        moveTarget = moveOverride.moveTarget;
+
+        if (typeof moveOverride.range === 'number') {
+            range = moveOverride.range;
+        }
+    }
+
     return {
-        moveTarget: moveTarget ? { x: moveTarget.x, y: moveTarget.y, roomName: moveTarget.roomName } : null,
+        moveTarget: moveTarget
+            ? { x: moveTarget.x, y: moveTarget.y, roomName: moveTarget.roomName }
+            : null,
         range,
         actions: buildActions(creep, target)
     };
