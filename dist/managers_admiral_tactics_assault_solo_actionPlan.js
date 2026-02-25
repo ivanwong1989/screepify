@@ -39,11 +39,19 @@ function plan(creep, runtime, target, routeTarget, moveOverride) {
     }
 
     // ✅ Movement override from soloPlanner
-    if (moveOverride && moveOverride.moveTarget) {
-        moveTarget = moveOverride.moveTarget;
+    if (moveOverride) {
+        // HOLD: planner explicitly wants no movement this tick
+        if (!moveOverride.moveTarget && moveOverride.range === 0) {
+            return {
+                moveTarget: null,
+                range: 0,
+                actions: buildActions(creep, target)
+            };
+        }
 
-        if (typeof moveOverride.range === 'number') {
-            range = moveOverride.range;
+        if (moveOverride.moveTarget) {
+            moveTarget = moveOverride.moveTarget;
+            if (typeof moveOverride.range === 'number') range = moveOverride.range;
         }
     }
 
