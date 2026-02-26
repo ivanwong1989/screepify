@@ -15,7 +15,13 @@
  */
 
 function getBoostFlagName(squadKey) {
-    return `${squadKey}b`;
+    if (!squadKey) return null;
+
+    // squadKey = "assault:flag:W"
+    const parts = squadKey.split(':');
+    const letter = parts[parts.length - 1]; // W or Y
+
+    return `${letter}b`;
 }
 
 function isLabEligible(lab) {

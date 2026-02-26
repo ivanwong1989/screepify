@@ -4,12 +4,35 @@ const aoResolver = require('managers_admiral_tactics_assault_common_ao');
 const route = require('managers_admiral_tactics_assault_solo_route');
 const engage = require('managers_admiral_tactics_assault_solo_engage');
 const actionPlan = require('managers_admiral_tactics_assault_solo_actionPlan');
+const boostGate = require('managers_admiral_tactics_boostgate_boostGate');
 
 // 🔥 SOLO MICRO PLANNER
 const soloPlanner = require('managers_admiral_tactics_assault_solo_soloPlanner_soloPlanner');
 
 const RETREAT_AT = 0.3;
 const REENGAGE_AT = 0.7;
+
+const WIPE_TTL = 4; // same as duos
+
+function handleSoloWipe(runtime, creep, now) {
+    if (!runtime.wipe) runtime.wipe = {};
+
+    // If creep exists, clear wipe timer
+    if (creep) {
+        runtime.wipe.lastMissingAt = 0;
+        return { reset: false };
+    }
+
+    // Creep missing this tick -> start/continue timer
+    if (!runtime.wipe.lastMissingAt) runtime.wipe.lastMissingAt = now;
+
+    // Missing long enough => consider wiped
+    if (now - runtime.wipe.lastMissingAt >= WIPE_TTL) {
+        return { reset: true };
+    }
+
+    return { reset: false };
+}
 
 function formatPos(pos) {
     if (!pos) return 'null';
@@ -127,6 +150,51 @@ function updatePhase(creep, runtime, flags, ao) {
 function run(creep, mission, context) {
     const runtime = memory.getRuntime(mission.name);
 
+    // ====================
+    // 💀 SOLO WIPE TRACKER (same concept as duos)
+    // ====================
+    const now = (typeof Game !== 'undefined') ? Game.time : 0;
+
+    const wipe = handleSoloWipe(runtime, creep, now);
+    if (wipe.reset) {
+        // Reset mission state fully
+        runtime.phase = 'RENDEZVOUS';
+        runtime.waypointIndex = 0;
+
+        // Clear any leftover micro/oscillation state
+        delete runtime._lastPos;
+        delete runtime._prevPos;
+
+        if (runtime.debug) {
+            delete runtime.debug.lastPhase;
+            delete runtime.debug.lastRouteTarget;
+            delete runtime.debug.lastTarget;
+            delete runtime.debug.lastMoveTarget;
+            delete runtime.debug.lastMoveTarget2;
+            delete runtime.debug.lastPos;
+            delete runtime.debug.lastPos2;
+            delete runtime.debug.oscillateCount;
+        }
+
+        // Clear wipe timer so new spawn starts fresh
+        runtime.wipe.lastMissingAt = 0;
+
+        return null; // No creep alive this tick
+    }
+
+    // If creep missing but not TTL yet, just bail
+    if (!creep) return null;
+
+    // ====================
+    // 🚪 BOOST GATE (Pre-Assembly Phase)
+    // ====================
+    const squadKey = mission && mission.data && mission.data.squadKey;
+
+    if (squadKey && !boostGate.runBoostGate(creep, squadKey)) {
+        // Still boosting — do NOT run assembly/combat logic
+        return null;
+    }
+
     const flags = flagsResolver.resolveFlags(mission); // handles W/Y automatically
     const ao = aoResolver.resolveAO(mission, flags);
 
@@ -180,7 +248,6 @@ function run(creep, mission, context) {
 
     // ---- Debug logging for oscillation / target changes ----
     const dbg = runtime.debug || (runtime.debug = {});
-    const now = (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
 
     const posNow = posKey(creep.pos);
     const routeKey = posKey(routeTarget);
