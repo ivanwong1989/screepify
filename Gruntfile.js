@@ -102,7 +102,7 @@ module.exports = function(grunt) {
     // Custom Task: Check if on Dev branch
     grunt.registerTask('check-dev', function() {
         var currentBranch = getCurrentBranch();
-        if (!currentBranch.startsWith('dev')) {
+        if (currentBranch !== 'master' && !currentBranch.startsWith('dev')) {
             grunt.fail.fatal('Safety Check: You are on "' + currentBranch + '". You must be on "dev" to push to private server!');
         }
         grunt.log.ok('Branch verified: dev');

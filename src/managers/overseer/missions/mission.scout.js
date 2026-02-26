@@ -11,6 +11,9 @@ module.exports = {
         );
         if (context.opState === 'EMERGENCY') return;
 
+        // if disabled remoteMissionsEnabled, then no need for auto gen scout missions
+        if (Memory.remoteMissionsEnabled === false) return; 
+
         const exits = Game.map.describeExits(room.name);
         if (!exits) return;
 

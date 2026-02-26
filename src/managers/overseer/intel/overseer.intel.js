@@ -15,11 +15,37 @@ const overseerIntel = {
         
         const containers = structures[STRUCTURE_CONTAINER] || [];
         const extractors = structures[STRUCTURE_EXTRACTOR] || [];
+
+        // --- Per-tick position lookup maps (cheap, O(n)) ---
+        const posKey = (x, y) => `${x},${y}`;
+
+        const containerIdByPos = Object.create(null);
+        for (const c of containers) {
+            const key = posKey(c.pos.x, c.pos.y);
+            // preserve first container found (same behavior as filter()[0])
+            if (containerIdByPos[key] === undefined) {
+                containerIdByPos[key] = c.id;
+            }
+        }
+
+        const links = structures[STRUCTURE_LINK] || [];
+        const linkIdByPos = Object.create(null);
+        for (const l of links) {
+            const key = posKey(l.pos.x, l.pos.y);
+            if (linkIdByPos[key] === undefined) {
+                linkIdByPos[key] = l.id;
+            }
+        } 
+
         const storage = room.storage;
         const terminal = room.terminal;
         
-        const containerEnergy = containers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
-        const containerCapacity = containers.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
+        let containerEnergy = 0;
+        let containerCapacity = 0;
+        for (const c of containers) {
+            containerEnergy += (c.store[RESOURCE_ENERGY] || 0);
+            containerCapacity += c.store.getCapacity(RESOURCE_ENERGY);
+        }
         const storageEnergy = storage ? storage.store[RESOURCE_ENERGY] : 0;
         const storageCapacity = storage ? storage.store.getCapacity(RESOURCE_ENERGY) : 0;
         const terminalEnergy = terminal ? terminal.store[RESOURCE_ENERGY] : 0;
@@ -56,11 +82,33 @@ const overseerIntel = {
         });
         
         const sources = (cache.sources || []).map(source => {
-            const nearbyContainers = containers.filter(c => c.pos.inRangeTo(source.pos, 1));
-            const nearbyLinks = source.pos.findInRange(FIND_STRUCTURES, 2, {
-                filter: s => s.structureType === STRUCTURE_LINK
-            });
-            const link = nearbyLinks.length > 0 ? nearbyLinks[0] : null;
+            // Check 8 adjacent tiles for container
+            let containerId = null;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const id = containerIdByPos[posKey(source.pos.x + dx, source.pos.y + dy)];
+                    if (id) {
+                        containerId = id;
+                        break;
+                    }
+                }
+                if (containerId) break;
+            }
+
+            // Check 5x5 area for link (range 2)
+            let linkId = null;
+            for (let dx = -2; dx <= 2; dx++) {
+                for (let dy = -2; dy <= 2; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const id = linkIdByPos[posKey(source.pos.x + dx, source.pos.y + dy)];
+                    if (id) {
+                        linkId = id;
+                        break;
+                    }
+                }
+                if (linkId) break;
+            }
 
             let availableSpaces = 0;
             for (let x = -1; x <= 1; x++) {
@@ -76,15 +124,27 @@ const overseerIntel = {
                 pos: source.pos,
                 energy: source.energy,
                 energyCapacity: source.energyCapacity,
-                hasContainer: nearbyContainers.length > 0,
-                containerId: nearbyContainers.length > 0 ? nearbyContainers[0].id : null,
-                linkId: link ? link.id : null,
+                hasContainer: !!containerId,
+                containerId: containerId,
+                linkId: linkId,
                 availableSpaces: availableSpaces
             };
         });
 
         const minerals = (cache.minerals || []).map(mineral => {
-            const nearbyContainers = containers.filter(c => c.pos.inRangeTo(mineral.pos, 1));
+            // Check 8 adjacent tiles for container (same as source logic)
+            let containerId = null;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const id = containerIdByPos[posKey(mineral.pos.x + dx, mineral.pos.y + dy)];
+                    if (id) {
+                        containerId = id;
+                        break;
+                    }
+                }
+                if (containerId) break;
+            }
             const extractor = extractors.find(e => e.pos.isEqualTo(mineral.pos));
 
             let availableSpaces = 0;
@@ -104,8 +164,8 @@ const overseerIntel = {
                 ticksToRegeneration: mineral.ticksToRegeneration || 0,
                 hasExtractor: !!extractor,
                 extractorId: extractor ? extractor.id : null,
-                hasContainer: nearbyContainers.length > 0,
-                containerId: nearbyContainers.length > 0 ? nearbyContainers[0].id : null,
+                hasContainer: !!containerId,
+                containerId: containerId,
                 availableSpaces: availableSpaces
             };
         });
@@ -114,18 +174,30 @@ const overseerIntel = {
         let controllerContainerId = null;
         if (room.controller) {
             const cPos = room.controller.pos;
-            for (let x = -3; x <= 3; x++) {
-                for (let y = -3; y <= 3; y++) {
-                    if (x === 0 && y === 0) continue;
-                    const cx = cPos.x + x;
-                    const cy = cPos.y + y;
+
+            controllerSpaces = 0;
+            controllerContainerId = null;
+
+            // Single 7x7 scan: count spaces + find container via lookup
+            for (let dx = -3; dx <= 3; dx++) {
+                for (let dy = -3; dy <= 3; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+
+                    const cx = cPos.x + dx;
+                    const cy = cPos.y + dy;
+
                     if (cx < 0 || cx > 49 || cy < 0 || cy > 49) continue;
+
                     const t = terrain.get(cx, cy);
                     if (t !== TERRAIN_MASK_WALL) controllerSpaces++;
+
+                    // container lookup (O(1))
+                    if (!controllerContainerId) {
+                        const id = containerIdByPos[posKey(cx, cy)];
+                        if (id) controllerContainerId = id;
+                    }
                 }
             }
-            const controllerContainers = containers.filter(c => room.controller.pos.inRangeTo(c.pos, 3));
-            if (controllerContainers.length > 0) controllerContainerId = controllerContainers[0].id;
         }
 
         return {

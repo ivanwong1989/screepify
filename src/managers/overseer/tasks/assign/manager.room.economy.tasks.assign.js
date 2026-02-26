@@ -42,6 +42,32 @@ const execScoutTask = require('managers_overseer_tasks_exec_scout');
  * @property {Object=} meta
  */
 var managerTasks = {
+    getMissionNeeds: function(mission) {
+        // Cache on the mission object for this tick only.
+        if (mission && mission._needsTick === Game.time && mission._needs) return mission._needs;
+
+        const type = mission ? mission.type : null;
+        const needs = { work: false, carry: false, claim: false };
+
+        if (type === 'harvest' || type === 'remote_harvest' || type === 'mineral' || type === 'dismantle') {
+            needs.work = true;
+        } else if (
+            type === 'upgrade' || type === 'build' || type === 'repair' ||
+            type === 'remote_build' || type === 'remote_repair'
+        ) {
+            needs.work = true;
+            needs.carry = true;
+        } else if (type === 'transfer' || type === 'remote_haul') {
+            needs.carry = true;
+        } else if (type === 'remote_reserve' || type === 'remote_claim') {
+            needs.claim = true;
+        }
+
+        mission._needsTick = Game.time;
+        mission._needs = needs;
+        return needs;
+    },
+
     getRemoteCreepsByHomeRoom: function() {
         const cache = global._remoteCreepsByHomeRoom;
         if (cache && cache.time === Game.time) return cache.byRoom;
@@ -167,8 +193,10 @@ var managerTasks = {
                          // Handled in idle loop or specific check below
                     }
 
-                    missionStatus[missionName].assignedWorkParts += creep.getActiveBodyparts(WORK);
-                    missionStatus[missionName].assignedCarryParts += creep.getActiveBodyparts(CARRY);
+                    // Pre-cache creep body parts to be used later
+                    const p = this.getCreepActiveParts(creep);
+                    missionStatus[missionName].assignedWorkParts += p.work;
+                    missionStatus[missionName].assignedCarryParts += p.carry;
                 } else {
                     // Mission was removed by Overseer (completed or strategy changed)
                     // Release the creep
@@ -207,8 +235,10 @@ var managerTasks = {
                 
                 // Update status immediately so next creep in this loop sees updated counts
                 missionStatus[bestMission.name].assignedCount++;
-                missionStatus[bestMission.name].assignedWorkParts += creep.getActiveBodyparts(WORK);
-                missionStatus[bestMission.name].assignedCarryParts += creep.getActiveBodyparts(CARRY);
+                // Pre-cache creep body parts to be used later
+                const p = this.getCreepActiveParts(creep);
+                missionStatus[missionName].assignedWorkParts += p.work;
+                missionStatus[missionName].assignedCarryParts += p.carry;
                 
                 if (creep.memory.ticketId) this.updateReservation(creep, 'ACTIVE');
 
@@ -403,24 +433,15 @@ var managerTasks = {
             // Check if requirements are met (Saturation check)
             if (req.count && status.assignedCount >= req.count) continue;
 
+            // ✅ cache once per creep per tick
+            const parts = this.getCreepActiveParts(creep);
+
             // Check if creep is capable for this mission type
-            if (m.type === 'harvest') {
-                if (creep.getActiveBodyparts(WORK) === 0) continue;
-            } else if (m.type === 'remote_harvest') {
-                if (creep.getActiveBodyparts(WORK) === 0) continue;
-            } else if (m.type === 'mineral') {
-                if (creep.getActiveBodyparts(WORK) === 0) continue;
-            } else if (m.type === 'upgrade' || m.type === 'build' || m.type === 'repair' || m.type === 'remote_build' || m.type === 'remote_repair') {
-                if (creep.getActiveBodyparts(WORK) === 0 || creep.getActiveBodyparts(CARRY) === 0) continue;
-            } else if (m.type === 'transfer' || m.type === 'remote_haul') {
-                if (creep.getActiveBodyparts(CARRY) === 0) continue;
-            } else if (m.type === 'dismantle') {
-                if (creep.getActiveBodyparts(WORK) === 0) continue;
-            } else if (m.type === 'remote_reserve') {
-                if (creep.getActiveBodyparts(CLAIM) === 0) continue;
-            } else if (m.type === 'remote_claim') {
-                if (creep.getActiveBodyparts(CLAIM) === 0) continue;
-            }
+            const needs = this.getMissionNeeds(m); // {work, carry, claim}
+
+            if (needs.work && parts.work === 0) continue;
+            if (needs.carry && parts.carry === 0) continue;
+            if (needs.claim && parts.claim === 0) continue;
 
             // Mission is valid
             if (bestPriority === null) {
@@ -666,6 +687,22 @@ var managerTasks = {
 
         const target = tower.pos.findClosestByRange(targets);
         return target ? target.id : null;
+    },
+
+    getCreepActiveParts: function(creep) {
+        // Cache per-creep per-tick. Ephemeral only.
+        if (creep._partsTick === Game.time && creep._parts) return creep._parts;
+
+        // Only compute what this file uses for gating + missionStatus accounting.
+        const parts = {
+            work: creep.getActiveBodyparts(WORK),
+            carry: creep.getActiveBodyparts(CARRY),
+            claim: creep.getActiveBodyparts(CLAIM),
+        };
+
+        creep._partsTick = Game.time;
+        creep._parts = parts;
+        return parts;
     },
 
     toRoomPosition: function(pos) {

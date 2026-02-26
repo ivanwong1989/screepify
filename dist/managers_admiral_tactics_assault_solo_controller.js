@@ -96,8 +96,15 @@ function updatePhase(creep, runtime, flags, ao) {
         }
     }
 
-    // ENGAGE → RETREAT
+    // ENGAGE → STAGE if attack flag removed (A/B no longer present)
     if (runtime.phase === 'ENGAGE') {
+        if (!flags.attackFlag) {
+            runtime.phase = 'STAGE';
+            // optional: reset waypoint progress so it re-walks to W properly
+            // runtime.waypointIndex = 0;
+            return;
+        }
+
         if (shouldRetreat(creep)) {
             runtime.phase = 'RETREAT';
         }
