@@ -14,6 +14,45 @@ const REENGAGE_AT = 0.7;
 
 const WIPE_TTL = 4; // same as duos
 
+function getRuntimeKey(mission) {
+    return (mission && mission.data && mission.data.squadKey) ? mission.data.squadKey : (mission ? mission.name : 'unknown');
+}
+
+function nowTick() {
+    return (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+}
+
+function ensureSoloAssembleState(runtime) {
+    if (!runtime.assembled || typeof runtime.assembled !== 'object') {
+        runtime.assembled = { done: false, at: 0, pos: null };
+    }
+}
+
+function isSoloAssembled(creep, flags) {
+    if (!creep) return false;
+
+    // Prefer assemblyPos if present, else waitPos (W)
+    const p = flags && (flags.assemblyPos || flags.waitPos);
+    if (!p) return false;
+
+    // Match duo-ish semantics: "arrived" within range 1
+    return creep.room.name === p.roomName && creep.pos.inRangeTo(p.x, p.y, 1);
+}
+
+function getSoloAssembleTarget(flags) {
+    // Strict preference order during assemble:
+    // 1) assemblyPos (Y, if you use it)
+    // 2) waitPos (W)
+    // 3) first waypoint (if any)
+    // (avoid ao.centerPos here; that often points at A)
+    if (!flags) return null;
+    if (flags.assemblyPos) return flags.assemblyPos;
+    if (flags.waitPos) return flags.waitPos;
+    const wps = flags.waypointPositions || [];
+    if (wps[0]) return wps[0];
+    return null;
+}
+
 function handleSoloWipe(runtime, creep, now) {
     if (!runtime.wipe) runtime.wipe = {};
 
@@ -32,6 +71,41 @@ function handleSoloWipe(runtime, creep, now) {
     }
 
     return { reset: false };
+}
+
+function resetSoloRuntimeState(runtime) {
+    // Reset mission state fully (Rendezvous/Assemble semantics)
+    runtime.phase = 'RENDEZVOUS';
+    runtime.waypointIndex = 0;
+
+    // Reset assemble gate (duo-consistent)
+    ensureSoloAssembleState(runtime);
+    runtime.assembled.done = false;
+    runtime.assembled.at = 0;
+    runtime.assembled.pos = null;
+
+    // Ensure spawning is allowed again (acceptance requirement)
+    if (!runtime.spawn || typeof runtime.spawn !== 'object') runtime.spawn = {};
+    runtime.spawn.allow = true;
+
+    // Clear any leftover micro/oscillation state
+    delete runtime._lastPos;
+    delete runtime._prevPos;
+
+    if (runtime.debug) {
+        delete runtime.debug.lastPhase;
+        delete runtime.debug.lastRouteTarget;
+        delete runtime.debug.lastTarget;
+        delete runtime.debug.lastMoveTarget;
+        delete runtime.debug.lastMoveTarget2;
+        delete runtime.debug.lastPos;
+        delete runtime.debug.lastPos2;
+        delete runtime.debug.oscillateCount;
+    }
+
+    // Clear wipe timer so new spawn starts fresh
+    if (!runtime.wipe) runtime.wipe = {};
+    runtime.wipe.lastMissingAt = 0;
 }
 
 function formatPos(pos) {
@@ -56,7 +130,7 @@ function logSolo(runtime, mission, message) {
     global.debug('admiral.assault.solo', `[assault.solo] mission=${missionName} ${message}`);
 
     if (runtime && runtime.debug) {
-        const now = (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+        const now = nowTick();
         if (runtime.debug.lastLogTick === now && runtime.debug.lastLog === message) return;
         runtime.debug.lastLogTick = now;
         runtime.debug.lastLog = message;
@@ -123,8 +197,6 @@ function updatePhase(creep, runtime, flags, ao) {
     if (runtime.phase === 'ENGAGE') {
         if (!flags.attackFlag) {
             runtime.phase = 'STAGE';
-            // optional: reset waypoint progress so it re-walks to W properly
-            // runtime.waypointIndex = 0;
             return;
         }
 
@@ -147,44 +219,46 @@ function updatePhase(creep, runtime, flags, ao) {
     }
 }
 
-function run(creep, mission, context) {
-    const runtime = memory.getRuntime(mission.name);
+/**
+ * SOLO tick driver: runs even if creep is null.
+ * - updates wipe TTL
+ * - resets runtime on wipe
+ * - if creep exists, delegates to runCore() (no behavioral change)
+ */
+function planForSolo(mission, creepOrNull, context) {
+    if (!mission) return null;
 
-    // ====================
-    // 💀 SOLO WIPE TRACKER (same concept as duos)
-    // ====================
-    const now = (typeof Game !== 'undefined') ? Game.time : 0;
+    const runtimeKey = getRuntimeKey(mission);
+    const runtime = memory.getRuntime(runtimeKey);
+    memory.touchSoloRuntime(runtime, mission, runtimeKey);
 
-    const wipe = handleSoloWipe(runtime, creep, now);
-    if (wipe.reset) {
-        // Reset mission state fully
-        runtime.phase = 'RENDEZVOUS';
-        runtime.waypointIndex = 0;
+    const ownerRoom =
+        (mission && mission.data && (mission.data.sponsorRoom || mission.data.ownerRoom)) || null;
 
-        // Clear any leftover micro/oscillation state
-        delete runtime._lastPos;
-        delete runtime._prevPos;
-
-        if (runtime.debug) {
-            delete runtime.debug.lastPhase;
-            delete runtime.debug.lastRouteTarget;
-            delete runtime.debug.lastTarget;
-            delete runtime.debug.lastMoveTarget;
-            delete runtime.debug.lastMoveTarget2;
-            delete runtime.debug.lastPos;
-            delete runtime.debug.lastPos2;
-            delete runtime.debug.oscillateCount;
-        }
-
-        // Clear wipe timer so new spawn starts fresh
-        runtime.wipe.lastMissingAt = 0;
-
-        return null; // No creep alive this tick
+    if (ownerRoom) {
+        runtime.meta.ownerRoom = ownerRoom;
     }
 
-    // If creep missing but not TTL yet, just bail
-    if (!creep) return null;
+    const now = nowTick();
 
+    const wipe = handleSoloWipe(runtime, creepOrNull, now);
+    if (wipe.reset) {
+        resetSoloRuntimeState(runtime);
+        return null;
+    }
+
+    // No creep => nothing to plan/assign this tick, but wipe timer was updated above
+    if (!creepOrNull) return null;
+
+    // Creep exists => proceed with original SOLO logic
+    return runCore(creepOrNull, mission, context, runtime, runtimeKey, now);
+}
+
+/**
+ * Original SOLO logic (previously in run()), but now assumes creep exists
+ * and wipe/reset has already been handled by planForSolo().
+ */
+function runCore(creep, mission, context, runtime, runtimeKey, now) {
     // ====================
     // 🚪 BOOST GATE (Pre-Assembly Phase)
     // ====================
@@ -195,13 +269,52 @@ function run(creep, mission, context) {
         return null;
     }
 
-    const flags = flagsResolver.resolveFlags(mission); // handles W/Y automatically
+    const flags = flagsResolver.resolveFlags(mission); // handles W/Y via mission.data.flags (not inferred)
     const ao = aoResolver.resolveAO(mission, flags);
 
-    updatePhase(creep, runtime, flags, ao);
+    // --------------------
+    // 🧷 ASSEMBLE GATE
+    // --------------------
+    ensureSoloAssembleState(runtime);
+
+    if (!runtime.assembled.done) {
+        if (isSoloAssembled(creep, flags)) {
+            runtime.assembled.done = true;
+            runtime.assembled.at = now;
+            const p = flags.assemblyPos || flags.waitPos;
+            runtime.assembled.pos = p ? { x: p.x, y: p.y, roomName: p.roomName } : null;
+
+            // NEW: once assembled, lock spawning (prevents extra creeps)
+            if (!runtime.spawn || typeof runtime.spawn !== 'object') runtime.spawn = {};
+            runtime.spawn.allow = false;
+            runtime.spawn.lastAllowAt = now;
+
+            // Once assembled, proceed into staging/waypoint logic
+            if (!runtime.phase || runtime.phase === 'RENDEZVOUS') {
+                runtime.phase = 'STAGE';
+            }
+        } else {
+            // Force rendezvous until assembled
+            runtime.phase = 'RENDEZVOUS';
+        }
+    }
+
+    // Only advance phases once assembled (prevents "waitPos missing => STAGE => A")
+    if (runtime.assembled.done) {
+        updatePhase(creep, runtime, flags, ao);
+    }
 
     // Cross-room / waypoint routing
-    const routeTarget = route.getRouteTarget(creep, runtime, flags, ao);
+    let routeTarget;
+    if (!runtime.assembled.done) {
+        // During assemble, NEVER route to AO center (which can be A-derived)
+        routeTarget = getSoloAssembleTarget(flags);
+        if (runtime.debug && runtime.debug.soloPlannerVerbose) {
+            logSolo(runtime, mission, `assembleGate hold target=${formatPos(routeTarget)} wait=${formatPos(flags.waitPos)} assembly=${formatPos(flags.assemblyPos)}`);
+        }
+    } else {
+        routeTarget = route.getRouteTarget(creep, runtime, flags, ao);
+    }
 
     // AO-bounded target selection
     const target =
@@ -332,6 +445,15 @@ function run(creep, mission, context) {
     return plan;
 }
 
+/**
+ * Backward compatible: existing callers that call run(creep, ...) still work.
+ * Internally uses the new tick driver.
+ */
+function run(creep, mission, context) {
+    return planForSolo(mission, creep, context);
+}
+
 module.exports = {
-    run
+    run,
+    planForSolo
 };

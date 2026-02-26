@@ -59,16 +59,47 @@ function getLiveAssaultSquadCreeps(squadKey) {
 function refreshAssaultSquadState(squadKey, liveSquad) {
     const squads = getAssaultSquadMemory();
     if (!squads) return null;
-    const state = squads[squadKey];
-    if (state && (!liveSquad || liveSquad.length === 0)) {
-        delete squads[squadKey];
-        return null;
+
+    const now = Game.time;
+    const liveCount = (liveSquad && liveSquad.length) ? liveSquad.length : 0;
+
+    let state = squads[squadKey];
+
+    // Create state the first time we ever see a live creep for this squad
+    if (!state && liveCount > 0) {
+        state = squads[squadKey] = {
+            started: true,
+            startedAt: now,
+            lastSeen: now,
+            liveCount: liveCount,
+            lastWipeAt: 0
+        };
+        return state;
     }
-    if (state) {
-        state.lastSeen = Game.time;
-        state.liveCount = liveSquad.length;
+
+    if (!state) return null;
+
+    // Update telemetry
+    state.lastSeen = now;
+    state.liveCount = liveCount;
+
+    // IMPORTANT: do NOT delete state when squad is empty.
+    // We need it to track wipe cooldown / TTL before respawn.
+
+    // Optional GC: if squad has been empty for a long time, clean it up.
+    // (prevents Memory bloat if flags are removed / missions renamed)
+    const EMPTY_GC_TTL = 1500; // ticks
+    if (liveCount === 0) {
+        if (!state.lastEmptyAt) state.lastEmptyAt = now;
+        if (now - state.lastEmptyAt > EMPTY_GC_TTL) {
+            delete squads[squadKey];
+            return null;
+        }
+    } else {
+        delete state.lastEmptyAt;
     }
-    return state || null;
+
+    return state;
 }
 
 function normalizeBodyPart(part) {
@@ -286,7 +317,27 @@ module.exports = {
             } else {
                 const missionName = squadKey;
                 const patternCost = getBodyCost(bodyConfig.solo);
-                const spawnAllowed = !patternCost || (Number.isFinite(budget) && budget >= patternCost);
+                const spawnAllowedBase = !patternCost || (Number.isFinite(budget) && budget >= patternCost);
+
+                // Get squad memory just like DUO
+                const squadState = refreshAssaultSquadState(squadKey, liveSquad);
+
+                // If squad was started and recently wiped, delay respawn
+                let spawnAllowed = spawnAllowedBase;
+
+                if (squadState) {
+                    const WIPE_TTL = 4;
+                    if (!liveSquad || liveSquad.length === 0) {
+                        if (!squadState.lastWipeAt) {
+                            squadState.lastWipeAt = Game.time;
+                        }
+                        if (Game.time - squadState.lastWipeAt < WIPE_TTL) {
+                            spawnAllowed = false;
+                        } else {
+                            delete squadState.lastWipeAt;
+                        }
+                    }
+                }
                 const census = typeof getMissionCensus === 'function'
                     ? getMissionCensus(missionName)
                     : { count: 0, workParts: 0, carryParts: 0 };

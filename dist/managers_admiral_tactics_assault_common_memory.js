@@ -80,6 +80,25 @@ function touchDuoRuntime(runtime, mission, runtimeKey) {
     if (runtimeKey) runtime.meta.runtimeKey = runtimeKey;
 }
 
+function touchSoloRuntime(runtime, mission, runtimeKey) {
+    if (!runtime) return;
+
+    if (!runtime.meta) runtime.meta = {};
+
+    runtime.meta.version = 2; // SOLO runtime marker
+    runtime.meta.runtimeKey = runtimeKey;
+    runtime.meta.lastSeenTick =
+        (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+
+    const ownerRoom =
+        (mission && mission.data &&
+            (mission.data.sponsorRoom || mission.data.ownerRoom)) || null;
+
+    if (ownerRoom) {
+        runtime.meta.ownerRoom = ownerRoom;
+    }
+}
+
 function gcDuoRuntimesForOwner(ownerRoom, graceTicks) {
     const root = ensureRoot();
     if (!root || !ownerRoom) return;
@@ -101,6 +120,31 @@ function gcDuoRuntimesForOwner(ownerRoom, graceTicks) {
     }
 }
 
+function gcSoloRuntimesForOwner(ownerRoom, graceTicks) {
+    const root = ensureRoot();
+    if (!root || !ownerRoom) return;
+
+    const g = Number.isFinite(graceTicks) ? graceTicks : 1;
+    const now = (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+    const cutoff = now - g;
+
+    for (const key in root) {
+        const entry = root[key];
+        if (!entry) continue;
+
+        // SOLO runtimes only:
+        // We mark them as meta.version === 2 (or change this marker to whatever you prefer)
+        const meta = entry.meta;
+        if (!meta || meta.version !== 2) continue;
+        if (meta.ownerRoom !== ownerRoom) continue;
+
+        const last = Number.isFinite(meta.lastSeenTick) ? meta.lastSeenTick : -Infinity;
+        if (last < cutoff) {
+            delete root[key];
+        }
+    }
+}
+
 function resetRuntime(missionName) {
     const root = ensureRoot();
     if (!root || !missionName) return initLegacyRuntimeEntry();
@@ -111,6 +155,8 @@ function resetRuntime(missionName) {
 module.exports = {
     getRuntime,
     resetRuntime,
+    touchSoloRuntime,
+    gcSoloRuntimesForOwner,
     touchDuoRuntime,
     gcDuoRuntimesForOwner,
     getDuoRuntime: function(missionName) {

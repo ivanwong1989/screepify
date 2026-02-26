@@ -30,6 +30,8 @@ function showLabHelp() {
         'Boost shortcuts:',
         'lab("boost", { XGH2O:"labId" })                 - global boost mode',
         'lab("roomBoost", "W1N1", { XGH2O:"labId" })     - per-room boost mode',
+        'lab("boostClear")                              - clear global boost labs',
+        'lab("roomBoostClear", "W1N1")                  - clear per-room boost labs',
 
         '',
         'Examples:',
@@ -257,6 +259,13 @@ module.exports = function registerLabConsole() {
             return msg;
         }
 
+        if (cmd === 'boostclear' || cmd === 'clearboost') {
+            managerLabs.applyPatch({ boosts: null });
+            const msg = managerLabs.summarize();
+            console.log(msg);
+            return msg;
+        }
+
         if (cmd === 'roomboost') {
             const roomName = args[0];
             const boostMap = args[1];
@@ -271,6 +280,15 @@ module.exports = function registerLabConsole() {
             }, (opts && typeof opts === 'object') ? opts : {});
 
             managerLabs.applyRoomPatch(roomName, patch);
+            const msg = managerLabs.summarizeRoom(roomName);
+            console.log(msg);
+            return msg;
+        }
+
+        if (cmd === 'roomboostclear' || cmd === 'clearroomboost') {
+            const roomName = args[0];
+            if (!roomName) return 'Usage: lab("roomBoostClear", "W1N1")';
+            managerLabs.applyRoomPatch(roomName, { boosts: null });
             const msg = managerLabs.summarizeRoom(roomName);
             console.log(msg);
             return msg;

@@ -99,6 +99,27 @@ function runDuoAssaultMissions(missions, assignments, context) {
     return handled;
 }
 
+function runSoloAssaultMissions(missions, assignments, context) {
+    const handled = new Set();
+
+    for (const mission of missions) {
+        if (!mission || mission.type !== 'assault') continue;
+        if (mission.data && mission.data.mode === 'DUO') continue;
+
+        handled.add(mission.name);
+
+        const assigned = assignments[mission.name] || [];
+        const creep = assigned.length > 0 ? assigned[0] : null;
+
+        const task = assaultTactics.planForSolo(mission, creep, context);
+        if (creep && !creep.spawning && task) {
+            creep.memory.task = task;
+        }
+    }
+
+    return handled;
+}
+
 function allocateCreeps(room, missions) {
     const ownedCreeps = getOwnedCreeps(room.name).filter(c => !c.spawning && isMilitaryRole(c.memory && c.memory.role));
     const assignments = Object.create(null);
@@ -254,20 +275,23 @@ var militaryTasks = {
             });
         }
 
-        const handledDuoMissions = runDuoAssaultMissions(missions, assignments, {
-            room,
-            hostiles,
-            runtime: { roomCallback }   
-        });
+        const ctx = { room, hostiles, runtime: { roomCallback } };
+
+        const handledDuoMissions = runDuoAssaultMissions(missions, assignments, ctx);
+        const handledSoloMissions = runSoloAssaultMissions(missions, assignments, ctx);
 
         for (const mission of missions) {
             if (handledDuoMissions.has(mission.name)) continue;
+            if (handledSoloMissions.has(mission.name)) continue;
             runMission(mission, assignments[mission.name] || [], { room, hostiles });
         }
 
         // GC: if a DUO assault mission no longer exists on the mission board,
         // its runtime will not be touched and will be removed within 1 tick.
         assaultMemory.gcDuoRuntimesForOwner(room.name, 1);
+
+        // GC SOLO runtime as well
+        assaultMemory.gcSoloRuntimesForOwner(room.name, 1);
     }
 };
 

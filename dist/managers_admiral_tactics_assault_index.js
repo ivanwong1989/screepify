@@ -18,9 +18,21 @@ function executeAssault(creep, mission, context) {
 module.exports = {
     runAssault,
     executeAssault,
+
+    // DUO tick driver (existing)
     planForPair: function(mission, leader, support, context) {
         const mode = mission && mission.data && mission.data.mode;
         if (mode !== 'DUO') return null;
         return duo.planForPair(mission, leader, support, context);
+    },
+
+    // NEW: SOLO tick driver
+    planForSolo: function(mission, creep, context) {
+        const mode = mission && mission.data && mission.data.mode;
+
+        // If DUO, this function should not handle it
+        if (mode === 'DUO') return null;
+
+        return solo.planForSolo(mission, creep, context);
     }
 };

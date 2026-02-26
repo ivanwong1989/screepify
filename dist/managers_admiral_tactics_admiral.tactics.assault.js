@@ -9,5 +9,8 @@ module.exports = {
     },
     planForPair: function(mission, leader, support, context) {
         return assault.planForPair(mission, leader, support, context);
+    },
+    planForSolo: function(mission, creep, context) {
+        return assault.planForSolo(mission, creep, context);
     }
 };
