@@ -18,7 +18,7 @@ module.exports = function registerHelpConsole() {
                 'debugcats()       - list enabled and available debug categories',
                 'debugall          - clear category filter (log all)',
                 'economy()         - override per-room economy state (upgrade/stockpile)',
-                'lab()             - manage labs (react/boost/purge/reverse; shortcuts: lab("react","H","O"), lab("reverse","GH2O"), lab("purge"), lab("idle"), lab("stop"))',                'remote()          - manage auto-econ remote missions (harvest/haul/build/repair)',
+                'lab()             - manage labs (react/reverse/purge/idle + boost stocking; shortcuts: lab("react","H","O"), lab("reverse","GH2O"), lab("boost",{XGH2O:"labId"}), lab("purge"), lab("idle"), lab("stop"))',                'remote()          - manage auto-econ remote missions (harvest/haul/build/repair)',
                 'allyAdd(\"Name\")    - add an ally by player name',
                 'allyRemove(\"Name\") - remove an ally by player name',
                 'allyList()        - show current allies',

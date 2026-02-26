@@ -4,7 +4,7 @@ var reverseLabs = require('managers_structures_labs.reverse');
 const DEFAULTS = Object.freeze({
     enabled: true,
     runEvery: 5,
-    mode: 'react', // react | boost | idle
+    mode: 'react', // react | reverse | idle | purge (boost stocking is independent via cfg.boosts)
     transferPriority: 60,
     inputTarget: 2000,
     boostTarget: 1000,
@@ -183,8 +183,137 @@ function chooseSink(room, resourceType) {
     return null;
 }
 
+
+function buildBoostLogisticsMissions(room, cfg, labs, labById) {
+    const missions = [];
+    if (!room || !cfg) return missions;
+    if (!Array.isArray(labs) || labs.length === 0) return missions;
+    if (!labById || typeof labById !== 'object') return missions;
+
+    const boostAssignments = normalizeBoostAssignments(cfg.boosts, labById);
+    const boostTypes = Object.keys(boostAssignments);
+    if (boostTypes.length === 0) return missions;
+
+    const missionPrefix = `labhaul:${room.name}`;
+    const seen = new Set();
+
+    // Keep mission names stable so an already-assigned hauler doesn't get released mid-run.
+    const isMissionAssigned = (label) => {
+        if (!label) return false;
+        for (const creep of Object.values(Game.creeps)) {
+            if (!creep || !creep.my) continue;
+            const name = creep.memory && creep.memory.missionName;
+            if (name === label) return true;
+        }
+        return false;
+    };
+
+    // For clear missions, infer resourceType from the mission label if a creep is already assigned.
+    const getAssignedClearTypes = (labId) => {
+        const out = new Set();
+        if (!labId) return out;
+        const prefix = `${missionPrefix}:clear:${labId}:`;
+        for (const creep of Object.values(Game.creeps)) {
+            if (!creep || !creep.my) continue;
+            const name = creep.memory && creep.memory.missionName;
+            if (!name || typeof name !== 'string') continue;
+            if (!name.startsWith(prefix)) continue;
+            const resourceType = name.slice(prefix.length);
+            if (resourceType) out.add(resourceType);
+        }
+        return out;
+    };
+
+    const enqueue = (sourceId, targetId, resourceType, label) => {
+        if (!targetId || !resourceType || !label) return;
+        if (seen.has(label)) return;
+        seen.add(label);
+
+        missions.push({
+            name: label,
+            type: 'transfer',
+            archetype: 'hauler',
+            targetId: targetId,
+            data: {
+                resourceType: resourceType,
+                sourceId: sourceId || null
+            },
+            requirements: {
+                archetype: 'hauler',
+                count: 1,
+                spawn: false
+            },
+            priority: cfg.transferPriority
+        });
+    };
+
+    const requestClear = (lab, resourceType) => {
+        const sink = chooseSink(room, resourceType);
+        if (!sink) return;
+        const label = `${missionPrefix}:clear:${lab.id}:${resourceType}`;
+        enqueue(lab.id, sink.id, resourceType, label);
+    };
+
+    const requestFill = (lab, resourceType, targetAmount) => {
+        const current = lab.store[resourceType] || 0;
+        if (current >= targetAmount) return;
+
+        const label = `${missionPrefix}:fill:${lab.id}:${resourceType}`;
+
+        const source = chooseSource(room, resourceType);
+        if (!source) {
+            // If a hauler already picked this up, keep the mission alive so it can finish delivery.
+            if (!isMissionAssigned(label)) return;
+            const keepSource = (room.storage && room.storage.id) || (room.terminal && room.terminal.id) || null;
+            enqueue(keepSource, lab.id, resourceType, label);
+            return;
+        }
+
+        enqueue(source.id, lab.id, resourceType, label);
+    };
+
+    const cleanupLab = (lab) => {
+        if (lab.mineralType && (lab.store[lab.mineralType] || 0) > 0) {
+            requestClear(lab, lab.mineralType);
+            return;
+        }
+
+        // If a hauler already withdrew the last bit, keep the clear mission alive to finish dumping.
+        const assigned = getAssignedClearTypes(lab.id);
+        if (assigned.size === 0) return;
+        for (const rt of assigned) {
+            requestClear(lab, rt);
+        }
+    };
+
+    // Only touch labs explicitly assigned as boost labs.
+    for (const resourceType of boostTypes) {
+        const labId = boostAssignments[resourceType];
+        const lab = labById[labId];
+        if (!lab) continue;
+
+        if (lab.mineralType && lab.mineralType !== resourceType && (lab.store[lab.mineralType] || 0) > 0) {
+            requestClear(lab, lab.mineralType);
+            continue;
+        }
+
+        // If lab is "wrong but empty", no mission needed; it will become correct after first fill.
+        if (lab.mineralType && lab.mineralType !== resourceType) {
+            // Still allow fill if the game thinks it's empty (mineralType can linger on 0 sometimes).
+        }
+
+        requestFill(lab, resourceType, cfg.boostTarget);
+    }
+
+    return missions;
+}
+
 function buildLabLogisticsMissions(room, cfg) {
     const missions = [];
+    // Always publish boost stocking missions (if configured)
+    // so we can react/reverse while keeping boost labs topped up.
+    // (Injected after labs discovery)
+
     if (!room || !room.controller || !room.controller.my) return missions;
 
     const cache = global.getRoomCache(room);
@@ -193,6 +322,10 @@ function buildLabLogisticsMissions(room, cfg) {
 
     const labById = {};
     for (const lab of labs) labById[lab.id] = lab;
+
+    // Boost stocking is independent from reaction mode.
+    const boostMissions = buildBoostLogisticsMissions(room, cfg, labs, labById);
+    for (const m of boostMissions) missions.push(m);
 
     const mode = (cfg.mode || DEFAULTS.mode).toLowerCase();
     const reaction = normalizeReaction(cfg.reaction);
@@ -320,29 +453,7 @@ const enqueue = (sourceId, targetId, resourceType, label) => {
         }
     };
 
-    if (mode === 'boost') {
-        for (const lab of labs) {
-            let desired = null;
-            for (const resourceType of Object.keys(boostAssignments)) {
-                if (boostAssignments[resourceType] === lab.id) {
-                    desired = resourceType;
-                    break;
-                }
-            }
-
-            if (!desired) {
-                cleanupLab(lab);
-                continue;
-            }
-
-            if (lab.mineralType && lab.mineralType !== desired && (lab.store[lab.mineralType] || 0) > 0) {
-                requestClear(lab, lab.mineralType);
-                continue;
-            }
-
-            requestFill(lab, desired, cfg.boostTarget);
-        }
-    } else if (mode === 'idle') {
+    if (mode === 'idle') {
         if (cfg.cleanupIdle) {
             for (const lab of labs) cleanupLab(lab);
         }
@@ -457,12 +568,22 @@ const managerLabs = {
         if (!cfg.enabled) return [];
         if (room._opState === 'EMERGENCY') return [];
 
-        // Special reverse split off because we don't want to destabilize existing lab manager.
-        // Future to re-unify reverse reaction into this file.
+        // Reverse still uses the dedicated module, but we can run boost stocking in parallel.
         if (cfg.mode && cfg.mode.toLowerCase() === 'reverse') {
             const cache = global.getRoomCache(room);
             const labs = cache.myStructuresByType[STRUCTURE_LAB] || [];
-            return reverseLabs.getReverseLogisticsMissions(room, cfg, labs);
+            const labById = {};
+            for (const lab of labs) labById[lab.id] = lab;
+
+            const boostAssignments = normalizeBoostAssignments(cfg.boosts, labById);
+            const boostLabIds = new Set(Object.values(boostAssignments));
+            const boostMissions = buildBoostLogisticsMissions(room, cfg, labs, labById);
+
+            // Prevent reverse logic from stealing/clearing boost labs.
+            const reverseLabsList = labs.filter(l => l && !boostLabIds.has(l.id));
+            const reverseMissions = reverseLabs.getReverseLogisticsMissions(room, cfg, reverseLabsList);
+
+            return boostMissions.concat(reverseMissions);
         }
 
         return buildLabLogisticsMissions(room, cfg);
@@ -502,7 +623,11 @@ const managerLabs = {
 
         // Reverse mode branch out
         if (mode === 'reverse') {
-            reverseLabs.runReverse(room, cfg, labs);
+            // Prevent reverse logic from stealing/clearing boost labs.
+            const boostAssignments = normalizeBoostAssignments(cfg.boosts, labById);
+            const boostLabIds = new Set(Object.values(boostAssignments));
+            const reverseLabsList = labs.filter(l => l && !boostLabIds.has(l.id));
+            reverseLabs.runReverse(room, cfg, reverseLabsList);
             return;
         }
 

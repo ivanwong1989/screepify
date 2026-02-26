@@ -28,8 +28,8 @@ function showLabHelp() {
 
         '',
         'Boost shortcuts:',
-        'lab("boost", { XGH2O:"labId" })                 - global boost mode',
-        'lab("roomBoost", "W1N1", { XGH2O:"labId" })     - per-room boost mode',
+        'lab("boost", { XGH2O:"labId" }, opts?)          - set boost lab assignments (stocking runs alongside react/reverse)',
+        'lab("roomBoost", "W1N1", { XGH2O:"labId" }, opts?) - set per-room boost lab assignments',
         'lab("boostClear")                              - clear global boost labs',
         'lab("roomBoostClear", "W1N1")                  - clear per-room boost labs',
 
@@ -246,10 +246,9 @@ module.exports = function registerLabConsole() {
             const opts = args[1];
 
             if (!boostMap || typeof boostMap !== 'object')
-                return 'Usage: lab("boost", { XGH2O: "labId1" }, { boostTarget: 2000 })';
+                return 'Usage: lab("boost", { XGH2O: "labId1" }, { boostTarget: 2000 })  // does not change mode';
 
             const patch = Object.assign({
-                mode: 'boost',
                 boosts: boostMap
             }, (opts && typeof opts === 'object') ? opts : {});
 
@@ -272,10 +271,9 @@ module.exports = function registerLabConsole() {
             const opts = args[2];
 
             if (!roomName || !boostMap || typeof boostMap !== 'object')
-                return 'Usage: lab("roomBoost", "W1N1", { XGH2O: "labId1" })';
+                return 'Usage: lab("roomBoost", "W1N1", { XGH2O: "labId1" })  // does not change mode';
 
             const patch = Object.assign({
-                mode: 'boost',
                 boosts: boostMap
             }, (opts && typeof opts === 'object') ? opts : {});
 
