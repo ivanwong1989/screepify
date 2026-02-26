@@ -573,9 +573,21 @@ function deserializePos(pos) {
 
 function getDuoMemory(memoryKey) {
     if (!memoryKey) return null;
-    if (!Memory.duoPlanner) Memory.duoPlanner = {};
-    if (!Memory.duoPlanner[memoryKey]) Memory.duoPlanner[memoryKey] = {};
-    return Memory.duoPlanner[memoryKey];
+
+    if (!Memory.military) Memory.military = {};
+    if (!Memory.military.runtime) Memory.military.runtime = {};
+
+    if (!Memory.military.runtime[memoryKey]) {
+        Memory.military.runtime[memoryKey] = {};
+    }
+
+    const runtimeMem = Memory.military.runtime[memoryKey];
+
+    if (!runtimeMem.duoPlanner) {
+        runtimeMem.duoPlanner = {};
+    }
+
+    return runtimeMem.duoPlanner;
 }
 
 function buildGoalKey(goalPos, goalType, goalRange) {
