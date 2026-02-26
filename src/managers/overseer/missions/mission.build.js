@@ -45,7 +45,8 @@ module.exports = {
         if (intel.constructionSites.length === 0 || opState === 'EMERGENCY') return;
 
         const buildStats = managerSpawner.checkBody('worker', budget);
-        const buildTarget = 5;
+        const rcl = (room.controller && room.controller.level) || 1;
+        const buildTarget = 5 + Math.max(0, rcl - 3) * 2;
         const workPerCreep = buildStats.work || 1;
         const desiredCount = Math.max(1, Math.ceil(buildTarget / workPerCreep));
 

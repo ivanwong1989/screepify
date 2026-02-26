@@ -126,7 +126,7 @@ module.exports = {
         let desiredCount = 0;
         if (repairTargets.length > 0) {
             const repairStats = managerSpawner.checkBody('worker', budget);
-            let repairWorkTarget = repairTargets.length > 10 ? 10 : 5;
+            const repairWorkTarget = 5 + Math.max(0, rcl - 3) * 2;
             workPerCreep = repairStats.work || 1;
             desiredCount = Math.ceil(repairWorkTarget / workPerCreep);
         }
