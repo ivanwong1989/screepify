@@ -11,19 +11,37 @@ const spawnContracts = {
             const req = mission.requirements || {};
             if (req.spawn === false) return;
 
+            // Admiral's side special handling
+            let desiredOverride = null;
+
             if (mission.type === 'assault' && mission.data && mission.data.mode === 'DUO') {
                 const runtimeKey = mission.data.squadKey || mission.name;
                 const runtime = assaultMemory.getDuoRuntime(runtimeKey);
+
                 if (runtime && runtime.assembled && runtime.assembled.done) {
-                    debug('spawner', `[SpawnContracts] duo gate mission=${mission.name} assembled=1 -> skip`);
-                    return;
+                    // ✅ "No fulfill": keep contract, but set desired to 0 so SpawnPlanner won't spawn replacements mid-fight.
+                    desiredOverride = 0;
+                    debug('spawner', `[SpawnContracts] duo gate mission=${mission.name} assembled=1 -> desired=0 (no fulfill)`);
                 }
             }
+            
+            if (mission.type === 'assault' && mission.data && mission.data.mode === 'SOLO') {
+                const runtimeKey = mission.data.squadKey || mission.name;
+                const runtime = assaultMemory.getSoloRuntime && assaultMemory.getSoloRuntime(runtimeKey);
 
+                if (runtime && runtime.assembled && runtime.assembled.done) {
+                    // ✅ "No fulfill": keep contract, but set desired to 0 so SpawnPlanner won't spawn replacements mid-fight.
+                    desiredOverride = 0;
+                    debug('spawner', `[SpawnContracts] solo gate mission=${mission.name} assembled=1 -> desired=0 (no fulfill)`);
+                }
+            }
+            // ----
+            
             const role = mission.archetype || req.archetype;
             if (!role) return;
 
-            const desired = Math.max(1, req.count || 1);
+            const desiredRaw = Math.max(1, req.count || 1);
+            const desired = (desiredOverride !== null) ? desiredOverride : desiredRaw;
             const priority = mission.priority || 0;
 
             if (req.spawnFromFleet) {

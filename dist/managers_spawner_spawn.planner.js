@@ -1,4 +1,4 @@
-const DEFAULT_REQUEST_TTL = 50;
+const DEFAULT_REQUEST_TTL = 10;
 
 const spawnPlanner = {
     plan: function(room, contractEntries, fulfillment, options) {

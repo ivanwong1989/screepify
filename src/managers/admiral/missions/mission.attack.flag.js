@@ -71,8 +71,7 @@ function refreshAssaultSquadState(squadKey, liveSquad) {
             started: true,
             startedAt: now,
             lastSeen: now,
-            liveCount: liveCount,
-            lastWipeAt: 0
+            liveCount: liveCount
         };
         return state;
     }
@@ -84,7 +83,7 @@ function refreshAssaultSquadState(squadKey, liveSquad) {
     state.liveCount = liveCount;
 
     // IMPORTANT: do NOT delete state when squad is empty.
-    // We need it to track wipe cooldown / TTL before respawn.
+    // We keep telemetry state even when empty; respawn gating is handled elsewhere.
 
     // Optional GC: if squad has been empty for a long time, clean it up.
     // (prevents Memory bloat if flags are removed / missions renamed)
@@ -269,10 +268,6 @@ module.exports = {
                 const supportCost = getBodyCost(bodyConfig.support);
                 let leaderSpawn = !leaderCost || (Number.isFinite(budget) && budget >= leaderCost);
                 let supportSpawn = !supportCost || (Number.isFinite(budget) && budget >= supportCost);
-                if (lockActive) {
-                    leaderSpawn = false;
-                    supportSpawn = false;
-                }
 
                 const leaderCensus = typeof getMissionCensus === 'function'
                     ? getMissionCensus(leaderMission)
@@ -322,22 +317,9 @@ module.exports = {
                 // Get squad memory just like DUO
                 const squadState = refreshAssaultSquadState(squadKey, liveSquad);
 
-                // If squad was started and recently wiped, delay respawn
+                // Spawn gating is budget-only (contracts remain present while fighting).
                 let spawnAllowed = spawnAllowedBase;
 
-                if (squadState) {
-                    const WIPE_TTL = 4;
-                    if (!liveSquad || liveSquad.length === 0) {
-                        if (!squadState.lastWipeAt) {
-                            squadState.lastWipeAt = Game.time;
-                        }
-                        if (Game.time - squadState.lastWipeAt < WIPE_TTL) {
-                            spawnAllowed = false;
-                        } else {
-                            delete squadState.lastWipeAt;
-                        }
-                    }
-                }
                 const census = typeof getMissionCensus === 'function'
                     ? getMissionCensus(missionName)
                     : { count: 0, workParts: 0, carryParts: 0 };

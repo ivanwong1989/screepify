@@ -12,7 +12,6 @@ const soloPlanner = require('managers_admiral_tactics_assault_solo_soloPlanner_s
 const RETREAT_AT = 0.3;
 const REENGAGE_AT = 0.7;
 
-const WIPE_TTL = 4; // same as duos
 
 function getRuntimeKey(mission) {
     return (mission && mission.data && mission.data.squadKey) ? mission.data.squadKey : (mission ? mission.name : 'unknown');
@@ -56,20 +55,24 @@ function getSoloAssembleTarget(flags) {
 function handleSoloWipe(runtime, creep, now) {
     if (!runtime.wipe) runtime.wipe = {};
 
-    // If creep exists, clear wipe timer
+    // If creep exists, clear any wipe marker
     if (creep) {
         runtime.wipe.lastMissingAt = 0;
         return { reset: false };
     }
 
-    // Creep missing this tick -> start/continue timer
-    if (!runtime.wipe.lastMissingAt) runtime.wipe.lastMissingAt = now;
+    // No TTL: if we've previously assembled (or progressed beyond initial state) and the creep is gone,
+    // treat it as a wipe immediately so contracts can fulfill again.
+    const assembledDone = !!(runtime.assembled && runtime.assembled.done);
+    const phase = runtime.phase || 'RENDEZVOUS';
+    const progressed = assembledDone || phase !== 'RENDEZVOUS' || (Number(runtime.waypointIndex) || 0) > 0;
 
-    // Missing long enough => consider wiped
-    if (now - runtime.wipe.lastMissingAt >= WIPE_TTL) {
+    if (progressed) {
+        runtime.wipe.lastMissingAt = now;
         return { reset: true };
     }
 
+    // Still idle / never spawned: don't churn runtime every tick
     return { reset: false };
 }
 
@@ -221,8 +224,8 @@ function updatePhase(creep, runtime, flags, ao) {
 
 /**
  * SOLO tick driver: runs even if creep is null.
- * - updates wipe TTL
- * - resets runtime on wipe
+ * - detects full wipe (no TTL)
+ * - resets runtime immediately on wipe so respawn follows W/waypoints again
  * - if creep exists, delegates to runCore() (no behavioral change)
  */
 function planForSolo(mission, creepOrNull, context) {

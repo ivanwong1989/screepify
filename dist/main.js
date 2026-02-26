@@ -102,7 +102,7 @@ module.exports.loop = function() {
 
                 // If expired but creep exists, keep ticket and let tasker refresh.
                 if (expired && creepAlive) {
-                    t.expiresAt = Game.time + 50;
+                    t.expiresAt = Game.time + 10;
                 }
             }
         })();

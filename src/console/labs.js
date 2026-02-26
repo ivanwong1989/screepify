@@ -45,7 +45,7 @@ function showLabHelp() {
 }
 
 function clearLabMissions(roomName) {
-    const key = ('' + roomName).trim();
+    const key = ('' + roomName).trim().toUpperCase();
     if (!key) return 'Usage: lab("clear", "W1N1")';
 
     const missions = userMissions.getByType('transfer');
@@ -65,6 +65,10 @@ function clearLabMissions(roomName) {
     }
 
     return `Removed ${removed} lab transfer missions for ${key}`;
+}
+
+function normalizeRoomName(roomName) {
+    return ('' + roomName).trim().toUpperCase();
 }
 
 module.exports = function registerLabConsole() {
@@ -102,7 +106,7 @@ module.exports = function registerLabConsole() {
         }
 
         if (cmd === 'room') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             if (!roomName) return 'Usage: lab("room", "W1N1", { ... })';
             const patch = args[1];
             if (patch === 'on' || patch === 'off') {
@@ -116,7 +120,7 @@ module.exports = function registerLabConsole() {
         }
 
         if (cmd === 'clear') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             const msg = clearLabMissions(roomName);
             console.log(msg);
             return msg;
@@ -144,7 +148,7 @@ module.exports = function registerLabConsole() {
         }
 
         if (cmd === 'roomidle') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             if (!roomName) return 'Usage: lab("roomIdle", "W1N1")';
             managerLabs.applyRoomPatch(roomName, { mode: 'idle' });
             const msg = managerLabs.summarizeRoom(roomName);
@@ -153,7 +157,7 @@ module.exports = function registerLabConsole() {
         }
 
         if (cmd === 'roompurge') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             if (!roomName) return 'Usage: lab("roomPurge", "W1N1")';
             managerLabs.applyRoomPatch(roomName, { mode: 'purge' });
             const msg = managerLabs.summarizeRoom(roomName);
@@ -184,7 +188,7 @@ module.exports = function registerLabConsole() {
         }
 
         if (cmd === 'roomreact') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             const reagentA = args[1];
             const reagentB = args[2];
             const opts = args[3];
@@ -224,7 +228,7 @@ module.exports = function registerLabConsole() {
         }
 
         if (cmd === 'roomreverse') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             const product = args[1];
             const opts = args[2];
 
@@ -266,7 +270,7 @@ module.exports = function registerLabConsole() {
         }
 
         if (cmd === 'roomboost') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             const boostMap = args[1];
             const opts = args[2];
 
@@ -284,7 +288,7 @@ module.exports = function registerLabConsole() {
         }
 
         if (cmd === 'roomboostclear' || cmd === 'clearroomboost') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             if (!roomName) return 'Usage: lab("roomBoostClear", "W1N1")';
             managerLabs.applyRoomPatch(roomName, { boosts: null });
             const msg = managerLabs.summarizeRoom(roomName);

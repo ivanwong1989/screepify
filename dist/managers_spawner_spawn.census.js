@@ -37,7 +37,7 @@ const resetDeadTicket = (ticket) => {
     ticket.state = 'REQUESTED';
     ticket.creepName = null;
     ticket.spawnRoom = null;
-    ticket.expiresAt = Game.time + 50;
+    ticket.expiresAt = Game.time + 2;
 };
 
 const spawnCensus = {
@@ -54,6 +54,41 @@ const spawnCensus = {
         const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
             ? Memory.rooms[room.name].spawnTicketsByKey
             : null;
+
+        const removeTicket = (ticketId, ticket) => {
+            delete tickets[ticketId];
+            const home = ticket && ticket.homeRoom;
+            const contractId = ticket && ticket.contractId;
+            if (home && contractId && Memory.rooms && Memory.rooms[home] && Memory.rooms[home].spawnTicketsByKey) {
+                const index = Memory.rooms[home].spawnTicketsByKey;
+                const list = index[contractId];
+                if (list && list.length > 0) {
+                    index[contractId] = list.filter(tid => tid !== ticketId);
+                }
+            }
+        };
+
+
+        // --------------------
+        // 🧹 ORPHAN INDEX BUCKET CLEANUP
+        // If a mission/contract disappears, its index bucket might never be visited (roomIndex path).
+        // Delete those buckets and their tickets immediately.
+        // --------------------
+        if (roomIndex) {
+            for (const indexedContractId in roomIndex) {
+                if (contractIds.has(indexedContractId)) continue;
+
+                const list = roomIndex[indexedContractId];
+                if (Array.isArray(list)) {
+                    for (let i = list.length - 1; i >= 0; i--) {
+                        const ticketId = list[i];
+                        const ticket = tickets[ticketId];
+                        if (ticket) removeTicket(ticketId, ticket);
+                    }
+                }
+                delete roomIndex[indexedContractId];
+            }
+        }
 
         const isActiveTicket = (ticket) => {
             if (!ticket) return false;
@@ -108,19 +143,6 @@ const spawnCensus = {
                 countTicket(id, ticket);
             }
         }
-
-        const removeTicket = (ticketId, ticket) => {
-            delete tickets[ticketId];
-            const home = ticket && ticket.homeRoom;
-            const contractId = ticket && ticket.contractId;
-            if (home && contractId && Memory.rooms && Memory.rooms[home] && Memory.rooms[home].spawnTicketsByKey) {
-                const index = Memory.rooms[home].spawnTicketsByKey;
-                const list = index[contractId];
-                if (list && list.length > 0) {
-                    index[contractId] = list.filter(tid => tid !== ticketId);
-                }
-            }
-        };
 
         let prunedTotal = 0;
         const prunedByContract = [];
@@ -194,6 +216,15 @@ const spawnCensus = {
             if (!isActiveTicket(ticket)) return;
             if (isTicketCreepMissing(ticket, spawningNames)) {
                 const oldName = ticket.creepName;
+
+                // If contract no longer exists, delete ticket entirely
+                if (!contractIds.has(ticket.contractId)) {
+                    delete tickets[ticketId];
+                    debug('spawner', `[SpawnCensus] ${room.name} deleted orphan ticket=${ticket.ticketId} contract=${ticket.contractId}`);
+                    return;
+                }
+
+                // Otherwise reset for re-request
                 resetDeadTicket(ticket);
                 debug('spawner', `[SpawnCensus] ${room.name} earlyDeath reset ticket=${ticket.ticketId} contract=${ticket.contractId} oldName=${oldName}`);
                 return;

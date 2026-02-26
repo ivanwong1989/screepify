@@ -10,7 +10,6 @@ const threatEval = require('managers_admiral_tactics_assault_common_threat');
 const RETREAT_AT = 0.3;
 const REENGAGE_AT = 0.7;
 const COHESION_RANGE = 1;
-const WIPE_TTL = 4;
 
 
 // ---- Assault tuning (optional, safe defaults) ----
@@ -158,12 +157,16 @@ function computeRegroup(leader, support, cohesionRange) {
 }
 
 function handleWipe(runtime, leader, support, now) {
+    // ✅ No TTL: we only reset once we've actually progressed (assembled or left ASSEMBLE).
     if (leader || support) {
-        runtime.wipe.lastFullMissingAt = 0;
+        if (runtime && runtime.wipe) runtime.wipe.lastFullMissingAt = 0;
         return { reset: false };
     }
-    if (!runtime.wipe.lastFullMissingAt) runtime.wipe.lastFullMissingAt = now;
-    if (now - runtime.wipe.lastFullMissingAt >= WIPE_TTL) {
+
+    const assembledDone = !!(runtime && runtime.assembled && runtime.assembled.done);
+    const progressed = assembledDone || (runtime && runtime.phase && runtime.phase !== 'ASSEMBLE');
+
+    if (progressed) {
         return { reset: true };
     }
     return { reset: false };

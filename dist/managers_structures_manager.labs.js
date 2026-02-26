@@ -453,11 +453,15 @@ const enqueue = (sourceId, targetId, resourceType, label) => {
         }
     };
 
-    if (mode === 'idle') {
-        if (cfg.cleanupIdle) {
-            for (const lab of labs) cleanupLab(lab);
-        }
-    } else if (mode === 'purge') {
+        if (mode === 'idle') {
+            if (cfg.cleanupIdle) {
+                for (const lab of labs) {
+                    // Do NOT cleanup labs reserved for boosts
+                    if (boostLabIds.has(lab.id)) continue;
+                    cleanupLab(lab);
+                }
+            }
+        } else if (mode === 'purge') {
         for (const lab of labs) {
             if (!lab.mineralType) continue;
 
