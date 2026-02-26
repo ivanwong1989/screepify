@@ -237,8 +237,8 @@ var managerTasks = {
                 missionStatus[bestMission.name].assignedCount++;
                 // Pre-cache creep body parts to be used later
                 const p = this.getCreepActiveParts(creep);
-                missionStatus[missionName].assignedWorkParts += p.work;
-                missionStatus[missionName].assignedCarryParts += p.carry;
+                missionStatus[bestMission.name].assignedWorkParts += p.work;
+                missionStatus[bestMission.name].assignedCarryParts += p.carry;
                 
                 if (creep.memory.ticketId) this.updateReservation(creep, 'ACTIVE');
 
