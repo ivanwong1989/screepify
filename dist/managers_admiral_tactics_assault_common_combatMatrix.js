@@ -80,6 +80,10 @@ function buildBaseMatrix(room, opts) {
         // NEW: rampart preference (applied only if enabled by caller)
         friendlyRampartBonus = 10,      // e.g. 2 or 3
         preferPublicRamparts = false,  // default off (public ≠ safe bunker)
+        // NEW: "rampart sink" mode (owned room combat) - make friendly ramparts as cheap as roads
+        rampartSinkInOwnedRoom = false,
+        rampartSinkCost = 1,            // normally keep at roadCost
+        rampartSinkOutsidePenalty = 2,  // penalty added to non-road, non-rampart tiles
     } = opts || {};
 
     const costs = new PathFinder.CostMatrix();
@@ -127,6 +131,13 @@ function buildBaseMatrix(room, opts) {
         }
     }
 
+
+// If enabled, we track road + friendly-rampart tiles so we can later make ramparts a "sink"
+// (i.e., as cheap as roads) in owned-room combat.
+const _trackRampartSink = !!rampartSinkInOwnedRoom;
+const _roadTiles = _trackRampartSink ? new Set() : null;           // posKey(int)
+const _friendlyRampartTiles = _trackRampartSink ? new Set() : null; // posKey(int)
+
     // Structures baseline
     const structures = room.find(FIND_STRUCTURES);
     for (const s of structures) {
@@ -136,6 +147,7 @@ function buildBaseMatrix(room, opts) {
             // roads are cheap, but don't overwrite later danger penalties (duoPlanner patch also helps)
             const cur = costs.get(x, y);
             if (cur !== 255 && cur > roadCost) costs.set(x, y, roadCost);
+            if (_roadTiles) _roadTiles.add(posKey(x, y));
             continue;
         }
 
@@ -150,6 +162,7 @@ function buildBaseMatrix(room, opts) {
         if (s.structureType === STRUCTURE_RAMPART) {
             const isFriendly = !!s.my;
             const isPublic = !!s.isPublic;
+            if (_friendlyRampartTiles && isFriendly) _friendlyRampartTiles.add(posKey(x, y));
 
             if (!(isFriendly || isPublic)) {
                 costs.set(x, y, 255);
@@ -192,6 +205,56 @@ function buildBaseMatrix(room, opts) {
         }
     }
 
+
+// ------------------------------------------------------------
+// Friendly rampart "sink" mode (owned-room combat helper)
+// ------------------------------------------------------------
+// Intuition:
+// - Roads are the global minima (cost=1).
+// - In owned rooms, our ramparts are also "safe" tiles to stand on.
+// - So during combat, we want PF to happily route *onto* ramparts, not just tolerate them.
+//
+// Implementation:
+// - If room is mine AND we have friendly ramparts:
+//   - Set friendly rampart tiles to rampartSinkCost (default 1, matching roads).
+//   - Add a small penalty to everything else (except roads) so ramparts become true minima.
+if (_trackRampartSink &&
+    room.controller && room.controller.my &&
+    _friendlyRampartTiles && _friendlyRampartTiles.size) {
+
+    const sinkCost = Number.isFinite(Number(rampartSinkCost)) ? (Number(rampartSinkCost) | 0) : roadCost;
+    const outsidePenalty = Number.isFinite(Number(rampartSinkOutsidePenalty)) ? (Number(rampartSinkOutsidePenalty) | 0) : 0;
+
+    if (outsidePenalty > 0) {
+        for (let x = 0; x < 50; x++) {
+            for (let y = 0; y < 50; y++) {
+                const cur = costs.get(x, y);
+                if (cur === 255) continue;
+
+                const k = posKey(x, y);
+
+                // Keep roads as minima too
+                if (_roadTiles && _roadTiles.has(k)) continue;
+
+                // Skip friendly ramparts; they will be set to sinkCost below
+                if (_friendlyRampartTiles.has(k)) continue;
+
+                costs.set(x, y, clamp255(cur + outsidePenalty));
+            }
+        }
+    }
+
+    // Finally, enforce friendly ramparts as sink tiles (normally cost=1)
+    for (const k of _friendlyRampartTiles) {
+        const x = (k >> 6) & 63;
+        const y = (k & 63);
+        const cur = costs.get(x, y);
+        if (cur === 255) continue;
+        const next = Math.max(1, Math.min(254, sinkCost));
+        if (cur !== next) costs.set(x, y, next);
+    }
+}
+
     // Borders slightly expensive
     if (avoidBorders) {
         for (let i = 0; i < 50; i++) {
@@ -233,6 +296,10 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
         // if you want to ignore “harmless” hostiles (e.g. no attack parts)
         ignoreHarmless = true,
 
+        // NEW: In owned rooms, friendly ramparts are a "shield".
+        // If enabled, we do NOT paint threat costs onto friendly rampart tiles.
+        ignoreThreatOnFriendlyRamparts = true,
+
         // Prediction envelope: also paint danger from where the enemy could be after 1 move this tick.
         // This reduces "surprise" hits without inflating true ranges.
         predictEnemyStep = true,
@@ -251,6 +318,38 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
     // Note: costmatrix is built at start-of-tick using current positions.
     // Enemies can move at end-of-tick, so we optionally add a 1-step "envelope" as medium-weight danger.
     const terrain = room.getTerrain();
+
+    // Friendly ramparts can act as a true shield in owned rooms.
+    // Optionally treat them as "safe tiles" even inside threat rings.
+    const _rampartSafe =
+        !!ignoreThreatOnFriendlyRamparts &&
+        room.controller && room.controller.my;
+
+    const _friendlyRampartSet = _rampartSafe ? new Set() : null;
+    if (_friendlyRampartSet) {
+        const ramps = room.find(FIND_STRUCTURES, { filter: r => r.structureType === STRUCTURE_RAMPART && r.my });
+        for (const r of ramps) _friendlyRampartSet.add(posKey(r.pos.x, r.pos.y));
+    }
+
+    function addMaxThreat(x, y, minCost) {
+        if (_friendlyRampartSet && _friendlyRampartSet.has(posKey(x, y))) return;
+        addMax(costs, x, y, minCost);
+    }
+
+    function addMaxInRangeChebyshevThreat(cx, cy, range, minCostByDistFn) {
+        const minX = Math.max(1, cx - range);
+        const maxX = Math.min(48, cx + range);
+        const minY = Math.max(1, cy - range);
+        const maxY = Math.min(48, cy + range);
+        for (let x = minX; x <= maxX; x++) {
+            for (let y = minY; y <= maxY; y++) {
+                const d = Math.max(Math.abs(x - cx), Math.abs(y - cy));
+                const c = minCostByDistFn(d);
+                if (c > 0) addMaxThreat(x, y, c);
+            }
+        }
+    }
+
 
     function clamp01(v, fallback) {
         const n = Number(v);
@@ -289,7 +388,7 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
         for (const [dx, dy] of OFFSETS_R2) {
             const x = cx + dx, y = cy + dy;
             if (x < 0 || x > 49 || y < 0 || y > 49) continue;
-            addMax(costs, x, y, meleeCost);
+            addMaxThreat(x, y, meleeCost);
         }
 
         // ranged (range 3) – stronger near
@@ -297,7 +396,7 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
             const x = cx + dx, y = cy + dy;
             if (x < 0 || x > 49 || y < 0 || y > 49) continue;
             const c = (d <= 1) ? rangedNearCost : (d === 2 ? (rangedFarCost + 15) : rangedFarCost);
-            addMax(costs, x, y, c);
+            addMaxThreat(x, y, c);
         }
     }
 
@@ -377,7 +476,7 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
     for (const t of towers) {
         const tx = t.pos.x, ty = t.pos.y;
 
-        addMaxInRangeChebyshev(costs, tx, ty, 20, (d) => {
+        addMaxInRangeChebyshevThreat(tx, ty, 20, (d) => {
             if (d <= 5) return towerMinCostNear;
             if (d <= 10) return towerMinCostMid;
             if (d <= 20) return towerMinCostFar;
@@ -472,6 +571,13 @@ function makeAssaultCombatRoomCallback(opts) {
                     friendlyRampartBonus: bonus,
                     // keep default false unless caller explicitly wants public ramparts
                     preferPublicRamparts: !!(base && base.preferPublicRamparts),
+                    // NEW: In owned-room combat, prefer standing on friendly ramparts.
+                    // Default ON in combat unless caller explicitly disables.
+                    rampartSinkInOwnedRoom: (base && base.rampartSinkInOwnedRoom != null)
+                        ? !!base.rampartSinkInOwnedRoom
+                        : true,
+                    rampartSinkCost: (base && base.rampartSinkCost != null) ? base.rampartSinkCost : 1,
+                    rampartSinkOutsidePenalty: (base && base.rampartSinkOutsidePenalty != null) ? base.rampartSinkOutsidePenalty : 2,
                 });
                 costs = buildBaseMatrix(room, combatBase);
             }

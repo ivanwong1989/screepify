@@ -246,14 +246,18 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
 
     const slack = Number.isFinite(opts.rangeSlack) ? Math.max(0, Math.floor(opts.rangeSlack)) : defaultSlack;
 
-    // If we have a target, enforce being "near" preferred range with slack.
-    // If not, treat focus as the reference and relax the constraint.
     const rangeHasTarget = !!(targetPos && targetPos.roomName === creep.room.name);
     const rangeRef = rangeHasTarget ? targetPos : focus;
 
+    // Range policy (simple):
+    // - Prefer rr.pref (r=3 for ranged)
+    // - Allow rr.min..rr.max (ranged: 2..3), so stepping to r=2 is acceptable (still outside melee).
+    // - Rely on the combat matrix's predictive overlay to naturally push us outward when the enemy advances.
     const prefRange = rangeHasTarget ? rr.pref : 0;
-    const minRange = rangeHasTarget ? Math.max(0, rr.pref - slack) : 0;
-    const maxRange = rangeHasTarget ? Math.min(10, rr.pref + slack) : 50;
+
+
+    const minRange = rangeHasTarget ? Math.max(0, rr.min - slack) : 0;
+    const maxRange = rangeHasTarget ? Math.min(10, rr.max + slack) : 50;
 
     // Search radius: bigger than maxRange so we can actually find candidates when slack>0.
     let searchRadius = Number.isFinite(opts.searchRadius) ? Math.max(1, Math.floor(opts.searchRadius)) : 10;
@@ -334,6 +338,7 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
             }
 
             const rec = { x, y, score, tileCost, distFromCreep, rangeToTarget, rampart: rs };
+
             if (!best || score < best.score) {
                 second = best;
                 best = rec;
@@ -347,7 +352,11 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
         return { anchorPos: focus, range: 0, reason: `fallback:no-candidate:${focusReason}` };
     }
 
-    const anchorPos = new RoomPosition(best.x, best.y, creep.room.name);
+    
+    // Choose the best-scoring candidate (range constraints + combat matrix costs already applied).
+    const chosen = best;
+
+    const anchorPos = new RoomPosition(chosen.x, chosen.y, creep.room.name);
 
     if (dbg) {
         dbg.last = {
