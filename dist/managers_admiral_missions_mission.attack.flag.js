@@ -1,4 +1,5 @@
 const shared = require('console_shared');
+flagsResolver = require('managers_admiral_tactics_assault_common_flags')
 
 /**
  * Assault Flag Mission (W/A)
@@ -182,7 +183,9 @@ function buildFlagAttackCache() {
         const sponsorRoom = shared.resolveSponsorRoomForTargetPos(waitFlag.pos);
         if (!sponsorRoom) continue;
 
-        const attackFlag = Game.flags[set.attackMass] || Game.flags[set.attack];
+        const attackFlag =
+            Game.flags[set.attackMass] ||
+            flagsResolver.resolveAttackFlag(set.attack); // will resolve A10 when set.attack === "A"
         const assaultMode = attackFlag && attackFlag.name === set.attackMass
             ? 'rangedMass'
             : undefined;

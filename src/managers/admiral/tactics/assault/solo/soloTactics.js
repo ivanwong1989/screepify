@@ -66,8 +66,25 @@ function ensureRuntime(runtime) {
     return runtime._soloTactics;
 }
 
+function nowTick() {
+    return (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+}
+
+function logSolo(runtime, message) {
+    if (!global || typeof global.debug !== 'function') return;
+    global.debug('admiral.assault.solo', `[assault.solo] ${message}`);
+
+    if (runtime && runtime.debug) {
+        const now = nowTick();
+        if (runtime.debug.lastLogTick === now && runtime.debug.lastLog === message) return;
+        runtime.debug.lastLogTick = now;
+        runtime.debug.lastLog = message;
+    }
+}
+
 function scoreTile(params) {
     // Lower is better.
+    // This is a *weighted* scoring function so caller can tune behavior without changing code.
     const {
         cost, // 0..254 from combat matrix (includes base+danger)
         distFromCreep,
@@ -78,30 +95,64 @@ function scoreTile(params) {
         border,
         onFriendlyRampart,
         onPublicRampart,
+        // Optional: neighborhood average danger/terrain cost (0..254)
+        neighborhoodCost,
+        // Optional weights override
+        weights
     } = params;
 
     // Hard constraints:
     if (rangeToTarget < minRange || rangeToTarget > maxRange) return Infinity;
     if (!Number.isFinite(cost)) return Infinity;
 
-    // Base: danger+terrain
-    let score = cost;
+    const w = weights || {};
 
-    // Prefer being at preferred range (e.g. range=3 for ranged)
-    score += Math.abs(rangeToTarget - prefRange) * 12;
+    const wCost = Number.isFinite(w.cost) ? w.cost : 1.0;
+    // Range penalties:
+    // - Under-range (closer than pref) is usually OK-ish (esp. for ranged kiting / stepping in).
+    // - Over-range (too far to engage) must be punished HARD, otherwise we camp out of attack range.
+    // Back-compat: if caller supplies weights.range, treat it as both under/over.
+    const wRangeUnder = Number.isFinite(w.rangeUnder)
+        ? w.rangeUnder
+        : (Number.isFinite(w.range) ? w.range : 12);
+    const wRangeOver = Number.isFinite(w.rangeOver)
+        ? w.rangeOver
+        : (Number.isFinite(w.range) ? w.range : 45);
+    const wDist = Number.isFinite(w.dist) ? w.dist : 2.5;
+    const wBorder = Number.isFinite(w.border) ? w.border : 25;
+    const wFriendlyRampart = Number.isFinite(w.friendlyRampart) ? w.friendlyRampart : -8;
+    const wPublicRampart = Number.isFinite(w.publicRampart) ? w.publicRampart : -3;
+    const wNeighborhood = Number.isFinite(w.neighborhood) ? w.neighborhood : 0.20;
+
+    // Base: danger+terrain
+    let score = cost * wCost;
+
+    // Prefer being at preferred range (e.g. range=3 for ranged), but allow slack via min/max range.
+    // Asymmetric penalty: too-far-to-engage gets punished much harder than too-close.
+    if (rangeToTarget > prefRange) {
+        score += (rangeToTarget - prefRange) * wRangeOver;
+    } else if (rangeToTarget < prefRange) {
+        score += (prefRange - rangeToTarget) * wRangeUnder;
+    }
 
     // Prefer closer-to-reach anchors, but not overly (danger should dominate)
-    score += distFromCreep * 2.5;
+    score += distFromCreep * wDist;
+
+    // Neighborhood stability: avoid "cheap tile surrounded by lava"
+    if (Number.isFinite(neighborhoodCost)) {
+        score += neighborhoodCost * wNeighborhood;
+    }
 
     // Avoid borders/exits slightly (your matrix already adds borderCost; this is an extra nudge)
-    if (border) score += 25;
+    if (border) score += wBorder;
 
     // Prefer rampart tiles a bit (bunkering), but keep it mild.
-    if (onFriendlyRampart) score -= 8;
-    if (onPublicRampart) score -= 3;
+    if (onFriendlyRampart) score += wFriendlyRampart;
+    if (onPublicRampart) score += wPublicRampart;
 
     return score;
 }
+
 
 function rampartStatus(room, x, y) {
     // Fast-ish: only check structures when candidate survived cost checks.
@@ -129,6 +180,7 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
 
     const rt = ensureRuntime(runtime);
     const dbg = opts.debug ? (rt.debug || (rt.debug = {})) : null;
+    const logEnabled = (opts.logSolo != null) ? !!opts.logSolo : !!opts.debug;
 
     // Choose "focus" position to anchor around (usually target; else AO center; else attackPos)
     const targetPos = toRoomPos(target);
@@ -175,27 +227,78 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
         };
     }
 
-    // Candidate enumeration:
-    // - Sample all tiles in chebyshev square around focus within rr.max (<=3)
-    // - Filter by AO
-    // - Filter by passability via costs (255 blocks)
-    const maxR = Math.max(1, Math.min(5, rr.max)); // safety cap
-    const minX = Math.max(0, focus.x - maxR);
-    const maxX = Math.min(49, focus.x + maxR);
-    const minY = Math.max(0, focus.y - maxR);
-    const maxY = Math.min(49, focus.y + maxR);
+    // Candidate enumeration (single pass):
+    // - Sample all tiles in a chebyshev square around focus with a configurable search radius.
+    // - Score each candidate using combat matrix danger + weighted preferences (range, travel, border, rampart, neighborhood).
+    //
+    // Why: pathing already avoids danger; anchor selection must ALSO be danger-aware.
+    //
+    // Tuning knobs:
+    // - opts.searchRadius: how far from focus we consider (default 10)
+    // - opts.rangeSlack: allowed deviation from preferred range to target (default: ranged 0, melee 1, worker 0)
+    // - opts.weights: { cost, rangeUnder, rangeOver, dist, border, friendlyRampart, publicRampart, neighborhood }
+    const weights = opts.weights || {};
+
+    const defaultSlack =
+        (rr.style === 'ranged') ? 0 :
+        (rr.style === 'melee') ? 1 :
+        0;
+
+    const slack = Number.isFinite(opts.rangeSlack) ? Math.max(0, Math.floor(opts.rangeSlack)) : defaultSlack;
+
+    // If we have a target, enforce being "near" preferred range with slack.
+    // If not, treat focus as the reference and relax the constraint.
+    const rangeHasTarget = !!(targetPos && targetPos.roomName === creep.room.name);
+    const rangeRef = rangeHasTarget ? targetPos : focus;
+
+    const prefRange = rangeHasTarget ? rr.pref : 0;
+    const minRange = rangeHasTarget ? Math.max(0, rr.pref - slack) : 0;
+    const maxRange = rangeHasTarget ? Math.min(10, rr.pref + slack) : 50;
+
+    // Search radius: bigger than maxRange so we can actually find candidates when slack>0.
+    let searchRadius = Number.isFinite(opts.searchRadius) ? Math.max(1, Math.floor(opts.searchRadius)) : 10;
+    searchRadius = Math.max(searchRadius, maxRange + 1);
+
+    // If AO radius is set, don't waste CPU searching beyond it (within same room).
+    const aoRadius = (ao && ao.centerPos && ao.centerPos.roomName === creep.room.name) ? (Number(ao.radius) || 0) : 0;
+    if (aoRadius > 0) searchRadius = Math.min(searchRadius, aoRadius);
+
+    const minX = Math.max(0, focus.x - searchRadius);
+    const maxX = Math.min(49, focus.x + searchRadius);
+    const minY = Math.max(0, focus.y - searchRadius);
+    const maxY = Math.min(49, focus.y + searchRadius);
 
     let best = null;
     let second = null;
 
-    // Minor optimization: if we are already at a valid anchor, keep it unless a clearly better tile exists.
+    // Stickiness: if it's our current tile, reduce score slightly so we don't jitter.
     const biasStickiness = Number.isFinite(opts.stickiness) ? opts.stickiness : 0.6;
+
+    function neighborhoodAvgCost(x, y) {
+        // Average cost of 8 neighbors (ignores 255 blocks). Helps avoid "one cheap tile in a lava field".
+        let sum = 0;
+        let n = 0;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = x + dx, ny = y + dy;
+                if (nx < 0 || nx > 49 || ny < 0 || ny > 49) continue;
+                const c = costs.get(nx, ny);
+                if (c === 255) continue;
+                sum += c;
+                n += 1;
+            }
+        }
+        return n > 0 ? (sum / n) : costSafeFallback(x, y);
+    }
+
+    function costSafeFallback(x, y) {
+        const c = costs.get(x, y);
+        return (c === 255) ? 254 : c;
+    }
 
     for (let x = minX; x <= maxX; x++) {
         for (let y = minY; y <= maxY; y++) {
-            const dToFocus = Math.max(Math.abs(x - focus.x), Math.abs(y - focus.y));
-            if (dToFocus > rr.max) continue;
-
             const p = new RoomPosition(x, y, creep.room.name);
 
             if (!inAO(p, ao)) continue;
@@ -203,8 +306,7 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
             const tileCost = costs.get(x, y);
             if (tileCost === 255) continue;
 
-            // Range to target *if* we have one; else range to focus.
-            const rangeRef = (targetPos && targetPos.roomName === creep.room.name) ? targetPos : focus;
+            // Range reference is decided once above (target when available; else focus).
             const rangeToTarget = rangeRef.getRangeTo(p);
 
             const distFromCreep = creep.pos.getRangeTo(p);
@@ -216,12 +318,14 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
                 cost: tileCost,
                 distFromCreep,
                 rangeToTarget,
-                prefRange: rr.pref,
-                minRange: rr.min,
-                maxRange: rr.max,
+                prefRange,
+                minRange,
+                maxRange,
                 border: isBorder(x, y),
                 onFriendlyRampart: rs.friendly,
-                onPublicRampart: rs.pub
+                onPublicRampart: rs.pub,
+                neighborhoodCost: neighborhoodAvgCost(x, y),
+                weights
             });
 
             // Stickiness: if it's our current tile, reduce score slightly so we don't jitter.
@@ -252,7 +356,10 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
             focusReason,
             target: targetPos ? `${targetPos.roomName}:${targetPos.x},${targetPos.y}` : null,
             role: rr.style,
-            prefRange: rr.pref,
+            prefRange,
+            slack,
+            searchRadius,
+            weights,
             best: {
                 pos: `${anchorPos.roomName}:${anchorPos.x},${anchorPos.y}`,
                 score: best.score,
@@ -270,6 +377,26 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
                 rampart: second.rampart
             } : null
         };
+    }
+
+    if (logEnabled) {
+        const bestMsg = `best=${anchorPos.roomName}:${anchorPos.x},${anchorPos.y}` +
+            ` score=${best.score.toFixed(2)} raw=${best.tileCost} dist=${best.distFromCreep} r=${best.rangeToTarget}` +
+            (best.rampart && (best.rampart.friendly || best.rampart.pub)
+                ? ` rampart=${best.rampart.friendly ? 'friendly' : 'public'}`
+                : '');
+
+        const secondMsg = second
+            ? ` second=${creep.room.name}:${second.x},${second.y}` +
+              ` score=${second.score.toFixed(2)} raw=${second.tileCost} dist=${second.distFromCreep} r=${second.rangeToTarget}`
+            : ' second=null';
+
+        logSolo(
+            runtime,
+            `tactics focus=${focus.roomName}:${focus.x},${focus.y}(${focusReason}) ` +
+            `role=${rr.style} prefR=${prefRange} slack=${slack} searchR=${searchRadius} ` +
+            bestMsg + secondMsg
+        );
     }
 
     return {
