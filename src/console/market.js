@@ -23,6 +23,11 @@ function showMarketHelp() {
     return 'Done';
 }
 
+function normalizeRoomName(roomName) {
+    if (!roomName) return roomName;
+    return ('' + roomName).trim().toUpperCase();
+}
+
 function collectRoomMineralTotals(room) {
     const totals = {};
     const addStore = (store) => {
@@ -38,6 +43,7 @@ function collectRoomMineralTotals(room) {
 }
 
 function marketReport(roomName) {
+    roomName = normalizeRoomName(roomName);
     const room = Game.rooms[roomName];
     if (!room) return `Unknown room: ${roomName}`;
     const ledger = room._resourceLedger || (room.memory.overseer && room.memory.overseer.resourceLedger);
@@ -104,6 +110,7 @@ function printManualOrders() {
 
 function createAndTrackOrder(kind, roomName, resourceType, price, amount, tag) {
     if (!Game.market) return 'Market not available.';
+    roomName = normalizeRoomName(roomName);
     const room = Game.rooms[roomName];
     if (!room) return `Unknown room: ${roomName}`;
     if (!room.controller || !room.controller.my) return `Room not owned: ${roomName}`;
@@ -202,7 +209,7 @@ module.exports = function registerMarketConsole() {
         }
 
         if (cmd === 'room') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             if (!roomName) return 'Usage: market(\"room\", \"W1N1\", { ... })';
             const patch = args[1];
             if (patch === 'report' || patch === 'ledger') {
@@ -219,7 +226,7 @@ module.exports = function registerMarketConsole() {
         }
 
         if (cmd === 'calc' || cmd === 'explain' || cmd === 'debug') {
-            const roomName = args[0];
+            const roomName = normalizeRoomName(args[0]);
             if (!roomName) return 'Usage: market(\"calc\", \"W1N1\", \"force\"?)';
             const mode = args[1];
             const opts = {};
@@ -240,7 +247,7 @@ module.exports = function registerMarketConsole() {
             const sub = args[0] ? ('' + args[0]).trim().toLowerCase() : '';
 
             if (sub === 'buy' || sub === 'sell') {
-                const roomName = args[1];
+                const roomName = normalizeRoomName(args[1]);
                 const resourceType = args[2];
                 const price = args[3];
                 const amount = args[4];

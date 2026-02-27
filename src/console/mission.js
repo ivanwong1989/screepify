@@ -105,6 +105,27 @@ function normalizeMissionPatch(patch) {
     return next;
 }
 
+function normalizeRoomNamesOnData(data) {
+    if (!data || typeof data !== 'object') return data;
+    if (data.roomName !== undefined) {
+        const roomName = userMissions.normalizeRoomName(data.roomName);
+        data.roomName = roomName || null;
+    }
+    if (data.targetRoom !== undefined) {
+        const targetRoom = userMissions.normalizeRoomName(data.targetRoom);
+        data.targetRoom = targetRoom || null;
+    }
+    if (data.sponsorRoom !== undefined) {
+        const sponsorRoom = userMissions.normalizeRoomName(data.sponsorRoom);
+        data.sponsorRoom = sponsorRoom || null;
+    }
+    if (data.sourceRoom !== undefined) {
+        const sourceRoom = userMissions.normalizeRoomName(data.sourceRoom);
+        data.sourceRoom = sourceRoom || null;
+    }
+    return data;
+}
+
 module.exports = function registerMissionConsole() {
     global.mission = function(action, typeOrData, ...args) {
         const cmd = action ? ('' + action).trim().toLowerCase() : 'help';
@@ -255,6 +276,8 @@ module.exports = function registerMissionConsole() {
                     if (sponsorRoom) data.sponsorRoom = sponsorRoom;
                 }
             }
+
+            normalizeRoomNamesOnData(data);
 
             const result = userMissions.addMission(key, data);
             if (result && result.error) return result.error;
