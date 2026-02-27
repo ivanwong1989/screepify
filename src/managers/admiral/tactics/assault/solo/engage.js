@@ -18,14 +18,52 @@ function inAO(pos, ao) {
     return c.getRangeTo(pos) <= radius;
 }
 
-function selectTarget(creep, flags, ao) {
-    if (!creep || !creep.room) return null;
-
-    const hostiles = getHostilesInRoom(creep.room).filter(h => inAO(h.pos, ao));
-    if (hostiles.length > 0) {
-        return creep.pos.findClosestByRange(hostiles);
+function getEngageContext(creep, flags, ao, debugOut) {
+    const debug = debugOut || {
+        reason: 'none',
+        counts: {
+            hostiles: 0,
+            hostileStructures: 0,
+            attackFlag: 0,
+            aoNearby: 0
+        }
+    };
+    if (!debug.counts) {
+        debug.counts = {
+            hostiles: 0,
+            hostileStructures: 0,
+            attackFlag: 0,
+            aoNearby: 0
+        };
     }
 
+    const ctx = {
+        target: null,
+        hostiles: [],
+        hostileStructures: [],
+        hasHostiles: false,
+        hasHostileStructures: false,
+        debug
+    };
+
+    if (!creep || !creep.room) {
+        debug.reason = 'no-creep';
+        return ctx;
+    }
+
+    // Hostile creeps (AO-bounded)
+    const hostiles = getHostilesInRoom(creep.room).filter(h => inAO(h.pos, ao));
+    ctx.hostiles = hostiles;
+    ctx.hasHostiles = hostiles.length > 0;
+    debug.counts.hostiles = hostiles.length;
+
+    if (hostiles.length > 0) {
+        debug.reason = 'hostile-creep';
+        ctx.target = creep.pos.findClosestByRange(hostiles);
+        return ctx;
+    }
+
+    // Hostile structures (AO-bounded)
     // Prefer cache-hostileStructures if present (already filters allies)
     let hostileStructures = null;
     try {
@@ -39,15 +77,29 @@ function selectTarget(creep, flags, ao) {
     if (!hostileStructures) {
         hostileStructures = filterOutAllies(creep.room.find(FIND_HOSTILE_STRUCTURES));
     }
-    hostileStructures = hostileStructures.filter(s => s.structureType !== STRUCTURE_CONTROLLER && inAO(s.pos, ao));
+
+    hostileStructures = hostileStructures
+        .filter(s => s.structureType !== STRUCTURE_CONTROLLER && inAO(s.pos, ao));
+
+    ctx.hostileStructures = hostileStructures;
+    ctx.hasHostileStructures = hostileStructures.length > 0;
+    debug.counts.hostileStructures = hostileStructures.length;
+
     if (hostileStructures.length > 0) {
-        return creep.pos.findClosestByRange(hostileStructures);
+        debug.reason = 'hostile-structure';
+        ctx.target = creep.pos.findClosestByRange(hostileStructures);
+        return ctx;
     }
 
     // Attack flag tile preference (only if inside AO too)
     if (flags.attackPos && flags.attackPos.roomName === creep.room.name && inAO(flags.attackPos, ao)) {
         const structuresAt = creep.room.lookForAt(LOOK_STRUCTURES, flags.attackPos.x, flags.attackPos.y);
-        if (structuresAt && structuresAt.length > 0) return structuresAt[0];
+        debug.counts.attackFlag = structuresAt ? structuresAt.length : 0;
+        if (structuresAt && structuresAt.length > 0) {
+            debug.reason = 'attack-flag-structure';
+            ctx.target = structuresAt[0];
+            return ctx;
+        }
     }
 
     // Near AO center fallback (bounded by radius anyway)
@@ -56,10 +108,20 @@ function selectTarget(creep, flags, ao) {
         const nearby = center.findInRange(FIND_HOSTILE_STRUCTURES, 3, {
             filter: s => s.structureType !== STRUCTURE_CONTROLLER
         }).filter(s => inAO(s.pos, ao));
-        if (nearby.length > 0) return nearby[0];
+        debug.counts.aoNearby = nearby.length;
+        if (nearby.length > 0) {
+            debug.reason = 'ao-center-nearby';
+            ctx.target = nearby[0];
+            return ctx;
+        }
     }
 
-    return null;
+    return ctx;
 }
 
-module.exports = { selectTarget };
+function selectTarget(creep, flags, ao, debugOut) {
+    // Backwards-compatible: callers expecting a single target keep working.
+    return getEngageContext(creep, flags, ao, debugOut).target;
+}
+
+module.exports = { selectTarget, getEngageContext };

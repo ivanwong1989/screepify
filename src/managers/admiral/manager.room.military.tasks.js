@@ -239,11 +239,24 @@ var militaryTasks = {
         const missions = selectMissions(room);
         const assignments = allocateCreeps(room, missions);
         const cache = global.getRoomCache(room);
-        const hostiles = cache.hostiles || [];
-        // 1) build callback ONCE
+        const hostiles = cache.hostiles || []; // keep this for ctx.hostiles / defense logic
+
+        // Restrict threat overlay to AO rooms only (cheap travel, expensive combat heatmap).
+        // Build a set of AO target rooms from current assault missions.
+        const overlayRooms = new Set();
+        for (const m of missions) {
+            if (!m || m.type !== 'assault') continue;
+            const aoRoom = (m.data && m.data.ao && m.data.ao.targetRoom)
+                ? m.data.ao.targetRoom
+                : (m.data && m.data.targetRoom) ? m.data.targetRoom : null;
+            if (aoRoom) overlayRooms.add(aoRoom);
+        }
+
+        // Build callback ONCE.
+        // Base matrix is available for any visible PF-evaluated room.
+        // Threat overlay is restricted to AO target rooms only (overlayRooms).
         const roomCallback = assaultCombatMatrix.makeAssaultCombatRoomCallback({
-            hostiles,
-            onlyOverlayInRoomName: room.name, // keep overlay local (safe + cheap)
+            onlyOverlayInRoomNames: overlayRooms,
             base: {
                 plainCost: 2,
                 swampCost: 10,
@@ -265,17 +278,44 @@ var militaryTasks = {
             },
         });
 
-        // 2) visualize it (behind a toggle)
-        if (Memory.visuals && Memory.visuals.combatMatrix) {
-            combatVis.drawCombatMatrix(room, roomCallback, {
-                step: 1,       // 1 to avoid visuals bug
-                minCost: Memory.visuals.combatMinCost || 20, // hide low costs
-                showNumbers: !!Memory.visuals.combatNumbers,
-                numberThreshold: Memory.visuals.combatNumberThreshold || 120,
-            });
-        }
-
         const ctx = { room, hostiles, runtime: { roomCallback } };
+
+        // --------------------------------------
+        // 🗺️ Combat CostMatrix Visualization (AO only)
+        // --------------------------------------
+        try {
+            const v = (Memory && Memory.visuals) ? Memory.visuals : null;
+            if (!v || !v.combatMatrix) {
+                // debug toggle off
+            } else {
+                const VIS_EVERY = 1; // you can add v.combatEvery later if you want
+                if ((Game.time % VIS_EVERY) === 0 && overlayRooms && overlayRooms.size) {
+                    const step = Number.isFinite(+v.combatStep) ? Math.max(1, Math.min(10, +v.combatStep)) : 1;
+                    const minCost = Number.isFinite(+v.combatMinCost) ? Math.max(0, Math.min(254, +v.combatMinCost)) : 20;
+                    const showNumbers = !!v.combatNumbers;
+                    const numberThreshold = Number.isFinite(+v.combatNumberThreshold)
+                        ? Math.max(0, Math.min(254, +v.combatNumberThreshold))
+                        : 120;
+
+                    for (const aoRoomName of overlayRooms) {
+                        const aoRoom = Game.rooms[aoRoomName];
+                        if (!aoRoom) continue; // must be visible
+
+                        if (combatVis && typeof combatVis.drawCombatMatrix === 'function') {
+                            combatVis.drawCombatMatrix(aoRoom, roomCallback, {
+                                step,
+                                minCost,
+                                legend: true,
+                                showNumbers,
+                                numberThreshold,
+                            });
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            // Never break missions because of visuals
+        }
 
         const handledDuoMissions = runDuoAssaultMissions(missions, assignments, ctx);
         const handledSoloMissions = runSoloAssaultMissions(missions, assignments, ctx);

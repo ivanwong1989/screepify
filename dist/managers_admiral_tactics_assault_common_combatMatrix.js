@@ -77,6 +77,9 @@ function buildBaseMatrix(room, opts) {
         creepCost = 50,
         portalCost = 1,
         ignoreCreepIds = null,
+        // NEW: rampart preference (applied only if enabled by caller)
+        friendlyRampartBonus = 10,      // e.g. 2 or 3
+        preferPublicRamparts = false,  // default off (public ≠ safe bunker)
     } = opts || {};
 
     const costs = new PathFinder.CostMatrix();
@@ -140,10 +143,31 @@ function buildBaseMatrix(room, opts) {
             continue; // passable
         }
 
-        // Friendly/public ramparts passable
+        // Ramparts:
+        // - enemy/private ramparts block
+        // - friendly ramparts are passable
+        // - optionally prefer friendly ramparts by reducing cost a bit
         if (s.structureType === STRUCTURE_RAMPART) {
-            if (s.my || s.isPublic) continue;
-            costs.set(x, y, 255);
+            const isFriendly = !!s.my;
+            const isPublic = !!s.isPublic;
+
+            if (!(isFriendly || isPublic)) {
+                costs.set(x, y, 255);
+                continue;
+            }
+
+            const shouldPrefer = isFriendly || (preferPublicRamparts && isPublic);
+            const bonus = shouldPrefer ? (Number(friendlyRampartBonus) || 0) : 0;
+
+            if (bonus > 0) {
+                const cur = costs.get(x, y);
+                // Don't override walls/blocks, and don't beat roads (keep roads king)
+                if (cur !== 255 && cur > roadCost) {
+                    const next = Math.max(roadCost, cur - bonus);
+                    if (next < cur) costs.set(x, y, next);
+                }
+            }
+
             continue;
         }
 
@@ -381,6 +405,7 @@ function makeAssaultCombatRoomCallback(opts) {
         // If true, only apply threat overlay in the "current room" you pass in.
         // Otherwise, if room is visible, we’ll overlay using room.find hostiles.
         onlyOverlayInRoomName = null,
+        onlyOverlayInRoomNames = null, // NEW: Set<string> | string[] | { [roomName]: true }
     } = opts || {};
 
     // Per-tick cache to avoid rebuilding matrices multiple times per room in same tick
@@ -397,11 +422,30 @@ function makeAssaultCombatRoomCallback(opts) {
         const room = Game.rooms[roomName];
         if (!room) return undefined; // not visible: let PF handle it
 
-        const costs = buildBaseMatrix(room, base);
+        // Build base matrix.
+        // If hostiles exist, we optionally prefer friendly ramparts (combat posture).
+        let costs = buildBaseMatrix(room, base);
 
         // Pick hostiles list
         let hs = null;
-        if (onlyOverlayInRoomName && roomName !== onlyOverlayInRoomName) {
+
+        // Restrict overlay rooms (single or many).
+        // - onlyOverlayInRoomName: string
+        // - onlyOverlayInRoomNames: Set<string> | string[] | { [roomName]: true }
+        let overlayAllowed = true;
+        if (onlyOverlayInRoomName) {
+            overlayAllowed = (roomName === onlyOverlayInRoomName);
+        } else if (onlyOverlayInRoomNames) {
+            if (onlyOverlayInRoomNames instanceof Set) {
+                overlayAllowed = onlyOverlayInRoomNames.has(roomName);
+            } else if (Array.isArray(onlyOverlayInRoomNames)) {
+                overlayAllowed = onlyOverlayInRoomNames.includes(roomName);
+            } else if (typeof onlyOverlayInRoomNames === 'object') {
+                overlayAllowed = !!onlyOverlayInRoomNames[roomName];
+            }
+        }
+
+        if (!overlayAllowed) {
             hs = null;
         } else if (hostilesByRoomName && hostilesByRoomName[roomName]) {
             hs = hostilesByRoomName[roomName];
@@ -415,6 +459,23 @@ function makeAssaultCombatRoomCallback(opts) {
 
         // Safety: if caller supplied hostiles arrays, still ensure allies are excluded.
         if (hs && hs.length) hs = filterOutAllies(hs);
+
+        // If there are hostiles, rebuild base matrix with rampart preference enabled.
+        // This avoids "rampart surfing" during peaceful travel.
+        if (hs && hs.length) {
+            const bonus = (base && base.friendlyRampartBonus != null)
+                ? base.friendlyRampartBonus
+                : 2; // sensible default when in combat
+
+            if (bonus > 0) {
+                const combatBase = Object.assign({}, base, {
+                    friendlyRampartBonus: bonus,
+                    // keep default false unless caller explicitly wants public ramparts
+                    preferPublicRamparts: !!(base && base.preferPublicRamparts),
+                });
+                costs = buildBaseMatrix(room, combatBase);
+            }
+        }
 
         if (hs && hs.length) {
             //const h0 = hs[0];

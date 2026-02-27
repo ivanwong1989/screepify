@@ -40,13 +40,9 @@ function plan(creep, runtime, target, routeTarget, moveOverride) {
 
     // ✅ Movement override from soloPlanner
     if (moveOverride) {
-        // HOLD: planner explicitly wants no movement this tick
-        if (!moveOverride.moveTarget && moveOverride.range === 0) {
-            return {
-                moveTarget: null,
-                range: 0,
-                actions: buildActions(creep, target)
-            };
+        // Any explicit null moveTarget means HOLD
+        if (moveOverride.moveTarget === null) {
+            return { moveTarget: null, range: 0, actions: buildActions(creep, target) };
         }
 
         if (moveOverride.moveTarget) {

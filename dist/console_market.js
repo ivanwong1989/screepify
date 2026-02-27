@@ -4,9 +4,11 @@ function showMarketHelp() {
     const lines = [
         'market()                          - show this help',
         'market(\"status\")                   - show market auto-trade status',
+        'market(\"status\", roomName)         - show market auto-trade status for a room',
         'market(\"on\") / market(\"off\")       - enable or disable auto-trading',
         'market(\"set\", { ... })             - patch global market settings',
         'market(\"room\", roomName, { ... })  - patch per-room overrides',
+        'market(\"room\", roomName, \"status\") - show market auto-trade status for a room',
         'market(\"room\", roomName, \"on|off\") - enable/disable per-room trading',
         'market(\"room\", roomName, \"report\") - show mineral totals (ledger + terminal)',
         'market(\"calc\", roomName, \"force\"?) - show buy/sell calc details for a room',
@@ -180,7 +182,8 @@ module.exports = function registerMarketConsole() {
         if (!cmd || cmd === 'help' || cmd === 'h') return showMarketHelp();
 
         if (cmd === 'status' || cmd === 's') {
-            const msg = managerMarket.summarize();
+            const roomName = normalizeRoomName(args[0]);
+            const msg = roomName ? managerMarket.summarizeRoom(roomName) : managerMarket.summarize();
             console.log(msg);
             return msg;
         }
@@ -212,6 +215,11 @@ module.exports = function registerMarketConsole() {
             const roomName = normalizeRoomName(args[0]);
             if (!roomName) return 'Usage: market(\"room\", \"W1N1\", { ... })';
             const patch = args[1];
+            if (patch === 'status' || patch === 's') {
+                const msg = managerMarket.summarizeRoom(roomName);
+                console.log(msg);
+                return msg;
+            }
             if (patch === 'report' || patch === 'ledger') {
                 return marketReport(roomName);
             }

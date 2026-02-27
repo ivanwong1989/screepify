@@ -1,13 +1,13 @@
 // admiral/tactics/assault/solo/soloPlanner.js
 //
-// PF-backed SOLO planner (duo-style spine):
-// - Travel: PF single-step with cached directions (no 8-tile greedy).
-// - Engage (has target): PF gives the spine step; combat matrix augments by locally picking a safer/better tile,
-//   but strongly biased toward the PF step to prevent oscillation / random holding.
-// - Includes path progress + stall → repath like duoPlanner.
+// PF-backed SOLO *path* planner:
+// - Given a goal position (anywhere), returns the next PF step (or hold if already in range).
+// - Uses your assault combat cost matrix as an optional roomCallback (so strategy can pick safe anchors elsewhere).
+// - Caches PF steps under runtime._soloPf (duo-style) and can be forced to recalc each tick.
 //
 // Exports:
-//   plan(creep, runtime, target, routeTarget, opts?) -> { moveTarget, range, reason, debug? }
+//   plan(creep, runtime, goal, opts?) -> { moveTarget, range, reason, debug? }
+//   Back-compat: plan(creep, runtime, target, routeTarget, opts?) where goal defaults to opts.goal || routeTarget || target.pos
 
 const { makeAssaultCombatRoomCallback } = require('managers_admiral_tactics_assault_common_combatMatrix');
 
@@ -95,14 +95,6 @@ function isPassable(room, pos, selfId) {
     return true;
 }
 
-function chooseDesiredRange(creep, runtime, target) {
-    if (runtime && runtime.phase === 'RETREAT') return 2;
-    if (runtime && runtime.phase === 'ENGAGE' && target) {
-        const hasRanged = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
-        return hasRanged ? 3 : 1;
-    }
-    return 1;
-}
 
 function formatPos(pos) {
     if (!pos) return 'null';
@@ -286,266 +278,125 @@ function pfStepToward(mem, purpose, creep, goalPos, range, opts) {
 }
 
 // ============================================================
-// Combat matrix augmented micro (PF spine + local adjustment)
-// ============================================================
-
-function scoreTile(room, costs, pos, goalPos, desiredRange, opts) {
-    const {
-        dangerWeight = 1.0,
-        distWeight = 3.0,
-        rangeWeight = 6.0,
-        borderPenalty = 25,
-
-        // PF spine bias: prefer the PF "to" tile strongly
-        pfTo = null,
-        pfPenalty = 20,
-
-        // anti-oscillation
-        prevPos = null
-    } = opts || {};
-
-    const c = costs ? costs.get(pos.x, pos.y) : 0;
-    if (c === 255) return Infinity;
-
-    let s = 0;
-
-    // Combat danger cost
-    s += (c * dangerWeight);
-
-    // Border penalty
-    if (isBorderPos(pos)) s += borderPenalty;
-
-    // Range + progress shaping
-    if (goalPos && goalPos.roomName === room.name) {
-        const d = pos.getRangeTo(goalPos);
-        if (Number.isFinite(desiredRange) && desiredRange >= 0) {
-            s += (Math.abs(d - desiredRange) * rangeWeight);
-        }
-        s += (d * distWeight);
-    }
-
-    // PF spine: anything not the PF step gets a penalty (so PF remains the default)
-    if (pfTo && !(pos.x === pfTo.x && pos.y === pfTo.y && pos.roomName === pfTo.roomName)) {
-        s += pfPenalty;
-    }
-
-    // anti-oscillation: avoid stepping back to prevPos
-    if (prevPos && pos.roomName === prevPos.roomName && pos.x === prevPos.x && pos.y === prevPos.y) {
-        s += 50;
-    }
-
-    return s;
-}
-
-function pickCombatStep(creep, goalPos, desiredRange, roomCallback, opts) {
-    const room = creep.room;
-    if (!room) return null;
-
-    const costs = roomCallback ? roomCallback(room.name) : null;
-    if (!costs) return null;
-
-    const here = creep.pos;
-
-    let best = null;
-    let bestScore = Infinity;
-
-    // Candidates: PF-to (preferred), stay, and neighbors
-    const candidates = [];
-
-    if (opts && opts.pfTo) candidates.push(opts.pfTo);
-    candidates.push(here);
-
-    for (const dir of DIRS) {
-        const v = DIR_VECTORS[dir];
-        const nx = here.x + v.dx;
-        const ny = here.y + v.dy;
-        if (nx < 0 || nx > 49 || ny < 0 || ny > 49) continue;
-        candidates.push(new RoomPosition(nx, ny, room.name));
-    }
-
-    for (const p of candidates) {
-        if (!p) continue;
-        if (!isPassable(room, p, creep.id)) continue;
-
-        const s = scoreTile(room, costs, p, goalPos, desiredRange, opts);
-        if (s < bestScore) {
-            bestScore = s;
-            best = p;
-        }
-    }
-
-    return best ? { pos: best, score: bestScore } : null;
-}
-
-// ============================================================
 // Main entry
 // ============================================================
 
-function plan(creep, runtime, target, routeTarget, opts) {
-    const phase = runtime && runtime.phase ? runtime.phase : 'UNKNOWN';
-    const hasCombatTarget = (phase === 'ENGAGE' && !!target);
 
-    const desiredRange = chooseDesiredRange(creep, runtime, target);
+function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
+    // Supports two call styles:
+    // 1) New:    plan(creep, runtime, goal, opts?)
+    // 2) Legacy: plan(creep, runtime, target, routeTarget, opts?)  (goal defaults to opts.goal || routeTarget || target.pos)
+    let goal = null;
+    let opts = null;
 
-    // Goal for PF:
-    // - ENGAGE with target: move toward target at desiredRange (kite/close)
-    // - otherwise: move toward routeTarget (flag/waypoint)
-    const goalPos = toRoomPosition(hasCombatTarget ? target.pos : routeTarget);
+    if (maybeOpts !== undefined) {
+        // Legacy 5-arg signature
+        const target = goalOrTarget;
+        const routeTarget = maybeGoalOrOpts;
+        opts = maybeOpts || {};
+        goal = opts.goal || routeTarget || (target && (target.pos || target)) || null;
+    } else {
+        // New 3/4-arg signature
+        goal = goalOrTarget;
+        opts = maybeGoalOrOpts || {};
+    }
 
+    const goalPos = toRoomPosition(goal);
     if (!goalPos) {
         return { moveTarget: null, range: 0, reason: 'fallback:no-goal' };
     }
+
+    // Range to consider "arrived". Defaults to 1 tile.
+    const range = Number.isFinite(opts.range) ? opts.range : (Number.isFinite(opts.desiredRange) ? opts.desiredRange : 1);
 
     // Cross-room: keep letting your higher-level route planner do it.
     // PF still can do multi-room, but your existing system already handles strategic routing.
     if (goalPos.roomName !== creep.room.name) {
         return {
             moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
-            range: hasCombatTarget ? desiredRange : 1,
+            range,
             reason: 'fallback:cross-room'
         };
+    }
+
+    // If we are already in range, hold.
+    if (creep.pos.inRangeTo(goalPos.x, goalPos.y, range)) {
+        return { moveTarget: null, range: 0, reason: 'hold:in-range' };
     }
 
     // --- PF cache memory ---
     const mem = getPfMemory(runtime);
 
     // Tick PF progress/stall (duo-style)
-    const stallRepathTicks = (opts && Number.isFinite(opts.stallRepathTicks)) ? opts.stallRepathTicks : 2;
+    const stallRepathTicks = Number.isFinite(opts.stallRepathTicks) ? opts.stallRepathTicks : 2;
+    const purpose = opts.cacheKey || 'path';
     if (mem) {
-        const p = getPathState(mem, hasCombatTarget ? 'engage' : 'travel');
+        const p = getPathState(mem, purpose);
         tickProgress(p, posKey(creep.pos), stallRepathTicks);
     }
 
     // --- PF options ---
-    const pathReuseTicks = (opts && Number.isFinite(opts.pathReuseTicks)) ? opts.pathReuseTicks : 25;
+    const pathReuseTicks = Number.isFinite(opts.pathReuseTicks) ? opts.pathReuseTicks : 25;
+    const forceRecalc = !!opts.forceRecalc;
 
-    // Combat matrix callback (for micro scoring) — same as before
+    // Default roomCallback uses the assault combat matrix (optional).
     const combatRoomCallback = makeAssaultCombatRoomCallback({
         avoidBorders: true,
         borderCost: 10,
         considerCreeps: false
     });
 
-    // Travel PF: default roomCallback (undefined) works fine; but we bias away from borders a bit by using combat callback
-    // ONLY for same-room planning (cheap + already cached elsewhere in your stack).
-    // If you want “pure terrain PF”, set useCombatCostsForTravel=false.
-    const useCombatCostsForTravel = true;
+    const useCombatCosts = (opts.useCombatCosts !== false);
 
     const pfRoomCallback = (roomName) => {
+        if (typeof opts.roomCallback === 'function') return opts.roomCallback(roomName);
+
         // In visible rooms only.
         const room = Game.rooms[roomName];
         if (!room) return undefined;
 
-        if (hasCombatTarget) {
-            // When fighting, PF itself should “see” the danger.
-            return combatRoomCallback(roomName);
-        }
-
-        if (useCombatCostsForTravel) {
-            // Travel: still avoid borders + mild danger, but PF is the spine (no local greedy)
-            return combatRoomCallback(roomName);
-        }
-
+        if (useCombatCosts) return combatRoomCallback(roomName);
         return undefined;
     };
 
-    // Determine goal range for PF
-    const pfRange = hasCombatTarget ? desiredRange : 1;
+    const pfRange = range;
 
-    const { to: pfTo, ps } = pfStepToward(mem, hasCombatTarget ? 'engage' : 'travel', creep, goalPos, pfRange, {
+    const { to: pfTo, ps } = pfStepToward(mem, purpose, creep, goalPos, pfRange, {
         maxRooms: 16,
-        pathReuseTicks,
+        pathReuseTicks: forceRecalc ? 0 : pathReuseTicks,
+        forceRecalc,
         roomCallback: pfRoomCallback
     });
 
-    // If PF has no step, just fallback to direct goal (moveTo can handle local)
+    // If PF has no step, just fallback to direct goal (moveTo can handle local).
     if (!pfTo) {
         return {
             moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
-            range: hasCombatTarget ? desiredRange : 1,
+            range,
             reason: 'fallback:no-pf-step'
         };
     }
 
-    // --- TRAVEL: PF-only, never “hold while far away” ---
-    if (!hasCombatTarget) {
-        // If we are already “close enough”, allow hold.
-        if (creep.pos.inRangeTo(goalPos.x, goalPos.y, 1)) {
-            return { moveTarget: null, range: 0, reason: 'hold:travel-in-range' };
+    // If PF step is blocked dynamically, clear cache quickly (stall logic will repath).
+    if (!isPassable(creep.room, pfTo, creep.id)) {
+        if (ps) {
+            // Nuke steps so next tick recomputes
+            ps.steps = [];
+            ps.idx = 0;
+            ps.lastToKey = null;
+            ps.stalledTicks = 0;
         }
-
-        // If PF step is blocked dynamically, clear cache quickly (stall logic will repath)
-        if (!isPassable(creep.room, pfTo, creep.id)) {
-            if (ps) {
-                // Nuke steps so next tick recomputes
-                ps.steps = [];
-                ps.idx = 0;
-                ps.lastToKey = null;
-                ps.stalledTicks = 0;
-            }
-            return {
-                moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
-                range: 1,
-                reason: 'fallback:pf-to-blocked'
-            };
-        }
-
         return {
-            moveTarget: { x: pfTo.x, y: pfTo.y, roomName: pfTo.roomName },
-            range: 0,
-            reason: 'pf:travel-step'
+            moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
+            range,
+            reason: 'fallback:pf-to-blocked'
         };
-    }
-
-    // --- ENGAGE: PF spine + combat-matrix local adjustment ---
-    const hp = creep.hitsMax > 0 ? creep.hits / creep.hitsMax : 1;
-    const lowHp = clamp01(1 - hp);
-    const hasRanged = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
-
-    const picked = pickCombatStep(
-        creep,
-        goalPos,
-        desiredRange,
-        combatRoomCallback,
-        {
-            dangerWeight: 1.0 + (lowHp * 0.8),
-            distWeight: 1.5,
-            rangeWeight: hasRanged ? 7.0 : 5.0,
-            borderPenalty: 25,
-
-            // PF spine bias: this is the main anti-jitter knob.
-            pfTo,
-            pfPenalty: (opts && opts.pfPenalty != null) ? opts.pfPenalty : 22,
-
-            prevPos: opts && opts.prevPos ? opts.prevPos : null
-        }
-    );
-
-    if (!picked || !picked.pos) {
-        return {
-            moveTarget: { x: pfTo.x, y: pfTo.y, roomName: pfTo.roomName },
-            range: 0,
-            reason: 'pf:engage-step-fallback'
-        };
-    }
-
-    const next = picked.pos;
-
-    // Allow holding ONLY if we are already in good engage posture
-    // (prevents “hold while far away” but still allows actual kiting / stand-ground).
-    const inDesiredBand = creep.pos.getRangeTo(goalPos) === desiredRange;
-    const allowHold = inDesiredBand;
-
-    if (next.x === creep.pos.x && next.y === creep.pos.y) {
-        return allowHold
-            ? { moveTarget: null, range: 0, reason: 'hold:engage-posture' }
-            : { moveTarget: { x: pfTo.x, y: pfTo.y, roomName: pfTo.roomName }, range: 0, reason: 'pf:push-forward' };
     }
 
     return {
-        moveTarget: { x: next.x, y: next.y, roomName: next.roomName },
+        moveTarget: { x: pfTo.x, y: pfTo.y, roomName: pfTo.roomName },
         range: 0,
-        reason: (next.x === pfTo.x && next.y === pfTo.y) ? 'pf:engage-spine' : 'micro:engage-augmented'
+        reason: 'pf:step'
     };
 }
 

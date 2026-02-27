@@ -3,10 +3,11 @@ const flagsResolver = require('managers_admiral_tactics_assault_common_flags');
 const aoResolver = require('managers_admiral_tactics_assault_common_ao');
 const route = require('managers_admiral_tactics_assault_solo_route');
 const engage = require('managers_admiral_tactics_assault_solo_engage');
+const soloTactics = require('managers_admiral_tactics_assault_solo_soloTactics');
 const actionPlan = require('managers_admiral_tactics_assault_solo_actionPlan');
 const boostGate = require('managers_admiral_tactics_boostgate_boostGate');
 
-// 🔥 SOLO MICRO PLANNER
+// 🧭 SOLO PF PLANNER (no micro-step)
 const soloPlanner = require('managers_admiral_tactics_assault_solo_soloPlanner_soloPlanner');
 
 const RETREAT_AT = 0.3;
@@ -100,10 +101,7 @@ function resetSoloRuntimeState(runtime) {
         delete runtime.debug.lastRouteTarget;
         delete runtime.debug.lastTarget;
         delete runtime.debug.lastMoveTarget;
-        delete runtime.debug.lastMoveTarget2;
         delete runtime.debug.lastPos;
-        delete runtime.debug.lastPos2;
-        delete runtime.debug.oscillateCount;
     }
 
     // Clear wipe timer so new spawn starts fresh
@@ -173,11 +171,15 @@ function updatePhase(creep, runtime, flags, ao) {
     const waypoints = flags.waypointPositions || [];
 
     if (!runtime.phase) runtime.phase = 'RENDEZVOUS';
+    const dbg = runtime.debug || (runtime.debug = {});
 
     // RENDEZVOUS → STAGE
     if (runtime.phase === 'RENDEZVOUS') {
         if (!flags.waitPos || isInRange(creep, flags.waitPos, 1)) {
             runtime.phase = 'STAGE';
+            dbg.lastPhaseReason = (!flags.waitPos)
+                ? 'waitPos missing'
+                : `arrived waitPos ${formatPos(flags.waitPos)}`;
         }
     }
 
@@ -192,6 +194,9 @@ function updatePhase(creep, runtime, flags, ao) {
             if (!flags.assemblyPos ||
                 isInRange(creep, flags.assemblyPos, 1)) {
                 runtime.phase = 'ENGAGE';
+                dbg.lastPhaseReason = (!flags.assemblyPos)
+                    ? 'assemblyPos missing'
+                    : `arrived assemblyPos ${formatPos(flags.assemblyPos)}`;
             }
         }
     }
@@ -200,11 +205,13 @@ function updatePhase(creep, runtime, flags, ao) {
     if (runtime.phase === 'ENGAGE') {
         if (!flags.attackFlag) {
             runtime.phase = 'STAGE';
+            dbg.lastPhaseReason = 'attack flag missing';
             return;
         }
 
         if (shouldRetreat(creep)) {
             runtime.phase = 'RETREAT';
+            dbg.lastPhaseReason = `low HP ${creep.hits}/${creep.hitsMax}`;
         }
     }
 
@@ -213,10 +220,12 @@ function updatePhase(creep, runtime, flags, ao) {
         if (shouldReengage(creep)) {
             if (flags.waitPos && isInRange(creep, flags.waitPos, 2)) {
                 runtime.phase = 'STAGE';
+                dbg.lastPhaseReason = `reengage at waitPos ${formatPos(flags.waitPos)}`;
             } else if (!flags.waitPos &&
                 ao.centerPos &&
                 isInRange(creep, ao.centerPos, 3)) {
                 runtime.phase = 'STAGE';
+                dbg.lastPhaseReason = `reengage at ao.centerPos ${formatPos(ao.centerPos)}`;
             }
         }
     }
@@ -246,6 +255,7 @@ function planForSolo(mission, creepOrNull, context) {
 
     const wipe = handleSoloWipe(runtime, creepOrNull, now);
     if (wipe.reset) {
+        logSolo(runtime, mission, 'wipe detected: resetting solo runtime state');
         resetSoloRuntimeState(runtime);
         return null;
     }
@@ -269,6 +279,11 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
     if (squadKey && !boostGate.runBoostGate(creep, squadKey)) {
         // Still boosting — do NOT run assembly/combat logic
+        const dbg = runtime.debug || (runtime.debug = {});
+        if (!dbg.lastBoostBlockAt || (now - dbg.lastBoostBlockAt) >= 5) {
+            logSolo(runtime, mission, `boostGate blocking; squadKey=${squadKey}`);
+            dbg.lastBoostBlockAt = now;
+        }
         return null;
     }
 
@@ -296,6 +311,12 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
             if (!runtime.phase || runtime.phase === 'RENDEZVOUS') {
                 runtime.phase = 'STAGE';
             }
+
+            logSolo(
+                runtime,
+                mission,
+                `assembled at ${formatPos(runtime.assembled.pos)}; spawn.locked=${runtime.spawn && runtime.spawn.allow === false}`
+            );
         } else {
             // Force rendezvous until assembled
             runtime.phase = 'RENDEZVOUS';
@@ -312,38 +333,86 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
     if (!runtime.assembled.done) {
         // During assemble, NEVER route to AO center (which can be A-derived)
         routeTarget = getSoloAssembleTarget(flags);
-        if (runtime.debug && runtime.debug.soloPlannerVerbose) {
-            logSolo(runtime, mission, `assembleGate hold target=${formatPos(routeTarget)} wait=${formatPos(flags.waitPos)} assembly=${formatPos(flags.assemblyPos)}`);
+        const dbg = runtime.debug || (runtime.debug = {});
+        const assembleKey = posKey(routeTarget);
+        if (assembleKey !== dbg.lastAssembleTarget) {
+            logSolo(
+                runtime,
+                mission,
+                `assembleGate hold target=${formatPos(routeTarget)} wait=${formatPos(flags.waitPos)} assembly=${formatPos(flags.assemblyPos)}`
+            );
+            dbg.lastAssembleTarget = assembleKey;
         }
     } else {
         routeTarget = route.getRouteTarget(creep, runtime, flags, ao);
     }
 
     // AO-bounded target selection
-    const target =
-        runtime.phase === 'ENGAGE'
-            ? engage.selectTarget(creep, flags, ao)
-            : null;
-
-    // Track last position to avoid oscillation
-    if (!runtime._lastPos) {
-        runtime._lastPos = { x: creep.pos.x, y: creep.pos.y, roomName: creep.room.name };
-    } else {
-        runtime._prevPos = runtime._lastPos;
-        runtime._lastPos = { x: creep.pos.x, y: creep.pos.y, roomName: creep.room.name };
+    let target = null;
+    let targetDebug = null;
+    let engageCtx = null;
+    if (runtime.phase === 'ENGAGE') {
+        targetDebug = { reason: 'none', counts: {} };
+        engageCtx = engage.getEngageContext(creep, flags, ao, targetDebug);
+        target = engageCtx.target;
     }
 
-    const enableSoloDebug =
-        !!(runtime && runtime.debug && runtime.debug.soloPlannerVerbose);
+    // (Micro-step removed) Keeping runtime position history is optional; omitted for now.
 
-    // 🧠 SOLO MICRO PLANNING (combat matrix + predictive avoidance)
+    const enableSoloDebug = true;
+        //!!(runtime && runtime.debug && runtime.debug.soloPlannerVerbose);
+
+    // 🧠 SOLO PATH PLANNING (pure PF step; goal is decided above)
+    // In ENGAGE: goal = tactical anchor (movement position), NOT the shoot/heal target.
+    // In other phases: goal = routeTarget from the route planner.
+    let moveGoal = routeTarget;
+    let moveRange = 1;
+
+    if (runtime.phase === 'ENGAGE') {
+
+        const hasHostiles = !!(engageCtx && engageCtx.hasHostiles);
+
+        if (hasHostiles) {
+            // 🔥 Tactical combat movement
+            const tactical = soloTactics.decideAnchor(
+                creep,
+                runtime,
+                flags,
+                ao,
+                target,
+                { debug: enableSoloDebug }
+            );
+
+            if (tactical && tactical.anchorPos) {
+                moveGoal = tactical.anchorPos;
+                // Anchor is a specific tile choice → must stand on it
+                moveRange = 0;
+
+                const dbg = runtime.debug || (runtime.debug = {});
+                dbg.lastAnchor = `${moveGoal.roomName}:${moveGoal.x},${moveGoal.y}`;
+                dbg.lastAnchorReason = tactical.reason || null;
+            }
+
+        } else {
+            // 🏁 No enemies → hold AO strategic anchor
+            if (flags.attackPos) {
+                moveGoal = flags.attackPos;
+            } else if (ao && ao.centerPos) {
+                moveGoal = ao.centerPos;
+            }
+
+            moveRange = 0;
+        }
+    }
+
     const movePlan =
         soloPlanner.plan(
             creep,
             runtime,
-            target,
-            routeTarget,
-            enableSoloDebug ? { prevPos: runtime._prevPos, debug: true } : { prevPos: runtime._prevPos }
+            moveGoal,
+            enableSoloDebug
+                ? { range: moveRange, cacheKey: 'solo', forceRecalc: (runtime.phase === 'ENGAGE'), debug: true }
+                : { range: moveRange, cacheKey: 'solo', forceRecalc: (runtime.phase === 'ENGAGE') }
         );
 
     // Let actionPlan handle attack/heal logic.
@@ -357,30 +426,38 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
         movePlan // <-- 5th param
     );
 
-    // Preserve micro-step precision
-    if (movePlan && movePlan.moveTarget) {
-        plan.range = movePlan.range;
-    }
-
     // ---- Debug logging for oscillation / target changes ----
     const dbg = runtime.debug || (runtime.debug = {});
 
     const posNow = posKey(creep.pos);
     const routeKey = posKey(routeTarget);
     const targetKey = target ? `${formatPos(target.pos)}(${target.id})` : null;
-    const movePlanKey = movePlan && movePlan.moveTarget ? posKey(movePlan.moveTarget) : null;
+    const targetReason = targetDebug ? targetDebug.reason : null;
+    const targetCounts = targetDebug ? targetDebug.counts : null;
+    const anchorKey = moveGoal ? posKey(moveGoal) : null;
+    const anchorReason = (runtime.debug && runtime.debug.lastAnchorReason) ? runtime.debug.lastAnchorReason : null;
     const finalMoveKey = plan && plan.moveTarget ? posKey(plan.moveTarget) : null;
 
     if (dbg.lastPhase && dbg.lastPhase !== runtime.phase) {
-        logSolo(runtime, mission, `phase ${dbg.lastPhase} -> ${runtime.phase}`);
+        const reason = dbg.lastPhaseReason ? ` reason=${dbg.lastPhaseReason}` : '';
+        logSolo(runtime, mission, `phase ${dbg.lastPhase} -> ${runtime.phase}${reason}`);
     }
 
     if (routeKey !== dbg.lastRouteTarget) {
         logSolo(runtime, mission, `routeTarget ${dbg.lastRouteTarget || 'null'} -> ${routeKey || 'null'}`);
     }
 
-    if (targetKey !== dbg.lastTarget) {
-        logSolo(runtime, mission, `target ${dbg.lastTarget || 'null'} -> ${targetKey || 'null'}`);
+    if (targetKey !== dbg.lastTarget || (targetReason && targetReason !== dbg.lastTargetReason)) {
+        const reason = targetReason ? ` reason=${targetReason}` : '';
+        const counts = targetCounts
+            ? ` counts=H:${targetCounts.hostiles} S:${targetCounts.hostileStructures} AF:${targetCounts.attackFlag} AO:${targetCounts.aoNearby}`
+            : '';
+        logSolo(runtime, mission, `target ${dbg.lastTarget || 'null'} -> ${targetKey || 'null'}${reason}${counts}`);
+    }
+
+    if (anchorKey !== dbg.lastAnchorSelected || (anchorReason && anchorReason !== dbg.lastAnchorSelectedReason)) {
+        const reason = anchorReason ? ` reason=${anchorReason}` : '';
+        logSolo(runtime, mission, `anchor ${dbg.lastAnchorSelected || 'null'} -> ${anchorKey || 'null'}${reason}`);
     }
 
     if (finalMoveKey !== dbg.lastMoveTarget) {
@@ -393,57 +470,29 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
         );
     }
 
-    if (enableSoloDebug && movePlan && movePlan.debug) {
-        const d = movePlan.debug;
-        const best = d.best ? `best=${d.best.pos} score=${d.best.score.toFixed(2)} ` +
-            `c=${d.best.breakdown.raw} danger=${d.best.breakdown.danger.toFixed(1)} ` +
-            `border=${d.best.breakdown.border.toFixed(1)} range=${d.best.breakdown.range.toFixed(1)} ` +
-            `dist=${d.best.breakdown.dist.toFixed(1)}` : 'best=null';
-        const second = d.second ? `second=${d.second.pos} score=${d.second.score.toFixed(2)} ` +
-            `c=${d.second.breakdown.raw} danger=${d.second.breakdown.danger.toFixed(1)} ` +
-            `border=${d.second.breakdown.border.toFixed(1)} range=${d.second.breakdown.range.toFixed(1)} ` +
-            `dist=${d.second.breakdown.dist.toFixed(1)}` : 'second=null';
-
-        logSolo(
-            runtime,
-            mission,
-            `planner goal=${d.goal} desiredRange=${d.desiredRange} ${best} ${second}`
-        );
+    if (enableSoloDebug) {
+        try {
+            const td = runtime && runtime._soloTactics && runtime._soloTactics.debug && runtime._soloTactics.debug.last;
+            if (td && td.tick === now) {
+                const best = td.best ? `best=${td.best.pos} score=${td.best.score.toFixed(2)} raw=${td.best.raw} dist=${td.best.dist} r=${td.best.r}` : 'best=null';
+                const second = td.second ? `second=${td.second.pos} score=${td.second.score.toFixed(2)} raw=${td.second.raw} dist=${td.second.dist} r=${td.second.r}` : 'second=null';
+                logSolo(runtime, mission, `tactics focus=${td.focus}(${td.focusReason}) role=${td.role} prefR=${td.prefRange} ${best} ${second}`);
+            }
+        } catch (e) {
+            // ignore debug
+        }
     }
 
-    if (dbg.lastPos2 && posNow === dbg.lastPos2 && dbg.lastPos && dbg.lastPos !== posNow) {
-        dbg.oscillateCount = (Number(dbg.oscillateCount) || 0) + 1;
-        logSolo(
-            runtime,
-            mission,
-            `oscillate pos ${dbg.lastPos2} -> ${dbg.lastPos} -> ${posNow} ` +
-            `moveTarget=${finalMoveKey || 'null'} route=${routeKey || 'null'} ` +
-            `reason=${(movePlan && movePlan.reason) ? movePlan.reason : 'actionPlan'} ` +
-            `count=${dbg.oscillateCount}`
-        );
-    } else {
-        dbg.oscillateCount = 0;
-    }
-
-    if (dbg.lastMoveTarget2 && finalMoveKey === dbg.lastMoveTarget2 && dbg.lastMoveTarget && dbg.lastMoveTarget !== finalMoveKey) {
-        logSolo(
-            runtime,
-            mission,
-            `oscillate moveTarget ${dbg.lastMoveTarget2} -> ${dbg.lastMoveTarget} -> ${finalMoveKey} ` +
-            `pos=${posNow} route=${routeKey || 'null'} phase=${runtime.phase}`
-        );
-    }
 
     dbg.lastPhase = runtime.phase;
     dbg.lastRouteTarget = routeKey;
     dbg.lastTarget = targetKey;
-    dbg.lastMoveTarget2 = dbg.lastMoveTarget;
+    dbg.lastTargetReason = targetReason;
+    dbg.lastAnchorSelected = anchorKey;
+    dbg.lastAnchorSelectedReason = anchorReason;
     dbg.lastMoveTarget = finalMoveKey;
-    dbg.lastPos2 = dbg.lastPos;
     dbg.lastPos = posNow;
     dbg.lastTick = now;
-    dbg.lastMovePlanTarget = movePlanKey;
-    dbg.lastMovePlanReason = movePlan && movePlan.reason ? movePlan.reason : null;
 
     return plan;
 }
