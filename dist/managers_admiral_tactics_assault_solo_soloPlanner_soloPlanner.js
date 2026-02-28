@@ -9,8 +9,6 @@
 //   plan(creep, runtime, goal, opts?) -> { moveTarget, range, reason, debug? }
 //   Back-compat: plan(creep, runtime, target, routeTarget, opts?) where goal defaults to opts.goal || routeTarget || target.pos
 
-const { makeAssaultCombatRoomCallback } = require('managers_admiral_tactics_assault_common_combatMatrix');
-
 const DIRS = [1, 2, 3, 4, 5, 6, 7, 8];
 const DIR_VECTORS = {
     1: { dx: 0, dy: -1 },
@@ -95,10 +93,25 @@ function isPassable(room, pos, selfId) {
     return true;
 }
 
-
 function formatPos(pos) {
     if (!pos) return 'null';
     return `${pos.roomName}:${pos.x},${pos.y}`;
+}
+
+function nowTick() {
+    return (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+}
+
+function logSolo(runtime, enabled, message) {
+    if (!enabled || !global || typeof global.debug !== 'function') return;
+    global.debug('admiral.assault.solo', `[assault.solo] ${message}`);
+
+    if (runtime && runtime.debug) {
+        const now = nowTick();
+        if (runtime.debug.lastLogTick === now && runtime.debug.lastLog === message) return;
+        runtime.debug.lastLogTick = now;
+        runtime.debug.lastLog = message;
+    }
 }
 
 // ============================================================
@@ -111,6 +124,63 @@ function getPfMemory(runtime) {
         runtime._soloPf = { paths: {} };
     }
     return runtime._soloPf;
+}
+
+function getPfDebug(mem) {
+    if (!mem) return null;
+    if (!mem.debug || typeof mem.debug !== 'object') mem.debug = {};
+    if (!mem.debug.once || typeof mem.debug.once !== 'object') mem.debug.once = {};
+    return mem.debug;
+}
+
+function logOncePerTick(runtime, mem, enabled, key, message) {
+    if (!enabled) return;
+    const dbg = getPfDebug(mem);
+    if (!dbg) {
+        logSolo(runtime, enabled, message);
+        return;
+    }
+    const now = nowTick();
+    if (dbg.once[key] === now) return;
+    dbg.once[key] = now;
+    logSolo(runtime, enabled, message);
+}
+
+function getInject(mem) {
+    if (!mem) return null;
+    if (!mem.inject || typeof mem.inject !== 'object') mem.inject = { byRoom: {} };
+    if (!mem.inject.byRoom) mem.inject.byRoom = {};
+    return mem.inject;
+}
+
+function addTempBlock(mem, roomName, pos, ttlTicks, cost = 255) {
+    if (!mem || !roomName || !pos) return;
+    const inject = getInject(mem);
+    if (!inject) return;
+
+    const r = inject.byRoom[roomName] || (inject.byRoom[roomName] = {});
+    const key = `${pos.x}:${pos.y}`;
+    const until = Game.time + (Number.isFinite(ttlTicks) ? ttlTicks : 5);
+
+    // keep the max expiry if re-added
+    const prev = r[key];
+    r[key] = {
+        until: prev ? Math.max(prev.until || 0, until) : until,
+        cost: Number.isFinite(cost) ? cost : 255
+    };
+}
+
+function purgeTempBlocks(mem) {
+    const inject = getInject(mem);
+    if (!inject) return;
+    for (const roomName in inject.byRoom) {
+        const r = inject.byRoom[roomName];
+        if (!r) continue;
+        for (const k in r) {
+            if (!r[k] || (r[k].until || 0) <= Game.time) delete r[k];
+        }
+        if (Object.keys(r).length === 0) delete inject.byRoom[roomName];
+    }
 }
 
 function getPathState(mem, purpose) {
@@ -281,7 +351,6 @@ function pfStepToward(mem, purpose, creep, goalPos, range, opts) {
 // Main entry
 // ============================================================
 
-
 function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
     // Supports two call styles:
     // 1) New:    plan(creep, runtime, goal, opts?)
@@ -303,15 +372,19 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
 
     const goalPos = toRoomPosition(goal);
     if (!goalPos) {
+        logSolo(runtime, !!(opts && opts.debug), 'planner: no valid goal');
         return { moveTarget: null, range: 0, reason: 'fallback:no-goal' };
     }
 
     // Range to consider "arrived". Defaults to 1 tile.
     const range = Number.isFinite(opts.range) ? opts.range : (Number.isFinite(opts.desiredRange) ? opts.desiredRange : 1);
+    const logEnabled = (opts.logSolo != null) ? !!opts.logSolo : !!opts.debug;
+    const purpose = (opts && opts.cacheKey) ? opts.cacheKey : 'path';
 
     // Cross-room: keep letting your higher-level route planner do it.
     // PF still can do multi-room, but your existing system already handles strategic routing.
     if (goalPos.roomName !== creep.room.name) {
+        logSolo(runtime, logEnabled, `planner: cross-room ${formatPos(creep.pos)} -> ${formatPos(goalPos)} range=${range}`);
         return {
             moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
             range,
@@ -321,45 +394,128 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
 
     // If we are already in range, hold.
     if (creep.pos.inRangeTo(goalPos.x, goalPos.y, range)) {
+        logSolo(runtime, logEnabled, `planner: in-range ${formatPos(creep.pos)} -> ${formatPos(goalPos)} range=${range}`);
         return { moveTarget: null, range: 0, reason: 'hold:in-range' };
     }
 
     // --- PF cache memory ---
     const mem = getPfMemory(runtime);
 
+    // Purge expired local PF injections (traffic blockers etc.)
+    if (mem) purgeTempBlocks(mem);
+
     // Tick PF progress/stall (duo-style)
     const stallRepathTicks = Number.isFinite(opts.stallRepathTicks) ? opts.stallRepathTicks : 2;
-    const purpose = opts.cacheKey || 'path';
     if (mem) {
         const p = getPathState(mem, purpose);
-        tickProgress(p, posKey(creep.pos), stallRepathTicks);
+
+        // Capture the expected tile BEFORE tickProgress may clear it.
+        const expectedKey = p && p.lastToKey ? String(p.lastToKey) : null;
+        const prog = tickProgress(p, posKey(creep.pos), stallRepathTicks);
+
+        if (prog && (prog.advanced || prog.stalled)) {
+            const status = prog.advanced ? 'advanced' : 'stalled';
+            logSolo(
+                runtime,
+                logEnabled,
+                `planner: ${status} creep=${creep.name} pos=${formatPos(creep.pos)} expected=${expectedKey || 'none'} purpose=${purpose}`
+            );
+        }
+
+        // If we stalled, temporarily "block" the expected tile so PF will route around traffic.
+        if (prog && prog.stalled && expectedKey) {
+            const parts = expectedKey.split(':'); // room:x:y
+            if (parts.length === 3) {
+                const [rn, xs, ys] = parts;
+                const x = Number(xs), y = Number(ys);
+                if (Number.isFinite(x) && Number.isFinite(y)) {
+                    addTempBlock(mem, rn, { x, y }, 5, 255);
+                    logSolo(runtime, logEnabled, `planner: inject block ${rn}:${x},${y} ttl=5`);
+                }
+            }
+        }
     }
 
-    // --- PF options ---
+        // --- PF options ---
+
     const pathReuseTicks = Number.isFinite(opts.pathReuseTicks) ? opts.pathReuseTicks : 25;
     const forceRecalc = !!opts.forceRecalc;
 
-    // Default roomCallback uses the assault combat matrix (optional).
-    const combatRoomCallback = makeAssaultCombatRoomCallback({
-        avoidBorders: true,
-        borderCost: 10,
-        considerCreeps: false
-    });
+    // ✅ No internal combat matrix construction in soloPlanner.
+    // We take the base CostMatrix from the *runtime-provided* roomCallback (built by controller/task-runner),
+    // then apply soloPlanner's short-lived local injections on top when needed.
+    //
+    // Expected shapes:
+    // - opts.roomCallback(roomName) -> CostMatrix   (explicit override)
+    // - runtime.roomCallback(roomName) -> CostMatrix (default provided by military task runner)
+    const baseRoomCallback =
+        (opts && typeof opts.roomCallback === 'function') ? opts.roomCallback :
+        (runtime && typeof runtime.roomCallback === 'function') ? runtime.roomCallback :
+        null;
 
-    const useCombatCosts = (opts.useCombatCosts !== false);
-
+    // PF roomCallback with local, short-lived "traffic blocker" injections (TTL ~5 ticks)
     const pfRoomCallback = (roomName) => {
-        if (typeof opts.roomCallback === 'function') return opts.roomCallback(roomName);
+        const mat = baseRoomCallback ? baseRoomCallback(roomName) : undefined;
+        if (!mat) {
+            logOncePerTick(
+                runtime,
+                mem,
+                logEnabled,
+                `rcb:${roomName}:none`,
+                `planner: roomCallback room=${roomName} base=none`
+            );
+            return undefined;
+        }
 
-        // In visible rooms only.
-        const room = Game.rooms[roomName];
-        if (!room) return undefined;
+        const inj = mem && mem.inject && mem.inject.byRoom ? mem.inject.byRoom[roomName] : null;
+        if (!inj || Object.keys(inj).length === 0) {
+            logOncePerTick(
+                runtime,
+                mem,
+                logEnabled,
+                `rcb:${roomName}:base`,
+                `planner: roomCallback room=${roomName} base=ok injections=0`
+            );
+            return mat;
+        }
 
-        if (useCombatCosts) return combatRoomCallback(roomName);
-        return undefined;
+        // Clone only when we actually have injections to apply.
+        const cloned = mat.clone();
+        let applied = 0;
+        for (const key in inj) {
+            const rec = inj[key];
+            if (!rec || (rec.until || 0) <= Game.time) continue;
+
+            const parts = String(key).split(':');
+            if (parts.length !== 2) continue;
+            const x = Number(parts[0]);
+            const y = Number(parts[1]);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+
+            const c = Number.isFinite(rec.cost) ? rec.cost : 255;
+            const prev = cloned.get(x, y);
+            cloned.set(x, y, Math.max(prev, c));
+            applied += 1;
+        }
+        logOncePerTick(
+            runtime,
+            mem,
+            logEnabled,
+            `rcb:${roomName}:inj`,
+            `planner: roomCallback room=${roomName} base=ok injections=${applied}`
+        );
+        return cloned;
     };
 
     const pfRange = range;
+
+    logOncePerTick(
+        runtime,
+        mem,
+        logEnabled,
+        `pfopts:${creep.name}`,
+        `planner: pf opts creep=${creep.name} purpose=${purpose} range=${pfRange} reuse=${pathReuseTicks} force=${forceRecalc}`
+    );
 
     const { to: pfTo, ps } = pfStepToward(mem, purpose, creep, goalPos, pfRange, {
         maxRooms: 16,
@@ -370,6 +526,11 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
 
     // If PF has no step, just fallback to direct goal (moveTo can handle local).
     if (!pfTo) {
+        logSolo(
+            runtime,
+            logEnabled,
+            `planner: no-pf-step creep=${creep.name} pos=${formatPos(creep.pos)} goal=${formatPos(goalPos)} range=${pfRange} force=${forceRecalc}`
+        );
         return {
             moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
             range,
@@ -377,22 +538,72 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
         };
     }
 
-    // If PF step is blocked dynamically, clear cache quickly (stall logic will repath).
+    // If PF step is blocked dynamically (traffic), inject a short-lived "block" on that tile
+    // and force a repath immediately. This prevents infinite HOLD loops behind miners/haulers.
     if (!isPassable(creep.room, pfTo, creep.id)) {
+        if (mem) addTempBlock(mem, creep.room.name, pfTo, 5, 255);
+        logSolo(
+            runtime,
+            logEnabled,
+            `planner: pf-step-blocked creep=${creep.name} to=${formatPos(pfTo)} injecting-block`
+        );
+
+        // Invalidate cached path state (we want a clean recompute).
         if (ps) {
-            // Nuke steps so next tick recomputes
             ps.steps = [];
             ps.idx = 0;
             ps.lastToKey = null;
             ps.stalledTicks = 0;
+            ps.lastRecalc = 0;
         }
+
+        const { to: repathTo } = pfStepToward(mem, purpose, creep, goalPos, pfRange, {
+            maxRooms: 16,
+            pathReuseTicks: 0,
+            forceRecalc: true,
+            roomCallback: pfRoomCallback
+        });
+
+        if (repathTo && isPassable(creep.room, repathTo, creep.id)) {
+            logSolo(
+                runtime,
+                logEnabled,
+                `planner: repath ok creep=${creep.name} to=${formatPos(repathTo)}`
+            );
+            return {
+                moveTarget: { x: repathTo.x, y: repathTo.y, roomName: repathTo.roomName },
+                range: 0,
+                reason: 'pf:repath-injected'
+            };
+        }
+
+        logSolo(
+            runtime,
+            logEnabled,
+            `planner: repath failed creep=${creep.name} goal=${formatPos(goalPos)}`
+        );
+
+        // IMPORTANT:
+        // We may have set ps.lastToKey during the (failed) repath attempt.
+        // If we return HOLD without issuing a move, tickProgress will think we "stalled" forever
+        // and keep injecting blocks each tick. Clear expectations on failure.
+        if (ps) {
+            ps.lastToKey = null;
+            ps.stalledTicks = 0;
+        }
+
         return {
-            moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
-            range,
-            reason: 'fallback:pf-to-blocked'
+            moveTarget: null,
+            range: 0,
+            reason: 'hold:blocked-no-alt'
         };
     }
 
+    logSolo(
+        runtime,
+        logEnabled,
+        `planner: step creep=${creep.name} from=${formatPos(creep.pos)} to=${formatPos(pfTo)} goal=${formatPos(goalPos)} purpose=${purpose}`
+    );
     return {
         moveTarget: { x: pfTo.x, y: pfTo.y, roomName: pfTo.roomName },
         range: 0,

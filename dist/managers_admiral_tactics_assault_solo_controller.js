@@ -10,8 +10,8 @@ const boostGate = require('managers_admiral_tactics_boostgate_boostGate');
 // 🧭 SOLO PF PLANNER (no micro-step)
 const soloPlanner = require('managers_admiral_tactics_assault_solo_soloPlanner_soloPlanner');
 
-const RETREAT_AT = 0.3;
-const REENGAGE_AT = 0.7;
+const RETREAT_AT = 0.5;
+const REENGAGE_AT = 0.95;
 
 
 function getRuntimeKey(mission) {
@@ -167,6 +167,18 @@ function shouldReengage(creep) {
         (creep.hits / creep.hitsMax) >= REENGAGE_AT;
 }
 
+// Retreat destination: latest reached waypoint (not all the way back to W)
+function getRetreatWaypoint(runtime, flags, ao) {
+    const waypoints = (flags && flags.waypointPositions) ? flags.waypointPositions : [];
+    if (!Array.isArray(waypoints) || waypoints.length === 0) return null;
+
+    let idx = Number(runtime && runtime.waypointIndex);
+    if (!Number.isFinite(idx) || idx <= 0) return waypoints[0];
+
+    idx = Math.min(idx - 1, waypoints.length - 1);
+    return waypoints[idx];
+}
+
 function updatePhase(creep, runtime, flags, ao) {
     const waypoints = flags.waypointPositions || [];
 
@@ -215,16 +227,22 @@ function updatePhase(creep, runtime, flags, ao) {
         }
     }
 
-    // RETREAT → STAGE
+    // RETREAT → ENGAGE (preferred) once healed and returned to the retreat waypoint
     if (runtime.phase === 'RETREAT') {
         if (shouldReengage(creep)) {
-            if (flags.waitPos && isInRange(creep, flags.waitPos, 2)) {
-                runtime.phase = 'STAGE';
+            const rp = getRetreatWaypoint(runtime, flags, ao);
+
+            if (rp && isInRange(creep, rp, 2)) {
+                // If attack directive exists, resume ENGAGE to AO/attack flag.
+                // Otherwise fall back to STAGE.
+                runtime.phase = flags.attackFlag ? 'ENGAGE' : 'STAGE';
+                dbg.lastPhaseReason = `reengage at retreat waypoint ${formatPos(rp)}`;
+            } else if (flags.waitPos && isInRange(creep, flags.waitPos, 2)) {
+                // Fallback: legacy behaviour if no waypoints are defined / reachable
+                runtime.phase = flags.attackFlag ? 'ENGAGE' : 'STAGE';
                 dbg.lastPhaseReason = `reengage at waitPos ${formatPos(flags.waitPos)}`;
-            } else if (!flags.waitPos &&
-                ao.centerPos &&
-                isInRange(creep, ao.centerPos, 3)) {
-                runtime.phase = 'STAGE';
+            } else if (!flags.waitPos && ao.centerPos && isInRange(creep, ao.centerPos, 3)) {
+                runtime.phase = flags.attackFlag ? 'ENGAGE' : 'STAGE';
                 dbg.lastPhaseReason = `reengage at ao.centerPos ${formatPos(ao.centerPos)}`;
             }
         }
@@ -243,6 +261,20 @@ function planForSolo(mission, creepOrNull, context) {
     const runtimeKey = getRuntimeKey(mission);
     const runtime = memory.getRuntime(runtimeKey);
     memory.touchSoloRuntime(runtime, mission, runtimeKey);
+
+    // ✅ Wire PathFinder roomCallback from the task-runner context into this mission runtime.
+    // soloPlanner expects runtime.roomCallback (or opts.roomCallback) to provide a base CostMatrix.
+    // Without this, soloPlanner logs "base=none" and PF ignores your structure/block rules.
+    const ctxCb = context && context.runtime && typeof context.runtime.roomCallback === 'function'
+        ? context.runtime.roomCallback
+        : null;
+    if (ctxCb) {
+        runtime.roomCallback = ctxCb;
+    } else if (runtime && runtime.roomCallback) {
+        // Avoid holding onto stale callbacks across ticks / reloads
+        delete runtime.roomCallback;
+    }
+
 
     const ownerRoom =
         (mission && mission.data && (mission.data.sponsorRoom || mission.data.ownerRoom)) || null;
@@ -344,7 +376,19 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
             dbg.lastAssembleTarget = assembleKey;
         }
     } else {
-        routeTarget = route.getRouteTarget(creep, runtime, flags, ao);
+        // During RETREAT, do NOT snap back to W. Retreat to the latest reached waypoint instead.
+        if (runtime.phase === 'RETREAT') {
+            routeTarget = getRetreatWaypoint(runtime, flags, ao) || (flags.waitPos || flags.assemblyPos || (ao && ao.centerPos));
+        } else {
+            routeTarget = route.getRouteTarget(creep, runtime, flags, ao);
+
+            // If attack/AO flag was removed while we were in ENGAGE, fall back to latest reached waypoint
+            // (instead of snapping all the way back to W).
+            if (runtime.phase === 'STAGE' && !flags.attackFlag) {
+                const hold = getRetreatWaypoint(runtime, flags, ao);
+                if (hold) routeTarget = hold;
+            }
+        }
     }
 
     // AO-bounded target selection
@@ -372,7 +416,18 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
         const hasHostiles = !!(engageCtx && engageCtx.hasHostiles);
 
-        if (hasHostiles) {
+        // If ENGAGE begins while we're still in the staging/assembly room (no vision / hostiles here),
+        // do NOT let tactical anchoring override cross-room travel. Only run combat anchoring once
+        // we're inside the AO / attack room.
+        const engageRoom =
+            (ao && ao.targetRoom)
+            || (flags.attackPos && flags.attackPos.roomName)
+            || (routeTarget && routeTarget.roomName)
+            || null;
+
+        const inEngageRoom = !engageRoom || creep.pos.roomName === engageRoom;
+
+        if (hasHostiles && inEngageRoom) {
             // 🔥 Tactical combat movement
             const tactical = soloTactics.decideAnchor(
                 creep,
@@ -393,8 +448,12 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
                 dbg.lastAnchorReason = tactical.reason || null;
             }
 
+        } else if (!inEngageRoom) {
+            // Still traveling to the AO / attack room → keep strategic route target (cross-room movement)
+            moveGoal = routeTarget;
+            moveRange = 1;
         } else {
-            // 🏁 No enemies → hold AO strategic anchor
+            // 🏁 No enemies (in AO room) → hold AO strategic anchor
             if (flags.attackPos) {
                 moveGoal = flags.attackPos;
             } else if (ao && ao.centerPos) {

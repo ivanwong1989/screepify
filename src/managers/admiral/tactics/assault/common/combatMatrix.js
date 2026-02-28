@@ -23,16 +23,19 @@ function posKey(x, y) {
 }
 
 // Precompute offsets for small radii (fast + no allocations per tick)
+// Note: we use Chebyshev distance (max(|dx|,|dy|)) because it matches Screeps ranges.
 const OFFSETS_R1 = [];
 const OFFSETS_R2 = [];
 const OFFSETS_R3 = [];
+const OFFSETS_R7 = []; // for "soft influence" aura up to range 7
 (function buildOffsets() {
-    for (let dx = -3; dx <= 3; dx++) {
-        for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -7; dx <= 7; dx++) {
+        for (let dy = -7; dy <= 7; dy++) {
             const d = Math.max(Math.abs(dx), Math.abs(dy));
             if (d <= 1) OFFSETS_R1.push([dx, dy, d]);
             if (d <= 2) OFFSETS_R2.push([dx, dy, d]);
             if (d <= 3) OFFSETS_R3.push([dx, dy, d]);
+            if (d <= 7) OFFSETS_R7.push([dx, dy, d]);
         }
     }
 })();
@@ -288,6 +291,19 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
         rangedMinCostNear = 70,
         rangedMinCostFar = 40,
 
+        // NEW: Soft "influence" aura outside true ranges.
+        // Goal: make PF feel the enemy earlier (directional gradient) without turning it into a hard no-go zone.
+        // - Applies beyond r3 up to softThreatRange (default 6).
+        // - Costs decay linearly from *AtR4* down to *AtRMax*.
+        // - Kept intentionally small so mission intent can still advance.
+        softThreatRange = 6,             // 4..7 recommended (7 is max supported by OFFSETS_R7)
+        rangedSoftAtR4 = 20,             // cost at distance 4 for hostiles with RANGED_ATTACK parts
+        rangedSoftAtRMax = 4,            // cost at distance softThreatRange
+        meleeSoftAtR4 = 14,              // cost at distance 4 for hostiles with ATTACK parts
+        meleeSoftAtRMax = 3,             // cost at distance softThreatRange
+        softScaleByParts = true,         // scale aura by hostile attack+ranged parts (capped)
+        softPartsCap = 20,               // parts cap for scaling (20 parts ~= "full weight")
+
         // tower danger
         towerMinCostNear = 200,  // <=5
         towerMinCostMid = 120,   // <=10
@@ -379,10 +395,23 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
         return { x: cx, y: cy };
     }
 
-    function applyCreepThreatAt(cx, cy, meleeCost, rangedNearCost, rangedFarCost) {
+    function applyCreepThreatAt(cx, cy, meleeCost, rangedNearCost, rangedFarCost, atkParts, rngParts) {
         // Skip impossible centers (shouldn't happen for current pos, but can for predicted)
         if (cx < 0 || cx > 49 || cy < 0 || cy > 49) return;
         if (terrain.get(cx, cy) & TERRAIN_MASK_WALL) return;
+
+        const hasMelee = (Number(atkParts) || 0) > 0;
+        const hasRanged = (Number(rngParts) || 0) > 0;
+
+        // Soft aura scaling (kept small!)
+        // - Full weight at parts >= softPartsCap
+        // - Half weight at parts == 0 (but we won't apply aura unless hasMelee/hasRanged)
+        let auraScale = 1;
+        if (softScaleByParts) {
+            const cap = Math.max(1, Number(softPartsCap) || 20);
+            const parts = (Number(atkParts) || 0) + (Number(rngParts) || 0);
+            auraScale = Math.max(0.4, Math.min(1.25, parts / cap)); // 0.4..1.25
+        }
 
         // melee (range 2) – models "enemy can step 1 + hit" (prediction-lite for melee)
         for (const [dx, dy] of OFFSETS_R2) {
@@ -398,22 +427,46 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
             const c = (d <= 1) ? rangedNearCost : (d === 2 ? (rangedFarCost + 15) : rangedFarCost);
             addMaxThreat(x, y, c);
         }
+
+        // NEW: soft influence aura beyond true threat rings (d=4..softThreatRange)
+        // This is intentionally gentle: it nudges PF away / around, but shouldn't prevent advancing.
+        const maxR = Math.max(0, Math.min(7, Number(softThreatRange) || 0));
+        if (maxR >= 4 && (hasMelee || hasRanged)) {
+            const denom = Math.max(1, (maxR - 4));
+
+            // linear decay: d=4 -> atR4, d=maxR -> atRMax
+            function lerpCost(d, atR4, atRMax) {
+                const t = (maxR - d) / denom; // 1 at d=4, 0 at d=maxR
+                const base = atRMax + (atR4 - atRMax) * t;
+                return Math.max(1, Math.floor(base * auraScale));
+            }
+
+            for (const [dx, dy, d] of OFFSETS_R7) {
+                if (d < 4 || d > maxR) continue;
+                const x = cx + dx, y = cy + dy;
+                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+
+                let c = 0;
+                if (hasRanged) c = Math.max(c, lerpCost(d, rangedSoftAtR4, rangedSoftAtRMax));
+                if (hasMelee) c = Math.max(c, lerpCost(d, meleeSoftAtR4, meleeSoftAtRMax));
+
+                if (c > 0) addMaxThreat(x, y, c);
+            }
+        }
     }
 
     if (hostiles && hostiles.length) {
         for (const h of hostiles) {
             if (!h || !h.pos) continue;
 
-            if (ignoreHarmless) {
-                const atk = h.getActiveBodyparts(ATTACK);
-                const rng = h.getActiveBodyparts(RANGED_ATTACK);
-                if (atk + rng <= 0) continue;
-            }
+            const atkParts = h.getActiveBodyparts(ATTACK);
+            const rngParts = h.getActiveBodyparts(RANGED_ATTACK);
+            if (ignoreHarmless && (atkParts + rngParts <= 0)) continue;
 
             const hx = h.pos.x, hy = h.pos.y;
 
             // 1) True/current center (full weight)
-            applyCreepThreatAt(hx, hy, meleeMinCost, rangedMinCostNear, rangedMinCostFar);
+            applyCreepThreatAt(hx, hy, meleeMinCost, rangedMinCostNear, rangedMinCostFar, atkParts, rngParts);
 
             // 2) Predicted 1-step envelope (medium weight)
             // Old behaviour: uniform 8-neighbour envelope. New: still keep a soft uniform envelope,
@@ -442,7 +495,7 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
                         const cx = hx + sx, cy = hy + sy;
                         if (cx < 0 || cx > 49 || cy < 0 || cy > 49) continue;
                         if (terrain.get(cx, cy) & TERRAIN_MASK_WALL) continue;
-                        applyCreepThreatAt(cx, cy, c.melee, c.rngNear, c.rngFar);
+                        applyCreepThreatAt(cx, cy, c.melee, c.rngNear, c.rngFar, atkParts, rngParts);
                     }
                 }
 
@@ -452,7 +505,7 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
                         // 2b) Strong bias on the "most likely" next center (vector-based)
                         if (vecW > 0) {
                             const c = scaledCosts(vecW);
-                            applyCreepThreatAt(vecCenter.x, vecCenter.y, c.melee, c.rngNear, c.rngFar);
+                            applyCreepThreatAt(vecCenter.x, vecCenter.y, c.melee, c.rngNear, c.rngFar, atkParts, rngParts);
                         }
 
                         // 2c) And a medium envelope around that vector tile (prevents being tricked by 1-tile sidestep)
@@ -462,7 +515,7 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
                                 const cx = vecCenter.x + sx, cy = vecCenter.y + sy;
                                 if (cx < 0 || cx > 49 || cy < 0 || cy > 49) continue;
                                 if (terrain.get(cx, cy) & TERRAIN_MASK_WALL) continue;
-                                applyCreepThreatAt(cx, cy, c.melee, c.rngNear, c.rngFar);
+                                applyCreepThreatAt(cx, cy, c.melee, c.rngNear, c.rngFar, atkParts, rngParts);
                             }
                         }
                     }

@@ -53,7 +53,7 @@ function getRoleRanges(creep) {
     // Strict assault behavior:
     // Ranged: always strive for range 3 (no drifting into range 2).
     // Melee: always strive for range 1.
-    if (ranged) return { min: 3, pref: 3, max: 3, style: 'ranged' };
+    if (ranged) return { min: 3, pref: 3, max: 4, style: 'ranged' };
     if (melee) return { min: 1, pref: 1, max: 1, style: 'melee' };
 
     // Fallback behavior (non-combat body)
@@ -117,7 +117,7 @@ function scoreTile(params) {
         : (Number.isFinite(w.range) ? w.range : 12);
     const wRangeOver = Number.isFinite(w.rangeOver)
         ? w.rangeOver
-        : (Number.isFinite(w.range) ? w.range : 45);
+        : (Number.isFinite(w.range) ? w.range : 80);
     const wDist = Number.isFinite(w.dist) ? w.dist : 2.5;
     const wBorder = Number.isFinite(w.border) ? w.border : 25;
     const wFriendlyRampart = Number.isFinite(w.friendlyRampart) ? w.friendlyRampart : -8;
@@ -172,6 +172,64 @@ function rampartStatus(room, x, y) {
 /**
  * Decide the movement anchor for ENGAGE.
  */
+
+function isHarmlessEnemy(target) {
+    if (!target || !target.body) return true;
+    for (const p of target.body) {
+        if (!p || p.hits <= 0) continue;
+        if (p.type === ATTACK || p.type === RANGED_ATTACK) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+function isReachableAnchor(creep, anchorPos, costs, rangeRef, safeMinRange, opts) {
+    if (!creep || !creep.pos || !anchorPos) return false;
+    if (creep.pos.roomName !== anchorPos.roomName) return false;
+
+    // If already at anchor, it's reachable.
+    if (creep.pos.x === anchorPos.x && creep.pos.y === anchorPos.y) return true;
+
+    const topKMaxOps = Number.isFinite(opts && opts.reachMaxOps) ? Math.max(200, Math.floor(opts.reachMaxOps)) : 900;
+    const maxPathLen = Number.isFinite(opts && opts.reachMaxPathLen) ? Math.max(1, Math.floor(opts.reachMaxPathLen)) : 12;
+    const checkSteps = Number.isFinite(opts && opts.reachCheckSteps) ? Math.max(0, Math.floor(opts.reachCheckSteps)) : 3;
+
+    // Probe a single-room path using the same combatMatrix costs as a CostMatrix.
+    const res = PathFinder.search(
+        creep.pos,
+        { pos: anchorPos, range: 0 },
+        {
+            maxOps: topKMaxOps,
+            maxRooms: 1,
+            plainCost: 2,
+            swampCost: 10,
+            roomCallback: function(roomName) {
+                if (roomName !== creep.pos.roomName) return false;
+                return costs || false;
+            }
+        }
+    );
+
+    if (!res || res.incomplete) return false;
+
+    const path = res.path || [];
+    if (path.length > maxPathLen) return false;
+
+    // "No-dive" guard: the early steps toward the anchor should not force us inside safeMinRange.
+    if (Number.isFinite(safeMinRange) && safeMinRange > 0 && rangeRef && typeof rangeRef.getRangeTo === 'function') {
+        for (let i = 0; i < path.length && i < checkSteps; i++) {
+            const step = path[i];
+            if (!step) continue;
+            const r = rangeRef.getRangeTo(step);
+            if (r < safeMinRange) return false;
+        }
+    }
+
+    return true;
+}
+
 function decideAnchor(creep, runtime, flags, ao, target, opts) {
     opts = opts || {};
     if (!creep || !creep.pos || !creep.room) {
@@ -227,6 +285,18 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
         };
     }
 
+
+    // Kiting trigger (single system):
+    // If our *current* tile is "hot" per combat matrix, prefer buffer ring r>=4 (for ranged) by penalizing r<4 candidates.
+    // Tuning:
+    // - opts.kiteCostThreshold (default 20): enter kite posture when creep's current tile cost >= threshold.
+    // - opts.weights.closeGate: penalty applied to r<4 candidates while kiting (default 5000).
+    const kiteCostThreshold = Number.isFinite(opts.kiteCostThreshold) ? opts.kiteCostThreshold : 20;
+    const myTileCostRaw = costs.get(creep.pos.x, creep.pos.y);
+    const myTileCost = (myTileCostRaw === 255) ? 254 : myTileCostRaw;
+    const kiteLikely = Number.isFinite(myTileCost) && myTileCost >= kiteCostThreshold;
+
+
     // Candidate enumeration (single pass):
     // - Sample all tiles in a chebyshev square around focus with a configurable search radius.
     // - Score each candidate using combat matrix danger + weighted preferences (range, travel, border, rampart, neighborhood).
@@ -238,6 +308,20 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
     // - opts.rangeSlack: allowed deviation from preferred range to target (default: ranged 0, melee 1, worker 0)
     // - opts.weights: { cost, rangeUnder, rangeOver, dist, border, friendlyRampart, publicRampart, neighborhood }
     const weights = opts.weights || {};
+
+// Reachability / geometry constraints:
+// - Prevent "teleporting" anchors that require flipping to the far side of the enemy in one hop.
+// - Keep anchors within a short horizon so ENGAGE behaves like a near-term tactical choice.
+//
+// Tuning:
+// - opts.maxAnchorDist (default 6): reject anchors farther than this (range from creep).
+// - opts.coneCos (default 0.20): keep anchors roughly on our side of the enemy.
+//   0.0 = 90° half-angle (very wide), 0.5 ≈ 60°, 0.707 ≈ 45°.
+// - opts.disableCone (default false): set true to turn off cone filtering.
+const maxAnchorDist = Number.isFinite(opts.maxAnchorDist) ? Math.max(1, Math.floor(opts.maxAnchorDist)) : 6;
+const coneCos = Number.isFinite(opts.coneCos) ? Math.max(0, Math.min(0.95, opts.coneCos)) : 0.20;
+const disableCone = !!opts.disableCone;
+
 
     const defaultSlack =
         (rr.style === 'ranged') ? 0 :
@@ -251,13 +335,19 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
 
     // Range policy (simple):
     // - Prefer rr.pref (r=3 for ranged)
-    // - Allow rr.min..rr.max (ranged: 2..3), so stepping to r=2 is acceptable (still outside melee).
+    // - Allow rr.min..rr.max (ranged: 3..4), so we can pick a buffer ring when kiting (r=4) without drifting out of engage.
     // - Rely on the combat matrix's predictive overlay to naturally push us outward when the enemy advances.
     const prefRange = rangeHasTarget ? rr.pref : 0;
 
+    let minRange = rangeHasTarget ? Math.max(0, rr.min - slack) : 0;
+    let maxRange = rangeHasTarget ? Math.min(10, rr.max + slack) : 50;
 
-    const minRange = rangeHasTarget ? Math.max(0, rr.min - slack) : 0;
-    const maxRange = rangeHasTarget ? Math.min(10, rr.max + slack) : 50;
+    // --- Harmless enemy override ---
+    // If target has no ATTACK/RANGED_ATTACK parts, we can safely close a bit more to finish it.
+    if (rr.style === 'ranged' && rangeHasTarget && isHarmlessEnemy(target)) {
+        minRange = 2;
+        maxRange = 3;
+    }
 
     // Search radius: bigger than maxRange so we can actually find candidates when slack>0.
     let searchRadius = Number.isFinite(opts.searchRadius) ? Math.max(1, Math.floor(opts.searchRadius)) : 10;
@@ -274,6 +364,15 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
 
     let best = null;
     let second = null;
+
+    // Reachability guard (top-K PF probe) to avoid selecting anchors behind wall/structure islands.
+    // Tuning:
+    // - opts.topK (default 10): number of best candidates to PF-validate
+    // - opts.reachMaxOps (default 900): PF budget per candidate
+    // - opts.reachMaxPathLen (default 12): reject anchors requiring long detours
+    // - opts.reachCheckSteps (default 3): reject anchors whose early steps dive inside safe range
+    const topK = Number.isFinite(opts.topK) ? Math.max(1, Math.floor(opts.topK)) : 10;
+    const topCandidates = [];
 
     // Stickiness: if it's our current tile, reduce score slightly so we don't jitter.
     const biasStickiness = Number.isFinite(opts.stickiness) ? opts.stickiness : 0.6;
@@ -315,8 +414,57 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
 
             const distFromCreep = creep.pos.getRangeTo(p);
 
+            // Short-horizon reachability: don't pick anchors that are too far to realize soon.
+            if (distFromCreep > maxAnchorDist) continue;
+
+            // "Same-side" cone filter:
+            // Reject candidates that are on the far side of the target relative to our current approach vector,
+            // since reaching them typically requires passing close to/through the enemy.
+            if (!disableCone && rangeHasTarget && targetPos) {
+                const ax = creep.pos.x - targetPos.x;
+                const ay = creep.pos.y - targetPos.y;
+                const bx = x - targetPos.x;
+                const by = y - targetPos.y;
+
+                const dot = ax * bx + ay * by;
+                if (dot <= 0) continue; // behind target
+
+                const a2 = ax * ax + ay * ay;
+                const b2 = bx * bx + by * by;
+                if (a2 > 0 && b2 > 0) {
+                    const cos2 = coneCos * coneCos;
+                    if ((dot * dot) < (a2 * b2 * cos2)) continue;
+                }
+            }
+
+
             // Rampart preference
             const rs = rampartStatus(creep.room, x, y);
+
+            // Single system: kite based on *our current tile cost*.
+            // If we're on a hot tile, make r<4 expensive so we pick r=4 anchors when possible.
+            // Refinement (from duoTactics):
+            // - Only enforce the "step-in risk" gate when the target can actually MOVE.
+            // - Allow opting out via opts.allowRange3VsMobile=true (less conservative).
+            let closeRiskPenalty = 0;
+            if (rr.style === 'ranged' && rangeHasTarget && kiteLikely) {
+                const wg = (weights && Number.isFinite(weights.closeGate)) ? weights.closeGate : 5000;
+
+                const allowRange3VsMobile = !!opts.allowRange3VsMobile;
+
+                // Best-effort "mobile" check (works for real creeps and creep-like objects).
+                const isMobile = !!(
+                    target &&
+                    (
+                        (typeof Creep !== 'undefined' && target instanceof Creep && target.getActiveBodyparts && target.getActiveBodyparts(MOVE) > 0) ||
+                        (target.body && Array.isArray(target.body) && target.body.some(p => p && p.type === MOVE && (p.hits == null || p.hits > 0)))
+                    )
+                );
+
+                if (!allowRange3VsMobile && isMobile && rangeToTarget < 4) {
+                    closeRiskPenalty += wg;
+                }
+            }
 
             let score = scoreTile({
                 cost: tileCost,
@@ -332,12 +480,19 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
                 weights
             });
 
+            if (closeRiskPenalty > 0) score += closeRiskPenalty;
+
             // Stickiness: if it's our current tile, reduce score slightly so we don't jitter.
             if (creep.pos.x === x && creep.pos.y === y) {
                 score *= biasStickiness;
             }
 
             const rec = { x, y, score, tileCost, distFromCreep, rangeToTarget, rampart: rs };
+
+            // Track top candidates for reachability probing (keep sorted by score, trim to topK).
+            topCandidates.push(rec);
+            topCandidates.sort((a, b) => a.score - b.score);
+            if (topCandidates.length > topK) topCandidates.length = topK;
 
             if (!best || score < best.score) {
                 second = best;
@@ -348,13 +503,53 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
         }
     }
 
+    // === Reachability guard: validate top candidates with a cheap single-room PF probe ===
+    // This prevents selecting anchors that are "geometrically valid" but topologically unreachable
+    // without detouring around wall/structure islands (which often causes a forced dive toward the enemy).
+    let chosenRec = best;
+    if (!(opts && opts.disableReachabilityProbe) && topCandidates.length > 0) {
+        // For ranged vs target, keep early steps outside a safe range band (no-dive).
+        const safeMinRange = (rr.style === 'ranged' && rangeHasTarget)
+            ? (kiteLikely ? 4 : (Number.isFinite(minRange) ? minRange : 0))
+            : 0;
+
+        let checked = 0;
+        let rejected = 0;
+        for (let i = 0; i < topCandidates.length; i++) {
+            const cand = topCandidates[i];
+            if (!cand) continue;
+            checked += 1;
+
+            const candPos = new RoomPosition(cand.x, cand.y, creep.room.name);
+            if (!isReachableAnchor(creep, candPos, costs, rangeHasTarget ? targetPos : null, safeMinRange, opts)) {
+                rejected += 1;
+                continue;
+            }
+
+            chosenRec = cand;
+            break;
+        }
+
+        if (dbg) {
+            dbg.reach = {
+                topK,
+                checked,
+                rejected,
+                safeMinRange,
+                kiteLikely
+            };
+        }
+    }
+
+
+
     if (!best || !Number.isFinite(best.score)) {
         return { anchorPos: focus, range: 0, reason: `fallback:no-candidate:${focusReason}` };
     }
 
     
     // Choose the best-scoring candidate (range constraints + combat matrix costs already applied).
-    const chosen = best;
+    const chosen = chosenRec || best;
 
     const anchorPos = new RoomPosition(chosen.x, chosen.y, creep.room.name);
 

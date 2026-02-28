@@ -293,6 +293,15 @@ var militaryTasks = {
 
         const ctx = { room, hostiles, runtime: { roomCallback } };
 
+        const handledDuoMissions = runDuoAssaultMissions(missions, assignments, ctx);
+        const handledSoloMissions = runSoloAssaultMissions(missions, assignments, ctx);
+
+        for (const mission of missions) {
+            if (handledDuoMissions.has(mission.name)) continue;
+            if (handledSoloMissions.has(mission.name)) continue;
+            runMission(mission, assignments[mission.name] || [], { room, hostiles });
+        }
+
         // --------------------------------------
         // 🗺️ Combat CostMatrix Visualization (AO only)
         // --------------------------------------
@@ -310,6 +319,64 @@ var militaryTasks = {
                         ? Math.max(0, Math.min(254, +v.combatNumberThreshold))
                         : 120;
 
+                    // NEW knobs (optional)
+                    const showLowNumbers = (v.combatLowNumbers == null) ? true : !!v.combatLowNumbers;
+                    const lowNumberThreshold = Number.isFinite(+v.combatLowNumberThreshold)
+                        ? Math.max(0, Math.min(254, +v.combatLowNumberThreshold))
+                        : 3;
+
+                    function parsePosString(s) {
+                        // accepts "W8N3:13,16"
+                        if (!s || typeof s !== 'string') return null;
+                        const m = s.match(/^([WE]\d+[NS]\d+):(\d+),(\d+)$/);
+                        if (!m) return null;
+                        const roomName = m[1];
+                        const x = Number(m[2]);
+                        const y = Number(m[3]);
+                        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                        return { roomName, x, y };
+                    }
+
+                    // Collect anchors from runtimes (best-effort, non-fatal)
+                    const anchorsByRoom = Object.create(null);
+
+                    for (const m of missions) {
+                        if (!m || m.type !== 'assault') continue;
+
+                        // DUO
+                        if (m.data && m.data.mode === 'DUO') {
+                            const runtimeKey = (m.data && m.data.squadKey) ? m.data.squadKey : m.name;
+                            if (assaultMemory && typeof assaultMemory.getDuoRuntime === 'function') {
+                                const rt = assaultMemory.getDuoRuntime(runtimeKey);
+                                const s = rt && rt.debug && rt.debug.tactical && rt.debug.tactical.anchorPos;
+                                const p = parsePosString(s);
+                                if (p) {
+                                    if (!anchorsByRoom[p.roomName]) anchorsByRoom[p.roomName] = [];
+                                    anchorsByRoom[p.roomName].push({
+                                        roomName: p.roomName, x: p.x, y: p.y,
+                                        kind: 'duo',
+                                        label: (m.data && m.data.squadKey) ? String(m.data.squadKey).slice(0, 2) : 'D'
+                                    });
+                                }
+                            }
+                        } else {
+                            // SOLO (best effort; only works if you have getSoloRuntime + same debug.tactical shape)
+                            if (assaultMemory && typeof assaultMemory.getSoloRuntime === 'function') {
+                                const rt = assaultMemory.getSoloRuntime(m.name);
+                                const s = rt && rt.debug && rt.debug.tactical && rt.debug.tactical.anchorPos;
+                                const p = parsePosString(s);
+                                if (p) {
+                                    if (!anchorsByRoom[p.roomName]) anchorsByRoom[p.roomName] = [];
+                                    anchorsByRoom[p.roomName].push({
+                                        roomName: p.roomName, x: p.x, y: p.y,
+                                        kind: 'solo',
+                                        label: 'S'
+                                    });
+                                }
+                            }
+                        }
+                    }
+
                     for (const aoRoomName of overlayRooms) {
                         const aoRoom = Game.rooms[aoRoomName];
                         if (!aoRoom) continue; // must be visible
@@ -321,6 +388,11 @@ var militaryTasks = {
                                 legend: true,
                                 showNumbers,
                                 numberThreshold,
+
+                                showLowNumbers,
+                                lowNumberThreshold,
+
+                                anchorPositions: anchorsByRoom[aoRoomName] || []
                             });
                         }
                     }
@@ -330,14 +402,6 @@ var militaryTasks = {
             // Never break missions because of visuals
         }
 
-        const handledDuoMissions = runDuoAssaultMissions(missions, assignments, ctx);
-        const handledSoloMissions = runSoloAssaultMissions(missions, assignments, ctx);
-
-        for (const mission of missions) {
-            if (handledDuoMissions.has(mission.name)) continue;
-            if (handledSoloMissions.has(mission.name)) continue;
-            runMission(mission, assignments[mission.name] || [], { room, hostiles });
-        }
 
         // GC: if a DUO assault mission no longer exists on the mission board,
         // its runtime will not be touched and will be removed within 1 tick.

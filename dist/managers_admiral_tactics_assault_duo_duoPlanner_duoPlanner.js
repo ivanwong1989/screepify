@@ -193,40 +193,6 @@ function clampRoomPos(pos) {
     return pos;
 }
 
-function pickLeaderDirsTowardGoal(leaderPos, goalPos) {
-    if (!leaderPos || !goalPos) return [];
-    const scored = [];
-    for (const dir of DIRS) {
-        const next = dirToPos(leaderPos, dir);
-        if (!next) continue;
-        const range = next.getRangeTo(goalPos);
-        scored.push({ dir, next, range });
-    }
-    scored.sort((a, b) => a.range - b.range);
-    return scored;
-}
-
-function pickLeaderDirsAlongBorder(leaderPos, borderAxis) {
-    if (!leaderPos) return [];
-    const scored = [];
-    for (const dir of DIRS) {
-        const next = dirToPos(leaderPos, dir);
-        if (!next) continue;
-        if (borderAxis === 'x' && next.x !== leaderPos.x) continue;
-        if (borderAxis === 'y' && next.y !== leaderPos.y) continue;
-        scored.push({ dir, next, range: 0 });
-    }
-    return scored;
-}
-
-function pickSupportOffsets(leaderDir, offset) {
-    if (!leaderDir) return [];
-    if (offset === 'left') return [LEFT_DIR[leaderDir]];
-    if (offset === 'right') return [RIGHT_DIR[leaderDir]];
-    if (offset === 'behind') return [OPPOSITE_DIR[leaderDir]];
-    return [OPPOSITE_DIR[leaderDir], LEFT_DIR[leaderDir], RIGHT_DIR[leaderDir]];
-}
-
 function getAdjacentTo(pos) {
     if (!pos) return [];
     const out = [];
@@ -242,29 +208,6 @@ function isCohesionOk(leaderTo, supportTo, cohesionRange, allowSplit) {
     if (leaderTo.roomName !== supportTo.roomName) return allowSplit;
     const range = Number.isFinite(cohesionRange) ? cohesionRange : COHESION_RANGE;
     return allowSplit ? true : leaderTo.getRangeTo(supportTo) <= range;
-}
-
-function isPassableForCreep(room, pos, creep, movePlan) {
-    if (!room || !pos) return false;
-    const terrain = room.getTerrain().get(pos.x, pos.y);
-    if (terrain === TERRAIN_MASK_WALL) return false;
-    if (isClaimedByOther(movePlan, pos, creep)) return false;
-    const creeps = room.lookForAt(LOOK_CREEPS, pos.x, pos.y);
-    if (creeps && creeps.length > 0) {
-        for (const other of creeps) {
-            if (!creep || other.id !== creep.id) {
-                if (allowedByVacating(movePlan, pos)) continue;
-                return false;
-            }
-        }
-    }
-    const structures = room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
-    if (structures && structures.length > 0) {
-        for (const structure of structures) {
-            if (!isWalkableStructure(structure)) return false;
-        }
-    }
-    return true;
 }
 
 function isGoalReached(leaderPos, goal) {
@@ -307,7 +250,10 @@ function isUnsafeForSupport(room, pos, runtime, opts = {}) {
     // - >=60 is "melee-ish / lethal-ish"
     // - >=40 is "ranged danger band"
     if (c >= 255) return true;
-    if (c >= 60) return true;
+    // NEW: stricter support rule
+    const hard = Number.isFinite(opts.hardThreshold) ? opts.hardThreshold : 60;
+    if (c >= hard) return true;
+
     return false;
 }
 
@@ -322,6 +268,20 @@ function computeSupportCohesive(room, leader, support, leaderTo, leaderDir, form
             : 1
     );
     const candidates = [];
+
+
+    // CombatMatrix "feel": use threat gradient to bias formation tiles.
+    // - Lower matrix cost is preferred.
+    // - Tiles that are *more threatened than leaderTo* are penalized (directional gradient).
+    // This gives support a sense of where danger comes from even outside hard r3.
+    const _cm = getCombatMatrix(runtime, room.name);
+    const _leaderToCost = _cm ? readMatrixCost(_cm, leaderTo.x, leaderTo.y) : 0;
+    const _threatWeight = Number.isFinite(formation && formation.supportThreatWeight)
+        ? formation.supportThreatWeight
+        : 4; // default: mild
+    const _gradientWeight = Number.isFinite(formation && formation.supportThreatGradientWeight)
+        ? formation.supportThreatGradientWeight
+        : 2; // default: mild
 
     function hardReject(pos) {
         if (!pos) return true;
@@ -345,16 +305,48 @@ function computeSupportCohesive(room, leader, support, leaderTo, leaderDir, form
             if (terrain === TERRAIN_MASK_WALL) return true;
             const structures = room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
             if (structures && structures.some(s => !isWalkableStructure(s))) return true;
+            // Only allow trail if leader is actually vacating this tile this tick.
+            if (!allowedByVacating(movePlan, pos)) return true;
         }
 
-        // safety hard filter (can be relaxed only in REGROUP, not here)
-        if (isUnsafeForSupport(room, pos, runtime, { allowExit: false })) return true;
+        // safety hard filter (combat-hardened support)
+        const hardThreshold =
+            Number.isFinite(formation && formation.supportHardThreatThreshold)
+                ? formation.supportHardThreatThreshold
+                : 40;
+
+        if (isUnsafeForSupport(room, pos, runtime, { allowExit: false, hardThreshold })) return true;
+
+        // ✅ Relative hardening: reject tiles that are significantly more threatened than leaderTo.
+        // This makes support "hug the safer flank" when your aura (r4..r7) is present.
+        const deltaHard =
+            Number.isFinite(formation && formation.supportThreatDeltaHard)
+                ? formation.supportThreatDeltaHard
+                : 25; // tune 15..40
+
+        if (_cm && deltaHard > 0) {
+            const tileCost = readMatrixCost(_cm, pos.x, pos.y);
+            const delta = tileCost - _leaderToCost;
+            if (delta > deltaHard) return true;
+        }
 
         return false;
     }
 
     function score(pos, pri) {
         let s = 0;
+
+        // Threat gradient preference: keep support on lower-pressure tiles.
+        // This is "soft" (works even when tile is not lethal) and helps orientation.
+        if (_cm && _threatWeight > 0) {
+            const tileCost = readMatrixCost(_cm, pos.x, pos.y);
+            if (tileCost > 0) {
+                s += tileCost * _threatWeight;
+                // Directional feel: penalize stepping to a tile that is more threatened than leaderTo.
+                const delta = tileCost - _leaderToCost;
+                if (delta > 0 && _gradientWeight > 0) s += delta * _gradientWeight;
+            }
+        }
 
         const dIntended = pos.getRangeTo(leaderTo);
         const dCurrent = pos.getRangeTo(leader.pos);
@@ -364,15 +356,11 @@ function computeSupportCohesive(room, leader, support, leaderTo, leaderDir, form
 
         // Magnet to preferred adjacency
         if (dIntended > preferred) s += (dIntended - preferred) * 120;
-        // Trail is fallback glue, not default.
+        // Trail is fallback glue, not default — unless travel mode explicitly prefers it.
         const isTrail = isSamePos(pos, leader.pos);
-        if (isTrail) s += 80; // make it expensive; only used when others fail
-
-        // Shield rule: don't put support "more forward" than leader vs enemy reference
-        if (enemyPos && enemyPos.roomName === leaderTo.roomName) {
-            const dEnemySupport = pos.getRangeTo(enemyPos);
-            const dEnemyLeader = leaderTo.getRangeTo(enemyPos);
-            if (dEnemySupport < dEnemyLeader) s += (dEnemyLeader - dEnemySupport) * 40;
+        if (isTrail) {
+            const preferTrail = formation && formation.travelSupportMode === 'trail';
+            s += preferTrail ? -120 : 80;
         }
 
         // Priority layer (candidate generation order)
@@ -401,7 +389,11 @@ function computeSupportCohesive(room, leader, support, leaderTo, leaderDir, form
     // 3) leaderCurrentPos (trail tile) - only if adjacent now
     if (support.pos.getRangeTo(leader.pos) === 1) {
         const p = leader.pos;
-        if (!hardReject(p)) candidates.push({ pos: p, score: score(p, 10) });
+        if (!hardReject(p)) {
+            const preferTrail = formation && formation.travelSupportMode === 'trail';
+            // If we're explicitly in trail mode (travel / non-combat), try trail early.
+            candidates.push({ pos: p, score: score(p, preferTrail ? -10 : 10) });
+        }
     }
 
     // 4) HOLD (only if staying is safe)
@@ -612,29 +604,11 @@ function getPathState(memory, purpose) {
     return memory.paths[purpose];
 }
 
-function resetPathState(ps, key) {
-    if (!ps) return;
-    ps.key = key || null;
-    ps.steps = [];
-    ps.idx = 0;
-    ps.lastRecalc = 0;
-    ps.stalledTicks = 0;
-    ps.lastToKey = null;
-}
-
 function peekNextDir(ps) {
     if (!ps || !ps.steps || ps.idx >= ps.steps.length) return null;
     return ps.steps[ps.idx];
 }
 
-function nextPlannedDir(memory, purpose, fromPos) {
-    const ps = getPathState(memory, purpose);
-    if (!ps || !fromPos) return { dir: null, toPos: null, toPosKey: null };
-    const dir = peekNextDir(ps);
-    const toPos = dir ? dirToPos(fromPos, dir) : null;
-    const toPosKey = toPos ? posKey(toPos) : null;
-    return { dir, toPos, toPosKey };
-}
 
 function advanceIfProgress(ps, currentPosKey) {
     if (!ps || !ps.lastToKey) return false;
@@ -680,6 +654,77 @@ function invalidatePath(memory, purpose) {
     ps.lastRecalc = Game.time;
 }
 
+// =========================================
+// Temporary PF blocks (traffic / stall busting)
+// =========================================
+
+function getInject(memory) {
+    if (!memory) return null;
+    if (!memory.inject || typeof memory.inject !== 'object') memory.inject = { byRoom: {} };
+    if (!memory.inject.byRoom) memory.inject.byRoom = {};
+    return memory.inject;
+}
+
+function addTempBlock(memory, roomName, pos, ttlTicks = 5, cost = 255) {
+    if (!memory || !roomName || !pos) return;
+    const inject = getInject(memory);
+    if (!inject) return;
+    const r = inject.byRoom[roomName] || (inject.byRoom[roomName] = {});
+    const key = `${pos.x}:${pos.y}`;
+    const until = Game.time + (Number.isFinite(ttlTicks) ? ttlTicks : 5);
+    const prev = r[key];
+    r[key] = {
+        until: prev ? Math.max(prev.until || 0, until) : until,
+        cost: Number.isFinite(cost) ? cost : 255
+    };
+}
+
+function purgeTempBlocks(memory) {
+    const inject = getInject(memory);
+    if (!inject) return;
+    for (const roomName in inject.byRoom) {
+        const r = inject.byRoom[roomName];
+        if (!r) continue;
+        for (const k in r) {
+            if (!r[k] || (r[k].until || 0) <= Game.time) delete r[k];
+        }
+        if (Object.keys(r).length === 0) delete inject.byRoom[roomName];
+    }
+}
+
+function parseToKey(key) {
+    // "room:x:y" -> { roomName, x, y }
+    if (!key || typeof key !== 'string') return null;
+    const parts = key.split(':');
+    if (parts.length !== 3) return null;
+    const roomName = parts[0];
+    const x = Number(parts[1]);
+    const y = Number(parts[2]);
+    if (!roomName || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { roomName, x, y };
+}
+
+function tickProgressAndInject(memory, purpose, creepPos, movement) {
+    if (!memory || !purpose || !creepPos) return;
+    const ps = getPathState(memory, purpose);
+    if (!ps) return;
+
+    // capture expected tile BEFORE tickProgress may clear it
+    const expectedKey = ps.lastToKey ? String(ps.lastToKey) : null;
+    const prog = tickProgress(ps, posKey(creepPos), movement);
+
+    // On stall (we expected a move but didn't advance):
+    // - inject a short-lived hard block on the expected next tile (traffic busting)
+    // - invalidate the cached path so we recompute immediately this tick
+    if (prog && prog.stalled && expectedKey) {
+        const p = parseToKey(expectedKey);
+        if (p && p.roomName) {
+            addTempBlock(memory, p.roomName, { x: p.x, y: p.y }, 5, 255);
+            invalidatePath(memory, purpose);
+        }
+    }
+}
+
 function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
     const {
         // Treat creeps as blocked? (recommended for regroup)
@@ -706,6 +751,9 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
         // If true, we’ll compute a full matrix even when runtimeCallback returns undefined.
         // If false, we only return a matrix when needed (preferRoads/considerCreeps/avoidBorders).
         alwaysBuild = false,
+
+        // Temporary injected blocks: memory.inject (shape: { byRoom: { [roomName]: { "x:y": {until,cost} } } })
+        inject = null,
     } = opts;
 
     function keyOf(pos) {
@@ -890,6 +938,23 @@ function buildRoomCallback(runtimeCallback, preferRoads, opts = {}) {
             }
         }
 
+        // 7) Apply temporary injected blocks (hard override)
+        const inj = inject && inject.byRoom ? inject.byRoom[roomName] : null;
+        if (inj && Object.keys(inj).length > 0) {
+            for (const key in inj) {
+                const rec = inj[key];
+                if (!rec || (rec.until || 0) <= Game.time) continue;
+                const parts = String(key).split(':');
+                if (parts.length !== 2) continue;
+                const x = Number(parts[0]);
+                const y = Number(parts[1]);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+                const c = Number.isFinite(rec.cost) ? rec.cost : 255;
+                const cur = costs.get(x, y);
+                costs.set(x, y, Math.max(cur, c));
+            }
+        }
+
         return costs;
     };
 }
@@ -999,6 +1064,12 @@ function isExitTile(pos) {
   return pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49;
 }
 
+function nearBorder(pos, margin) {
+    if (!pos) return false;
+    const m = Number.isFinite(margin) ? margin : 1;
+    return pos.x <= m || pos.x >= (49 - m) || pos.y <= m || pos.y >= (49 - m);
+}
+
 // Choose a dir that moves 1 tile inward (off the edge).
 function inwardDirs(pos) {
   const dirs = [];
@@ -1038,9 +1109,19 @@ function applyBorderHygieneToStep(step, leader, support) {
     const leaderEndsOnExit = isExitTile(leaderEnd);
     const supportEndsOnExit = isExitTile(supportEnd);
 
+    // ✅ Handshake exception:
+    // If leader is intentionally crossing this tick AND support is intentionally docking onto the
+    // same exit tile (common in border-handshake / pre-cross), do NOT nudge support inward.
+    // Otherwise, hygiene can break the handshake and cause room-split ping-pong.
+    const supportDockingForHandshake =
+        leaderCrossing &&
+        leaderEndsOnExit &&
+        supportEndsOnExit &&
+        isSamePos(supportEnd, leaderEnd);
+
     // If they would end on an exit tile without actually crossing, we must push inward.
     const needFixLeader = leaderEndsOnExit && !leaderCrossing;
-    const needFixSupport = supportEndsOnExit && !supportCrossing;
+    const needFixSupport = supportEndsOnExit && !supportCrossing && !supportDockingForHandshake;
 
     if (!needFixLeader && !needFixSupport) return step;
 
@@ -1137,6 +1218,30 @@ function posOnEdge(pos, edge) {
   return false;
 }
 
+function sameEdge(a, b) {
+    if (!a || !b) return false;
+    if (!isExitTile(a) || !isExitTile(b)) return false;
+    // share the same border line
+    if (a.x === 0 && b.x === 0) return true;
+    if (a.x === 49 && b.x === 49) return true;
+    if (a.y === 0 && b.y === 0) return true;
+    if (a.y === 49 && b.y === 49) return true;
+    return false;
+}
+
+function adjacentExitCandidatesOnSameEdge(exitPos) {
+    if (!exitPos || !isExitTile(exitPos)) return [];
+    const out = [];
+    const adj = getAdjacentTo(exitPos);
+    for (const p of adj) {
+        if (!p) continue;
+        if (!isExitTile(p)) continue;
+        if (!sameEdge(exitPos, p)) continue;
+        out.push(p);
+    }
+    return out;
+}
+
 
 function planSplitToGoalRoom(leader, support, goalPos, memory, movement, runtime) {
     if (!leader || !support || !goalPos) return null;
@@ -1153,7 +1258,8 @@ function planSplitToGoalRoom(leader, support, goalPos, memory, movement, runtime
         considerCreeps: true,
         ignoreCreepIds: buildIgnoreSet(leader, support),
         avoidBorders: true,
-        maxRooms: 1
+        maxRooms: 1,
+        inject: memory ? getInject(memory) : null
     };
 
     // If one is already in the goal room, DO NOT pull it out to meet the other.
@@ -1248,7 +1354,8 @@ function planSplitRegroup(leader, support, goalPos, memory, movement, runtime) {
         considerCreeps: true,
         ignoreCreepIds: buildIgnoreSet(leader, support),
         avoidBorders: true,
-        maxRooms: 1
+        maxRooms: 1,
+        inject: memory ? getInject(memory) : null
     };
 
     const leaderOnExit = isSamePos(leader.pos, leaderExit);
@@ -1452,13 +1559,16 @@ function planV3(request) {
 
     const memory = memoryKey ? getDuoMemory(memoryKey) : null;
 
+    // Purge expired local PF injections (traffic blockers etc.)
+    if (memory) purgeTempBlocks(memory);
+
     // Progress truth: advance only if actual position matched last planned-to.
     if (memory) {
         const leaderPurposes = ['travel', 'regroup_leader', 'split_goal_leader', 'split_regroup_leader'];
         const supportPurposes = ['regroup', 'split_goal_support', 'split_regroup_support'];
 
-        for (const p of leaderPurposes) tickProgress(getPathState(memory, p), posKey(leader && leader.pos), movement);
-        for (const p of supportPurposes) tickProgress(getPathState(memory, p), posKey(support && support.pos), movement);
+        for (const p of leaderPurposes) tickProgressAndInject(memory, p, leader && leader.pos, movement);
+        for (const p of supportPurposes) tickProgressAndInject(memory, p, support && support.pos, movement);
     }
 
     // Guard: missing input
@@ -1569,28 +1679,226 @@ function planV3(request) {
         };
     }
 
-    // Border handshake (same as before, but treated as a first-class mode).
-    if (goalPos.roomName !== room.name && isBorderPos(leader.pos)) {
-        const crossDir = getBorderCrossDir(leader.pos);
-        if (crossDir && support.pos.getRangeTo(leader.pos) <= 1) {
-            const supportTo = leader.pos;
-            const plan = buildMovePlan(leader, support, leader.pos, supportTo);
-            markVacating(plan, leader.pos);
-            if (isPassableForSupport(room, supportTo, leader, support, plan)) {
-                const rawStep = { leaderDir: crossDir, leaderTo: leader.pos, supportDir: support.pos.getDirectionTo(leader.pos), supportTo: leader.pos };
+    // =========================================
+    // Deterministic border protocol (fatigue-safe)
+    // =========================================
+    // Policy:
+    // 1) Stage BOTH creeps on adjacent exit tiles on the correct edge.
+    // 2) ONLY when BOTH have fatigue==0 and both are staged, cross together.
+    // This avoids split/regroup ping-pong when one creep is fatigued.
+    if (goalPos.roomName !== room.name) {
+        const ignore = buildIgnoreSet(leader, support);
+
+        // Only engage border protocol when we're actually near the border.
+        // Otherwise, normal PF travel keeps the duo cohesive while approaching the edge.
+        const borderEngage = nearBorder(leader.pos, 1) || nearBorder(support.pos, 1);
+        if (borderEngage) {
+
+        // Pick a good exit lane for the leader (prefer PF-derived).
+        let leaderExit = null;
+        if (isExitTile(leader.pos)) leaderExit = leader.pos;
+        if (!leaderExit) {
+            leaderExit = pickExitTile(room, goalPos.roomName, goalPos, {
+                fromPos: leader.pos,
+                targetPos: goalPos,
+                movement,
+                runtime,
+                ignoreCreepIds: ignore
+            });
+        }
+
+        if (leaderExit && isExitTile(leaderExit)) {
+            const crossDir = getBorderCrossDir(leaderExit);
+
+            // Choose an adjacent exit tile for support on the same edge (side-by-side staging).
+            let supportExit = null;
+            if (isExitTile(support.pos) && sameEdge(support.pos, leaderExit) && support.pos.getRangeTo(leaderExit) <= 1) {
+                // already staged / close enough
+                supportExit = support.pos;
+            } else {
+                const cand = adjacentExitCandidatesOnSameEdge(leaderExit);
+                let best = null;
+                let bestScore = Infinity;
+                for (const p of cand) {
+                    if (isSamePos(p, leaderExit)) continue;
+                    // Must be a real, valid exit tile when we have vision.
+                    if (!isValidExitTile(room, p)) continue;
+                    // Prefer tiles closer to support.
+                    const score = support.pos.getRangeTo(p) * 10 + leader.pos.getRangeTo(p);
+                    if (score < bestScore) {
+                        bestScore = score;
+                        best = p;
+                    }
+                }
+                supportExit = best || leaderExit; // fallback: docking (still protected by hygiene exception)
+            }
+
+            // === PRE-CROSS STAGING (side-by-side one tile inward) ===
+            // Goal: before stepping onto the exit line, force the pair to form up side-by-side on the
+            // "pre-cross" line (x=1/48 or y=1/48 depending on which edge). This prevents the common
+            // diagonal "one tile behind" approach and reduces conga-line crossings.
+            const origLeaderExit = leaderExit;
+            const origSupportExit = supportExit;
+
+            function inwardFromExit(exitPos) {
+                if (!exitPos) return null;
+                if (exitPos.x === 0) return new RoomPosition(1, exitPos.y, exitPos.roomName);
+                if (exitPos.x === 49) return new RoomPosition(48, exitPos.y, exitPos.roomName);
+                if (exitPos.y === 0) return new RoomPosition(exitPos.x, 1, exitPos.roomName);
+                if (exitPos.y === 49) return new RoomPosition(exitPos.x, 48, exitPos.roomName);
+                return null;
+            }
+
+            function isPreLine(pos, pre) {
+                if (!pos || !pre) return false;
+
+                // Determine pre-line orientation explicitly:
+                // - left/right edges stage on x==1 or x==48 (vertical line)
+                // - top/bottom edges stage on y==1 or y==48 (horizontal line)
+                if (pre.x === 1 || pre.x === 48) return pos.x === pre.x;
+                if (pre.y === 1 || pre.y === 48) return pos.y === pre.y;
+
+                return false;
+            }
+
+            function isSideBySideOnPreLine(a, b, pre) {
+                if (!a || !b || !pre) return false;
+                if (!isPreLine(a, pre) || !isPreLine(b, pre)) return false;
+
+                // Vertical pre-line (x fixed): side-by-side differs in y
+                if (pre.x === 1 || pre.x === 48) {
+                    return Math.abs(a.y - b.y) === 1 && a.x === b.x;
+                }
+
+                // Horizontal pre-line (y fixed): side-by-side differs in x
+                if (pre.y === 1 || pre.y === 48) {
+                    return Math.abs(a.x - b.x) === 1 && a.y === b.y;
+                }
+
+                return false;
+            }
+
+            const leaderPre = inwardFromExit(origLeaderExit);
+
+            // Only do pre-cross staging when we are in the room BEFORE crossing (goal room differs)
+            // and the leader isn't already on the exit tile. Once both are staged on exits, the
+            // existing atomic cross logic applies.
+            if (leaderPre && goalPos && goalPos.roomName !== room.name && !isExitTile(leader.pos)) {
+                const leaderOnPre = isSamePos(leader.pos, leaderPre);
+                const supportOnPre = isSamePos(support.pos, leaderPre) ? false : (isPreLine(support.pos, leaderPre));
+                const sideBySide = isSideBySideOnPreLine(leader.pos, support.pos, leaderPre);
+
+                // If not in correct pre-cross formation, stage onto pre line first.
+                if (!leaderOnPre || !supportOnPre || !sideBySide) {
+                    // Leader stages to pre-tile (one inward from exit).
+                    leaderExit = leaderPre;
+
+                    // Support stages to an adjacent tile on the same pre line (side-by-side).
+                    const candidates = getAdjacentTo(leaderPre).filter(p => {
+                        if (!p) return false;
+                        if (isExitTile(p)) return false;
+                        if (!isPreLine(p, leaderPre)) return false;
+                        // basic terrain/structure gate (PF will handle creep avoidance)
+                        const t = room.getTerrain().get(p.x, p.y);
+                        if (t === TERRAIN_MASK_WALL) return false;
+                        if (isBlockedByStructureAt(room, p)) return false;
+                        return true;
+                    });
+
+                    let bestPre = null;
+                    let bestScore = Infinity;
+                    for (const p of candidates) {
+                        const score = support.pos.getRangeTo(p) * 10 + leader.pos.getRangeTo(p);
+                        if (score < bestScore) { bestScore = score; bestPre = p; }
+                    }
+
+                    // If no valid side-by-side pre tile exists (rare narrow exit), fall back to the
+                    // original exit staging behavior (may conga) rather than deadlock.
+                    if (bestPre) supportExit = bestPre;
+                    else {
+                        leaderExit = origLeaderExit;
+                        supportExit = origSupportExit;
+                    }
+                }
+
+// If we ARE already properly staged side-by-side on the pre-line,
+// the next step is simply to move ONTO the actual exit line (x/y == 0/49).
+// Crossing happens automatically once we step onto the exit tiles.
+if (leaderPre && goalPos && goalPos.roomName !== room.name) {
+    const onPreLine = isPreLine(leader.pos, leaderPre) && isPreLine(support.pos, leaderPre);
+    const sideBySideNow = isSideBySideOnPreLine(leader.pos, support.pos, leaderPre);
+    if (onPreLine && sideBySideNow) {
+        leaderExit = origLeaderExit;
+        supportExit = origSupportExit;
+    }
+}
+
+            }
+
+            const stageOpts = {
+                considerCreeps: true,
+                ignoreCreepIds: ignore,
+                avoidBorders: false, // we WANT to step onto exits during staging
+                maxRooms: 1,
+                inject: memory ? getInject(memory) : null
+            };
+
+            const leaderStaged = isSamePos(leader.pos, leaderExit);
+            const supportStaged = isSamePos(support.pos, supportExit);
+
+            // If not staged, PF both toward their staging tiles.
+            if (!leaderStaged || !supportStaged) {
+                const l = leaderStaged
+                    ? { dir: null, to: leader.pos, ps: memory ? getPathState(memory, 'border_stage_leader') : null }
+                    : pfStepToward(memory && usePathCache ? memory : null, 'border_stage_leader', leader, leaderExit, 0, movement, runtime, stageOpts, leaderExit, false);
+
+                const s = supportStaged
+                    ? { dir: null, to: support.pos, ps: memory ? getPathState(memory, 'border_stage_support') : null }
+                    : pfStepToward(memory && usePathCache ? memory : null, 'border_stage_support', support, supportExit, 0, movement, runtime, stageOpts, supportExit, false);
+
+                // Prevent support from stepping onto leader's CURRENT tile during border staging.
+                // This avoids "support stacks onto leader then crosses" conga behavior on the pre-cross side.
+                if (!supportStaged && s && s.to && isSamePos(s.to, leader.pos)) {
+                    s.dir = null;
+                    s.to = support.pos;
+                }
+
                 return {
                     ok: true,
-                    reason: 'border-handshake',
+                    reason: 'border-stage',
                     mode: 'BORDER_HANDSHAKE',
-                    cohesive: true,
+                    cohesive: (l.to || leader.pos).getRangeTo(s.to || support.pos) <= cohesionRange,
                     sameRoom: true,
                     dist,
-                    step: applyBorderHygieneToStep(rawStep, leader, support),
+                    step: applyBorderHygieneToStep(
+                        buildStepResult(leader, support, l.to || leader.pos, s.to || support.pos),
+                        leader,
+                        support
+                    ),
                     meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath: false, pathIndex: 0, stalledTicks: 0, goalRange, goalType }
                 };
             }
+// Both staged: DO NOT issue an explicit "cross intent" (dir==crossDir with to==currentPos).
+// In Screeps, stepping ONTO x/y==0/49 already performs the room transition automatically.
+// So if we ever reach a state where both are staged and unfatigued, just HOLD and let the
+// next tick run in the destination room after the edge-step has happened.
+
+
+            // Both staged but someone is fatigued (or no cross dir): HOLD on the staging tiles.
+            return {
+                ok: true,
+                reason: 'border-stage-hold',
+                mode: 'HOLD',
+                cohesive: true,
+                sameRoom: true,
+                dist,
+                step: applyBorderHygieneToStep(buildStepResult(leader, support, leader.pos, support.pos), leader, support),
+                meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath: false, pathIndex: 0, stalledTicks: 0, goalRange, goalType }
+            };
         }
     }
+
+        }
 
     // Decide whether leader should HOLD (goal reached) or step.
     const goalReached = isGoalReached(leader.pos, { pos: goalPos, type: goalType, range: goalRange });
@@ -1601,7 +1909,8 @@ function planV3(request) {
         considerCreeps: true,
         ignoreCreepIds: buildIgnoreSet(leader, support),
         avoidBorders: movement.avoidBorders !== false,
-        maxRooms: 16
+        maxRooms: 16,
+        inject: memory ? getInject(memory) : null
     };
 
     let travelPS = memory ? getPathState(memory, 'travel') : null;
@@ -1645,21 +1954,96 @@ function planV3(request) {
         const supportTo = computeSupportCohesive(room, leader, support, leaderTo, leaderDir, formation, provisional, runtime, cohesionRange, enemyPos);
 
         if (supportTo) {
+
+// Yield-to-leader rule:
+// If the leader's intended tile is currently occupied by the support, the support MUST vacate
+// to avoid deadlocks (PF often prefers stepping "through" the support).
+// Preference order:
+//  1) Sidestep to a safe adjacent tile near the leader's intended end (NOT swap)
+//  2) Swap (support -> leader.pos) as the fallback, even if unsafe (still must be walkable)
+let desiredSupportTo = supportTo;
+
+if (!goalReached && isSamePos(leaderTo, support.pos)) {
+    // 1) Try to vacate without swapping into leader's tile.
+    const sidestepCandidates = [];
+    const adj = getAdjacentTo(leaderTo);
+    for (let i = 0; i < adj.length; i++) {
+        const p = adj[i];
+        if (!p) continue;
+
+        // must be a 1-tick move (or would be hold; but hold would deadlock)
+        if (support.pos.getRangeTo(p) > 1) continue;
+
+        // avoid swapping as "better tile"
+        if (isSamePos(p, leader.pos)) continue;
+
+        // never end on exits in cohesive mode
+        if (isExitTile(p)) continue;
+
+        // must remain within cohesion constraint relative to leaderTo
+        if (p.roomName !== leaderTo.roomName) continue;
+        if (p.getRangeTo(leaderTo) > cohesionRange) continue;
+
+        // passability with same-tick vacating/claimed rules
+        const plan = buildMovePlan(leader, support, leaderTo, p);
+        const can = isPassableForSupport(room, p, leader, support, plan);
+        if (!can) continue;
+
+        // safety: keep the usual hard safety rule for sidestep tiles
+        if (isUnsafeForSupport(room, p, runtime, { allowExit: false })) continue;
+
+        // score: prefer tiles that keep support not "more forward" than leader vs enemy ref
+        let score = 0;
+        const dIntended = p.getRangeTo(leaderTo);
+        score += dIntended * 50; // should be 1 for adjacency; keep it decisive
+
+        if (enemyPos && enemyPos.roomName === leaderTo.roomName) {
+            const dEnemySupport = p.getRangeTo(enemyPos);
+            const dEnemyLeader = leaderTo.getRangeTo(enemyPos);
+            if (dEnemySupport < dEnemyLeader) score += (dEnemyLeader - dEnemySupport) * 40;
+        }
+
+        // stable tie-break by generation order
+        score += i;
+
+        sidestepCandidates.push({ pos: p, score });
+    }
+
+    if (sidestepCandidates.length > 0) {
+        sidestepCandidates.sort((a, b) => a.score - b.score);
+        desiredSupportTo = sidestepCandidates[0].pos;
+    } else if (allowSwap) {
+        // 2) Swap fallback: support moves into leader's current tile.
+        // Allow this even if unsafe, because deadlock is worse than a 1-tick "least bad" move.
+        const swapTo = leader.pos;
+
+        // Keep basic walkability constraints.
+        const terrain = room.getTerrain().get(swapTo.x, swapTo.y);
+        const walkable = terrain !== TERRAIN_MASK_WALL && !isExitTile(swapTo) && !isBlockedByStructureAt(room, swapTo);
+
+        if (walkable) {
+            const plan = buildMovePlan(leader, support, leaderTo, swapTo);
+            if (isPassableForSupport(room, swapTo, leader, support, plan)) {
+                desiredSupportTo = swapTo;
+            }
+        }
+    }
+}
+
             // Pre-cross staging: if leaderTo is an edge tile for next room, force support to trail into leader.pos.
             if (needsPreCrossStaging(room.name, goalPos, leaderTo)) {
                 if (support.pos.getRangeTo(leader.pos) <= 1) {
                     const trailPlan = buildMovePlan(leader, support, leaderTo, leader.pos);
                     if (isPassableForSupport(room, leader.pos, leader, support, trailPlan)) {
                         // override supportTo (trail)
-                        // eslint-disable-next-line no-unused-vars
-                        const _ = 0;
+                        desiredSupportTo = leader.pos;
                     }
                 }
             }
 
             const finalSupportTo = (needsPreCrossStaging(room.name, goalPos, leaderTo) && support.pos.getRangeTo(leader.pos) <= 1)
                 ? leader.pos
-                : supportTo;
+                : desiredSupportTo;
 
             const movePlan = buildMovePlan(leader, support, leaderTo, finalSupportTo);
 
@@ -1707,7 +2091,8 @@ function planV3(request) {
             ignoreCreepIds: buildIgnoreSet(leader, support),
             vacatingPosKeys: provisional.vacating,
             avoidBorders: true,
-            maxRooms: 1
+            maxRooms: 1,
+            inject: memory ? getInject(memory) : null
         };
 
         // Leader step toward meetPos (range 0 if not already there)
@@ -1722,33 +2107,39 @@ function planV3(request) {
         let leaderToR = lStep.to || leader.pos;
         let supportToR = sStep.to || support.pos;
 
-        // REGROUP robustness: anchor the leader by default.
-        // The leader only moves when it is required (leader tile unsafe for support) or when they are far apart.
-        const leaderUnsafeForSupport = isUnsafeForSupport(room, leader.pos, runtime, { allowExit: false });
-        let allowLeaderMoveInRegroup = (leaderUnsafeForSupport && !isSamePos(meetPos, leader.pos)) || (dist > (cohesionRange + 2));
+        // REGROUP convergence: both creeps PF toward meetPos to re-form quickly.
+// We keep one small guard: if the leader's planned step would *increase* separation
+// relative to the support's planned end, prefer holding the leader (prevents "running away").
+//
+// NOTE: border hygiene is still enforced later by applyBorderHygieneToStep(...).
+try {
+    if (leaderToR && supportToR && leaderToR.getRangeTo(supportToR) > leader.pos.getRangeTo(supportToR)) {
+        leaderToR = leader.pos;
+    }
+} catch (e) {
+    leaderToR = leader.pos;
+}
 
-        if (!allowLeaderMoveInRegroup) {
-            leaderToR = leader.pos;
-        } else {
-            // Never let the leader step increase separation vs the support's intended step.
-            try {
-                if (leaderToR && supportToR && leaderToR.getRangeTo(supportToR) > leader.pos.getRangeTo(supportToR)) {
-                    leaderToR = leader.pos;
-                }
-            } catch (e) {
-                leaderToR = leader.pos;
-            }
-        }
+// Fail-safe: prevent illegal stacking.
+// Prefer letting the leader advance while the support HOLDS (faster convergence),
+// but never allow the leader to step onto a non-vacating support tile unless it's a swap.
+let swapAllowed = allowSwap && isSamePos(leaderToR, support.pos) && isSamePos(supportToR, leader.pos);
+if (isSamePos(leaderToR, supportToR) && !swapAllowed) {
+    // If both planned to end on the same tile, try holding support first.
+    if (!isSamePos(leaderToR, support.pos)) {
+        supportToR = support.pos;
+    } else {
+        // leaderToR is support.pos (leader trying to step onto support while support also goes there) -> full hold.
+        leaderToR = leader.pos;
+        supportToR = support.pos;
+    }
+}
 
-        // Fail-safe: never half-move into collision.
-        const movePlan = buildMovePlan(leader, support, leaderToR, supportToR);
-        const swapAllowed = allowSwap && isSamePos(leaderToR, support.pos) && isSamePos(supportToR, leader.pos);
-        if (isSamePos(leaderToR, supportToR) && !swapAllowed) {
-            leaderToR = leader.pos;
-            supportToR = support.pos;
-        }
+// Build plan AFTER any adjustments.
+const movePlan = buildMovePlan(leader, support, leaderToR, supportToR);
+swapAllowed = allowSwap && isSamePos(leaderToR, support.pos) && isSamePos(supportToR, leader.pos);
 
-        // If regroup still can't produce a legal move, both hold.
+// If regroup still can't produce a legal move, both hold.
         const okLeader = isSamePos(leaderToR, leader.pos) || isPassableForLeader(room, leaderToR, leader, support, movePlan);
         const okSupport = isSamePos(supportToR, support.pos) || isPassableForSupport(room, supportToR, leader, support, movePlan);
 

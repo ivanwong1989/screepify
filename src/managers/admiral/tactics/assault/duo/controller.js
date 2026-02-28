@@ -7,9 +7,10 @@ const actionPlan = require('managers_admiral_tactics_assault_duo_actionPlan');
 const duoPlanner = require('managers_admiral_tactics_assault_duo_duoPlanner_duoPlanner');
 const duoTactics = require('managers_admiral_tactics_assault_duo_duoTactics');
 const threatEval = require('managers_admiral_tactics_assault_common_threat');
+const boostGate = require('managers_admiral_tactics_boostgate_boostGate');
 
-const RETREAT_AT = 0.3;
-const REENGAGE_AT = 0.7;
+const RETREAT_AT = 0.6;
+const REENGAGE_AT = 0.95;
 const COHESION_RANGE = 1;
 
 
@@ -135,17 +136,89 @@ function advanceWaypoint(runtime, leader, support, waypoints) {
     }
 }
 
-function getRouteTarget(runtime, flags, ao) {
-    if (runtime.phase === 'ASSEMBLE') return flags.assemblyPos || flags.waitPos || ao.centerPos;
+function getHoldWaypoint(runtime, flags, ao) {
+    const waypoints = (flags && flags.waypointPositions) ? flags.waypointPositions : [];
+    if (!Array.isArray(waypoints) || waypoints.length === 0) {
+        return (flags && (flags.assemblyPos || flags.waitPos)) || (ao && ao.centerPos) || null;
+    }
+
+    // waypointIndex is the "next" waypoint we are trying to reach.
+    // If the waypoint list shrinks (e.g. A / later W<N> flags removed),
+    // clamp to the last existing waypoint so we HOLD at the latest known waypoint
+    // instead of snapping all the way back to W/assembly.
+    let idx = Number(runtime && runtime.route && runtime.route.waypointIndex);
+    if (!Number.isFinite(idx) || idx < 0) idx = 0;
+    if (idx >= waypoints.length) idx = waypoints.length - 1;
+
+    return waypoints[idx];
+}
+
+
+function getRetreatWaypoint(runtime, flags, ao) {
+    const waypoints = (flags && flags.waypointPositions) ? flags.waypointPositions : [];
+    if (!Array.isArray(waypoints) || waypoints.length === 0) return null;
+
+    // waypointIndex is the "next" waypoint we are trying to reach.
+    // So the last reached waypoint is waypointIndex - 1 (clamped).
+    let idx = Number(runtime && runtime.route && runtime.route.waypointIndex);
+    if (!Number.isFinite(idx) || idx <= 0) return waypoints[0];
+
+    idx = Math.min(idx - 1, waypoints.length - 1);
+    return waypoints[idx];
+}
+
+
+function getRouteTarget(runtime, flags, ao, hasAttackDirective) {
+    if (runtime.phase === 'ASSEMBLE') return flags.assemblyPos || flags.waitPos || (ao && ao.centerPos);
+
     if (runtime.phase === 'ROUTE') {
         const waypoints = flags.waypointPositions || [];
-        const index = Number(runtime.route && runtime.route.waypointIndex) || 0;
+        let index = Number(runtime.route && runtime.route.waypointIndex);
+        if (!Number.isFinite(index) || index < 0) index = 0;
+
+        // If waypoint list has shrunk (e.g. removed higher W<N> or A),
+        // clamp to the last waypoint and HOLD there.
+        if (index >= waypoints.length && waypoints.length > 0) {
+            return getHoldWaypoint(runtime, flags, ao);
+        }
+
         if (waypoints[index]) return waypoints[index];
-        return flags.attackPos || ao.centerPos;
+
+        // If there is an attack directive, we can proceed to attackPos/center.
+        if (hasAttackDirective) return flags.attackPos || (ao && ao.centerPos);
+
+        // Otherwise, hold at the latest waypoint instead of returning to W/assembly.
+        return getHoldWaypoint(runtime, flags, ao);
     }
-    if (runtime.phase === 'ENGAGE') return flags.attackPos || ao.centerPos;
-    if (runtime.phase === 'RETREAT') return flags.waitPos || flags.assemblyPos || ao.centerPos;
-    return flags.waitPos || ao.centerPos;
+
+    if (runtime.phase === 'ENGAGE') {
+        // If the attack directive disappears mid-run, HOLD at latest waypoint (if any)
+        // rather than snapping back to assembly.
+        if (!hasAttackDirective) return getHoldWaypoint(runtime, flags, ao);
+        return flags.attackPos || (ao && ao.centerPos);
+    }
+
+    if (runtime.phase === 'RETREAT') {
+        const waypoints = flags.waypointPositions || [];
+
+        if (Array.isArray(waypoints) && waypoints.length > 0) {
+            let idx = Number(runtime.route && runtime.route.waypointIndex);
+
+            if (!Number.isFinite(idx) || idx <= 0) {
+                // Never reached first waypoint → fall back to first waypoint
+                return waypoints[0];
+            }
+
+            // Retreat to last reached waypoint
+            idx = Math.min(idx - 1, waypoints.length - 1);
+            return waypoints[idx];
+        }
+
+        // No waypoints defined → fallback to wait/assembly
+        return flags.waitPos || flags.assemblyPos || (ao && ao.centerPos);
+    }
+
+    return flags.waitPos || (ao && ao.centerPos);
 }
 
 function computeRegroup(leader, support, cohesionRange) {
@@ -171,11 +244,21 @@ function handleWipe(runtime, leader, support, now) {
     return { reset: false };
 }
 
-function shouldExitRetreat(runtime, leader, support, flags) {
+function shouldExitRetreat(runtime, leader, support, flags, ao) {
     if (!leader || !support) return false;
     if (!shouldReengage(leader) || !shouldReengage(support)) return false;
+
+    // ✅ Exit RETREAT once healed AND back at the retreat destination (latest reached waypoint).
+    // This prevents "healed at waypoint but never exits" when waitPos (W) is far away.
+    const rp = getRetreatWaypoint(runtime, flags, ao);
+    if (rp) {
+        return leader.pos.inRangeTo(rp.x, rp.y, 2) && support.pos.inRangeTo(rp.x, rp.y, 2);
+    }
+
+    // Fallback: legacy behavior (waitPos / assembly).
     if (!flags.waitPos) return true;
-    return leader.pos.inRangeTo(flags.waitPos.x, flags.waitPos.y, 2) && support.pos.inRangeTo(flags.waitPos.x, flags.waitPos.y, 2);
+    return leader.pos.inRangeTo(flags.waitPos.x, flags.waitPos.y, 2) &&
+           support.pos.inRangeTo(flags.waitPos.x, flags.waitPos.y, 2);
 }
 
 function toRoomPos(p) {
@@ -256,6 +339,54 @@ function planForPair(mission, leaderInput, supportInput, context) {
         logDuo(runtime, mission, `wipe=reset at=${now}`);
     }
 
+    // ====================
+    // 🚪 BOOST GATE (Pre-Assembly / Pre-Combat)
+    // ====================
+    const squadKey = mission && mission.data && mission.data.squadKey;
+
+    // Only run boostGate if squadKey exists (same contract as solo).
+    // If boosting is active, boostGate will issue creep.moveTo(...) itself,
+    // and we must NOT run assembly/route/engage logic this tick.
+    if (squadKey) {
+        let leaderOk = true;
+        let supportOk = true;
+
+        if (leader) leaderOk = boostGate.runBoostGate(leader, squadKey);
+        if (support) supportOk = boostGate.runBoostGate(support, squadKey);
+
+        if (!leaderOk || !supportOk) {
+            const dbg = runtime.debug || (runtime.debug = {});
+            if (!dbg.lastBoostBlockAt || (now - dbg.lastBoostBlockAt) >= 5) {
+                logDuo(runtime, mission,
+                    `boostGate blocking; squadKey=${squadKey} ` +
+                    `L=${leader ? (leaderOk ? 'ok' : 'block') : 'null'} ` +
+                    `S=${support ? (supportOk ? 'ok' : 'block') : 'null'}`
+                );
+                dbg.lastBoostBlockAt = now;
+            }
+
+            // While boosting:
+            // - Do NOT let the mission progress phases / waypoints / combat.
+            // - Spawn policy: allow spawning only if the pair is incomplete.
+            if (runtime && runtime.spawn) {
+                runtime.spawn.allow = !(leader && support);
+                runtime.spawn.lastAllowAt = now;
+            }
+
+            // Keep it in a safe "pre-assembled" phase.
+            if (!runtime.assembled || !runtime.assembled.done) {
+                runtime.phase = 'ASSEMBLE';
+            }
+
+            return {
+                leaderTask: null,
+                supportTask: null,
+                runtime,
+                debug: runtime.debug || {}
+            };
+        }
+    }    
+
     runtime.squad.leaderId = leader ? leader.id : null;
     runtime.squad.supportId = support ? support.id : null;
 
@@ -266,7 +397,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
             runtime.assembled.pos = flags.assemblyPos ? { x: flags.assemblyPos.x, y: flags.assemblyPos.y, roomName: flags.assemblyPos.roomName } : null;
             runtime.spawn.allow = false;
             runtime.spawn.lastAllowAt = now;
-            runtime.phase = (flags.waypointPositions && flags.waypointPositions.length > 0) ? 'ROUTE' : 'ENGAGE';
+            runtime.phase = (flags.waypointPositions && flags.waypointPositions.length > 0) ? 'ROUTE' : (hasAttackDirective ? 'ENGAGE' : 'ROUTE');
             logDuo(runtime, mission, `assembled=1 at=${now} pos=${formatPos(flags.assemblyPos)} phase=${runtime.phase}`);
         } else {
             runtime.phase = 'ASSEMBLE';
@@ -276,42 +407,32 @@ function planForPair(mission, leaderInput, supportInput, context) {
     } else {
         runtime.spawn.allow = false;
         if (runtime.phase === 'ASSEMBLE') {
-            runtime.phase = (flags.waypointPositions && flags.waypointPositions.length > 0) ? 'ROUTE' : 'ENGAGE';
+            runtime.phase = (flags.waypointPositions && flags.waypointPositions.length > 0) ? 'ROUTE' : (hasAttackDirective ? 'ENGAGE' : 'ROUTE');
         }
     }
 
     if (runtime.assembled.done) {
         if (runtime.phase !== 'RETREAT' && (shouldRetreat(leader) || shouldRetreat(support))) {
             runtime.phase = 'RETREAT';
-        } else if (runtime.phase === 'RETREAT' && shouldExitRetreat(runtime, leader, support, flags)) {
-            runtime.phase = (flags.waypointPositions && flags.waypointPositions.length > 0) ? 'ROUTE' : 'ENGAGE';
+        } else if (runtime.phase === 'RETREAT' && shouldExitRetreat(runtime, leader, support, flags, ao)) {
+            runtime.phase = (flags.waypointPositions && flags.waypointPositions.length > 0) ? 'ROUTE' : (hasAttackDirective ? 'ENGAGE' : 'ROUTE');
         }
     }
 
     const threat = threatEval.evaluateThreat(leader, support);
-    // baseline cohesion from tuning; fallback = COHESION_RANGE
-    let cohesionRange = tunedNumber('supportRange', COHESION_RANGE, 1, 3);
-    let splitRetreat = false;
-    if (runtime.phase === 'RETREAT' || (threat && threat.level >= 2)) {
-        cohesionRange = 3;
-    }
-    if (runtime.phase === 'RETREAT' && (shouldRetreat(leader) || shouldRetreat(support)) && threat && threat.level >= 2) {
-        cohesionRange = 999;
-        splitRetreat = true;
-    }
-    if (runtime.phase === 'ASSEMBLE' || runtime.phase === 'ROUTE') {
-        cohesionRange = tunedNumber('supportRange', COHESION_RANGE, 1, 3);
-        splitRetreat = false;
-    }
-
-    let baseRegroup = false;
+    // Simplified doctrine:
+    // 1) Always stay together (adjacent)
+    // 2) If not together, regroup
+    // No allowSplit / split-retreat behavior.
+    const cohesionRange = COHESION_RANGE;
+let baseRegroup = false;
     if (runtime.assembled.done && (!leader || !support)) {
         runtime.phase = 'RETREAT';
         baseRegroup = false;
     } else {
         baseRegroup = computeRegroup(leader, support, cohesionRange);
     }
-    const strictBroken = leader && support && leader.room.name === support.room.name && leader.pos.getRangeTo(support.pos) > 1 && !splitRetreat;
+    const strictBroken = leader && support && leader.room.name === support.room.name && leader.pos.getRangeTo(support.pos) > 1;
     if (strictBroken) baseRegroup = true;
 
     if (runtime.assembled.done) {
@@ -321,7 +442,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
             }
             const index = Number(runtime.route && runtime.route.waypointIndex) || 0;
             if (index >= (flags.waypointPositions || []).length) {
-                runtime.phase = 'ENGAGE';
+                runtime.phase = hasAttackDirective ? 'ENGAGE' : 'ROUTE';
             }
         }
     }
@@ -330,7 +451,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
         logDuo(runtime, mission, `phase=${prevPhase}->${runtime.phase} leader=${formatCreep(leader)} support=${formatCreep(support)}`);
     }
 
-    const routeTarget = getRouteTarget(runtime, flags, ao);
+    const routeTarget = getRouteTarget(runtime, flags, ao, hasAttackDirective);
     const rallyPos = flags.assemblyPos || flags.waitPos || routeTarget;
 
     const engageActor = leader || support;
@@ -341,10 +462,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
             ? engage.selectTarget(engageActor, flags, ao)
             : null;
 
-    // If leader is in immediate melee contact, allow temporary split movement so it can break contact
-    // while support catches up. This prevents 'leader pinned beside enemy while regroup forces HOLD'.
-    const inMeleeDanger = !!(target && leader && leader.pos && leader.pos.getRangeTo(target) <= 1);
-    if (inMeleeDanger) splitRetreat = true;
+    // If leader is in immediate melee contact, this is handled by tactics/anchor.
 
     // Decide combat intent (basic plug, used for logging/telemetry)
     const intent = decideCombatIntent(runtime, leader, support, target, ao);
@@ -353,8 +471,16 @@ function planForPair(mission, leaderInput, supportInput, context) {
     let goalPos = routeTarget;
     let goalRange = 1;
 
-    if (runtime.phase === 'ENGAGE') {
-        const tactical = duoTactics.decideAnchor(
+    let tactical = null;
+    // If ENGAGE goal is in another room, we are still effectively traveling.
+    // Do NOT run tactical anchoring until we're inside the AO/attack room; otherwise it can "hold" in the assembly room.
+    const engageInAORoom = (runtime.phase === 'ENGAGE') && leader && (
+        (ao && ao.targetRoom && leader.room && leader.room.name === ao.targetRoom) ||
+        (flags && flags.attackPos && leader.room && leader.room.name === flags.attackPos.roomName)
+    );
+
+    if (runtime.phase === 'ENGAGE' && engageInAORoom && target) {
+        tactical = duoTactics.decideAnchor(
             leader,
             support,
             runtime,
@@ -362,8 +488,13 @@ function planForPair(mission, leaderInput, supportInput, context) {
             ao,
             target,
             {
+                // Stable per-mission key for duoTactics caches (works even across respawns).
+                duoKey: String(runtimeKey),
                 holdCenterRange: tunedNumber('holdCenterRange', 1, 0, 3),
-                preferRoads: true
+                preferRoads: true,
+                // Debug anchor selection to diagnose movement oddities.
+                debug: true,
+                logDuo: true
             }
         );
 
@@ -384,7 +515,30 @@ function planForPair(mission, leaderInput, supportInput, context) {
         }
     }
 
+    const tacticalAnchor = (runtime.phase === 'ENGAGE' && typeof tactical !== 'undefined' && tactical && tactical.anchorPos)
+        ? formatPos(tactical.anchorPos)
+        : 'n/a';
+    const tacticalRange = (runtime.phase === 'ENGAGE' && typeof tactical !== 'undefined' && tactical && Number.isFinite(tactical.range))
+        ? tactical.range
+        : 'n/a';
+    const tacticalReason = (runtime.phase === 'ENGAGE' && typeof tactical !== 'undefined' && tactical && tactical.reason)
+        ? tactical.reason
+        : 'n/a';
+    const tacticalSupportHint = (runtime.phase === 'ENGAGE' && typeof tactical !== 'undefined' && tactical && tactical.supportHintPos)
+        ? formatPos(tactical.supportHintPos)
+        : 'n/a';
+    if (runtime && runtime.debug) {
+        runtime.debug.tactical = {
+            anchorPos: tacticalAnchor,
+            range: tacticalRange,
+            reason: tacticalReason,
+            supportHintPos: tacticalSupportHint
+        };
+    }
+
     // Pass the chosen goal into planner
+    const travelSupportMode = ((runtime.phase !== 'ENGAGE') || !engageInAORoom) ? 'trail' : 'auto';
+
     const move = duoPlanner.plan({
         leader,
         support,
@@ -398,18 +552,27 @@ function planForPair(mission, leaderInput, supportInput, context) {
             cohesionRange,
             anchor: 'leader',
             supportOffset: 'auto',
-            allowSwap: true
+            travelSupportMode
         },
         movement: {
-            allowSplit: splitRetreat,
-            usePathCache: true,
+            
+            // ---- Travel behaviour ----
+            usePathCache: (runtime.phase !== 'ENGAGE') || !engageInAORoom,
             pathReuseTicks: 25,
             stallRepathTicks: 2,
-            preferRoads: true
+            preferRoads: (runtime.phase !== 'ENGAGE') || !engageInAORoom,
+
+            // ---- Combat behaviour ----
+            combat: (runtime.phase === 'ENGAGE') && engageInAORoom,
+            combatMagnet: (runtime.phase === 'ENGAGE') && engageInAORoom,
+            combatFreshPF: (runtime.phase === 'ENGAGE') && engageInAORoom
         },
         runtime: {
             roomCallback: runtime.roomCallback || null
         },
+
+        enemyPos: target ? target.pos : null,
+
         debug: true
     });
 
@@ -531,7 +694,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
         logDuo(
             runtime,
             mission,
-            `phase=${runtime.phase} mode=${mode} allowStep=${allowStep} assembled=${runtime.assembled.done ? 1 : 0} spawnAllow=${runtime.spawn.allow ? 1 : 0} cohesive=${cohesive} dist=${dist} regroup=${runtime.regroup ? 1 : 0} hasTargetPos=${hasTargetPos} hasRouteTarget=${hasRouteTarget} predSep=${predictedSeparation} suppress=${suppressCombat} Lfat=${lfat} Sfat=${sfat} Lnext=${formatPos(leaderNext)} Snext=${formatPos(supportNext)} spin=${spinCount} rally=${formatPos(rallyPos)} routeTarget=${formatPos(routeTarget)} goal=${goalLabel} intent=${intentLabel} waypoint=${waypointIndex}/${waypoints.length} leader=${formatCreep(leader)} support=${formatCreep(support)} target=${targetLabel} rej=${rej} reason=${reason} who=${who}`
+            `phase=${runtime.phase} mode=${mode} allowStep=${allowStep} assembled=${runtime.assembled.done ? 1 : 0} spawnAllow=${runtime.spawn.allow ? 1 : 0} cohesive=${cohesive} dist=${dist} regroup=${runtime.regroup ? 1 : 0} hasTargetPos=${hasTargetPos} hasRouteTarget=${hasRouteTarget} predSep=${predictedSeparation} suppress=${suppressCombat} Lfat=${lfat} Sfat=${sfat} Lnext=${formatPos(leaderNext)} Snext=${formatPos(supportNext)} spin=${spinCount} rally=${formatPos(rallyPos)} routeTarget=${formatPos(routeTarget)} goal=${goalLabel} intent=${intentLabel} tactical=${tacticalAnchor} tRange=${tacticalRange} tReason=${tacticalReason} tHint=${tacticalSupportHint} waypoint=${waypointIndex}/${waypoints.length} leader=${formatCreep(leader)} support=${formatCreep(support)} target=${targetLabel} rej=${rej} reason=${reason} who=${who}`
         );
     }
 

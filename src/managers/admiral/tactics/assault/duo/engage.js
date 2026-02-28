@@ -21,6 +21,11 @@ function inAO(pos, ao) {
 function selectTarget(creep, flags, ao) {
     if (!creep || !creep.room) return null;
 
+    // HARD AO ROOM GATE
+    if (ao && ao.centerPos && creep.room.name !== ao.centerPos.roomName) {
+        return null;
+    }
+    
     const hostiles = getHostilesInRoom(creep.room).filter(h => inAO(h.pos, ao));
     if (hostiles.length > 0) {
         return creep.pos.findClosestByRange(hostiles);

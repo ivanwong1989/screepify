@@ -51,6 +51,12 @@ function getEngageContext(creep, flags, ao, debugOut) {
         return ctx;
     }
 
+    // ✅ HARD AO ROOM GATE (prevents “fight in wrong room”)
+    if (ao && ao.centerPos && ao.centerPos.roomName && creep.room.name !== ao.centerPos.roomName) {
+        debug.reason = 'outside-ao-room';
+        return ctx; // target stays null, caller will keep moving by route/ao rules
+    }
+ 
     // Hostile creeps (AO-bounded)
     const hostiles = getHostilesInRoom(creep.room).filter(h => inAO(h.pos, ao));
     ctx.hostiles = hostiles;

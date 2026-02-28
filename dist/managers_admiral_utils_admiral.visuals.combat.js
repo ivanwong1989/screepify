@@ -3,7 +3,13 @@
  *
  * Usage:
  *   const combatVis = require('managers_admiral_visuals_admiral.visuals.combat');
- *   combatVis.drawCombatMatrix(room, roomCallback, { step: 1, minCost: 20 });
+ *   combatVis.drawCombatMatrix(room, roomCallback, {
+ *     step: 1,
+ *     minCost: 20,
+ *     showLowNumbers: true,
+ *     lowNumberThreshold: 3,
+ *     anchorPositions: [{ roomName:'W8N3', x:13, y:16, kind:'duo', label:'W' }]
+ *   });
  */
 
 function colorForCost(c) {
@@ -27,6 +33,7 @@ function drawLegend(vis, x, y) {
         '>=80 orange',
         '>=45 yellow',
         '>=20 green',
+        '>=3  light-green #',
         '255 impassable'
     ];
     for (let i = 0; i < lines.length; i++) {
@@ -40,11 +47,34 @@ function drawLegend(vis, x, y) {
     }
 }
 
+function normalizeAnchor(a, roomName) {
+    if (!a) return null;
+    const rn = a.roomName || (a.room && a.room.name) || roomName;
+    if (rn !== roomName) return null;
+    const x = a.x, y = a.y;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (x < 0 || x > 49 || y < 0 || y > 49) return null;
+    return {
+        roomName: rn,
+        x: Math.floor(x),
+        y: Math.floor(y),
+        kind: a.kind || 'anchor',
+        label: a.label || null
+    };
+}
+
+function styleForAnchor(kind) {
+    // distinct “special color” per kind
+    if (kind === 'solo') return { stroke: '#ff4dff', text: '#ff4dff', glyph: '◆' }; // magenta diamond
+    if (kind === 'duo')  return { stroke: '#00e5ff', text: '#00e5ff', glyph: '★' }; // cyan star
+    return { stroke: '#ffffff', text: '#ffffff', glyph: '■' };
+}
+
 function drawCombatMatrix(room, roomCallback, opts) {
     if (!room || !roomCallback) return;
 
     const {
-        // step=1 harcoded to avoid visual bug
+        // step=1 hardcoded to avoid visual bug
         step = 1,
         // ignore low costs so it’s readable
         minCost = 20,
@@ -54,6 +84,14 @@ function drawCombatMatrix(room, roomCallback, opts) {
         showNumbers = false,
         // only show numbers when >= this
         numberThreshold = 120,
+
+        // NEW: mild danger numbers (>=3 by default, i.e. “above 2”)
+        showLowNumbers = true,
+        lowNumberThreshold = 3,
+
+        // NEW: allow multiple anchors
+        // [{roomName,x,y,kind:'solo'|'duo'|'anchor',label?:string}]
+        anchorPositions = null,
     } = opts || {};
 
     // hard clamp: combat matrix must be tile-accurate
@@ -63,7 +101,6 @@ function drawCombatMatrix(room, roomCallback, opts) {
     if (!costs) return;
 
     const vis = new RoomVisual(room.name);
-
     if (legend) drawLegend(vis, 1, 1);
 
     for (let x = 0; x < 50; x += step) {
@@ -74,23 +111,70 @@ function drawCombatMatrix(room, roomCallback, opts) {
 
             const c = costs.get(sx, sy);
 
-            if (c < minCost && c !== 255) continue;
+            // Main heat layer (>= minCost)
+            if (c >= minCost || c === 255) {
+                const style = colorForCost(c);
+                if (style) {
+                    vis.rect(x - 0.5, y - 0.5, step, step, {
+                        fill: style.fill,
+                        opacity: style.opacity,
+                        stroke: undefined
+                    });
+                }
+            }
 
-            const style = colorForCost(c);
-            if (!style) continue;
+            // NEW: light-green numbers for mild danger, even below minCost
+            if (showLowNumbers && c !== 255 && c >= lowNumberThreshold && c < minCost) {
+                vis.text(String(c), sx, sy + 0.15, {
+                    font: 0.32,
+                    opacity: 0.55,
+                    color: '#b6ffb6', // super light green
+                    stroke: '#000000',
+                    strokeWidth: 0.10
+                });
+            }
 
-            vis.rect(x - 0.5, y - 0.5, step, step, {
-                fill: style.fill,
-                opacity: style.opacity,
-                stroke: undefined
-            });
-
+            // Existing: heavy numbers for high danger
             if (showNumbers && c >= numberThreshold && c !== 255) {
-                // put number near the sampled center too
                 vis.text(String(c), sx, sy + 0.15, {
                     font: 0.35,
                     opacity: 0.9,
                     color: '#ffffff',
+                    stroke: '#000000',
+                    strokeWidth: 0.12
+                });
+            }
+        }
+    }
+
+    // NEW: highlight anchors
+    if (Array.isArray(anchorPositions) && anchorPositions.length) {
+        for (const raw of anchorPositions) {
+            const a = normalizeAnchor(raw, room.name);
+            if (!a) continue;
+
+            const st = styleForAnchor(a.kind);
+
+            vis.rect(a.x - 0.5, a.y - 0.5, 1, 1, {
+                fill: undefined,
+                stroke: st.stroke,
+                strokeWidth: 0.18,
+                opacity: 0.95
+            });
+
+            vis.text(st.glyph, a.x, a.y + 0.2, {
+                font: 0.55,
+                opacity: 0.9,
+                color: st.text,
+                stroke: '#000000',
+                strokeWidth: 0.12
+            });
+
+            if (a.label) {
+                vis.text(String(a.label), a.x, a.y - 0.25, {
+                    font: 0.35,
+                    opacity: 0.85,
+                    color: st.text,
                     stroke: '#000000',
                     strokeWidth: 0.12
                 });
