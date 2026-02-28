@@ -31,25 +31,30 @@ function ensureSoloAssembleState(runtime) {
 function isSoloAssembled(creep, flags) {
     if (!creep) return false;
 
-    // Prefer assemblyPos if present, else waitPos (W)
-    const p = flags && (flags.assemblyPos || flags.waitPos);
+    // ✅ If you have explicit assemblyPos, use it.
+    // ✅ Else, treat the LAST waypoint as the effective assembly/stage target.
+    // ✅ Else, fall back to waitPos (W).
+    const wps = (flags && flags.waypointPositions) ? flags.waypointPositions : [];
+    const lastWp = Array.isArray(wps) && wps.length > 0 ? wps[wps.length - 1] : null;
+
+    const p = flags && (flags.assemblyPos || lastWp || flags.waitPos);
     if (!p) return false;
 
-    // Match duo-ish semantics: "arrived" within range 1
     return creep.room.name === p.roomName && creep.pos.inRangeTo(p.x, p.y, 1);
 }
 
 function getSoloAssembleTarget(flags) {
     // Strict preference order during assemble:
-    // 1) assemblyPos (Y, if you use it)
-    // 2) waitPos (W)
-    // 3) first waypoint (if any)
-    // (avoid ao.centerPos here; that often points at A)
+    // 1) assemblyPos (Y)
+    // 2) first waypoint (W1)  ✅ so we actually walk the chain
+    // 3) waitPos (W)
     if (!flags) return null;
     if (flags.assemblyPos) return flags.assemblyPos;
-    if (flags.waitPos) return flags.waitPos;
+
     const wps = flags.waypointPositions || [];
     if (wps[0]) return wps[0];
+
+    if (flags.waitPos) return flags.waitPos;
     return null;
 }
 
