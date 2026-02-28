@@ -59,10 +59,6 @@ function planLeader(creep, runtime, target, routeTarget, options) {
     const opts = options || {};
     let moveTarget = opts.moveTarget || routeTarget;
     let range = opts.range || 1;
-    if (!opts.moveTarget && runtime.phase === 'ENGAGE' && target) {
-        moveTarget = target.pos;
-        range = creep.getActiveBodyparts(RANGED_ATTACK) > 0 ? 3 : 1;
-    }
     return {
         moveTarget: moveTarget ? { x: moveTarget.x, y: moveTarget.y, roomName: moveTarget.roomName } : null,
         range,

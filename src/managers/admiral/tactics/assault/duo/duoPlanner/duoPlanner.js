@@ -292,126 +292,128 @@ function getCombatMatrix(runtime, roomName) {
     }
 }
 
-function computeSupportTo(room, leader, support, leaderTo, leaderDir, formation, movePlan, runtime) {
+function isUnsafeForSupport(room, pos, runtime, opts = {}) {
+    if (!room || !pos) return true;
+    // Exit tiles are considered unsafe unless explicitly allowed (cross/handshake).
+    if (!opts.allowExit && isExitTile(pos)) return true;
+
+    const combatMatrix = getCombatMatrix(runtime, room.name);
+    if (!combatMatrix) return false; // no intel; don't hard-block
+
+    const c = readMatrixCost(combatMatrix, pos.x, pos.y);
+    if (!Number.isFinite(c)) return false;
+    // Convention used elsewhere in your overlays:
+    // - 255 is unwalkable
+    // - >=60 is "melee-ish / lethal-ish"
+    // - >=40 is "ranged danger band"
+    if (c >= 255) return true;
+    if (c >= 60) return true;
+    return false;
+}
+
+function computeSupportCohesive(room, leader, support, leaderTo, leaderDir, formation, movePlan, runtime, cohesionRange, enemyPos) {
     if (!room || !leader || !support || !leaderTo) return null;
 
-    // If no combat matrix is available, keep legacy behaviour (stable + cheap).
-    const combatMatrix = getCombatMatrix(runtime, room.name);
-    const useCombat = !!combatMatrix;
-
-    const leaderToCombatCost = useCombat ? readMatrixCost(combatMatrix, leaderTo.x, leaderTo.y) : 0;
-
-    const offset = formation && formation.supportOffset ? formation.supportOffset : 'auto';
-    let preferredDirs = pickSupportOffsets(leaderDir, offset);
-
-    // Preserve your "tight corridors" heuristic for auto offset
-    if (offset === 'auto') {
-        let passableAdj = 0;
-        for (const dir of DIRS) {
-            const pos = dirToPos(leaderTo, dir);
-            if (!pos) continue;
-            if (isPassableForSupport(room, pos, leader, support, movePlan)) passableAdj += 1;
-        }
-        if (passableAdj <= 2) {
-            preferredDirs = [OPPOSITE_DIR[leaderDir]];
-        }
-    }
-
-    // Score candidates instead of picking first-passable.
-    // Lower score wins. We only use combat scoring if we have a matrix.
-    //
-    // ✅ IMPORTANT: Cohesion is enforced later by isCohesionOk(leaderTo, supportTo, ...)
-    // so here we just pick the best adjacent tile that is passable.
+    const rangeMax = Number.isFinite(cohesionRange) ? cohesionRange : COHESION_RANGE;
+    const preferred = Math.min(
+        rangeMax,
+        Number.isFinite(formation && formation.preferredCohesionRange)
+            ? formation.preferredCohesionRange
+            : 1
+    );
     const candidates = [];
-    // Heuristic thresholds (based on combatMatrix defaults)
-    // - rangedMinCostFar ~ 40 (range-3 edge)
-    // - meleeMinCost ~ 60
-    // If we have any tiles safer than these, we won't step into the danger band.
-    const RANGED_DANGER_COST = 40;
-    const MELEE_DANGER_COST = 60;
 
-    function consider(pos, preferencePenalty, extraPenalty = 0) {
-        if (!pos) return;
+    function hardReject(pos) {
+        if (!pos) return true;
+        // one-tick step only (or hold)
+        if (support.pos.getRangeTo(pos) > 1) return true;
 
-        // ✅ NEW: support must be able to reach supportTo in ONE tick
-        // (otherwise support.move(dir) will NOT land on supportTo)
-        const stepRange = support.pos.getRangeTo(pos);
-        if (stepRange > 1) return;          // cannot reach in one move
-        // optionally: allow staying put if already on it (range==0)
-        if (stepRange !== 1 && !isSamePos(support.pos, pos)) return;
+        // cohesion relative to intended leaderTo
+        if (pos.roomName !== leaderTo.roomName) return true;
+        if (pos.getRangeTo(leaderTo) > rangeMax) return true;
 
-        if (!isPassableForSupport(room, pos, leader, support, movePlan)) return;
+        // border hygiene: never end on exits in cohesive mode
+        if (isExitTile(pos)) return true;
 
-        let score = 0;
-        let combatCost = 0;
-
-        if (useCombat) {
-            // CostMatrix: 0..255. Treat 255 as hard-avoid even if passable logic allowed it.
-            const c = readMatrixCost(combatMatrix, pos.x, pos.y);
-            if (c >= 255) return;
-            combatCost = c;
-            // Make combat cost dominate small preference penalties.
-            // Linear is usually fine, but we upweight so "red" tiles are strongly disfavored.
-            score += c * 10;
-
-            // Extra nudge: don't pick a support tile that is *more dangerous* than where the leader is stepping.
-            // This helps avoid the classic 'support backpacks into danger behind the leader'.
-            if (c > leaderToCombatCost) score += (c - leaderToCombatCost) * 20;
+        // passability, with trail special-case
+        const isTrail = isSamePos(pos, leader.pos);
+        if (!isTrail) {
+            if (!isPassableForSupport(room, pos, leader, support, movePlan)) return true;
+        } else {
+            // allow stepping into leader current tile (vacated this tick) as glue
+            const terrain = room.getTerrain().get(pos.x, pos.y);
+            if (terrain === TERRAIN_MASK_WALL) return true;
+            const structures = room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
+            if (structures && structures.some(s => !isWalkableStructure(s))) return true;
         }
 
-        // Keep legacy offset preference as a mild bias so behaviour doesn't flip-flop.
-        score += (Number.isFinite(preferencePenalty) ? preferencePenalty : 0);
-        score += (Number.isFinite(extraPenalty) ? extraPenalty : 0);
+        // safety hard filter (can be relaxed only in REGROUP, not here)
+        if (isUnsafeForSupport(room, pos, runtime, { allowExit: false })) return true;
 
-        candidates.push({ pos, score, combatCost });
+        return false;
     }
 
-    // 1) Preferred offsets first (low preference penalty)
-    for (let i = 0; i < preferredDirs.length; i++) {
-        const dir = preferredDirs[i];
-        const pos = dirToPos(leaderTo, dir);
-        const behindPenalty = (dir === OPPOSITE_DIR[leaderDir]) ? 5 : 0;
-        consider(pos, i, behindPenalty); // 0,1,2...
+    function score(pos, pri) {
+        let s = 0;
+
+        const dIntended = pos.getRangeTo(leaderTo);
+        const dCurrent = pos.getRangeTo(leader.pos);
+
+        // Prefer sticking close to intended move
+        s += dIntended * 20;
+
+        // Magnet to preferred adjacency
+        if (dIntended > preferred) s += (dIntended - preferred) * 120;
+        // Trail is fallback glue, not default.
+        const isTrail = isSamePos(pos, leader.pos);
+        if (isTrail) s += 80; // make it expensive; only used when others fail
+
+        // Shield rule: don't put support "more forward" than leader vs enemy reference
+        if (enemyPos && enemyPos.roomName === leaderTo.roomName) {
+            const dEnemySupport = pos.getRangeTo(enemyPos);
+            const dEnemyLeader = leaderTo.getRangeTo(enemyPos);
+            if (dEnemySupport < dEnemyLeader) s += (dEnemyLeader - dEnemySupport) * 40;
+        }
+
+        // Priority layer (candidate generation order)
+        s += (Number.isFinite(pri) ? pri : 0);
+
+        return s;
     }
 
-    // 2) Any adjacent to leaderTo (slightly higher penalty than preferred)
-    const adjacent = getAdjacentTo(leaderTo);
-    for (let i = 0; i < adjacent.length; i++) {
-        const pos = adjacent[i];
-        consider(pos, 10 + i, 0);
+    // Rule 7: Candidate generation priority
+    // 1) Adjacent to leaderIntendedTo
+    const adjIntended = getAdjacentTo(leaderTo);
+    for (let i = 0; i < adjIntended.length; i++) {
+        const p = adjIntended[i];
+        if (hardReject(p)) continue;
+        candidates.push({ pos: p, score: score(p, 0 + i) });
     }
 
-    // 3) Rare edge case: support already on leaderTo
-    if (isSamePos(support.pos, leaderTo) && isPassableForSupport(room, support.pos, leader, support, movePlan)) {
-        consider(support.pos, 50, 0);
+    // 2) Adjacent to leaderCurrentPos
+    const adjCurrent = getAdjacentTo(leader.pos);
+    for (let i = 0; i < adjCurrent.length; i++) {
+        const p = adjCurrent[i];
+        if (hardReject(p)) continue;
+        candidates.push({ pos: p, score: score(p, 20 + i) });
+    }
+
+    // 3) leaderCurrentPos (trail tile) - only if adjacent now
+    if (support.pos.getRangeTo(leader.pos) === 1) {
+        const p = leader.pos;
+        if (!hardReject(p)) candidates.push({ pos: p, score: score(p, 10) });
+    }
+
+    // 4) HOLD (only if staying is safe)
+    if (!isUnsafeForSupport(room, support.pos, runtime, { allowExit: false })) {
+        // HOLD is represented by current pos
+        candidates.push({ pos: support.pos, score: score(support.pos, 80) });
     }
 
     if (candidates.length === 0) return null;
-
-    // Prefer staying out of threat bands if *any* adjacent offers it.
-    // 1) If any adjacent is < ranged danger, only consider those.
-    // 2) Else if any adjacent is < melee danger, only consider those.
-    if (useCombat) {
-        const minCost = Math.min(...candidates.map(c => c.combatCost));
-        // If we can stay fully out of ranged threat overlay, do it.
-        if (minCost < RANGED_DANGER_COST) {
-            const filtered = candidates.filter(c => c.combatCost < RANGED_DANGER_COST);
-            if (filtered.length > 0) {
-                candidates.length = 0;
-                for (const c of filtered) candidates.push(c);
-            }
-        } else if (minCost < MELEE_DANGER_COST) {
-            const filtered = candidates.filter(c => c.combatCost < MELEE_DANGER_COST);
-            if (filtered.length > 0) {
-                candidates.length = 0;
-                for (const c of filtered) candidates.push(c);
-            }
-        }
-    }
-
-    // Pick lowest score; tie-break: keep earlier candidates (preference order)
     candidates.sort((a, b) => a.score - b.score);
 
+    // Return best
     return candidates[0].pos;
 }
 
@@ -982,7 +984,11 @@ function pfStepToward(memory, purpose, creep, goalPos, range, movement, runtime,
     if (!to) return { dir: null, to: null, ps };
 
     // Split-room rule: never "end" on random border tiles; only allow the designated exit tile.
-    if (isForbiddenSplitEnd(to, allowedExitPos)) return { dir: null, to: null, ps };
+    // IMPORTANT: this must NOT apply to normal travel, otherwise PF will refuse to step onto exits
+    // and the duo will get stuck at x/y==1 next to the border.
+    if (allowedExitPos != null && isForbiddenSplitEnd(to, allowedExitPos)) {
+        return { dir: null, to: null, ps };
+    }
 
     if (ps) ps.lastToKey = posKey(to);
 
@@ -1313,29 +1319,149 @@ function planSplitRegroup(leader, support, goalPos, memory, movement, runtime) {
 }
 
 
-function planV2(request) {
+function selectMeetPos(room, leader, support, runtime) {
+    // Rule 15: leader.pos if safe for support.
+    // Otherwise choose a SAFE meet tile (radius 2–4 around leader) that is reachable by BOTH.
+    if (!room || !leader || !support) return leader ? leader.pos : null;
+
+    const leaderPos = leader.pos;
+    const supportPos = support.pos;
+
+    const isSafe = (pos) => !isUnsafeForSupport(room, pos, runtime, { allowExit: false });
+
+    // Fast path: meet at leader if support can safely dock there.
+    if (isSafe(leaderPos)) return leaderPos;
+
+    const terrain = room.getTerrain();
+
+    function isBasicWalkable(pos) {
+        if (!pos) return false;
+        if (isExitTile(pos)) return false;
+        const t = terrain.get(pos.x, pos.y);
+        if (t === TERRAIN_MASK_WALL) return false;
+        const structs = room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
+        if (structs && structs.some(st => !isWalkableStructure(st))) return false;
+        return true;
+    }
+
+    // Lightweight reachability probe (regroup-only, bounded ops)
+    function pathLen(fromPos, toPos) {
+        try {
+            const ret = PathFinder.search(
+                fromPos,
+                { pos: toPos, range: 0 },
+                {
+                    maxRooms: 1,
+                    maxOps: 800,
+                    heuristicWeight: 1.2,
+                    swampCost: 10,
+                    plainCost: 2,
+                    roomCallback: runtime && runtime.roomCallback ? runtime.roomCallback : undefined
+                }
+            );
+            if (ret && ret.incomplete) return Infinity;
+            return (ret && ret.path) ? ret.path.length : Infinity;
+        } catch (e) {
+            return Infinity;
+        }
+    }
+
+    // Candidate set: rings 2..4 around leader, plus a few around midpoint.
+    const candidates = [];
+
+    function pushCandidate(pos) {
+        if (!pos) return;
+        if (!isBasicWalkable(pos)) return;
+        if (!isSafe(pos)) return;
+        candidates.push(pos);
+    }
+
+    for (const r of [2, 3, 4]) {
+        for (let dx = -r; dx <= r; dx++) {
+            for (let dy = -r; dy <= r; dy++) {
+                const cheb = Math.max(Math.abs(dx), Math.abs(dy));
+                if (cheb !== r) continue;
+                const x = leaderPos.x + dx;
+                const y = leaderPos.y + dy;
+                if (x < 1 || x > 48 || y < 1 || y > 48) continue; // keep off exits
+                pushCandidate(new RoomPosition(x, y, leaderPos.roomName));
+            }
+        }
+    }
+
+    const mid = new RoomPosition(
+        Math.max(1, Math.min(48, Math.round((leaderPos.x + supportPos.x) / 2))),
+        Math.max(1, Math.min(48, Math.round((leaderPos.y + supportPos.y) / 2))),
+        leaderPos.roomName
+    );
+    pushCandidate(mid);
+    for (const a of getAdjacentTo(mid)) pushCandidate(a);
+
+    // If no safe candidates exist, fall back to leader.pos (even if unsafe). Regroup will then HOLD / try again.
+    if (candidates.length === 0) return leaderPos;
+
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const pos of candidates) {
+        const l = pathLen(leaderPos, pos);
+        const s = pathLen(supportPos, pos);
+        if (!Number.isFinite(l) || !Number.isFinite(s) || l === Infinity || s === Infinity) continue;
+
+        // Prefer meeting closer to leader (keeps formation centered) and with shorter combined path.
+        const score = (l + s) * 10 + leaderPos.getRangeTo(pos) * 3 + supportPos.getRangeTo(pos);
+        if (score < bestScore) {
+            bestScore = score;
+            best = pos;
+        }
+    }
+
+    return best || leaderPos;
+}
+
+
+function planV3(request) {
     const req = request || {};
     const leader = req.leader || null;
     const support = req.support || null;
     const memoryKey = req.memoryKey || null;
+
     const goal = req.goal || {};
     const goalPos = toRoomPosition(goal.pos);
     const goalType = goal.type || 'RANGE';
     const goalRange = Number.isFinite(goal.range) ? goal.range : 1;
+
     const formation = req.formation || {};
     const cohesionRange = Number.isFinite(formation.cohesionRange) ? formation.cohesionRange : COHESION_RANGE;
     const allowSwap = formation.allowSwap !== false;
+
     const movement = req.movement || {};
     const allowSplit = !!movement.allowSplit;
     const usePathCache = movement.usePathCache !== false;
     const stallRepathTicks = Number.isFinite(movement.stallRepathTicks) ? movement.stallRepathTicks : 2;
+
     const runtime = req.runtime || null;
     const debug = !!req.debug;
+
+    // Optional enemy reference (for shield rule). Controller can pass target.pos here.
+    const enemyPos = toRoomPosition(req.enemyPos) || null;
 
     const cohesion = getCohesion(leader, support, cohesionRange);
     const sameRoom = cohesion.sameRoom;
     const dist = cohesion.dist;
 
+    const memory = memoryKey ? getDuoMemory(memoryKey) : null;
+
+    // Progress truth: advance only if actual position matched last planned-to.
+    if (memory) {
+        const leaderPurposes = ['travel', 'regroup_leader', 'split_goal_leader', 'split_regroup_leader'];
+        const supportPurposes = ['regroup', 'split_goal_support', 'split_regroup_support'];
+
+        for (const p of leaderPurposes) tickProgress(getPathState(memory, p), posKey(leader && leader.pos), movement);
+        for (const p of supportPurposes) tickProgress(getPathState(memory, p), posKey(support && support.pos), movement);
+    }
+
+    // Guard: missing input
     if (!leader || !support || !goalPos) {
         return {
             ok: false,
@@ -1344,85 +1470,28 @@ function planV2(request) {
             cohesive: cohesion.cohesive,
             sameRoom,
             dist,
-            step: applyBorderHygieneToStep(
-                buildStepResult(leader, support, null, null),
-                leader,
-                support
-            ),
+            step: applyBorderHygieneToStep(buildStepResult(leader, support, null, null), leader, support),
             meta: {
                 goalKey: goalPos ? buildGoalKey(goalPos, goalType, goalRange) : 'missing',
                 usedPath: false,
                 pathIndex: 0,
                 stalledTicks: 0,
-                allowFallbackMoveTo: false
+                goalRange,
+                goalType
             },
             debug: debug ? { reason: 'missing-input' } : undefined
         };
     }
 
-
-    const memory = memoryKey ? getDuoMemory(memoryKey) : null;
-
-    // ===============================
-    // Path progress / stall tracking
-    // - advance idx ONLY when the creep actually reached lastToKey
-    // - count stalls ONLY when lastToKey existed (we expected a move)
-    //
-    // IMPORTANT: We also tick split-room PF purposes, otherwise their cached paths never advance
-    // (they'll repeat the same first step forever and look like "stalling until it randomly works").
-    let travelProgress = { advanced: false, stalled: false };
-    let regroupProgress = { advanced: false, stalled: false };
-    let travelPS = null;
-    let regroupPS = null;
-
-    if (memory) {
-        const leaderPurposes = ['travel', 'split_goal_leader', 'split_regroup_leader'];
-        const supportPurposes = ['regroup', 'split_goal_support', 'split_regroup_support'];
-
-        for (const p of leaderPurposes) {
-            const ps = getPathState(memory, p);
-            const prog = tickProgress(ps, posKey(leader.pos), movement);
-            if (p === 'travel') { travelPS = ps; travelProgress = prog; }
-        }
-
-        for (const p of supportPurposes) {
-            const ps = getPathState(memory, p);
-            const prog = tickProgress(ps, posKey(support.pos), movement);
-            if (p === 'regroup') { regroupPS = ps; regroupProgress = prog; }
-        }
-    }
-
+    // Split-room protocol is sacred: keep existing split logic.
     if (!sameRoom) {
-        // NEW: if goalPos exists, converge into goal room instead of chasing each other
         const goalStep = planSplitToGoalRoom(leader, support, goalPos, memory, movement, runtime);
-        if (goalStep) {
-            return {
-                ok: true,
-                reason: 'regroup-to-goal-room',
-                mode: 'REGROUP',
-                cohesive: false,
-                sameRoom: false,
-                dist,
-                step: applyBorderHygieneToStep(
-                    goalStep,
-                    leader,
-                    support
-                ),
-                meta: {
-                    goalKey: buildGoalKey(goalPos, goalType, goalRange),
-                    usedPath: false,
-                    pathIndex: 0,
-                    stalledTicks: 0,
-                    allowFallbackMoveTo: false
-                }
-            };
-        }
+        const step = goalStep || planSplitRegroup(leader, support, goalPos, memory, movement, runtime);
 
-        const step = planSplitRegroup(leader, support, goalPos, memory, movement, runtime);
         if (step) {
             return {
                 ok: true,
-                reason: 'regroup-split',
+                reason: goalStep ? 'split-to-goal-room' : 'split-regroup',
                 mode: 'REGROUP',
                 cohesive: false,
                 sameRoom: false,
@@ -1433,31 +1502,28 @@ function planV2(request) {
                     usedPath: false,
                     pathIndex: 0,
                     stalledTicks: 0,
-                    allowFallbackMoveTo: false
-                },
-                debug: debug ? { reason: 'split-rooms' } : undefined
+                    goalRange,
+                    goalType
+                }
             };
         }
+
         return {
             ok: false,
-            reason: 'split-rooms',
+            reason: 'split-no-step',
             mode: 'REGROUP',
             cohesive: false,
             sameRoom: false,
             dist,
-            step: applyBorderHygieneToStep(
-                buildStepResult(leader, support, null, null),
-                leader,
-                support
-            ),
+            step: applyBorderHygieneToStep(buildStepResult(leader, support, leader.pos, support.pos), leader, support),
             meta: {
                 goalKey: buildGoalKey(goalPos, goalType, goalRange),
                 usedPath: false,
                 pathIndex: 0,
                 stalledTicks: 0,
-                allowFallbackMoveTo: false
-            },
-            debug: debug ? { reason: 'split-rooms' } : undefined
+                goalRange,
+                goalType
+            }
         };
     }
 
@@ -1468,56 +1534,174 @@ function planV2(request) {
             reason: 'no-room',
             mode: 'HOLD',
             cohesive: cohesion.cohesive,
-            sameRoom,
+            sameRoom: true,
             dist,
-            step: applyBorderHygieneToStep(
-                buildStepResult(leader, support, null, null),
-                leader,
-                support
-            ),
+            step: applyBorderHygieneToStep(buildStepResult(leader, support, leader.pos, support.pos), leader, support),
             meta: {
                 goalKey: buildGoalKey(goalPos, goalType, goalRange),
                 usedPath: false,
                 pathIndex: 0,
                 stalledTicks: 0,
-                allowFallbackMoveTo: false
+                goalRange,
+                goalType
             }
         };
     }
 
+    // Always obey fatigue: hold. Planner still runs; just returns HOLD plan.
     if (shouldHoldForFatigue(leader, support)) {
         return {
             ok: true,
             reason: 'fatigue',
-            mode: cohesion.cohesive ? 'HOLD' : 'REGROUP',
+            mode: 'HOLD',
             cohesive: cohesion.cohesive,
-            sameRoom,
+            sameRoom: true,
             dist,
-            step: applyBorderHygieneToStep(
-                buildStepResult(leader, support, leader.pos, support.pos),
-                leader,
-                support
-            ),
+            step: applyBorderHygieneToStep(buildStepResult(leader, support, leader.pos, support.pos), leader, support),
             meta: {
                 goalKey: buildGoalKey(goalPos, goalType, goalRange),
                 usedPath: false,
                 pathIndex: 0,
                 stalledTicks: 0,
-                allowFallbackMoveTo: false
+                goalRange,
+                goalType
             }
         };
     }
 
-    if (!cohesion.cohesive && !allowSplit) {
-        const regroupGoal = {
-            pos: leader.pos,
-            range: 1,
-            key: `regroup:${leader.pos.roomName}:${leader.pos.x}:${leader.pos.y}:r1`
-        };
+    // Border handshake (same as before, but treated as a first-class mode).
+    if (goalPos.roomName !== room.name && isBorderPos(leader.pos)) {
+        const crossDir = getBorderCrossDir(leader.pos);
+        if (crossDir && support.pos.getRangeTo(leader.pos) <= 1) {
+            const supportTo = leader.pos;
+            const plan = buildMovePlan(leader, support, leader.pos, supportTo);
+            markVacating(plan, leader.pos);
+            if (isPassableForSupport(room, supportTo, leader, support, plan)) {
+                const rawStep = { leaderDir: crossDir, leaderTo: leader.pos, supportDir: support.pos.getDirectionTo(leader.pos), supportTo: leader.pos };
+                return {
+                    ok: true,
+                    reason: 'border-handshake',
+                    mode: 'BORDER_HANDSHAKE',
+                    cohesive: true,
+                    sameRoom: true,
+                    dist,
+                    step: applyBorderHygieneToStep(rawStep, leader, support),
+                    meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath: false, pathIndex: 0, stalledTicks: 0, goalRange, goalType }
+                };
+            }
+        }
+    }
+
+    // Decide whether leader should HOLD (goal reached) or step.
+    const goalReached = isGoalReached(leader.pos, { pos: goalPos, type: goalType, range: goalRange });
+    let leaderTo = leader.pos;
+    let leaderDir = null;
+
+    const travelOpts = {
+        considerCreeps: true,
+        ignoreCreepIds: buildIgnoreSet(leader, support),
+        avoidBorders: movement.avoidBorders !== false,
+        maxRooms: 16
+    };
+
+    let travelPS = memory ? getPathState(memory, 'travel') : null;
+    let usedPath = false;
+    let pathIndex = 0;
+
+    if (!goalReached) {
+        const step = pfStepToward(
+            memory && usePathCache ? memory : null,
+            'travel',
+            leader,
+            goalPos,
+            goalType === 'RANGE' ? goalRange : 0,
+            movement,
+            runtime,
+            travelOpts,
+            null,
+            false
+        );
+
+        leaderDir = step.dir;
+        leaderTo = step.to || leader.pos;
+
+        if (memory && usePathCache) {
+            travelPS = step.ps || travelPS;
+            usedPath = true;
+            pathIndex = travelPS ? (travelPS.idx || 0) : 0;
+        }
+    }
+
+    // SAME-ROOM REGROUP trigger:
+    // - distance > cohesionRange
+    // - support currently unsafe
+    // - OR no safe cohesive joint step exists
+    const supportUnsafeNow = isUnsafeForSupport(room, support.pos, runtime, { allowExit: false });
+    let needRegroup = (!allowSplit && dist > cohesionRange) || supportUnsafeNow;
+
+    // Attempt cohesive plan first if not forced to regroup
+    if (!needRegroup && !allowSplit) {
+        const provisional = buildMovePlan(leader, support, leaderTo, support.pos);
+        const supportTo = computeSupportCohesive(room, leader, support, leaderTo, leaderDir, formation, provisional, runtime, cohesionRange, enemyPos);
+
+        if (supportTo) {
+            // Pre-cross staging: if leaderTo is an edge tile for next room, force support to trail into leader.pos.
+            if (needsPreCrossStaging(room.name, goalPos, leaderTo)) {
+                if (support.pos.getRangeTo(leader.pos) <= 1) {
+                    const trailPlan = buildMovePlan(leader, support, leaderTo, leader.pos);
+                    if (isPassableForSupport(room, leader.pos, leader, support, trailPlan)) {
+                        // override supportTo (trail)
+                        // eslint-disable-next-line no-unused-vars
+                        const _ = 0;
+                    }
+                }
+            }
+
+            const finalSupportTo = (needsPreCrossStaging(room.name, goalPos, leaderTo) && support.pos.getRangeTo(leader.pos) <= 1)
+                ? leader.pos
+                : supportTo;
+
+            const movePlan = buildMovePlan(leader, support, leaderTo, finalSupportTo);
+
+            const canLeader = isPassableForLeader(room, leaderTo, leader, support, movePlan) || isSamePos(leaderTo, leader.pos);
+            const canSupport = isPassableForSupport(room, finalSupportTo, leader, support, movePlan) || isSamePos(finalSupportTo, support.pos);
+
+            const swapAllowed = allowSwap && isSamePos(leaderTo, support.pos) && isSamePos(finalSupportTo, leader.pos);
+            const collision = isSamePos(leaderTo, finalSupportTo) && !swapAllowed;
+
+            if (canLeader && canSupport && !collision && isCohesionOk(leaderTo, finalSupportTo, cohesionRange, false)) {
+                return {
+                    ok: true,
+                    reason: 'cohesive',
+                    mode: goalReached ? 'HOLD' : 'COHESIVE',
+                    cohesive: true,
+                    sameRoom: true,
+                    dist,
+                    step: applyBorderHygieneToStep(buildStepResult(leader, support, leaderTo, finalSupportTo), leader, support),
+                    meta: {
+                        goalKey: buildGoalKey(goalPos, goalType, goalRange),
+                        usedPath,
+                        pathIndex,
+                        stalledTicks: travelPS ? (travelPS.stalledTicks || 0) : 0,
+                        goalRange,
+                        goalType
+                    }
+                };
+            }
+        }
+
+        // No valid cohesive step => enter regroup
+        needRegroup = true;
+    }
+
+    // SAME-ROOM REGROUP MODE
+    if (!allowSplit && needRegroup) {
+        const meetPos = selectMeetPos(room, leader, support, runtime);
+
         const provisional = buildMovePlan(leader, support, leader.pos, support.pos);
+        markVacating(provisional, leader.pos);
         markVacating(provisional, support.pos);
-        let regroup = null;
-        let dir = null;
+
         const regroupOpts = {
             considerCreeps: true,
             ignoreCreepIds: buildIgnoreSet(leader, support),
@@ -1525,526 +1709,101 @@ function planV2(request) {
             avoidBorders: true,
             maxRooms: 1
         };
-        if (memory) {
-            regroup = ensurePath(
-                memory,
-                'regroup',
-                support.pos,
-                regroupGoal,
-                movement,
-                runtime,
-                regroupOpts
-            );
-            dir = peekNextDir(regroup);
+
+        // Leader step toward meetPos (range 0 if not already there)
+        const lStep = isSamePos(leader.pos, meetPos)
+            ? { dir: null, to: leader.pos, ps: memory ? getPathState(memory, 'regroup_leader') : null }
+            : pfStepToward(memory && usePathCache ? memory : null, 'regroup_leader', leader, meetPos, 0, movement, runtime, regroupOpts, null, false);
+
+        // Support step toward meetPos; if meetPos is leader.pos, use range=1 to avoid collision.
+        const sRange = isSamePos(meetPos, leader.pos) ? 1 : 0;
+        const sStep = pfStepToward(memory && usePathCache ? memory : null, 'regroup', support, meetPos, sRange, movement, runtime, regroupOpts, null, false);
+
+        let leaderToR = lStep.to || leader.pos;
+        let supportToR = sStep.to || support.pos;
+
+        // REGROUP robustness: anchor the leader by default.
+        // The leader only moves when it is required (leader tile unsafe for support) or when they are far apart.
+        const leaderUnsafeForSupport = isUnsafeForSupport(room, leader.pos, runtime, { allowExit: false });
+        let allowLeaderMoveInRegroup = (leaderUnsafeForSupport && !isSamePos(meetPos, leader.pos)) || (dist > (cohesionRange + 2));
+
+        if (!allowLeaderMoveInRegroup) {
+            leaderToR = leader.pos;
         } else {
-            const result = computePathSteps(
-                support.pos,
-                regroupGoal,
-                movement,
-                runtime,
-                regroupOpts
-            );
-            dir = result.steps.length > 0 ? result.steps[0] : null;
-        }
-        if (!dir) {
-            if (memory && regroup && regroup.steps && regroup.idx >= regroup.steps.length) {
-                invalidatePath(memory, 'regroup');
+            // Never let the leader step increase separation vs the support's intended step.
+            try {
+                if (leaderToR && supportToR && leaderToR.getRangeTo(supportToR) > leader.pos.getRangeTo(supportToR)) {
+                    leaderToR = leader.pos;
+                }
+            } catch (e) {
+                leaderToR = leader.pos;
             }
-            return {
-                ok: false,
-                reason: 'regroup-no-path',
-                mode: 'REGROUP',
-                cohesive: false,
-                sameRoom,
-                dist,
-                step: applyBorderHygieneToStep(
-                    buildStepResult(leader, support, leader.pos, support.pos),
-                    leader,
-                    support
-                ),
-                meta: {
-                    goalKey: buildGoalKey(goalPos, goalType, goalRange),
-                    usedPath: false,
-                    pathIndex: 0,
-                    stalledTicks: regroup ? (regroup.stalledTicks || 0) : 0,
-                    allowFallbackMoveTo: false
-                },
-                debug: debug ? {
-                    reason: 'regroup-no-path',
-                    purpose: 'regroup',
-                    key: regroupGoal.key,
-                    leaderPos: serializePos(leader.pos),
-                    supportPos: serializePos(support.pos),
-                    dir,
-                    idx: regroup ? (regroup.idx || 0) : 0,
-                    stepsLen: regroup && regroup.steps ? regroup.steps.length : 0,
-                    stalledTicks: regroup ? (regroup.stalledTicks || 0) : 0
-                } : undefined
-            };
         }
 
-        const supportTo = clampRoomPos(dirToPos(support.pos, dir));
-        const planned = buildMovePlan(leader, support, leader.pos, supportTo);
-        if (!supportTo || !isPassableForSupport(room, supportTo, leader, support, planned)) {
-            if (regroup) {
-                if (!regroupProgress.stalled) markStall(regroup);
-                if (regroup.stalledTicks >= stallRepathTicks) invalidatePath(memory, 'regroup');
+        // Fail-safe: never half-move into collision.
+        const movePlan = buildMovePlan(leader, support, leaderToR, supportToR);
+        const swapAllowed = allowSwap && isSamePos(leaderToR, support.pos) && isSamePos(supportToR, leader.pos);
+        if (isSamePos(leaderToR, supportToR) && !swapAllowed) {
+            leaderToR = leader.pos;
+            supportToR = support.pos;
+        }
+
+        // If regroup still can't produce a legal move, both hold.
+        const okLeader = isSamePos(leaderToR, leader.pos) || isPassableForLeader(room, leaderToR, leader, support, movePlan);
+        const okSupport = isSamePos(supportToR, support.pos) || isPassableForSupport(room, supportToR, leader, support, movePlan);
+
+        if (!okLeader || !okSupport) {
+            // stall handling for cached paths
+            if (memory && usePathCache) {
+                const lps = getPathState(memory, 'regroup_leader');
+                const sps = getPathState(memory, 'regroup');
+                if (lps && !lps.lastToKey) markStall(lps);
+                if (sps && !sps.lastToKey) markStall(sps);
+                if (lps && (lps.stalledTicks || 0) >= stallRepathTicks) invalidatePath(memory, 'regroup_leader');
+                if (sps && (sps.stalledTicks || 0) >= stallRepathTicks) invalidatePath(memory, 'regroup');
             }
+
             return {
                 ok: false,
                 reason: 'regroup-blocked',
                 mode: 'REGROUP',
                 cohesive: false,
-                sameRoom,
+                sameRoom: true,
                 dist,
-                step: applyBorderHygieneToStep(
-                    buildStepResult(leader, support, leader.pos, support.pos),
-                    leader,
-                    support
-                ),
-                meta: {
-                    goalKey: buildGoalKey(goalPos, goalType, goalRange),
-                    usedPath: false,
-                    pathIndex: 0,
-                    stalledTicks: regroup ? (regroup.stalledTicks || 0) : 0,
-                    allowFallbackMoveTo: false
-                },
-                debug: debug ? {
-                    reason: 'regroup-blocked',
-                    purpose: 'regroup',
-                    key: regroupGoal.key,
-                    leaderPos: serializePos(leader.pos),
-                    supportPos: serializePos(support.pos),
-                    supportTo: supportTo ? serializePos(supportTo) : null,
-                    dir,
-                    idx: regroup ? (regroup.idx || 0) : 0,
-                    stepsLen: regroup && regroup.steps ? regroup.steps.length : 0,
-                    stalledTicks: regroup ? (regroup.stalledTicks || 0) : 0
-                } : undefined
+                step: applyBorderHygieneToStep(buildStepResult(leader, support, leader.pos, support.pos), leader, support),
+                meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath: false, pathIndex: 0, stalledTicks: 0, goalRange, goalType }
             };
         }
 
-        if (regroup) regroup.lastToKey = posKey(supportTo);
-
         return {
             ok: true,
-            reason: 'regroup-path',
+            reason: 'regroup',
             mode: 'REGROUP',
-            cohesive: false,
-            sameRoom,
+            cohesive: (leaderToR.getRangeTo(supportToR) <= cohesionRange),
+            sameRoom: true,
             dist,
-            step: applyBorderHygieneToStep(
-                buildStepResult(leader, support, leader.pos, supportTo),
-                leader,
-                support
-            ),
-            meta: {
-                goalKey: buildGoalKey(goalPos, goalType, goalRange),
-                usedPath: false,
-                pathIndex: regroup ? (regroup.idx || 0) : 0,
-                stalledTicks: regroup ? (regroup.stalledTicks || 0) : 0,
-                allowFallbackMoveTo: false
-            },
-            debug: debug ? {
-                reason: 'regroup-path',
-                purpose: 'regroup',
-                key: regroupGoal.key,
-                leaderPos: serializePos(leader.pos),
-                supportPos: serializePos(support.pos),
-                supportTo: serializePos(supportTo),
-                dir,
-                idx: regroup ? (regroup.idx || 0) : 0,
-                stepsLen: regroup && regroup.steps ? regroup.steps.length : 0,
-                stalledTicks: regroup ? (regroup.stalledTicks || 0) : 0
-            } : undefined
+            step: applyBorderHygieneToStep(buildStepResult(leader, support, leaderToR, supportToR), leader, support),
+            meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath: false, pathIndex: 0, stalledTicks: 0, goalRange, goalType }
         };
     }
 
-    if (goalType === 'OCCUPY') {
-        const hasCohesion = allowSplit ? true : leader.pos.getRangeTo(support.pos) <= cohesionRange;
-        if (isSamePos(leader.pos, goalPos) && hasCohesion) {
-            return {
-                ok: true,
-                reason: 'goal-occupy',
-                mode: 'HOLD',
-                cohesive: cohesion.cohesive,
-                sameRoom,
-                dist,
-                step: applyBorderHygieneToStep(
-                    buildStepResult(leader, support, leader.pos, support.pos),
-                    leader,
-                    support
-                ),
-                meta: {
-                    goalKey: buildGoalKey(goalPos, goalType, goalRange),
-                    usedPath: false,
-                    pathIndex: 0,
-                    stalledTicks: 0,
-                    allowFallbackMoveTo: false
-                }
-            };
-        }
-    } else if (isGoalReached(leader.pos, { pos: goalPos, type: 'RANGE', range: goalRange })) {
-        return {
-            ok: true,
-            reason: 'goal-reached',
-            mode: 'HOLD',
-            cohesive: cohesion.cohesive,
-            sameRoom,
-            dist,
-            step: applyBorderHygieneToStep(
-                buildStepResult(leader, support, leader.pos, support.pos),
-                leader,
-                support
-            ),
-            meta: {
-                goalKey: buildGoalKey(goalPos, goalType, goalRange),
-                usedPath: false,
-                pathIndex: 0,
-                stalledTicks: 0,
-                allowFallbackMoveTo: false
-            }
-        };
-    }
-
-    const goalKey = buildGoalKey(goalPos, goalType, goalRange);
-    const travelKey = `travel:${goalKey}`;
-    const travelGoal = {
-        pos: goalPos,
-        range: goalType === 'RANGE' ? goalRange : 0,
-        key: travelKey
-    };
-    const travel = memory ? getPathState(memory, 'travel') : null;
-    if (memory) {
-        if (memory.goalKey !== goalKey) memory.goalKey = goalKey;
-        if (travel && travel.key && travel.key !== travelKey) resetPathState(travel, travelKey);
-        if (cohesion.cohesive) {
-            const rps = getPathState(memory, 'regroup');
-            rps.steps = [];
-            rps.idx = 0;
-            rps.lastToKey = null;
-            rps.stalledTicks = 0;
-        }
-    }
-
-    if (goalPos.roomName !== room.name && isBorderPos(leader.pos)) {
-        const crossDir = getBorderCrossDir(leader.pos);
-        if (crossDir) {
-            const supportTo = leader.pos;
-            const movePlan = buildMovePlan(leader, support, leader.pos, supportTo);
-            markVacating(movePlan, leader.pos);
-            if (support.pos.getRangeTo(leader.pos) <= 1 && isPassableForSupport(room, supportTo, leader, support, movePlan)) {
-
-                const rawStep = {
-                    leaderDir: crossDir,                 // leader crosses
-                    supportDir: support.pos.getDirectionTo(leader.pos), // will be overwritten by leader.pos target anyway
-                    leaderTo: leader.pos,                // leader "to" stays; dir causes cross
-                    supportTo: leader.pos                // support steps into leader's current tile (vacated this tick)
-                };
-
-                const safeStep = applyBorderHygieneToStep(rawStep, leader, support);
-                return {
-                    ok: true,
-                    reason: 'border-handshake',
-                    mode: 'BORDER_HANDSHAKE',
-                    cohesive: true,
-                    sameRoom,
-                    dist,
-                    step: safeStep,
-                    meta: {
-                        goalKey,
-                        usedPath: false,
-                        pathIndex: 0,
-                        stalledTicks: travel ? (travel.stalledTicks || 0) : 0,
-                        allowFallbackMoveTo: false
-                    }
-                };
-            }
-        }
-    }
-
-    
-let usedPath = false;
-    let pathIndex = 0;
-
-    // Leader navigation is PF-only (no 8-tile greedy).
-    const travelOpts = {
-        considerCreeps: true,
-        ignoreCreepIds: buildIgnoreSet(leader, support),
-        avoidBorders: true,
-        maxRooms: 16
-    };
-
-    let leaderCandidates = [];
-    let plannedDir = null;
-
-    if (usePathCache && memory) {
-        const ps = ensurePath(
-            memory,
-            'travel',
-            leader.pos,
-            travelGoal,
-            movement,
-            runtime,
-            travelOpts
-        );
-        plannedDir = peekNextDir(ps);
-        usedPath = true;
-        pathIndex = ps ? (ps.idx || 0) : 0;
-    } else {
-        const result = computePathSteps(leader.pos, travelGoal, movement, runtime, travelOpts);
-        plannedDir = result.steps && result.steps.length > 0 ? result.steps[0] : null;
-        usedPath = false;
-        pathIndex = 0;
-    }
-
-    if (plannedDir) {
-        const next = dirToPos(leader.pos, plannedDir);
-        if (next) {
-            leaderCandidates = [{ dir: plannedDir, next, range: next.getRangeTo(goalPos) }];
-        }
-    }
-// =====================
-    // DEBUG: reject reasons
-    // =====================
-    const rejects = debug ? [] : null;
-
-    function pushReject(option, why) {
-        if (!rejects) return;
-        if (rejects.length < 10) {
-            rejects.push({
-                dir: option.dir,
-                next: option.next ? serializePos(option.next) : null,
-                why
-            });
-        }
-    }
-
-    let blockedByCreepOnPath = false;
-    let wantsCrossButNotReady = false;
-
-    for (const option of leaderCandidates) {
-        const leaderTo = clampRoomPos(option.next);
-        if (!leaderTo) { pushReject(option, 'leaderTo-null'); continue; }
-
-        const leaderDir = option.dir;
-
-        const tentative = buildMovePlan(leader, support, leaderTo, support.pos);
-        if (!isPassableForLeader(room, leaderTo, leader, support, tentative)) {
-            // detect if blocked specifically by "some other creep" (not leader/support)
-            const creeps = room.lookForAt(LOOK_CREEPS, leaderTo.x, leaderTo.y);
-            const blockedByOtherCreep = creeps && creeps.some(c => c.id !== leader.id && c.id !== support.id);
-
-            pushReject(option, blockedByOtherCreep ? 'leader-blocked-by-creep' : 'leader-not-passable');
-
-            // only trigger instant repath when we're using cached path and the "primary" dir is blocked by creep
-            if (usedPath && blockedByOtherCreep && option.dir === (travel && travel.steps ? travel.steps[pathIndex] : null)) {
-                blockedByCreepOnPath = true;
-            }
-            continue;
-        }
-
-        let supportTo = computeSupportTo(room, leader, support, leaderTo, leaderDir, formation, tentative, runtime);
-        if (!supportTo) { pushReject(option, 'support-null'); continue; }
-
-        // PRE-CROSS STAGING FIX:
-        // If leader is about to step onto an edge tile (to cross rooms), we *prefer* support trailing
-        // into leader's vacated tile. This prevents "avoid borders" or combat scoring from choosing a
-        // different adjacent tile that breaks the handshake.
-        if (needsPreCrossStaging(room.name, goalPos, leaderTo)) {
-            const supportReadyNow = support.pos.getRangeTo(leader.pos) <= 1;
-            if (supportReadyNow) {
-                const trailPos = leader.pos; // support steps into leader's vacated tile
-                const trailPlan = buildMovePlan(leader, support, leaderTo, trailPos);
-                if (isPassableForSupport(room, trailPos, leader, support, trailPlan)) {
-                    supportTo = trailPos;
-                }
-            }
-        }
-
-        // PRE-CROSS STAGING: don't let leader step onto edge until support is ready to trail
-        if (needsPreCrossStaging(room.name, goalPos, leaderTo)) {
-            const supportReadyNow = support.pos.getRangeTo(leader.pos) <= 1;
-            const supportTrailingThisTick = isSamePos(supportTo, leader.pos); // support steps into leader's vacated tile
-
-            if (!(supportReadyNow && supportTrailingThisTick)) {
-                wantsCrossButNotReady = true;
-                pushReject(option, 'pre-cross-staging');
-                continue;
-            }
-        }
-
-        const movePlan = buildMovePlan(leader, support, leaderTo, supportTo);
-        const canLeader = isPassableForLeader(room, leaderTo, leader, support, movePlan);
-        const canSupport = isPassableForSupport(room, supportTo, leader, support, movePlan);
-        if (!canLeader || !canSupport) {
-            pushReject(option, !canLeader ? 'leader-not-passable-final' : 'support-not-passable-final');
-            continue;
-        }
-
-        const swapAllowed = allowSwap && isSamePos(leaderTo, support.pos) && isSamePos(supportTo, leader.pos);
-        if (!swapAllowed && isSamePos(leaderTo, supportTo)) { pushReject(option, 'same-tile'); continue; }
-
-        if (!isCohesionOk(leaderTo, supportTo, cohesionRange, allowSplit)) {
-            pushReject(option, 'cohesion-failed');
-            continue;
-        }
-
-        if (goalType === 'OCCUPY' && isSamePos(leaderTo, goalPos)) {
-            if (!isCohesionOk(leaderTo, supportTo, cohesionRange, allowSplit)) {
-                pushReject(option, 'occupy-cohesion-failed');
-                continue;
-            }
-        }
-
-        if (travel && usedPath) {
-            travel.lastToKey = posKey(leaderTo);
-        }
-
-        return {
-            ok: true,
-            reason: 'cohesive-step',
-            mode: 'COHESIVE_TRAVEL',
-            cohesive: true,
-            sameRoom,
-            dist,
-            step: applyBorderHygieneToStep(
-                buildStepResult(leader, support, leaderTo, supportTo),
-                leader,
-                support
-            ),
-            meta: {
-                goalKey,
-                usedPath,
-                pathIndex,
-                stalledTicks: travel ? (travel.stalledTicks || 0) : 0,
-                allowFallbackMoveTo: false
-            },
-            debug: debug ? {
-                leaderTo,
-                supportTo,
-                leaderDir,
-                allowSwap,
-                rejects // optional: shows rejects even on success (useful if you want)
-            } : undefined
-        };
-    }
-
-    if (usePathCache && memory && usedPath && blockedByCreepOnPath) {
-        ensurePath(
-            memory,
-            'travel',
-            leader.pos,
-            travelGoal,
-            movement,
-            runtime,
-            {
-                considerCreeps: true,
-                ignoreCreepIds: buildIgnoreSet(leader, support),
-                avoidBorders: true,
-                maxRooms: 16
-            },
-            true
-        );
-    }
-
-    if (usePathCache && memory && usedPath && travel) {
-        if (!travelProgress.stalled) markStall(travel);
-        if (travel.stalledTicks >= stallRepathTicks) {
-            invalidatePath(memory, 'travel');
-        }
-    }
-
-    // =========================================
-    // PRE-CROSS SHIMMY: leader holds, support moves
-    // =========================================
-    
-if (wantsCrossButNotReady) {
-        // Support must "dock" to leader using PF (no greedy shimmy).
-        const dockGoal = {
-            pos: leader.pos,
-            range: 1,
-            key: `dock:${leader.pos.roomName}:${leader.pos.x}:${leader.pos.y}:r1`
-        };
-
-        const provisional = buildMovePlan(leader, support, leader.pos, support.pos);
-        markVacating(provisional, support.pos);
-
-        const dockOpts = {
-            considerCreeps: true,
-            ignoreCreepIds: buildIgnoreSet(leader, support),
-            vacatingPosKeys: provisional.vacating,
-            avoidBorders: true,
-            maxRooms: 1
-        };
-
-        let ps = null;
-        let dir = null;
-
-        if (memory) {
-            ps = ensurePath(memory, 'regroup', support.pos, dockGoal, movement, runtime, dockOpts);
-            dir = peekNextDir(ps);
-        } else {
-            const result = computePathSteps(support.pos, dockGoal, movement, runtime, dockOpts);
-            dir = result.steps.length > 0 ? result.steps[0] : null;
-        }
-
-        if (dir) {
-            const supportTo = clampRoomPos(dirToPos(support.pos, dir));
-            const movePlan = buildMovePlan(leader, support, leader.pos, supportTo);
-
-            if (supportTo && isPassableForSupport(room, supportTo, leader, support, movePlan)) {
-                if (ps) ps.lastToKey = posKey(supportTo);
-
-                return {
-                    ok: true,
-                    reason: 'pre-cross-dock',
-                    mode: 'REGROUP',
-                    cohesive: false,
-                    sameRoom: true,
-                    dist,
-                    step: applyBorderHygieneToStep(
-                        buildStepResult(leader, support, leader.pos, supportTo),
-                        leader,
-                        support
-                    ),
-                    meta: {
-                        goalKey,
-                        usedPath,
-                        pathIndex,
-                        stalledTicks: travel ? (travel.stalledTicks || 0) : 0,
-                        allowFallbackMoveTo: false
-                    }
-                };
-            }
-        }
-    }
+    // Split explicitly allowed: best-effort PF for leader; support HOLD if safe else follow cohesive pick without cohesion hard-stop.
+    const provisional = buildMovePlan(leader, support, leaderTo, support.pos);
+    let supportTo = computeSupportCohesive(room, leader, support, leaderTo, leaderDir, formation, provisional, runtime, Math.max(1, Math.min(1, cohesionRange)), enemyPos);
+    if (!supportTo) supportTo = support.pos;
 
     return {
-        ok: false,
-        reason: 'no-valid-step',
-        mode: cohesion.cohesive ? 'HOLD' : 'REGROUP',
-        cohesive: cohesion.cohesive,
-        sameRoom,
+        ok: true,
+        reason: 'split-allowed',
+        mode: 'SPLIT',
+        cohesive: false,
+        sameRoom: true,
         dist,
-        step:  applyBorderHygieneToStep(
-            buildStepResult(leader, support, leader.pos, support.pos),
-            leader,
-            support
-        ),
-        meta: {
-            goalKey,
-            usedPath,
-            pathIndex,
-            stalledTicks: travel ? (travel.stalledTicks || 0) : 0,
-            allowFallbackMoveTo: false
-        },
-        debug: debug ? { reason: 'no-valid-step', rejects } : undefined
+        step: applyBorderHygieneToStep(buildStepResult(leader, support, leaderTo, supportTo), leader, support),
+        meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath, pathIndex, stalledTicks: travelPS ? (travelPS.stalledTicks || 0) : 0, goalRange, goalType }
     };
 }
 
-
-
 module.exports = {
-    plan: planV2
+    plan: planV3
 };

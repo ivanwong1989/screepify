@@ -126,6 +126,10 @@ function normalizeRoomNamesOnData(data) {
     return data;
 }
 
+function normalizeRoomArg(roomName) {
+    return userMissions.normalizeRoomName(roomName);
+}
+
 module.exports = function registerMissionConsole() {
     global.mission = function(action, typeOrData, ...args) {
         const cmd = action ? ('' + action).trim().toLowerCase() : 'help';
@@ -161,9 +165,10 @@ module.exports = function registerMissionConsole() {
             if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?) OR mission(\"add\", \"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", { type, ... })';
 
             if (!data) {
+                const roomNameArg = normalizeRoomArg(args[0]);
                 if (key === 'dismantle') {
                     data = {
-                        roomName: args[0],
+                        roomName: roomNameArg,
                         x: args[1],
                         y: args[2],
                         sponsorRoom: args[3],
@@ -173,7 +178,7 @@ module.exports = function registerMissionConsole() {
                     };
                 } else if (key === 'drainer') {
                     data = {
-                        roomName: args[0],
+                        roomName: roomNameArg,
                         x: args[1],
                         y: args[2],
                         sponsorRoom: args[3],
@@ -183,7 +188,7 @@ module.exports = function registerMissionConsole() {
                     };
                 } else if (key === 'reserve') {
                     data = {
-                        roomName: args[0],
+                        roomName: roomNameArg,
                         sponsorRoom: args[1],
                         priority: args[2],
                         persist: args[3],
@@ -191,7 +196,7 @@ module.exports = function registerMissionConsole() {
                     };
                 } else if (key === 'claim') {
                     data = {
-                        roomName: args[0],
+                        roomName: roomNameArg,
                         sponsorRoom: args[1],
                         priority: args[2],
                         persist: args[3],

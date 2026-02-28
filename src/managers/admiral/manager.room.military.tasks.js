@@ -42,24 +42,37 @@ function isDuoMission(mission) {
     return mission && mission.type === 'assault' && mission.data && mission.data.mode === 'DUO';
 }
 
+// add helper near other helpers
+function inferRoleFromMissionName(creep) {
+    if (!creep || !creep.memory) return null;
+    const m = creep.memory.missionName;
+    if (!m || typeof m !== 'string') return null;
+    if (m.slice(-7) === ':leader') return 'leader';
+    if (m.slice(-8) === ':support') return 'support';
+    return null;
+}
+
 function pickDuoPair(creeps) {
     const list = Array.isArray(creeps) ? creeps.slice() : [];
     if (list.length === 0) return { leader: null, support: null };
-    let leader = list.find(c => c.memory && c.memory.assaultRole === 'leader') || null;
-    let support = list.find(c => c.memory && c.memory.assaultRole === 'support') || null;
 
+    // ✅ Source of truth: assigned missionName role
+    let leader = list.find(c => inferRoleFromMissionName(c) === 'leader') || null;
+    let support = list.find(c => inferRoleFromMissionName(c) === 'support') || null;
+
+    // If somehow both point to same creep, drop support
     if (leader && support && leader.id === support.id) support = null;
+
+    // Fill missing side with "any other creep"
     if (!leader && support) leader = list.find(c => c.id !== support.id) || null;
     if (!support && leader) support = list.find(c => c.id !== leader.id) || null;
 
+    // If still missing both roles (shouldn't happen), keep stable but DO NOT swap by name:
+    // just pick first two after sorting by name (pure fallback)
     if (!leader && !support) {
         list.sort(sortCreepsByName);
         leader = list[0] || null;
         support = list[1] || null;
-    } else if (leader && support && String(leader.name || '') > String(support.name || '')) {
-        const swap = leader;
-        leader = support;
-        support = swap;
     }
 
     return { leader, support };

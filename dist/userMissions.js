@@ -46,7 +46,7 @@ function ensureStore() {
 
 function normalizeRoomName(value) {
     if (value === undefined || value === null) return '';
-    return ('' + value).trim();
+    return ('' + value).trim().toUpperCase();
 }
 
 function normalizeBool(value, fallback = false) {

@@ -5,6 +5,7 @@ const rendezvous = require('managers_admiral_tactics_assault_duo_rendezvous');
 const engage = require('managers_admiral_tactics_assault_duo_engage');
 const actionPlan = require('managers_admiral_tactics_assault_duo_actionPlan');
 const duoPlanner = require('managers_admiral_tactics_assault_duo_duoPlanner_duoPlanner');
+const duoTactics = require('managers_admiral_tactics_assault_duo_duoTactics');
 const threatEval = require('managers_admiral_tactics_assault_common_threat');
 
 const RETREAT_AT = 0.3;
@@ -76,8 +77,14 @@ function inferRoleFromMissionName(creep) {
 }
 
 function inferRole(creep) {
+    // ✅ Source of truth: assigned mission binding
+    const byMission = inferRoleFromMissionName(creep);
+    if (byMission) return byMission;
+
+    // fallback only
     if (creep && creep.memory && creep.memory.assaultRole) return creep.memory.assaultRole;
-    return inferRoleFromMissionName(creep);
+
+    return null;
 }
 
 function resolveLeaderSupport(leaderInput, supportInput) {
@@ -104,16 +111,8 @@ function resolveLeaderSupport(leaderInput, supportInput) {
         support = tmp2;
     }
 
-    // Still ambiguous? pick deterministically by name so it doesn't flip
-    if (leader && support) {
-        var ln = String(leader.name || '');
-        var sn = String(support.name || '');
-        if (ln > sn) {
-        var tmp3 = leader;
-        leader = support;
-        support = tmp3;
-        }
-    }
+    // If still ambiguous, do not reorder here.
+    // Caller should pass correct leaderInput/supportInput, and missionName binding is the authority.
 
     return { leader: leader, support: support };
 }
@@ -185,52 +184,6 @@ function toRoomPos(p) {
     return new RoomPosition(p.x, p.y, p.roomName || (p.room && p.room.name));
 }
 
-function aoRadius(ao) {
-    const r = ao ? Number(ao.radius) : 0;
-    return Number.isFinite(r) ? r : 0;
-}
-
-function inAOPos(pos, ao) {
-    if (!ao || !ao.centerPos) return true;
-    const r = aoRadius(ao);
-    if (r <= 0) return true;
-    const c = toRoomPos(ao.centerPos);
-    if (!c || !pos) return true;
-    if (pos.roomName !== c.roomName) return false;
-    return c.getRangeTo(pos) <= r;
-}
-
-// Pick a "kite anchor" point away from target, but still generally within AO.
-// This is intentionally simple (basic plug), not perfect kiting AI.
-function computeKiteAnchor(leader, target, ao) {
-    if (!leader || !target) return null;
-    if (leader.room.name !== target.pos.roomName) return null;
-
-    const lx = leader.pos.x, ly = leader.pos.y;
-    const tx = target.pos.x, ty = target.pos.y;
-
-    const dx = lx - tx;
-    const dy = ly - ty;
-
-    // Normalize to a direction (-1/0/1)
-    const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
-    const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
-
-    // Try to retreat ~4 tiles away in that direction
-    let ax = Math.max(1, Math.min(48, lx + sx * 4));
-    let ay = Math.max(1, Math.min(48, ly + sy * 4));
-
-    const cand = new RoomPosition(ax, ay, leader.room.name);
-
-    // If AO exists, bias anchor toward staying inside it (if outside, go back to center)
-    if (ao && ao.centerPos && aoRadius(ao) > 0) {
-        if (!inAOPos(cand, ao)) {
-            const c = toRoomPos(ao.centerPos);
-            return c;
-        }
-    }
-    return cand;
-}
 
 function decideCombatIntent(runtime, leader, support, target, ao) {
     // Default: follow routeTarget behavior handled elsewhere
@@ -393,63 +346,41 @@ function planForPair(mission, leaderInput, supportInput, context) {
     const inMeleeDanger = !!(target && leader && leader.pos && leader.pos.getRangeTo(target) <= 1);
     if (inMeleeDanger) splitRetreat = true;
 
-    // --- AO awareness for movement goal ---
-    const aoCenter = ao && ao.centerPos ? toRoomPos(ao.centerPos) : null;
-    const aoR = aoRadius(ao);
-
-    // Determine whether duo is "inside AO" (both members when present)
-    const leaderInAO = leader ? inAOPos(leader.pos, ao) : true;
-    const supportInAO = support ? inAOPos(support.pos, ao) : true;
-    const pairInAO = leaderInAO && supportInAO;
-
-    // Decide combat intent (basic plug)
+    // Decide combat intent (basic plug, used for logging/telemetry)
     const intent = decideCombatIntent(runtime, leader, support, target, ao);
 
     // Select planner goal for this tick
     let goalPos = routeTarget;
     let goalRange = 1;
 
-    // IMPORTANT:
-    // - ao.radius is an *engagement/selection* radius ("enemies inside this bubble matter").
-    // - It must NOT be used as the "stop X tiles away from the AO flag" distance.
-    //   HOLD behavior should keep the duo tight to the AO center (on/adjacent), otherwise
-    //   large radii (A10/A12) cause the squad to stop on an arbitrary ring.
-    const holdCenterRange = tunedNumber('holdCenterRange', 1, 0, 3);
-
     if (runtime.phase === 'ENGAGE') {
-        // If AO is defined and we're not inside, force return to AO first
-        if (aoCenter && aoR > 0 && !pairInAO) {
-            goalPos = aoCenter;
-            // Go *to* the AO center (tight). Radius is for engagement, not for stopping distance.
-            goalRange = holdCenterRange;
-        } else if (target) {
-            const hasRanged = leader && leader.getActiveBodyparts(RANGED_ATTACK) > 0;
-            const desired = (intent && intent.desiredRange) || (hasRanged ? 3 : 1);
-
-            if (intent.mode === 'KITE') {
-                // Move away while maintaining formation
-                const anchor = computeKiteAnchor(leader || support, target, ao);
-                if (anchor) {
-                    goalPos = anchor;
-                    goalRange = 0;
-                } else {
-                    // fallback: just keep distance band
-                    goalPos = target.pos;
-                    goalRange = desired;
-                }
-            } else {
-                // ENGAGE: maintain band around target
-                goalPos = target.pos;
-                goalRange = desired;
+        const tactical = duoTactics.decideAnchor(
+            leader,
+            support,
+            runtime,
+            flags,
+            ao,
+            target,
+            {
+                holdCenterRange: tunedNumber('holdCenterRange', 1, 0, 3),
+                preferRoads: true
             }
-        } else if (aoCenter && aoR > 0) {
-            // No target: hold AO center-ish
-            goalPos = aoCenter;
-            goalRange = holdCenterRange;
+        );
+
+        if (tactical && tactical.anchorPos) {
+            goalPos = tactical.anchorPos;
+            goalRange = Number.isFinite(tactical.range) ? tactical.range : 0;
         } else {
-            // No AO: fall back to attackPos/center
-            goalPos = flags.attackPos || routeTarget;
-            goalRange = 1;
+            if (target) {
+                goalPos = target.pos;
+                goalRange = 1;
+            } else if (flags.attackPos) {
+                goalPos = flags.attackPos;
+                goalRange = 1;
+            } else {
+                goalPos = routeTarget;
+                goalRange = 1;
+            }
         }
     }
 
