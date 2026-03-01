@@ -137,42 +137,42 @@ module.exports = function registerDebugConsole() {
         configurable: true
     });
 
-Object.defineProperty(global, 'debugviscombaton', {
-    get: function () {
-        if (!Memory.visuals) Memory.visuals = {};
+    Object.defineProperty(global, 'debugviscombaton', {
+        get: function () {
+            if (!Memory.visuals) Memory.visuals = {};
 
-        Memory.visuals.combatMatrix = true;
-        Memory.visuals.combatStep = 1;
-        Memory.visuals.combatMinCost = 20;
-        Memory.visuals.combatNumbers = true;
-        Memory.visuals.combatNumberThreshold = 40;
+            Memory.visuals.combatMatrix = true;
+            Memory.visuals.combatStep = 1;
+            Memory.visuals.combatMinCost = 20;
+            Memory.visuals.combatNumbers = true;
+            Memory.visuals.combatNumberThreshold = 40;
 
-        console.log('Debug visuals combat mode ENABLED');
-        return 'Debug visuals combat mode ENABLED';
-    },
-    configurable: true
-});
+            console.log('Debug visuals combat mode ENABLED');
+            return 'Debug visuals combat mode ENABLED';
+        },
+        configurable: true
+    });
 
-Object.defineProperty(global, 'debugviscombatoff', {
-    get: function () {
-        if (Memory.visuals) {
-            delete Memory.visuals.combatMatrix;
-            delete Memory.visuals.combatStep;
-            delete Memory.visuals.combatMinCost;
-            delete Memory.visuals.combatNumbers;
-            delete Memory.visuals.combatNumberThreshold;
+    Object.defineProperty(global, 'debugviscombatoff', {
+        get: function () {
+            if (Memory.visuals) {
+                delete Memory.visuals.combatMatrix;
+                delete Memory.visuals.combatStep;
+                delete Memory.visuals.combatMinCost;
+                delete Memory.visuals.combatNumbers;
+                delete Memory.visuals.combatNumberThreshold;
 
-            // Optional cleanup
-            if (Object.keys(Memory.visuals).length === 0) {
-                delete Memory.visuals;
+                // Optional cleanup
+                if (Object.keys(Memory.visuals).length === 0) {
+                    delete Memory.visuals;
+                }
             }
-        }
 
-        console.log('Debug visuals combat mode DISABLED');
-        return 'Debug visuals combat mode DISABLED';
-    },
-    configurable: true
-});
+            console.log('Debug visuals combat mode DISABLED');
+            return 'Debug visuals combat mode DISABLED';
+        },
+        configurable: true
+    });
 
     Object.defineProperty(global, 'debugoncombat', {
         get: function() {
@@ -222,5 +222,19 @@ Object.defineProperty(global, 'debugviscombatoff', {
         Memory.debug = true;
         delete Memory.debugCategories;
         return 'Debug categories cleared (all enabled)';
+    };
+
+    global.clearflags = function(prefix) {
+        let count = 0;
+
+        for (const name in Game.flags) {
+            if (!prefix || name.startsWith(prefix)) {
+                Game.flags[name].remove();
+                count++;
+            }
+        }
+
+        console.log(`Removed ${count} flag(s).`);
+        return `Removed ${count} flag(s).`;
     };
 };

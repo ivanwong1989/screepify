@@ -32,6 +32,8 @@ module.exports = function registerHelpConsole() {
                 'attackBodyLeader()  - set/show leader body for assault flag duo (auto/fixed)',
                 'attackBodySupport() - set/show support body for assault flag duo (set to enable duo; auto/fixed)',
                 'assaultTuning()     - !!! deprecated for now!!! show/set assault tuning overrides (retreatAt, reengageAt, safeDamageRatio, damageBuffer, dangerRadius, supportRange)',
+                'clearflags()        - Clear all flags',
+                '   clearflags("<prefix>") - Clear all flags matching this prefix',   
                 'flag directives:',
                 '  Parking*        - decongest parking flags',
                 '  W/A/AM          - assault mission flags (W=wait, W1.. waypoints, A=attack, AM=mass attack)',

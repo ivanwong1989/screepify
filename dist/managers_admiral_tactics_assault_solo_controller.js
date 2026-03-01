@@ -162,6 +162,13 @@ function resetSoloRuntimeState(runtime) {
     delete runtime._lastPos;
     delete runtime._prevPos;
 
+    // Reset waypoint progress trackers (so wipes restart from scratch)
+    if (runtime.route && typeof runtime.route === 'object') {
+        delete runtime.route.lastReachedWaypoint;
+        delete runtime.route.maxWaypointIndex;
+    }
+    delete runtime._cbWarn;
+
     if (runtime.debug) {
         delete runtime.debug.lastPhase;
         delete runtime.debug.lastRouteTarget;
@@ -212,9 +219,20 @@ function advanceWaypoint(creep, runtime, waypoints) {
 
     const wp = waypoints[index];
 
-    if (wp.roomName === creep.room.name &&
+        if (wp.roomName === creep.room.name &&
         creep.pos.inRangeTo(wp.x, wp.y, 1)) {
-        runtime.waypointIndex = index + 1;
+        const next = index + 1;
+        runtime.waypointIndex = next;
+
+        // ✅ Remember latest reached waypoint for robust RETREAT/hold behaviour.
+        // This prevents snapping all the way back to wait/assembly if waypointPositions
+        // are temporarily empty (flag resolution hiccup) or waypointIndex desyncs.
+        if (!runtime.route || typeof runtime.route !== 'object') runtime.route = {};
+        runtime.route.lastReachedWaypoint = { x: wp.x, y: wp.y, roomName: wp.roomName };
+
+        // Monotonic progress marker (duo-style). Useful even if waypointIndex later resets.
+        const prevMax = Number(runtime.route.maxWaypointIndex) || 0;
+        runtime.route.maxWaypointIndex = Math.max(prevMax, next);
     }
 }
 
@@ -296,10 +314,17 @@ function selectActiveRoomCallback(runtime, phase, creep, engageRoomName, hasComb
 
 // Retreat destination: latest reached waypoint (not all the way back to W)
 function getRetreatWaypoint(runtime, flags, ao) {
+    // Prefer cached "latest reached waypoint" (robust even if flags/waypoints fail to resolve for a tick)
+    const cached = runtime && runtime.route && runtime.route.lastReachedWaypoint;
+    if (cached && cached.roomName && cached.x != null && cached.y != null) return cached;
+
     const waypoints = (flags && flags.waypointPositions) ? flags.waypointPositions : [];
     if (!Array.isArray(waypoints) || waypoints.length === 0) return null;
 
-    let idx = Number(runtime && runtime.waypointIndex);
+    // Prefer monotonic progress marker if present (duo-style), else fall back to waypointIndex
+    const maxIdx = runtime && runtime.route ? Number(runtime.route.maxWaypointIndex) : NaN;
+    let idx = Number.isFinite(maxIdx) ? maxIdx : Number(runtime && runtime.waypointIndex);
+
     if (!Number.isFinite(idx) || idx <= 0) return waypoints[0];
 
     idx = Math.min(idx - 1, waypoints.length - 1);
@@ -330,12 +355,21 @@ function updatePhase(creep, runtime, flags, ao) {
             (Number(runtime.waypointIndex) || 0) >= waypoints.length;
 
         if (waypointDone) {
-            if (!flags.assemblyPos ||
-                isInRange(creep, flags.assemblyPos, 1)) {
+            // IMPORTANT:
+            // If waypoints are defined, the last waypoint is the effective "stage gate".
+            // We must NOT force a return to the assembly flag (Z/Y) after completing waypoints,
+            // otherwise we get: Z -> Z1 Z2 Z3 -> Z -> AO.
+            const lastWp = (Array.isArray(waypoints) && waypoints.length > 0)
+                ? waypoints[waypoints.length - 1]
+                : null;
+
+            const stageGatePos = lastWp || flags.assemblyPos || flags.waitPos;
+
+            if (!stageGatePos || isInRange(creep, stageGatePos, 1)) {
                 runtime.phase = 'ENGAGE';
-                dbg.lastPhaseReason = (!flags.assemblyPos)
-                    ? 'assemblyPos missing'
-                    : `arrived assemblyPos ${formatPos(flags.assemblyPos)}`;
+                dbg.lastPhaseReason = !stageGatePos
+                    ? 'stage gate missing'
+                    : `arrived stageGate ${formatPos(stageGatePos)}`;
             }
         }
     }
