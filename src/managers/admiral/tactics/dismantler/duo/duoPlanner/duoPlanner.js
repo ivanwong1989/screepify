@@ -1694,42 +1694,8 @@ function planV3(request) {
         const borderEngage = nearBorder(leader.pos, 1) || nearBorder(support.pos, 1);
         if (borderEngage) {
 
-        // Cache exit-lane choice while border-handshaking to avoid PF jitter (48,21 <-> 48,22).
-        // Keyed by goalKey + current room + destination room.
-        const goalKey = buildGoalKey(goalPos, goalType, goalRange);
-        const bh = memory ? (memory.borderHandshake || (memory.borderHandshake = {})) : null;
-        const bhKey = `${room.name}->${goalPos.roomName}:${goalKey}`;
-        if (bh) {
-            // Clear stale cache if room/destination/goal changed.
-            if (bh.key !== bhKey) {
-                bh.key = bhKey;
-                bh.leaderExit = null;
-                bh.supportExit = null;
-                bh.ts = Game.time;
-            }
-        }
-
         // Pick a good exit lane for the leader (prefer PF-derived).
         let leaderExit = null;
-
-        // Use cached exits when available (prevents oscillation due to considerCreeps/PF lane flips).
-        if (bh && bh.leaderExit && bh.supportExit) {
-            const cachedLeader = deserializePos(bh.leaderExit);
-            const cachedSupport = deserializePos(bh.supportExit);
-            if (
-                cachedLeader && cachedSupport &&
-                cachedLeader.roomName === room.name &&
-                cachedSupport.roomName === room.name &&
-                isValidExitTile(room, cachedLeader) &&
-                isValidExitTile(room, cachedSupport) &&
-                sameEdge(cachedLeader, cachedSupport) &&
-                !isSamePos(cachedLeader, cachedSupport)
-            ) {
-                leaderExit = cachedLeader;
-                // We'll set supportExit from cache below after we compute it.
-            }
-        }
-
         if (isExitTile(leader.pos)) leaderExit = leader.pos;
         if (!leaderExit) {
             leaderExit = pickExitTile(room, goalPos.roomName, goalPos, {
@@ -1746,27 +1712,10 @@ function planV3(request) {
 
             // Choose an adjacent exit tile for support on the same edge (side-by-side staging).
             let supportExit = null;
-
-            // If we have cached exits for this handshake, reuse the cached support exit.
-            if (bh && bh.supportExit) {
-                const cachedSupport = deserializePos(bh.supportExit);
-                if (
-                    cachedSupport &&
-                    cachedSupport.roomName === room.name &&
-                    leaderExit &&
-                    sameEdge(cachedSupport, leaderExit) &&
-                    !isSamePos(cachedSupport, leaderExit) &&
-                    isValidExitTile(room, cachedSupport)
-                ) {
-                    supportExit = cachedSupport;
-                }
-            }
-
-            if (!supportExit && isExitTile(support.pos) && sameEdge(support.pos, leaderExit) && support.pos.getRangeTo(leaderExit) <= 1) {
+            if (isExitTile(support.pos) && sameEdge(support.pos, leaderExit) && support.pos.getRangeTo(leaderExit) <= 1) {
                 // already staged / close enough
                 supportExit = support.pos;
-            } else if (!supportExit) {
-
+            } else {
                 const cand = adjacentExitCandidatesOnSameEdge(leaderExit);
                 let best = null;
                 let bestScore = Infinity;
@@ -1781,23 +1730,10 @@ function planV3(request) {
                         best = p;
                     }
                 }
-                supportExit = best; // if null, we’ll handle below
-                if (!supportExit) {
-                // pick *some* other exit candidate on same edge that is not leaderExit
-                const cand = adjacentExitCandidatesOnSameEdge(leaderExit).filter(p => !isSamePos(p, leaderExit) && isValidExitTile(room, p));
-                supportExit = cand[0] || leaderExit; // last resort
-                }
+                supportExit = best || leaderExit; // fallback: docking (still protected by hygiene exception)
             }
 
-            
-            // Persist chosen exit tiles for this handshake to avoid oscillation.
-            if (bh && leaderExit && supportExit) {
-                bh.leaderExit = serializePos(leaderExit);
-                bh.supportExit = serializePos(supportExit);
-                bh.ts = Game.time;
-            }
-
-// === PRE-CROSS STAGING (side-by-side one tile inward) ===
+            // === PRE-CROSS STAGING (side-by-side one tile inward) ===
             // Goal: before stepping onto the exit line, force the pair to form up side-by-side on the
             // "pre-cross" line (x=1/48 or y=1/48 depending on which edge). This prevents the common
             // diagonal "one tile behind" approach and reduces conga-line crossings.
@@ -1921,15 +1857,11 @@ if (leaderPre && goalPos && goalPos.roomName !== room.name) {
                     : pfStepToward(memory && usePathCache ? memory : null, 'border_stage_support', support, supportExit, 0, movement, runtime, stageOpts, supportExit, false);
 
                 // Prevent support from stepping onto leader's CURRENT tile during border staging.
-// This avoids "support stacks onto leader then crosses" conga behavior on the pre-cross side.
-// HOWEVER: allow stepping into leader's current tile if the leader is vacating it this tick (swap / move-into-vacated).
-if (!supportStaged && s && s.to && isSamePos(s.to, leader.pos)) {
-    const leaderIsMovingAway = l && l.to && !isSamePos(l.to, leader.pos);
-    if (!leaderIsMovingAway) {
-        s.dir = null;
-        s.to = support.pos;
-    }
-}
+                // This avoids "support stacks onto leader then crosses" conga behavior on the pre-cross side.
+                if (!supportStaged && s && s.to && isSamePos(s.to, leader.pos)) {
+                    s.dir = null;
+                    s.to = support.pos;
+                }
 
                 return {
                     ok: true,
@@ -1946,51 +1878,13 @@ if (!supportStaged && s && s.to && isSamePos(s.to, leader.pos)) {
                     meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath: false, pathIndex: 0, stalledTicks: 0, goalRange, goalType }
                 };
             }
-// Both staged:
-            // - If either creep has fatigue, HOLD on staging tiles (safe).
-            // - If both are unfatigued, commit an explicit cross intent together.
-            //
-            // Note: Crossing is expressed as { to: currentPos, dir: crossDir } (see isCrossIntent()).
-            const intendedExitDir = room.findExitTo(goalPos.roomName);
-            const intent = exitDirToEdgeAndCross(intendedExitDir);
-            const canCross =
-                intent &&
-                posOnEdge(leader.pos, intent.edge) &&
-                posOnEdge(support.pos, intent.edge) &&
-                leader.fatigue === 0 &&
-                support.fatigue === 0;
+// Both staged: DO NOT issue an explicit "cross intent" (dir==crossDir with to==currentPos).
+// In Screeps, stepping ONTO x/y==0/49 already performs the room transition automatically.
+// So if we ever reach a state where both are staged and unfatigued, just HOLD and let the
+// next tick run in the destination room after the edge-step has happened.
 
-            if (canCross) {
-                const crossDir2 = intent.crossDir;
-                const crossStep = {
-                    leaderDir: crossDir2,
-                    leaderTo: leader.pos,
-                    supportDir: crossDir2,
-                    supportTo: support.pos
-                };
 
-                // Optional: clear handshake cache once we commit the cross.
-                if (bh) {
-                    bh.key = null;
-                    bh.leaderExit = null;
-                    bh.supportExit = null;
-                    bh.ts = Game.time;
-                }
-
-                return {
-                    ok: true,
-                    reason: 'border-cross',
-                    mode: 'BORDER_HANDSHAKE',
-                    cohesive: true,
-                    sameRoom: true,
-                    dist,
-                    step: applyBorderHygieneToStep(crossStep, leader, support),
-                    meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath: false, pathIndex: 0, stalledTicks: 0, goalRange, goalType },
-                    debug: debug ? { edge: intent.edge, crossDir: crossDir2 } : undefined
-                };
-            }
-
-            // Both staged but cannot cross this tick (fatigue / wrong edge / no exit dir): HOLD.
+            // Both staged but someone is fatigued (or no cross dir): HOLD on the staging tiles.
             return {
                 ok: true,
                 reason: 'border-stage-hold',
