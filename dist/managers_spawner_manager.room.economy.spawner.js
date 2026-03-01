@@ -138,7 +138,7 @@ var managerSpawner = {
             budget = Math.min(budget, 2100);
         }
         if (archetype === 'worker') {
-            budget = Math.min(budget, 2500);
+            budget = Math.min(budget, 3000);
         }
         if (archetype === 'hauler' || archetype == 'user_hauler') {
             budget = Math.min(budget, 2500);
