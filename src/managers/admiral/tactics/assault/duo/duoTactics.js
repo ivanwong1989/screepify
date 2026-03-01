@@ -15,7 +15,7 @@
 // - target is still selected by engage.selectTarget() (creep/structure/etc).
 
 const { makeAssaultCombatRoomCallback } = require('managers_admiral_tactics_assault_common_combatMatrix');
-
+const { evaluateThreat } = require('managers_admiral_tactics_assault_common_threat');
 
 function toRoomPos(p) {
     if (!p) return null;
@@ -31,6 +31,23 @@ function clampStep(n) {
     if (n > 1) return 1;
     if (n < -1) return -1;
     return n;
+}
+
+function computeDuoHealPerTick(leader, support) {
+    function healParts(creep) {
+        if (!creep) return 0;
+        let count = 0;
+        for (const p of creep.body) {
+            if (p.type === HEAL && p.hits > 0) count++;
+        }
+        return count;
+    }
+
+    const leaderHeal = healParts(leader) * 12;
+    const supportHeal = healParts(support) * 12;
+
+    // Assume support ranged-heals leader (most common case)
+    return leaderHeal + supportHeal;
 }
 
 
@@ -158,6 +175,67 @@ function ensureRuntime(runtime) {
 
 function nowTick() {
     return (typeof Game !== 'undefined' && Game.time != null) ? Game.time : 0;
+}
+
+
+function getDuoDanceState(duoKey) {
+    if (!duoKey) return null;
+    const g = global || {};
+    if (!g._duoDance || typeof g._duoDance !== 'object') g._duoDance = {};
+    if (!g._duoDance[duoKey] || typeof g._duoDance[duoKey] !== 'object') {
+        g._duoDance[duoKey] = { lastRange: null, lastSign: 0, flips: 0, lastFlipTick: 0, aggressiveUntil: 0 };
+    }
+    return g._duoDance[duoKey];
+}
+
+// Detect "back-and-forth dance" where range oscillates (e.g. 3<->4 or 4<->5) repeatedly.
+// If we see >=2 direction flips within a short window, enter an aggressive mode briefly.
+// This is intentionally cheap and local (no full prediction): it's just to break stalemates.
+// If we see >=2 direction flips within a short window, enter an aggressive mode briefly.
+// This is intentionally cheap and local (no full prediction): it's just to break stalemates.
+function updateDanceAggro(duoKey, leaderPos, enemyPos, opts) {
+    if (!duoKey || !leaderPos || !enemyPos) return false;
+
+    const st = getDuoDanceState(duoKey);
+    if (!st) return false;
+
+    const now = nowTick();
+    const windowTicks = (opts && Number.isFinite(opts.danceWindowTicks)) ? Math.max(2, Math.floor(opts.danceWindowTicks)) : 8;
+    const aggroTicks = (opts && Number.isFinite(opts.danceAggroTicks)) ? Math.max(2, Math.floor(opts.danceAggroTicks)) : 6;
+    const flipsToAggro = (opts && Number.isFinite(opts.danceFlipsToAggro)) ? Math.max(1, Math.floor(opts.danceFlipsToAggro)) : 2;
+
+    // Prune old flip streak
+    if (st.lastFlipTick && (now - st.lastFlipTick) > windowTicks) {
+        st.flips = 0;
+        st.lastSign = 0;
+    }
+
+    const r = leaderPos.getRangeTo(enemyPos);
+
+    if (Number.isFinite(st.lastRange)) {
+        const delta = r - st.lastRange;
+
+        // Only treat meaningful oscillations (±1). Big jumps are likely pathing/LoS breaks.
+        const sign = (delta > 0) ? 1 : (delta < 0 ? -1 : 0);
+
+        if (sign !== 0) {
+            if (st.lastSign !== 0 && sign !== st.lastSign) {
+                st.flips += 1;
+                st.lastFlipTick = now;
+            }
+            st.lastSign = sign;
+        }
+    }
+
+    st.lastRange = r;
+
+    if (st.flips >= flipsToAggro) {
+        st.aggressiveUntil = now + aggroTicks;
+        st.flips = 0; // consume the trigger so we don't keep re-triggering every tick
+        st.lastSign = 0;
+    }
+
+    return (st.aggressiveUntil && now < st.aggressiveUntil);
 }
 
 function logDuo(runtime, message) {
@@ -420,37 +498,35 @@ function decideAnchor(leader, support, runtime, flags, ao, target, opts) {
 
     const rr = getRoleRanges(leader);
 
-    // If target is a creep, infer last-tick movement vector.
-// Prefer combatMatrix's global cache when present; otherwise we maintain our own local cache so gating never depends on call order.
-const enemyPos = (targetPos && targetPos.roomName === leader.room.name) ? targetPos : ((target && target.pos && target.pos.roomName === leader.room.name) ? target.pos : null);
+    let canOutHeal = false;
+    let pushAggro = false;
 
-// Last-pos source priority:
-// 1) global._enemyLastPos[target.id] (if target has id and someone else populated it, e.g. combatMatrix)
-// 2) runtime-local lastTargetPos (works even if `target` is only a RoomPosition)
-// 3) global._duoEnemyLastPos[target.id] (our own global cache)
-let lastEnemyPos = getCachedEnemyLastPos(target);
+    if (target && leader.room) {
+        const threat = evaluateThreat(leader, support);
+        const ourHeal = computeDuoHealPerTick(leader, support);
 
-// If `target` is not a creep (no id) OR combatMatrix hasn't run yet,
-// fall back to a per-duo cache keyed by mission/leader.
-if (!lastEnemyPos && enemyPos) {
-    const cached = getCachedDuoLastPos(duoKey);
-    if (cached && cached.roomName === enemyPos.roomName) lastEnemyPos = cached;
-}
+        if (threat && threat.totalDps > 0 && ourHeal >= threat.totalDps) {
+            canOutHeal = true;
+            pushAggro = true;
+        }
 
+        if (dbg) {
+            dbg.threat = {
+                ourHeal,
+                enemyDps: threat ? threat.totalDps : null,
+                pushAggro
+            };
+        }
+    }
 
-const fakeTarget = enemyPos ? { pos: enemyPos } : null;
-const enemyVel = getEnemyLastVector(fakeTarget, lastEnemyPos);
+    // Enemy position (same room only). We keep this for a few tile-level heuristics,
+    // but we intentionally do NOT run a separate "closing vector" heuristic here.
+    // The combat matrix / aura threshold is the source of truth for kiting/closing behavior.
+    const enemyPos = (targetPos && targetPos.roomName === leader.room.name)
+        ? targetPos
+        : ((target && target.pos && target.pos.roomName === leader.room.name) ? target.pos : null);
 
-// "Closing" means enemy's last movement vector is generally toward our leader.
-// If we don't have a last-pos vector, this will be false.
-const closingLikelyOverall = (enemyPos && enemyVel && leader && leader.pos)
-    ? isClosingLikelyOnTile(enemyPos, enemyVel, leader.pos)
-    : false;
-
-if (enemyPos) {
-    setCachedDuoLastPos(duoKey, enemyPos);
-}
-// Build/get combat cost matrix for this room.
+    // Build/get combat cost matrix for this room.
     const roomCallback = makeAssaultCombatRoomCallback({
         avoidBorders: true,
         borderCost: 10,
@@ -525,14 +601,54 @@ const disableCone = !!opts.disableCone;
         harmlessOverrideApplied = true;
     }
 
-const prefRange = rangeHasTarget ? rr.pref : 0;
-
-
-    
+    const prefRange = rangeHasTarget ? rr.pref : 0;
+  
     let minRange = rangeHasTarget ? Math.max(0, rr.min - slack) : 0;
     let maxRange = rangeHasTarget ? Math.min(10, rr.max + slack) : 50;
 
     if (harmlessOverrideApplied) {
+        minRange = 2;
+        maxRange = 3;
+    }
+
+    // === Anti-stalemate "dance" detector ===
+    // Problem: we can get stuck hovering at r=4 while the enemy also backs away, creating a no-contact loop.
+    // Fix: detect a short-range oscillation (range flips direction repeatedly), then briefly prefer closing to r=3/2.
+    //
+    // Tunables:
+    // - opts.danceWindowTicks (default 8): how long to consider flips
+    // - opts.danceAggroTicks  (default 6): how long we stay aggressive after trigger
+    // - opts.danceFlipsToAggro (default 2): how many direction flips to trigger
+    const danceAggro = (!harmlessOverrideApplied
+        && rr.style === 'ranged'
+        && rangeHasTarget
+        && enemyPos
+        && target
+        && isMobileEnemy(target)
+        )
+            ? updateDanceAggro(duoKey, leader.pos, enemyPos, opts)
+            : false;
+
+    const danceState = getDuoDanceState(duoKey);
+    const danceFlips = (danceState && Number.isFinite(danceState.flips)) ? danceState.flips : 0;
+
+
+    if (danceAggro) {
+        // Force engagement band for a short burst.
+        minRange = 2;
+        maxRange = 3;
+    }
+
+    // --- Dance aggro override ---
+    // If both sides are range-dancing (3<->4 etc), stop being polite and step in for the kill briefly.
+    // This override is temporary and only applies to ranged vs mobile targets.
+    if (danceAggro) {
+        minRange = 2;
+        maxRange = 3;
+    }
+
+    // This part is for if we calculated we will outheal enemy's damage
+    if (pushAggro && rr.style === 'ranged') {
         minRange = 2;
         maxRange = 3;
     }
@@ -683,8 +799,7 @@ if (!disableCone && rangeHasTarget && targetPos) {
                 // So: if the target is a *mobile creep*, treat r=3 as inherently risky and prefer r>=4.
                 // You can disable this conservatism by setting opts.allowRange3VsMobile=true.
                 const allowRange3VsMobile = !!(opts && opts.allowRange3VsMobile);
-                const closingLikely = closingLikelyOverall;
-                const shouldGate = (rangeToTarget < 4) && kiteLikely;
+                const shouldGate = (rangeToTarget < 4) && kiteLikely && !danceAggro;
 
                 if (shouldGate) {
                     // Huge penalty (acts like a gate unless there are literally no options)
@@ -770,7 +885,7 @@ if (topCandidates.length > topK) {
 // Geometry cone + maxAnchorDist are NOT enough when walls/structures create disconnected pockets.
 // So we PF-probe the top candidates and pick the best one that is actually reachable without
 // forcing an immediate dive inside our safe minimum range.
-const safeMinRange = (rr.style === 'ranged' && rangeHasTarget && kiteLikely && !harmlessOverrideApplied)
+const safeMinRange = (rr.style === 'ranged' && rangeHasTarget && kiteLikely && !harmlessOverrideApplied && !danceAggro)
     ? 4
     : minRange;
 
@@ -802,7 +917,7 @@ const anchorPos = new RoomPosition(chosen.x, chosen.y, leader.room.name);
             slack,
             searchRadius,
             weights,
-            kite: { likely: kiteLikely, myTileCost: myTileCost, threshold: kiteCostThreshold },
+            kite: { likely: kiteLikely, myTileCost: myTileCost, threshold: kiteCostThreshold, danceAggro },
             best: {
                 pos: `${anchorPos.roomName}:${anchorPos.x},${anchorPos.y}`,
                 score: best.score,
@@ -843,7 +958,7 @@ const anchorPos = new RoomPosition(chosen.x, chosen.y, leader.room.name);
         logDuo(
             runtime,
             `tactics focus=${focus.roomName}:${focus.x},${focus.y}(${focusReason}) ` +
-            `role=${rr.style} prefR=${prefRange} minR=${minRange} maxR=${maxRange} slack=${slack} searchR=${searchRadius} ` +
+            `role=${rr.style} prefR=${prefRange} minR=${minRange} maxR=${maxRange} slack=${slack} searchR=${searchRadius} danceAggro=${danceAggro?1:0} danceFlips=${danceFlips} ` +
             bestMsg + secondMsg +
             ` cands total=${stats.total} inAO=${stats.inAO} costOk=${stats.costOk} rangeOk=${stats.rangeOk} supportOk=${stats.supportOk}` +
             ` rejAO=${stats.rejAO} rejBlocked=${stats.rejBlocked} rejR<min=${stats.rejRangeUnder} rejR>max=${stats.rejRangeOver} rejNoSupport=${stats.rejNoSupport} closeGate=${stats.closeGate}` +

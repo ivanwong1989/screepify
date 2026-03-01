@@ -23,7 +23,11 @@ function isEligibleForMission(creep, mission) {
     if (!creep || !mission) return false;
     const role = creep.memory && creep.memory.role;
     if (mission.type === 'defend') return role === 'defender' || role === 'brawler';
-    if (mission.type === 'assault') return role === 'assault';
+    if (mission.type === 'assault') {
+        const assaultMode = mission.data && mission.data.assaultMode;
+        if (assaultMode === 'dismantle') return role === 'assault' || role === 'dismantler';
+        return role === 'assault';
+    }
     return false;
 }
 
@@ -239,7 +243,7 @@ function runMission(mission, assignedCreeps, context) {
 
     if (mission.type === 'assault') {
         assignedCreeps.forEach(creep => {
-            if (!creep.spawning) assaultTactics.executeAssault(creep, mission);
+            if (!creep.spawning) assaultTactics.executeAssault(creep, mission, context);
         });
     }
 }

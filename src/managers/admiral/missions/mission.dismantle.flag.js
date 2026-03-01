@@ -1,23 +1,31 @@
 const shared = require('console_shared');
+const flagsResolver = require('managers_admiral_tactics_assault_common_flags');
 
 /**
- * Assault Dismantle Flag Mission (D/A)
+ * Assault Dismantle Flag Mission (Z/A + D AO)
  *
  * Flags:
- * - D: wait/sponsor flag (required). Determines sponsor room and staging position.
- * - W1, W2, ...: optional waypoint flags (numeric suffix). Uses W as the waypoint base.
+ * - Z: assembly / sponsor flag (required). Determines sponsor room and staging position.
+ * - Z1, Z2, ...: optional waypoint flags (numeric suffix). Traversed in order before attack.
  * - A: attack flag (optional). Determines target room and attack position.
+ * - D / D<number>: AO flag (optional). If numeric suffix exists, it is used as AO radius.
+ *   Examples: D (radius 0), D3 (radius 3), D10 (radius 10).
  *
  * Mission data (consumed by assault tactics):
  * - assaultMode: 'dismantle'
  * - assaultRole: 'solo'
- * - squadKey: shared key so any support stays coordinated
+ * - squadKey: shared key for coordination / telemetry
+ * - flags: { wait, assembly, attack, waypoints[] }
+ * - ao: { targetRoom, radius, centerPos }
+ *
+ * Legacy convenience fields are also included:
  * - waitFlagName, waypointFlagName, attackFlagName, waitPos, attackPos, targetRoom, sponsorRoom
  */
 
-const FLAG_WAIT = 'D';
+const FLAG_ASSEMBLY = 'Z';
 const FLAG_ATTACK = 'A';
-const FLAG_WAYPOINT = 'W';
+const FLAG_AO_PREFIX = 'D';
+
 const DEFAULT_DISMANTLE_BODY = [WORK, MOVE];
 const DEFAULT_BODY_MODE = 'auto';
 
@@ -63,33 +71,99 @@ function toPos(pos) {
     return { x: pos.x, y: pos.y, roomName: pos.roomName };
 }
 
+function getWaypointFlagNames(prefix) {
+    const result = [];
+    for (const name in Game.flags) {
+        if (!Object.prototype.hasOwnProperty.call(Game.flags, name)) continue;
+        if (!name.startsWith(prefix)) continue;
+        const suffix = name.slice(prefix.length);
+        if (!/^\d+$/.test(suffix)) continue;
+        result.push({ name, order: Number(suffix) });
+    }
+    result.sort((a, b) => a.order - b.order);
+    return result.map(e => e.name);
+}
+
+function resolveAoFlag(prefix) {
+    // Prefer exact "D" if present; otherwise choose the D<number> with the largest number.
+    const exact = Game.flags[prefix];
+    if (exact) return exact;
+
+    let best = null;
+    let bestN = -1;
+    for (const name in Game.flags) {
+        if (!Object.prototype.hasOwnProperty.call(Game.flags, name)) continue;
+        if (!name.startsWith(prefix)) continue;
+        const suffix = name.slice(prefix.length);
+        if (!/^\d+$/.test(suffix)) continue;
+        const n = Number(suffix);
+        if (!Number.isFinite(n)) continue;
+        if (n > bestN) {
+            bestN = n;
+            best = Game.flags[name];
+        }
+    }
+    return best;
+}
+
+function getAoRadiusFromFlag(flag, prefix) {
+    if (!flag || !flag.name) return 0;
+    if (flag.name === prefix) return 0;
+    const m = flag.name.match(new RegExp(`^${prefix}(\\d+)$`));
+    if (!m) return 0;
+    const n = Number(m[1]);
+    return Number.isFinite(n) ? n : 0;
+}
+
 function buildFlagDismantleCache() {
     const cache = global._flagDismantleMissionCache;
     if (cache && cache.time === Game.time) return cache;
 
-    const waitFlag = Game.flags[FLAG_WAIT];
-    if (!waitFlag) {
+    const assemblyFlag = Game.flags[FLAG_ASSEMBLY];
+    if (!assemblyFlag) {
         const empty = { time: Game.time, bySponsorRoom: {} };
         global._flagDismantleMissionCache = empty;
         return empty;
     }
 
-    const sponsorRoom = shared.resolveSponsorRoomForTargetPos(waitFlag.pos);
+    const sponsorRoom = shared.resolveSponsorRoomForTargetPos(assemblyFlag.pos);
     if (!sponsorRoom) {
         const empty = { time: Game.time, bySponsorRoom: {} };
         global._flagDismantleMissionCache = empty;
         return empty;
     }
 
-    const attackFlag = Game.flags[FLAG_ATTACK];
+    const attackFlag = flagsResolver.resolveAttackFlag(FLAG_ATTACK);
+    const aoFlag = resolveAoFlag(FLAG_AO_PREFIX);
+    const aoRadius = getAoRadiusFromFlag(aoFlag, FLAG_AO_PREFIX);
+
+    const waypointFlagNames = getWaypointFlagNames(FLAG_ASSEMBLY);
+
+    const waitPos = toPos(assemblyFlag.pos);
+    const attackPos = attackFlag ? toPos(attackFlag.pos) : null;
+
+    const targetRoom = attackFlag ? attackFlag.pos.roomName : assemblyFlag.pos.roomName;
+
+    // AO center prefers the AO flag position; fallback to attackPos, then assembly.
+    const aoCenterPos = aoFlag
+        ? toPos(aoFlag.pos)
+        : (attackPos || waitPos);
+
     const entry = {
         sponsorRoom,
-        waitFlagName: waitFlag.name,
-        waypointFlagName: FLAG_WAYPOINT,
-        attackFlagName: FLAG_ATTACK,
-        waitPos: toPos(waitFlag.pos),
-        attackPos: attackFlag ? toPos(attackFlag.pos) : null,
-        targetRoom: attackFlag ? attackFlag.pos.roomName : waitFlag.pos.roomName
+        waitFlagName: assemblyFlag.name,
+        assemblyFlagName: assemblyFlag.name,
+        attackFlagName: attackFlag ? attackFlag.name : FLAG_ATTACK,
+        waitPos,
+        assemblyPos: waitPos,
+        attackPos,
+        targetRoom,
+        waypointFlagNames,
+        ao: {
+            targetRoom,
+            radius: aoRadius,
+            centerPos: aoCenterPos
+        }
     };
 
     const bySponsorRoom = {};
@@ -116,7 +190,7 @@ module.exports = {
                 ? getMissionCensus(squadKey)
                 : { count: 0, workParts: 0, carryParts: 0 };
 
-            debug('mission.dismantle.flag', `[AssaultDismantleFlag] ${room.name} wait=${entry.waitPos.roomName} attack=${entry.targetRoom} spawn=${spawnAllowed}`);
+            debug('mission.dismantle.flag', `[AssaultDismantleFlag] ${room.name} Z=${entry.waitPos.roomName} target=${entry.targetRoom} aoR=${entry.ao.radius} spawn=${spawnAllowed}`);
 
             missions.push({
                 name: squadKey,
@@ -131,16 +205,29 @@ module.exports = {
                     spawn: spawnAllowed
                 },
                 data: {
+                    ownerRoom: room.name,
+                    squadKey,
+                    mode: 'SOLO',
+                    assaultRole: 'solo',
+                    assaultMode: 'dismantle',
+
+                    // Canonical fields (match assault mission style)
+                    flags: {
+                        wait: entry.waitFlagName,        // Z
+                        assembly: entry.assemblyFlagName, // Z
+                        attack: entry.attackFlagName,     // A / A10 etc
+                        waypoints: entry.waypointFlagNames || []
+                    },
+                    ao: entry.ao,
+
+                    // Legacy convenience fields (kept for compatibility)
                     waitFlagName: entry.waitFlagName,
-                    waypointFlagName: entry.waypointFlagName,
+                    waypointFlagName: FLAG_ASSEMBLY,
                     attackFlagName: entry.attackFlagName,
                     waitPos: entry.waitPos,
                     attackPos: entry.attackPos,
                     targetRoom: entry.targetRoom,
-                    sponsorRoom: room.name,
-                    assaultRole: 'solo',
-                    assaultMode: 'dismantle',
-                    squadKey
+                    sponsorRoom: room.name
                 },
                 census
             });

@@ -13,6 +13,62 @@ const soloPlanner = require('managers_admiral_tactics_assault_solo_soloPlanner_s
 const RETREAT_AT = 0.5;
 const REENGAGE_AT = 0.95;
 
+// --------------------
+// 🧱 DISMANTLE MODE HELPERS
+// --------------------
+function isDismantleMission(mission) {
+    const data = mission && mission.data ? mission.data : null;
+    return !!(data && data.assaultMode === 'dismantle');
+}
+
+function pickDismantleTarget(creep, ao) {
+    if (!creep || !creep.room) return null;
+
+    const radius = ao && Number.isFinite(ao.radius) ? ao.radius : 0;
+    const center = ao && ao.centerPos
+        ? new RoomPosition(ao.centerPos.x, ao.centerPos.y, ao.centerPos.roomName)
+        : null;
+
+    const structures = creep.room.find(FIND_STRUCTURES, {
+        filter: s => {
+            if (s.my) return false;
+            if (s.structureType === STRUCTURE_CONTROLLER) return false;
+
+            // AO radius enforcement
+            if (radius > 0 && center) {
+                if (s.pos.roomName !== center.roomName) return false;
+                if (center.getRangeTo(s.pos) > radius) return false;
+            }
+
+            return true;
+        }
+    });
+
+    if (!structures.length) return null;
+
+    const priority = [
+        STRUCTURE_TOWER,
+        STRUCTURE_SPAWN,
+        STRUCTURE_STORAGE,
+        STRUCTURE_TERMINAL,
+        STRUCTURE_RAMPART
+    ];
+
+    structures.sort((a, b) => {
+        const ai = priority.indexOf(a.structureType);
+        const bi = priority.indexOf(b.structureType);
+        const ap = ai === -1 ? 999 : ai;
+        const bp = bi === -1 ? 999 : bi;
+
+        if (ap !== bp) return ap - bp;
+
+        return creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b);
+    });
+
+    return structures[0];
+}
+
+
 
 function getRuntimeKey(mission) {
     return (mission && mission.data && mission.data.squadKey) ? mission.data.squadKey : (mission ? mission.name : 'unknown');
@@ -396,17 +452,31 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
         }
     }
 
+
     // AO-bounded target selection
+    const dismantleMode = isDismantleMission(mission);
+
     let target = null;
     let targetDebug = null;
     let engageCtx = null;
+
     if (runtime.phase === 'ENGAGE') {
         targetDebug = { reason: 'none', counts: {} };
+
+        // Keep existing engage context to detect hostiles / AO context,
+        // but allow dismantle missions to override the "what do I focus" target safely.
         engageCtx = engage.getEngageContext(creep, flags, ao, targetDebug);
-        target = engageCtx.target;
+
+        if (dismantleMode) {
+            target = pickDismantleTarget(creep, ao);
+            targetDebug.reason = target ? `dismantle:${target.structureType}` : 'dismantle:none';
+        } else {
+            target = engageCtx.target;
+        }
     }
 
     // (Micro-step removed) Keeping runtime position history is optional; omitted for now.
+
 
     const enableSoloDebug = true;
         //!!(runtime && runtime.debug && runtime.debug.soloPlannerVerbose);
@@ -432,7 +502,22 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
         const inEngageRoom = !engageRoom || creep.pos.roomName === engageRoom;
 
-        if (hasHostiles && inEngageRoom) {
+        if (dismantleMode) {
+            // 🧱 Dismantle missions: keep ALL the existing travel/phase/PF goodness,
+            // but override ENGAGE movement to approach a structure at range 1.
+            if (!inEngageRoom) {
+                moveGoal = routeTarget;
+                moveRange = 1;
+            } else if (target && target.pos) {
+                moveGoal = target.pos;
+                moveRange = 1;
+            } else {
+                // No structures left: hold on the AO anchor (or attack flag)
+                if (flags.attackPos) moveGoal = flags.attackPos;
+                else if (ao && ao.centerPos) moveGoal = ao.centerPos;
+                moveRange = 0;
+            }
+        } else if (hasHostiles && inEngageRoom) {
             // 🔥 Tactical combat movement
             const tactical = soloTactics.decideAnchor(
                 creep,
@@ -482,13 +567,38 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
     // Let actionPlan handle attack/heal logic.
     // routeTarget stays the "strategic" destination.
     // movePlan (optional) overrides movement for 1-tick micro.
-    const plan = actionPlan.plan(
-        creep,
-        runtime,
-        target,
-        routeTarget,
-        movePlan // <-- 5th param
-    );
+    let plan;
+    if (dismantleMode) {
+        // Build a "task" in the same shape as actionPlan, but with dismantle action.
+        // Keep movePlan so your task executor can still do PF-driven movement.
+        plan = {
+            moveTarget: moveGoal,
+            range: moveRange,
+            actions: [],
+            movePlan
+        };
+
+        // Only dismantle once we are in the engage room and have a valid structure target.
+        const engageRoom =
+            (ao && ao.targetRoom)
+            || (flags.attackPos && flags.attackPos.roomName)
+            || (routeTarget && routeTarget.roomName)
+            || null;
+        const inEngageRoom = !engageRoom || creep.pos.roomName === engageRoom;
+
+        if (inEngageRoom && target && target.id) {
+            plan.actions.push({ action: 'dismantle', targetId: target.id });
+        }
+    } else {
+        // Default assault behaviour (unchanged)
+        plan = actionPlan.plan(
+            creep,
+            runtime,
+            target,
+            routeTarget,
+            movePlan // <-- 5th param
+        );
+    }
 
     // ---- Debug logging for oscillation / target changes ----
     const dbg = runtime.debug || (runtime.debug = {});

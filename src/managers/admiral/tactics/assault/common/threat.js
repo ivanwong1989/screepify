@@ -33,6 +33,22 @@ function getHostilesInRoom(room) {
     return filterOutAllies(raw);
 }
 
+function computeHostileDps(hostiles) {
+    let meleeDps = 0;
+    let rangedDps = 0;
+
+    for (const h of hostiles) {
+        meleeDps += getBodyPartsCount(h, ATTACK) * 30;
+        rangedDps += getBodyPartsCount(h, RANGED_ATTACK) * 10;
+    }
+
+    return {
+        meleeDps,
+        rangedDps,
+        totalDps: meleeDps + rangedDps
+    };
+}
+
 function getBodyPartsCount(creep, type) {
     if (!creep || !creep.body) return 0;
     let count = 0;
@@ -51,7 +67,13 @@ function evaluateThreat(leader, support) {
             nearRanged: false,
             maxIncomingPotential: 0,
             closestHostileRange: Infinity,
-            hostiles: 0
+            hostiles: 0,
+            // NEW
+            meleeParts: 0,
+            rangedParts: 0,
+            meleeDps: 0,
+            rangedDps: 0,
+            totalDps: 0
         };
     }
 
@@ -62,9 +84,7 @@ function evaluateThreat(leader, support) {
     const hostileMap = new Map();
     for (const room of rooms) {
         const hostiles = getHostilesInRoom(room);
-        for (const hostile of hostiles) {
-            hostileMap.set(hostile.id, hostile);
-        }
+        for (const hostile of hostiles) hostileMap.set(hostile.id, hostile);
     }
 
     const hostiles = Array.from(hostileMap.values());
@@ -75,7 +95,13 @@ function evaluateThreat(leader, support) {
             nearRanged: false,
             maxIncomingPotential: 0,
             closestHostileRange: Infinity,
-            hostiles: 0
+            hostiles: 0,
+            // NEW
+            meleeParts: 0,
+            rangedParts: 0,
+            meleeDps: 0,
+            rangedDps: 0,
+            totalDps: 0
         };
     }
 
@@ -83,14 +109,25 @@ function evaluateThreat(leader, support) {
     let nearMelee = false;
     let nearRanged = false;
     let maxIncomingPotential = 0;
-    let totalMelee = 0;
-    let totalRanged = 0;
+
+    // NEW totals
+    let totalMeleeParts = 0;
+    let totalRangedParts = 0;
+    let totalMeleeDps = 0;
+    let totalRangedDps = 0;
 
     for (const hostile of hostiles) {
         const meleeParts = getBodyPartsCount(hostile, ATTACK);
         const rangedParts = getBodyPartsCount(hostile, RANGED_ATTACK);
-        totalMelee += meleeParts;
-        totalRanged += rangedParts;
+
+        totalMeleeParts += meleeParts;
+        totalRangedParts += rangedParts;
+
+        // Screeps raw (unboosted) DPS per part:
+        // ATTACK = 30, RANGED_ATTACK = 10
+        totalMeleeDps += meleeParts * 30;
+        totalRangedDps += rangedParts * 10;
+
         maxIncomingPotential = Math.max(maxIncomingPotential, meleeParts + rangedParts);
 
         let range = Infinity;
@@ -106,9 +143,11 @@ function evaluateThreat(leader, support) {
         if (rangedParts > 0 && range <= 3) nearRanged = true;
     }
 
+    const totalDps = totalMeleeDps + totalRangedDps;
+
     let score = 0;
     if (nearMelee || nearRanged) score += 2;
-    if (totalMelee + totalRanged >= 10) score += 1;
+    if (totalMeleeParts + totalRangedParts >= 10) score += 1;
     if (hostiles.length >= 3) score += 1;
     if (closestHostileRange <= 2) score += 1;
 
@@ -122,7 +161,14 @@ function evaluateThreat(leader, support) {
         nearRanged,
         maxIncomingPotential,
         closestHostileRange,
-        hostiles: hostiles.length
+        hostiles: hostiles.length,
+
+        // NEW: richer output for “can we outheal then push to r=2?”
+        meleeParts: totalMeleeParts,
+        rangedParts: totalRangedParts,
+        meleeDps: totalMeleeDps,
+        rangedDps: totalRangedDps,
+        totalDps
     };
 }
 

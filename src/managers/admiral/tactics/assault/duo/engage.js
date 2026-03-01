@@ -18,6 +18,12 @@ function inAO(pos, ao) {
     return c.getRangeTo(pos) <= radius;
 }
 
+function isSourceKeeperOwned(o) {
+    const owner = o && o.owner;
+    const u = owner && owner.username;
+    return (typeof u === 'string') && (u.toLowerCase() === 'source keeper');
+}
+
 function selectTarget(creep, flags, ao) {
     if (!creep || !creep.room) return null;
 
@@ -26,10 +32,19 @@ function selectTarget(creep, flags, ao) {
         return null;
     }
     
-    const hostiles = getHostilesInRoom(creep.room).filter(h => inAO(h.pos, ao));
-    if (hostiles.length > 0) {
-        return creep.pos.findClosestByRange(hostiles);
+    // Hostile creeps in AO, but DO NOT engage Source Keepers as targets.
+    // (They still exist in threat evaluation via getHostilesInRoom elsewhere.)
+    const hostiles = getHostilesInRoom(creep.room)
+        .filter(h => inAO(h.pos, ao));
+
+    const engageable = hostiles.filter(h => !isSourceKeeperOwned(h));
+
+    if (engageable.length > 0) {
+        return creep.pos.findClosestByRange(engageable);
     }
+
+    // Optional: if ONLY SKs exist, we intentionally return null here so ENGAGE
+    // doesn't chase them. Other phase logic can decide to hold/retreat/etc.
 
     // Prefer cache-hostileStructures if present (already filters allies)
     let hostileStructures = null;
