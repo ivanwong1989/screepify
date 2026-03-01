@@ -2,6 +2,7 @@
  * Admiral Missions: generate combat missions and compositions.
  */
 const flagAttackMission = require('managers_admiral_missions_mission.attack.flag');
+const flagDismantleMission = require('managers_admiral_missions_mission.dismantle.flag');
 
 function getMissionCensusByName(missionName) {
     let count = 0;
@@ -56,6 +57,14 @@ var admiralMissions = {
                 getMissionCensus: (missionName) => getMissionCensusByName(missionName)
             };
             flagAttackMission.generate(room, null, attackContext, missions);
+        }
+
+        if (flagDismantleMission && typeof flagDismantleMission.generate === 'function') {
+            const dismantleContext = {
+                budget,
+                getMissionCensus: (missionName) => getMissionCensusByName(missionName)
+            };
+            flagDismantleMission.generate(room, null, dismantleContext, missions);
         }
 
         return missions;

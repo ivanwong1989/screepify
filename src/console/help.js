@@ -23,6 +23,9 @@ module.exports = function registerHelpConsole() {
                 'allyRemove(\"Name\") - remove an ally by player name',
                 'allyList()        - show current allies',
                 'mission()         - manage user-controlled missions',
+                'dismantleBody()   - set/show dismantle body for assaultMode=dismantle missions (auto/fixed)',
+                '  dismantleBody("auto: work move") - auto repeats pattern to capacity (default)',
+                '  dismantleBody("fixed: work move") - fixed exact body (no repeat)',
                 'attackBody()      - set/show attack flag creep body (auto/fixed)',
                 '  attackBody("auto: r m h") - auto repeats pattern to capacity (default)',
                 '  attackBody("fixed: r m h") - fixed exact body (no repeat)',
@@ -32,7 +35,8 @@ module.exports = function registerHelpConsole() {
                 'flag directives:',
                 '  Parking*        - decongest parking flags',
                 '  W/A/AM          - assault mission flags (W=wait, W1.. waypoints, A=attack, AM=mass attack)',
-                '  D/A             - assault dismantler flags (D=wait, W1.. waypoints, A=target)'
+                '  Y/B/BM          - assault mission flags (Y=wait, Y1.. waypoints, B=attack, BM=mass attack)',
+                '  Z/D             - assault dismantler flags (Z=wait, Z1.. waypoints, D=target)'
             ];
             for (const line of lines) console.log(line);
             return `Done`;

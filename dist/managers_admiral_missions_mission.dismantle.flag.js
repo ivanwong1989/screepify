@@ -1,15 +1,21 @@
 const shared = require('console_shared');
-const flagsResolver = require('managers_admiral_tactics_assault_common_flags');
 
 /**
- * Assault Dismantle Flag Mission (Z/A + D AO)
+ * Assault Dismantle Flag Mission (Z + D AO)
  *
- * Flags:
+ * Player-facing flags:
  * - Z: assembly / sponsor flag (required). Determines sponsor room and staging position.
- * - Z1, Z2, ...: optional waypoint flags (numeric suffix). Traversed in order before attack.
- * - A: attack flag (optional). Determines target room and attack position.
+ * - Z1, Z2, ...: optional waypoint flags (numeric suffix). Traversed in order before engage.
  * - D / D<number>: AO flag (optional). If numeric suffix exists, it is used as AO radius.
  *   Examples: D (radius 0), D3 (radius 3), D10 (radius 10).
+ *
+ * NOTE (compat):
+ * - We DO NOT use an "A" flag for dismantle.
+ * - However, the assault SOLO controller still expects a mission.data.flags.attack flag to exist
+ *   to remain in ENGAGE phase.
+ * - So we internally set flags.attack to:
+ *     - D (if present), else
+ *     - Z (fallback)
  *
  * Mission data (consumed by assault tactics):
  * - assaultMode: 'dismantle'
@@ -23,7 +29,6 @@ const flagsResolver = require('managers_admiral_tactics_assault_common_flags');
  */
 
 const FLAG_ASSEMBLY = 'Z';
-const FLAG_ATTACK = 'A';
 const FLAG_AO_PREFIX = 'D';
 
 const DEFAULT_DISMANTLE_BODY = [WORK, MOVE];
@@ -133,27 +138,31 @@ function buildFlagDismantleCache() {
         return empty;
     }
 
-    const attackFlag = flagsResolver.resolveAttackFlag(FLAG_ATTACK);
     const aoFlag = resolveAoFlag(FLAG_AO_PREFIX);
     const aoRadius = getAoRadiusFromFlag(aoFlag, FLAG_AO_PREFIX);
 
     const waypointFlagNames = getWaypointFlagNames(FLAG_ASSEMBLY);
 
     const waitPos = toPos(assemblyFlag.pos);
+
+    // ✅ Compat "attack" flag: use D if present, else fall back to Z.
+    const attackFlag = aoFlag || assemblyFlag;
     const attackPos = attackFlag ? toPos(attackFlag.pos) : null;
 
-    const targetRoom = attackFlag ? attackFlag.pos.roomName : assemblyFlag.pos.roomName;
+    // Target room should be AO room if present; otherwise stay in assembly room.
+    const targetRoom = aoFlag ? aoFlag.pos.roomName : assemblyFlag.pos.roomName;
 
-    // AO center prefers the AO flag position; fallback to attackPos, then assembly.
-    const aoCenterPos = aoFlag
-        ? toPos(aoFlag.pos)
-        : (attackPos || waitPos);
+    // AO center prefers the AO flag position; fallback to assembly.
+    const aoCenterPos = aoFlag ? toPos(aoFlag.pos) : waitPos;
 
     const entry = {
         sponsorRoom,
         waitFlagName: assemblyFlag.name,
         assemblyFlagName: assemblyFlag.name,
-        attackFlagName: attackFlag ? attackFlag.name : FLAG_ATTACK,
+
+        // "attack" is a compat anchor flag name (D or Z), not A.
+        attackFlagName: attackFlag.name,
+
         waitPos,
         assemblyPos: waitPos,
         attackPos,
@@ -213,9 +222,9 @@ module.exports = {
 
                     // Canonical fields (match assault mission style)
                     flags: {
-                        wait: entry.waitFlagName,        // Z
-                        assembly: entry.assemblyFlagName, // Z
-                        attack: entry.attackFlagName,     // A / A10 etc
+                        wait: entry.waitFlagName,          // Z
+                        assembly: entry.assemblyFlagName,  // Z
+                        attack: entry.attackFlagName,      // compat anchor: D or Z
                         waypoints: entry.waypointFlagNames || []
                     },
                     ao: entry.ao,

@@ -33,6 +33,10 @@ function pickDismantleTarget(creep, ao) {
         filter: s => {
             if (s.my) return false;
             if (s.structureType === STRUCTURE_CONTROLLER) return false;
+            if (s.structureType === STRUCTURE_STORAGE) return false;
+            if (s.structureType === STRUCTURE_SPAWN) return false;
+            if (s.structureType === STRUCTURE_TERMINAL) return false;
+            if (s.structureType === STRUCTURE_FACTORY) return false;
 
             // AO radius enforcement
             if (radius > 0 && center) {
@@ -49,6 +53,7 @@ function pickDismantleTarget(creep, ao) {
     const priority = [
         STRUCTURE_TOWER,
         STRUCTURE_SPAWN,
+        STRUCTURE_EXTENSION,
         STRUCTURE_STORAGE,
         STRUCTURE_TERMINAL,
         STRUCTURE_RAMPART
@@ -630,17 +635,19 @@ cbDbg.lastRoomCallbackMode = active ? active.mode : 'none';
     // movePlan (optional) overrides movement for 1-tick micro.
     let plan;
     if (dismantleMode) {
-        // Build a "task" in the same shape as actionPlan, but with dismantle action.
-        // Keep movePlan so your task executor can still do PF-driven movement.
+        // Build a "task" in the same shape as actionPlan output:
+        // - DO NOT attach movePlan (soloPlanner output is not duo-style step.dir)
+        // - Use movePlan's computed next position as the moveTarget, so role.assault can moveTo it.
         plan = {
-            moveTarget: moveGoal,
-            range: moveRange,
-            actions: [],
-            movePlan
+            moveTarget: (movePlan && movePlan.moveTarget)
+                ? movePlan.moveTarget
+                : (moveGoal ? { x: moveGoal.x, y: moveGoal.y, roomName: moveGoal.roomName } : null),
+            range: (movePlan && Number.isFinite(movePlan.range)) ? movePlan.range : moveRange,
+            actions: []
         };
+
         // Only dismantle once we are in the engage room and have a valid structure target.
         const inEngageRoom = !engageRoomName || creep.pos.roomName === engageRoomName;
-
         if (inEngageRoom && target && target.id) {
             plan.actions.push({ action: 'dismantle', targetId: target.id });
         }

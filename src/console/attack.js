@@ -1,6 +1,8 @@
 const DEFAULT_ATTACK_BODY = [RANGED_ATTACK, MOVE, HEAL];
 const DEFAULT_SUPPORT_BODY = [HEAL, MOVE, MOVE];
 const DEFAULT_BODY_MODE = 'auto';
+// --- Dismantle mission body tuning (stored in Memory.military.dismantle) ---
+const DEFAULT_DISMANTLE_BODY = [WORK, MOVE];
 const ASSAULT_TUNING_KEYS = [
     'retreatAt',
     'reengageAt',
@@ -65,7 +67,10 @@ function normalizeBodyPart(part) {
             t: 'tough',
             tough: 'tough',
             h: 'heal',
-            heal: 'heal'
+            heal: 'heal',
+            w: 'work',
+            work: 'work',
+            wrk: 'work'
         };
         if (shorthand[normalized]) return shorthand[normalized];
         if (normalized && BODYPART_COST && BODYPART_COST[normalized]) return normalized;
@@ -225,6 +230,64 @@ function setAttackBodyKey(key, modeKey, parts, label, defaultBody) {
     return msg;
 }
 
+
+function ensureDismantleMemory() {
+    if (!Memory.military) Memory.military = {};
+    if (!Memory.military.dismantle) Memory.military.dismantle = {};
+    return Memory.military.dismantle;
+}
+
+function setDismantleBodyKey(key, modeKey, parts, label, defaultBody) {
+    const memory = ensureDismantleMemory();
+    const current = Array.isArray(memory[key]) ? memory[key] : [];
+    const currentMode = getStoredMode(memory, modeKey);
+
+    if (parts === undefined || parts === null) {
+        const fallback = Array.isArray(defaultBody) ? formatBody(defaultBody) : '(none)';
+        const msg = `${label} body: ${formatBody(current)} (mode=${currentMode}, default=${fallback})`;
+        console.log(msg);
+        return msg;
+    }
+
+    const parsed = parseBodyInput(parts);
+    if (parsed.reset) {
+        delete memory[key];
+        delete memory[modeKey];
+        const fallback = Array.isArray(defaultBody) ? formatBody(defaultBody) : '(none)';
+        const cost = Array.isArray(defaultBody) ? getBodyCost(defaultBody) : 0;
+        const msg = `${label} body reset to default (${fallback}, cost=${cost})`;
+        console.log(msg);
+        return msg;
+    }
+
+    if (!parsed.hasBody && !parsed.hasMode) {
+        return `Usage: ${label}Body("auto: work,move") OR ${label}Body("fixed: work,move") OR ${label}Body([WORK, MOVE]) OR ${label}Body("reset")`;
+    }
+
+    if (parsed.hasBody && (!parsed.body || parsed.body.length === 0)) {
+        return `Usage: ${label}Body("auto: work,move") OR ${label}Body("fixed: work,move") OR ${label}Body([WORK, MOVE]) OR ${label}Body("reset")`;
+    }
+
+    if (parsed.hasMode) {
+        storeMode(memory, modeKey, parsed.mode);
+    }
+
+    const effectiveMode = parsed.hasMode ? parsed.mode : currentMode;
+
+    if (parsed.hasBody) {
+        memory[key] = parsed.body;
+        const cost = getBodyCost(parsed.body);
+        const msg = `${label} body set: ${formatBody(parsed.body)} (mode=${effectiveMode}, cost=${cost})`;
+        console.log(msg);
+        return msg;
+    }
+
+    const msg = `${label} body mode set: ${effectiveMode} (body=${formatBody(current)})`;
+    console.log(msg);
+    return msg;
+}
+
+
 function getFlagByName(name) {
     if (!name || typeof name !== 'string') return null;
     const n = name.trim();
@@ -326,6 +389,11 @@ module.exports = function registerAttackConsole() {
         const msg = `Attack support body mode set: ${effectiveMode} (body=${formatBody(current)})`;
         console.log(msg);
         return msg;
+    };
+
+    // Dismantle mission body (Z + D AO)
+    global.dismantleBody = function(parts) {
+        return setDismantleBodyKey('body', 'bodyMode', parts, 'Dismantle', DEFAULT_DISMANTLE_BODY);
     };
 
     global.assaultTuning = function(input, flagName) {
