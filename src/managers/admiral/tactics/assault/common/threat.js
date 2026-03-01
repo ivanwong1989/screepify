@@ -58,7 +58,8 @@ function getBodyPartsCount(creep, type) {
     return count;
 }
 
-function evaluateThreat(leader, support) {
+function evaluateThreat(leader, support, opts) {
+    opts = opts || {};
     const anchor = leader || support;
     if (!anchor || !anchor.room) {
         return {
@@ -68,12 +69,14 @@ function evaluateThreat(leader, support) {
             maxIncomingPotential: 0,
             closestHostileRange: Infinity,
             hostiles: 0,
+
             // NEW
-            meleeParts: 0,
-            rangedParts: 0,
-            meleeDps: 0,
-            rangedDps: 0,
-            totalDps: 0
+            meleeDpsIn3: 0,
+            rangedDpsIn3: 0,
+            totalDpsIn3: 0,
+            meleeDpsAll: 0,
+            rangedDpsAll: 0,
+            totalDpsAll: 0
         };
     }
 
@@ -96,40 +99,47 @@ function evaluateThreat(leader, support) {
             maxIncomingPotential: 0,
             closestHostileRange: Infinity,
             hostiles: 0,
+
             // NEW
-            meleeParts: 0,
-            rangedParts: 0,
-            meleeDps: 0,
-            rangedDps: 0,
-            totalDps: 0
+            meleeDpsIn3: 0,
+            rangedDpsIn3: 0,
+            totalDpsIn3: 0,
+            meleeDpsAll: 0,
+            rangedDpsAll: 0,
+            totalDpsAll: 0
         };
     }
+
+    const meleeRange = Number.isFinite(opts.meleeRange) ? opts.meleeRange : 1;
+    const rangedRange = Number.isFinite(opts.rangedRange) ? opts.rangedRange : 3;
 
     let closestHostileRange = Infinity;
     let nearMelee = false;
     let nearRanged = false;
     let maxIncomingPotential = 0;
 
-    // NEW totals
-    let totalMeleeParts = 0;
-    let totalRangedParts = 0;
-    let totalMeleeDps = 0;
-    let totalRangedDps = 0;
+    // totals (all hostiles in room)
+    let meleeDpsAll = 0;
+    let rangedDpsAll = 0;
+
+    // totals (only those that can hit within relevant ranges)
+    let meleeDpsIn3 = 0;
+    let rangedDpsIn3 = 0;
 
     for (const hostile of hostiles) {
         const meleeParts = getBodyPartsCount(hostile, ATTACK);
         const rangedParts = getBodyPartsCount(hostile, RANGED_ATTACK);
 
-        totalMeleeParts += meleeParts;
-        totalRangedParts += rangedParts;
+        // raw unboosted DPS
+        const meleeDps = meleeParts * 30;
+        const rangedDps = rangedParts * 10;
 
-        // Screeps raw (unboosted) DPS per part:
-        // ATTACK = 30, RANGED_ATTACK = 10
-        totalMeleeDps += meleeParts * 30;
-        totalRangedDps += rangedParts * 10;
+        meleeDpsAll += meleeDps;
+        rangedDpsAll += rangedDps;
 
         maxIncomingPotential = Math.max(maxIncomingPotential, meleeParts + rangedParts);
 
+        // distance to our duo (min of leader/support if same room)
         let range = Infinity;
         if (leader && leader.room && leader.room.name === hostile.room.name) {
             range = Math.min(range, leader.pos.getRangeTo(hostile.pos));
@@ -139,15 +149,23 @@ function evaluateThreat(leader, support) {
         }
         closestHostileRange = Math.min(closestHostileRange, range);
 
-        if (meleeParts > 0 && range <= 1) nearMelee = true;
-        if (rangedParts > 0 && range <= 3) nearRanged = true;
+        if (meleeParts > 0 && range <= meleeRange) {
+            nearMelee = true;
+            meleeDpsIn3 += meleeDps;
+        }
+        if (rangedParts > 0 && range <= rangedRange) {
+            nearRanged = true;
+            rangedDpsIn3 += rangedDps;
+        }
     }
 
-    const totalDps = totalMeleeDps + totalRangedDps;
+    const totalDpsAll = meleeDpsAll + rangedDpsAll;
+    const totalDpsIn3 = meleeDpsIn3 + rangedDpsIn3;
 
+    // threat "level" based on *relevant* (in-range) threat, not whole room.
     let score = 0;
     if (nearMelee || nearRanged) score += 2;
-    if (totalMeleeParts + totalRangedParts >= 10) score += 1;
+    if ((meleeDpsIn3 + rangedDpsIn3) >= 200) score += 1;     // tunable
     if (hostiles.length >= 3) score += 1;
     if (closestHostileRange <= 2) score += 1;
 
@@ -163,12 +181,15 @@ function evaluateThreat(leader, support) {
         closestHostileRange,
         hostiles: hostiles.length,
 
-        // NEW: richer output for “can we outheal then push to r=2?”
-        meleeParts: totalMeleeParts,
-        rangedParts: totalRangedParts,
-        meleeDps: totalMeleeDps,
-        rangedDps: totalRangedDps,
-        totalDps
+        // NEW (what you asked for)
+        meleeDpsIn3,
+        rangedDpsIn3,
+        totalDpsIn3,
+
+        // NEW (optional: keep full-room signal too)
+        meleeDpsAll,
+        rangedDpsAll,
+        totalDpsAll
     };
 }
 

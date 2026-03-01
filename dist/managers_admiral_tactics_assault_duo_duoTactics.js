@@ -505,7 +505,7 @@ function decideAnchor(leader, support, runtime, flags, ao, target, opts) {
         const threat = evaluateThreat(leader, support);
         const ourHeal = computeDuoHealPerTick(leader, support);
 
-        if (threat && threat.totalDps > 0 && ourHeal >= threat.totalDps) {
+        if (threat.totalDpsIn3 > 0 && ourHeal >= threat.totalDpsIn3) {
             canOutHeal = true;
             pushAggro = true;
         }
@@ -650,7 +650,7 @@ const disableCone = !!opts.disableCone;
     // This part is for if we calculated we will outheal enemy's damage
     if (pushAggro && rr.style === 'ranged') {
         minRange = 2;
-        maxRange = 3;
+        maxRange = 2;
     }
 
 
