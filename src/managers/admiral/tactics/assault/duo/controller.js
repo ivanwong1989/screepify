@@ -55,6 +55,18 @@ function logDuo(runtime, mission, message) {
     if (runtime && runtime.debug) runtime.debug.lastLog = message;
 }
 
+
+// Rate-limited callback error logging (once per tick per key)
+function logCbErrorOnce(runtime, mission, key, message) {
+    if (!runtime) return;
+    if (!runtime.debug) runtime.debug = {};
+    const t = (typeof Game !== 'undefined' && Game && typeof Game.time === 'number') ? Game.time : -1;
+    const last = runtime.debug._cbErr || null;
+    if (last && last.t === t && last.key === key) return;
+    runtime.debug._cbErr = { t, key };
+    logDuo(runtime, mission, message);
+}
+
 function shouldRetreat(creep) {
     return creep && creep.hitsMax > 0 && (creep.hits / creep.hitsMax) <= RETREAT_AT;
 }
@@ -305,6 +317,24 @@ function planForPair(mission, leaderInput, supportInput, context) {
     let runtime = memory.getDuoRuntime(runtimeKey);
     // Heartbeat: if mission exists on the board, touch runtime so GC won't delete it
     memory.touchDuoRuntime(runtime, mission, runtimeKey);
+    // 🔌 Inject tasker-provided callbacks into duo runtime (STRICT)
+    if (context && context.runtime) {
+        runtime.travelRoomCallback = (typeof context.runtime.travelRoomCallback === 'function')
+            ? context.runtime.travelRoomCallback
+            : null;
+        runtime.combatRoomCallback = (typeof context.runtime.combatRoomCallback === 'function')
+            ? context.runtime.combatRoomCallback
+            : null;
+
+        // STRICT: ignore legacy single roomCallback entirely (no silent fallback)
+        runtime.roomCallback = null;
+
+        if (typeof context.runtime.roomCallback === 'function') {
+            logCbErrorOnce(runtime, mission, 'legacyRoomCallbackIgnored',
+                'STRICT: legacy context.runtime.roomCallback was provided but is ignored. Provide travelRoomCallback/combatRoomCallback instead.'
+            );
+        }
+    }
     if (!runtime.debug) runtime.debug = {};
     const flags = flagsResolver.resolveFlags(mission);
     const ao = aoResolver.resolveAO(mission, flags);
@@ -425,7 +455,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
     // 2) If not together, regroup
     // No allowSplit / split-retreat behavior.
     const cohesionRange = COHESION_RANGE;
-let baseRegroup = false;
+    let baseRegroup = false;
     if (runtime.assembled.done && (!leader || !support)) {
         runtime.phase = 'RETREAT';
         baseRegroup = false;
@@ -567,9 +597,40 @@ let baseRegroup = false;
             combatMagnet: (runtime.phase === 'ENGAGE') && engageInAORoom,
             combatFreshPF: (runtime.phase === 'ENGAGE') && engageInAORoom
         },
-        runtime: {
-            roomCallback: runtime.roomCallback || null
-        },
+        runtime: (() => {
+            const useCombat = (runtime.phase === 'ENGAGE') && engageInAORoom;
+
+            let selectedCb = null;
+            if (useCombat) {
+                if (runtime.combatRoomCallback) {
+                    selectedCb = runtime.combatRoomCallback;
+                } else {
+                    logCbErrorOnce(runtime, mission, 'missingCombatRoomCallback',
+                        `ERROR: Missing combatRoomCallback in COMBAT mode (phase=ENGAGE in AO). Using null roomCallback. phase=${runtime.phase} aoRoom=${engageInAORoom ? 1 : 0}`
+                    );
+                    selectedCb = null;
+                }
+            } else {
+                if (runtime.travelRoomCallback) {
+                    selectedCb = runtime.travelRoomCallback;
+                } else {
+                    logCbErrorOnce(runtime, mission, 'missingTravelRoomCallback',
+                        `ERROR: Missing travelRoomCallback in TRAVEL mode. Using null roomCallback. phase=${runtime.phase} aoRoom=${engageInAORoom ? 1 : 0}`
+                    );
+                    selectedCb = null;
+                }
+            }
+
+            return {
+                // STRICT: only the selected callback is used *right now*
+                roomCallback: selectedCb,
+
+                // pass through both explicitly (no fallback chaining)
+                travelRoomCallback: runtime.travelRoomCallback,
+                combatRoomCallback: runtime.combatRoomCallback,
+            };
+        })(),
+
 
         enemyPos: target ? target.pos : null,
 

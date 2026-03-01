@@ -336,6 +336,17 @@ function computeSupportCohesive(room, leader, support, leaderTo, leaderDir, form
     function score(pos, pri) {
         let s = 0;
 
+        // Terrain penalty (prevents swamp dragging leader)
+        const terrain = room.getTerrain().get(pos.x, pos.y);
+        const swampPenalty =
+            Number.isFinite(formation && formation.supportSwampPenalty)
+                ? formation.supportSwampPenalty
+                : 25; // tune 15–40
+
+        if (terrain === TERRAIN_MASK_SWAMP) {
+            s += swampPenalty;
+        }
+
         // Threat gradient preference: keep support on lower-pressure tiles.
         // This is "soft" (works even when tile is not lethal) and helps orientation.
         if (_cm && _threatWeight > 0) {
@@ -1931,7 +1942,43 @@ if (!supportStaged && s && s.to && isSamePos(s.to, leader.pos)) {
     }
 }
 
-                return {
+
+// Prevent leader from pathing onto support's CURRENT tile during border staging.
+// PF treats creeps as high-cost, not blocked, so it may still choose the support tile.
+// If support is not vacating this tick, that becomes a hard deadlock (leader tries to move into occupied tile).
+if (!leaderStaged && l && l.to && isSamePos(l.to, support.pos)) {
+    const supportIsMovingAway = s && s.to && !isSamePos(s.to, support.pos);
+    if (!supportIsMovingAway) {
+        // Try one quick reroute by injecting a short-lived hard block on the support tile.
+        if (memory) {
+            addTempBlock(memory, room.name, support.pos, 3, 255);
+            invalidatePath(memory, 'border_stage_leader');
+        }
+        const l2 = pfStepToward(
+            memory && usePathCache ? memory : null,
+            'border_stage_leader',
+            leader,
+            leaderExit,
+            0,
+            movement,
+            runtime,
+            stageOpts,
+            leaderExit,
+            true // forceRecalc
+        );
+        if (l2 && l2.to) {
+            l.dir = l2.dir;
+            l.to = l2.to;
+            l.ps = l2.ps;
+        }
+
+        // If we STILL want to step onto support, hold leader (prefer 1-tick delay over permanent deadlock).
+        if (l && l.to && isSamePos(l.to, support.pos)) {
+            l.dir = null;
+            l.to = leader.pos;
+        }
+    }
+}                return {
                     ok: true,
                     reason: 'border-stage',
                     mode: 'BORDER_HANDSHAKE',

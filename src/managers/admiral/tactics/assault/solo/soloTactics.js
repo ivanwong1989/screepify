@@ -269,11 +269,18 @@ function decideAnchor(creep, runtime, flags, ao, target, opts) {
     const rr = getRoleRanges(creep);
 
     // Build/get combat cost matrix for this room.
-    const roomCallback = makeAssaultCombatRoomCallback({
-        avoidBorders: true,
-        borderCost: 10,
-        considerCreeps: false
-    });
+    // Source of truth: injected by tasker/controller via runtime.roomCallback.
+    const roomCallback = (runtime && typeof runtime.roomCallback === 'function')
+        ? runtime.roomCallback
+        : null;
+
+    if (!roomCallback) {
+        return {
+            anchorPos: focus,
+            range: 0,
+            reason: `fallback:no-roomCallback:${focusReason}`
+        };
+    }
 
     const costs = roomCallback(creep.room.name);
     // If matrix is unavailable, degrade to a simple "stand on focus (or near it)".

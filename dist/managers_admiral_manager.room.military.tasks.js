@@ -269,17 +269,31 @@ var militaryTasks = {
             if (aoRoom) overlayRooms.add(aoRoom);
         }
 
-        // Build callback ONCE.
-        // Base matrix is available for any visible PF-evaluated room.
-        // Threat overlay is restricted to AO target rooms only (overlayRooms).
-        const roomCallback = assaultCombatMatrix.makeAssaultCombatRoomCallback({
+        // Build callbacks ONCE.
+        // - travelRoomCallback: base-only (cheap), used for ROUTE/STAGE/TRAVEL PF
+        // - combatRoomCallback: base + threat overlay, but overlay restricted to AO rooms only
+        const travelRoomCallback = assaultCombatMatrix.makeAssaultCombatRoomCallback({
+            // No overlay restriction needed because we don't add threat overlay at all.
+            base: {
+                plainCost: 2,
+                swampCost: 10,
+                roadCost: 1,
+                avoidBorders: true,
+                borderCost: 10,      // lighter for travel
+                considerCreeps: false,
+            },
+            // Important: disable overlay entirely for travel
+            threat: null
+        });
+
+        const combatRoomCallback = assaultCombatMatrix.makeAssaultCombatRoomCallback({
             onlyOverlayInRoomNames: overlayRooms,
             base: {
                 plainCost: 2,
                 swampCost: 10,
                 roadCost: 1,
                 avoidBorders: true,
-                borderCost: 100,
+                borderCost: 100,     // your current combat border behavior
                 considerCreeps: false,
             },
             threat: {
@@ -295,7 +309,17 @@ var militaryTasks = {
             },
         });
 
-        const ctx = { room, hostiles, runtime: { roomCallback } };
+        // Back-compat: keep runtime.roomCallback pointing at COMBAT by default
+        // (since solo/duo tactics expect runtime.roomCallback for the "combat matrix")
+        const ctx = {
+            room,
+            hostiles,
+            runtime: {
+                //roomCallback: combatRoomCallback,
+                travelRoomCallback,
+                combatRoomCallback,
+            }
+        };
 
         const handledDuoMissions = runDuoAssaultMissions(missions, assignments, ctx);
         const handledSoloMissions = runSoloAssaultMissions(missions, assignments, ctx);
@@ -386,7 +410,7 @@ var militaryTasks = {
                         if (!aoRoom) continue; // must be visible
 
                         if (combatVis && typeof combatVis.drawCombatMatrix === 'function') {
-                            combatVis.drawCombatMatrix(aoRoom, roomCallback, {
+                            combatVis.drawCombatMatrix(aoRoom, combatRoomCallback, {
                                 step,
                                 minCost,
                                 legend: true,

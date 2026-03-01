@@ -228,6 +228,67 @@ function shouldReengage(creep) {
         (creep.hits / creep.hitsMax) >= REENGAGE_AT;
 }
 
+
+// --------------------
+// 🧭 PF CALLBACK WIRING HELPERS
+// --------------------
+// Resolve the "combat room" where we want to enable expensive combat matrices.
+// Prefer AO targetRoom, then attack flag room; fall back to routeTarget room if we have it.
+function resolveEngageRoomName(ao, flags, routeTarget) {
+    if (ao && ao.targetRoom) return ao.targetRoom;
+    if (flags && flags.attackPos && flags.attackPos.roomName) return flags.attackPos.roomName;
+    if (routeTarget && routeTarget.roomName) return routeTarget.roomName;
+    return null;
+}
+
+// Pull callbacks from context.runtime if present, but never hard-crash the whole tick.
+// (Throwing here makes missions brittle when tasker wiring changes.)
+function wirePathCallbacks(runtime, context) {
+    if (!runtime) return;
+
+    const rt = context && context.runtime ? context.runtime : null;
+    const travelCb = rt && typeof rt.travelRoomCallback === 'function' ? rt.travelRoomCallback : null;
+    const combatCb = rt && typeof rt.combatRoomCallback === 'function' ? rt.combatRoomCallback : null;
+
+    // Only overwrite if we have valid functions (keeps last-known-good if tasker is temporarily inconsistent)
+    if (travelCb) runtime.travelRoomCallback = travelCb;
+    if (combatCb) runtime.combatRoomCallback = combatCb;
+
+    // Track miswiring for debug (but do not throw)
+    if (!travelCb || !combatCb) {
+        if (!runtime._cbWarn) runtime._cbWarn = {};
+        runtime._cbWarn.missing = {
+            travel: !travelCb,
+            combat: !combatCb,
+            ctxRuntime: !!rt
+        };
+    } else if (runtime._cbWarn) {
+        delete runtime._cbWarn.missing;
+    }
+}
+
+// Decide which callback is active this tick.
+// - Default: travel callback (cheap, stable)
+// - Combat callback: only in ENGAGE, inside engage room, and only when there's meaningful combat threat.
+//   (Avoid paying combat matrix cost while just walking around or while dismantling structures.)
+function selectActiveRoomCallback(runtime, phase, creep, engageRoomName, hasCombatThreat, dismantleMode) {
+    const travelCb = runtime && typeof runtime.travelRoomCallback === 'function' ? runtime.travelRoomCallback : null;
+    const combatCb = runtime && typeof runtime.combatRoomCallback === 'function' ? runtime.combatRoomCallback : null;
+
+    const inEngageRoom = !engageRoomName || (creep && creep.pos && creep.pos.roomName === engageRoomName);
+
+    if (!dismantleMode &&
+        phase === 'ENGAGE' &&
+        inEngageRoom &&
+        hasCombatThreat &&
+        combatCb) {
+        return { cb: combatCb, mode: 'combat' };
+    }
+
+    if (travelCb) return { cb: travelCb, mode: 'travel' };
+    return { cb: null, mode: 'none' };
+}
+
 // Retreat destination: latest reached waypoint (not all the way back to W)
 function getRetreatWaypoint(runtime, flags, ao) {
     const waypoints = (flags && flags.waypointPositions) ? flags.waypointPositions : [];
@@ -322,19 +383,8 @@ function planForSolo(mission, creepOrNull, context) {
     const runtimeKey = getRuntimeKey(mission);
     const runtime = memory.getRuntime(runtimeKey);
     memory.touchSoloRuntime(runtime, mission, runtimeKey);
-
-    // ✅ Wire PathFinder roomCallback from the task-runner context into this mission runtime.
-    // soloPlanner expects runtime.roomCallback (or opts.roomCallback) to provide a base CostMatrix.
-    // Without this, soloPlanner logs "base=none" and PF ignores your structure/block rules.
-    const ctxCb = context && context.runtime && typeof context.runtime.roomCallback === 'function'
-        ? context.runtime.roomCallback
-        : null;
-    if (ctxCb) {
-        runtime.roomCallback = ctxCb;
-    } else if (runtime && runtime.roomCallback) {
-        // Avoid holding onto stale callbacks across ticks / reloads
-        delete runtime.roomCallback;
-    }
+    // ---- PathFinder callback wiring (non-fatal) ----
+    wirePathCallbacks(runtime, context);
 
 
     const ownerRoom =
@@ -475,6 +525,23 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
         }
     }
 
+
+
+// --------------------------------------------------
+// 🎛 Phase-aware PathFinder callback switching (clean)
+// --------------------------------------------------
+// We keep travel + combat callbacks injected by tasker, but only activate the combat matrix
+// when we're actually fighting in the engage room.
+const engageRoomName = resolveEngageRoomName(ao, flags, routeTarget);
+const hasCombatThreat = !!(engageCtx && engageCtx.hasHostiles);
+const active = selectActiveRoomCallback(runtime, runtime.phase, creep, engageRoomName, hasCombatThreat, dismantleMode);
+
+if (active && active.cb) runtime.roomCallback = active.cb;
+else delete runtime.roomCallback;
+
+// Optional debug breadcrumb
+const cbDbg = runtime.debug || (runtime.debug = {});
+cbDbg.lastRoomCallbackMode = active ? active.mode : 'none';
     // (Micro-step removed) Keeping runtime position history is optional; omitted for now.
 
 
@@ -494,13 +561,7 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
         // If ENGAGE begins while we're still in the staging/assembly room (no vision / hostiles here),
         // do NOT let tactical anchoring override cross-room travel. Only run combat anchoring once
         // we're inside the AO / attack room.
-        const engageRoom =
-            (ao && ao.targetRoom)
-            || (flags.attackPos && flags.attackPos.roomName)
-            || (routeTarget && routeTarget.roomName)
-            || null;
-
-        const inEngageRoom = !engageRoom || creep.pos.roomName === engageRoom;
+        const inEngageRoom = !engageRoomName || creep.pos.roomName === engageRoomName;
 
         if (dismantleMode) {
             // 🧱 Dismantle missions: keep ALL the existing travel/phase/PF goodness,
@@ -577,14 +638,8 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
             actions: [],
             movePlan
         };
-
         // Only dismantle once we are in the engage room and have a valid structure target.
-        const engageRoom =
-            (ao && ao.targetRoom)
-            || (flags.attackPos && flags.attackPos.roomName)
-            || (routeTarget && routeTarget.roomName)
-            || null;
-        const inEngageRoom = !engageRoom || creep.pos.roomName === engageRoom;
+        const inEngageRoom = !engageRoomName || creep.pos.roomName === engageRoomName;
 
         if (inEngageRoom && target && target.id) {
             plan.actions.push({ action: 'dismantle', targetId: target.id });
