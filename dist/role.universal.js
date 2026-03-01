@@ -132,6 +132,24 @@ function moveToTarget(creep, target, range) {
     creep.moveTo(target, { range: moveRange, reusePath: 20 });
 }
 
+function getOpportunisticDesiredHits(room, st) {
+    if (!st || !st.hitsMax) return 0;
+
+    // For walls/ramparts, cap at mission policy target hits (NOT hitsMax)
+    if (st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART) {
+        const policy = room && room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy;
+        const target = policy && Number.isFinite(policy.target) ? policy.target : 0;
+
+        // If no policy, safest is to not opportunistic-fortify infinities
+        if (target <= 0) return 0;
+
+        return Math.min(target, st.hitsMax);
+    }
+
+    // Normal structures: desired is full hitsMax
+    return st.hitsMax;
+}
+
 function tryOpportunisticRepair(creep, currentTask) {
     if (!creep || creep.spawning) return false;
 
@@ -157,7 +175,7 @@ function tryOpportunisticRepair(creep, currentTask) {
     if (creep._oppRepairTick === Game.time) return false;
     creep._oppRepairTick = Game.time;
 
-    // Pick nearby damaged non-fortification structures
+    // Pick nearby damaged structures
     // Prefer roomCache (avoids fresh room.find / findInRange scans).
     let candidates;
     if (room && global.getRoomCache) {
@@ -166,16 +184,16 @@ function tryOpportunisticRepair(creep, currentTask) {
         if (structs && structs.length) {
             candidates = structs.filter((st) => {
                 if (!st || !st.hitsMax) return false;
-                if (st.hits >= st.hitsMax) return false;
-
-                // Skip fortifications (handled by missions)
-                //if (st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART) return false;
 
                 // Only consider nearby (match old findInRange radius=3)
                 if (!st.pos || st.pos.getRangeTo(creep.pos) > 3) return false;
 
-                // Skip if only tiny scratch (tune threshold)
-                return st.hits < (st.hitsMax * 0.95);
+                const desired = getOpportunisticDesiredHits(room, st);
+                if (desired <= 0) return false;          // no policy for fortifications => skip
+                if (st.hits >= desired) return false;    // already at/above desired cap
+
+                // Skip if only tiny scratch (relative to desired cap)
+                return st.hits < (desired * 0.95);
             });
         }
     }
@@ -183,19 +201,23 @@ function tryOpportunisticRepair(creep, currentTask) {
         candidates = creep.pos.findInRange(FIND_STRUCTURES, 3, {
             filter: (st) => {
                 if (!st || !st.hitsMax) return false;
-                if (st.hits >= st.hitsMax) return false;
 
-                // Skip fortifications (handled by missions)
-                //if (st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART) return false;
+                const desired = getOpportunisticDesiredHits(room, st);
+                if (desired <= 0) return false;
+                if (st.hits >= desired) return false;
 
-                // Skip if only tiny scratch (tune threshold)
-                return st.hits < (st.hitsMax * 0.85);
+                return st.hits < (desired * 0.85);
             }
         });
     }
     if (!candidates || candidates.length === 0) return false;
 
-    candidates.sort((a, b) => (a.hits / a.hitsMax) - (b.hits / b.hitsMax));
+    candidates.sort((a, b) => {
+        const da = getOpportunisticDesiredHits(room, a) || a.hitsMax;
+        const db = getOpportunisticDesiredHits(room, b) || b.hitsMax;
+        return (a.hits / da) - (b.hits / db);
+    });
+
     const target = candidates[0];
     const res = creep.repair(target);
     return res === OK;

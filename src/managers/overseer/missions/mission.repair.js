@@ -24,6 +24,16 @@ module.exports = {
         const FORTIFY_START_HITS = settings.start;
         const FORTIFY_TARGET_HITS = settings.target;
 
+        // Hacky way to get fortify values to memory for downstream usage. might need to move to policy layer later
+        if (!room.memory.overseer) room.memory.overseer = {};
+
+        room.memory.overseer.fortifyPolicy = {
+        rcl,
+        start: FORTIFY_START_HITS,
+        target: FORTIFY_TARGET_HITS,
+        updated: Game.time
+        };
+
         const REPAIR_MIN_RATIO = 0.9;
         const CRITICAL_GENERAL_RATIO = 0.8;
         const CRITICAL_DECAYABLE_RATIO = 0.7;
