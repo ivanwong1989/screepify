@@ -126,7 +126,28 @@ module.exports = {
         let desiredCount = 0;
         if (repairTargets.length > 0) {
             const repairStats = managerSpawner.checkBody('worker', budget);
-            const repairWorkTarget = 5 + Math.max(0, rcl - 3) * 2;
+
+            // Baseline (existing behavior): small steady repair throughput by RCL
+            const baseWork = 5 + Math.max(0, rcl - 3) * 2;
+
+            // Backlog scaling:
+            // +2 work for every 8 repair targets (tune this)
+            const BACKLOG_PER = 8;
+            const BACKLOG_WORK_PER_CHUNK = 2;
+            const backlogWork = Math.floor(repairTargets.length / BACKLOG_PER) * BACKLOG_WORK_PER_CHUNK;
+
+            // Urgency boosts (optional but nice):
+            const criticalBoost = criticalFound ? 10 : 0;              // slam harder when critical exists
+            const siegeBoost = (hostilesPresent || siegeMode) ? 6 : 0; // extra repairs during active threat
+
+            // Hard cap so we don't spawn-repair the whole economy
+            const MAX_REPAIR_WORK_TARGET = 60;
+
+            const repairWorkTarget = Math.min(
+                MAX_REPAIR_WORK_TARGET,
+                baseWork + backlogWork + criticalBoost + siegeBoost
+            );
+
             workPerCreep = repairStats.work || 1;
             desiredCount = Math.ceil(repairWorkTarget / workPerCreep);
         }
@@ -195,7 +216,22 @@ module.exports = {
         }
 
         if (fortifyTargets.length > 0) {
+            // Fortify stays capped in *targets* (prevents jumping around),
+            // but can scale in *workers per target* and flip spawn on when dire.
             const FORTIFY_TARGET_CAP = 3;
+            const FORTIFY_SPAWN_THRESHOLD = 25;       // backlog size where we allow spawning for fortify
+            const FORTIFY_MAX_COUNT_PER_TARGET = 4;   // up to N workers per fortify target
+            const FORTIFY_BACKLOG_STEP = 20;          // every +N fortify targets increases count (when dire)
+            const REPAIR_BACKLOG_BLOCK_SPAWN = 15;    // don't spawn for fortify if repairs are still huge
+
+            const direFortify = siegeMode || hostilesPresent || (fortifyTargets.length >= FORTIFY_SPAWN_THRESHOLD);
+            const allowFortifySpawn = direFortify && (repairTargets.length <= REPAIR_BACKLOG_BLOCK_SPAWN);
+            const extra = direFortify ? Math.floor(fortifyTargets.length / FORTIFY_BACKLOG_STEP) : 0;
+            const fortifyCountPerTarget = Math.max(
+                1,
+                Math.min(FORTIFY_MAX_COUNT_PER_TARGET, 1 + extra)
+            );
+
             const sortedForts = [...fortifyTargets].sort((a, b) => {
                 const aRatio = a.hitsMax > 0 ? (a.hits / a.hitsMax) : 1;
                 const bRatio = b.hitsMax > 0 ? (b.hits / b.hitsMax) : 1;
@@ -219,7 +255,12 @@ module.exports = {
                     .slice(0, Math.max(0, fortifyCount - stickyFortTargets.length))
             );
 
-            debug('mission.repair', `[Fortify] ${room.name} targets=${selectedForts.length}/${fortifyTargets.length}`);
+            debug(
+                'mission.repair',
+                `[Fortify] ${room.name} targets=${selectedForts.length}/${fortifyTargets.length} ` +
+                `countPerTarget=${fortifyCountPerTarget} spawn=${allowFortifySpawn} dire=${direFortify} ` +
+                `repairBacklog=${repairTargets.length}`
+            );
 
             selectedForts.forEach(target => {
                 missions.push({
@@ -230,11 +271,11 @@ module.exports = {
                     data: { sourceIds: intel.allEnergySources.map(s => s.id), fortify: true },
                     requirements: {
                         archetype: 'worker',
-                        count: 1,
+                        count: fortifyCountPerTarget,
                         spawnFromFleet: true,
-                        spawn: false
+                        spawn: allowFortifySpawn
                     },
-                    priority: 35
+                    priority: allowFortifySpawn ? 55 : 35
                 });
             });
         }

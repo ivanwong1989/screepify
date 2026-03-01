@@ -132,6 +132,76 @@ function moveToTarget(creep, target, range) {
     creep.moveTo(target, { range: moveRange, reusePath: 20 });
 }
 
+function tryOpportunisticRepair(creep, currentTask) {
+    if (!creep || creep.spawning) return false;
+
+    // Only if we have energy + WORK
+    if (!creep.store || creep.store[RESOURCE_ENERGY] <= 0) return false;
+    if (creep.getActiveBodyparts(WORK) <= 0) return false;
+
+    // Don't double-repair on a real repair task (let the mission do its job)
+    const action = currentTask && currentTask.action;
+    if (action === 'repair') return false;
+
+    // Avoid combat roles
+    const role = creep.memory && creep.memory.role;
+    if (role && ['defender', 'brawler', 'drainer', 'assault'].includes(role)) return false;
+
+    // Avoid during siege (keep workers focused / reduce noise)
+    const room = creep.room;
+    if (!room) return false;
+    const combatState = room.memory && room.memory.admiral && room.memory.admiral.state;
+    if (combatState === 'SIEGE') return false;
+
+    // Throttle: at most once per tick (in case run() gets called twice)
+    if (creep._oppRepairTick === Game.time) return false;
+    creep._oppRepairTick = Game.time;
+
+    // Pick nearby damaged non-fortification structures
+    // Prefer roomCache (avoids fresh room.find / findInRange scans).
+    let candidates;
+    if (room && global.getRoomCache) {
+        const cache = global.getRoomCache(room);
+        const structs = cache && cache.structures;
+        if (structs && structs.length) {
+            candidates = structs.filter((st) => {
+                if (!st || !st.hitsMax) return false;
+                if (st.hits >= st.hitsMax) return false;
+
+                // Skip fortifications (handled by missions)
+                //if (st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART) return false;
+
+                // Only consider nearby (match old findInRange radius=3)
+                if (!st.pos || st.pos.getRangeTo(creep.pos) > 3) return false;
+
+                // Skip if only tiny scratch (tune threshold)
+                return st.hits < (st.hitsMax * 0.95);
+            });
+        }
+    }
+    if (!candidates) {
+        candidates = creep.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: (st) => {
+                if (!st || !st.hitsMax) return false;
+                if (st.hits >= st.hitsMax) return false;
+
+                // Skip fortifications (handled by missions)
+                //if (st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART) return false;
+
+                // Skip if only tiny scratch (tune threshold)
+                return st.hits < (st.hitsMax * 0.85);
+            }
+        });
+    }
+    if (!candidates || candidates.length === 0) return false;
+
+    candidates.sort((a, b) => (a.hits / a.hitsMax) - (b.hits / b.hitsMax));
+    const target = candidates[0];
+    const res = creep.repair(target);
+    return res === OK;
+}
+
+
 var roleUniversal = {
     /**
      * The universal role creep logic.
@@ -209,6 +279,15 @@ var roleUniversal = {
             return;
         }
 
+        // Opportunistic micro-repair while traveling (does NOT stop movement)
+        // Do not return early — we still want to execute the actual task (including move).
+        // NOTE: For primary 'repair' tasks, we only attempt opportunistic repair if the primary repair is NOT in range
+        // (see the 'repair' case below), so workers can still patch nearby stuff while walking.
+        // Do not have harvesters in 'harvest' task do repair. 
+        if (task.action !== 'repair' && task.action !== 'harvest') {
+            tryOpportunisticRepair(creep, task);
+        }
+
         switch(task.action) {
             case 'move':
                 if (target) {
@@ -248,11 +327,15 @@ var roleUniversal = {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
-            case 'repair':
-                if (creep.repair(target) === ERR_NOT_IN_RANGE) {
+            case 'repair': {
+                const res = creep.repair(target);
+                if (res === ERR_NOT_IN_RANGE) {
+                    // Still traveling to the real repair target — allow opportunistic repair en route.
+                    tryOpportunisticRepair(creep, task);
                     moveToTarget(creep, target, task.range);
                 }
                 break;
+            }
             case 'dismantle':
                 if (creep.dismantle(target) === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
