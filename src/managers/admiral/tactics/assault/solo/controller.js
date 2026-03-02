@@ -74,6 +74,43 @@ function pickDismantleTarget(creep, ao) {
 }
 
 
+// DH = hard target tile: ONLY dismantle structures on this exact position.
+function pickDismantleHardTarget(creep, hardPos) {
+    if (!creep || !creep.room || !hardPos) return null;
+    if (creep.room.name !== hardPos.roomName) return null;
+
+    const structuresAt = creep.room.lookForAt(LOOK_STRUCTURES, hardPos.x, hardPos.y) || [];
+    const filtered = structuresAt.filter(s => {
+        if (!s) return false;
+        if (s.my) return false;
+        if (s.structureType === STRUCTURE_CONTROLLER) return false;
+        return true;
+    });
+
+    if (!filtered.length) return null;
+
+    // Prefer “hard” blockers/defense first if multiple share tile (e.g. rampart + road).
+    const priority = [
+        STRUCTURE_RAMPART,
+        STRUCTURE_TOWER,
+        STRUCTURE_SPAWN,
+        STRUCTURE_EXTENSION,
+        STRUCTURE_WALL,
+        STRUCTURE_ROAD
+    ];
+
+    filtered.sort((a, b) => {
+        const ai = priority.indexOf(a.structureType);
+        const bi = priority.indexOf(b.structureType);
+        const ap = ai === -1 ? 999 : ai;
+        const bp = bi === -1 ? 999 : bi;
+        if (ap !== bp) return ap - bp;
+        return creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b);
+    });
+
+    return filtered[0];
+}
+
 
 function getRuntimeKey(mission) {
     return (mission && mission.data && mission.data.squadKey) ? mission.data.squadKey : (mission ? mission.name : 'unknown');
@@ -544,6 +581,7 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
     // AO-bounded target selection
     const dismantleMode = isDismantleMission(mission);
+    const dismantleHardMode = dismantleMode && !!(flags && flags.attackFlag && String(flags.attackFlag.name || '').toUpperCase() === 'DH');
 
     let target = null;
     let targetDebug = null;
@@ -557,8 +595,13 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
         engageCtx = engage.getEngageContext(creep, flags, ao, targetDebug);
 
         if (dismantleMode) {
-            target = pickDismantleTarget(creep, ao);
-            targetDebug.reason = target ? `dismantle:${target.structureType}` : 'dismantle:none';
+            if (dismantleHardMode && flags && flags.attackPos) {
+                target = pickDismantleHardTarget(creep, flags.attackPos);
+                targetDebug.reason = target ? `dismantle:DH:${target.structureType}` : 'dismantle:DH:none';
+            } else {
+                target = pickDismantleTarget(creep, ao);
+                targetDebug.reason = target ? `dismantle:${target.structureType}` : 'dismantle:none';
+            }
         } else {
             target = engageCtx.target;
         }

@@ -2,6 +2,17 @@ const helpers = require('managers_overseer_tasks_exec__helpers');
 
 module.exports = function execGatherTask(ctx) {
     const { creep, room, options = {} } = ctx;
+    const allowPartial = !!options.allowPartial;
+    // Sticky deliver to prevent yo-yo oscillations when new energy appears mid-trip.
+    // If we're already in WORKING state with some cargo, do not suggest new gather actions.
+    if (creep.memory && creep.memory.taskState === 'working' && creep.store[RESOURCE_ENERGY] > 0) {
+        return null;
+    }
+    // For partial routes, once we have *any* energy, commit to delivery (caller should handle the sink).
+    if (allowPartial && creep.store[RESOURCE_ENERGY] > 0) {
+        creep.memory.taskState = 'working';
+        return null;
+    }
     if (!room._reservedEnergy) room._reservedEnergy = {};
     const cache = global.getRoomCache(room);
 

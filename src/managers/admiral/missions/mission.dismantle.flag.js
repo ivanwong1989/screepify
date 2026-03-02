@@ -8,6 +8,8 @@ const shared = require('console_shared');
  * - Z1, Z2, ...: optional waypoint flags (numeric suffix). Traversed in order before engage.
  * - D / D<number>: AO flag (optional). If numeric suffix exists, it is used as AO radius.
  *   Examples: D (radius 0), D3 (radius 3), D10 (radius 10).
+ * - DH: Hard target flag (optional). If present, dismantle will ONLY target structures on this flag tile.
+ *   (No AO scanning; it will not dismantle anything else.)
  *
  * NOTE (compat):
  * - We DO NOT use an "A" flag for dismantle.
@@ -30,6 +32,7 @@ const shared = require('console_shared');
 
 const FLAG_ASSEMBLY = 'Z';
 const FLAG_AO_PREFIX = 'D';
+const FLAG_HARD_TARGET = 'DH';
 
 const DEFAULT_DISMANTLE_BODY = [WORK, MOVE];
 const DEFAULT_BODY_MODE = 'auto';
@@ -141,19 +144,34 @@ function buildFlagDismantleCache() {
     const aoFlag = resolveAoFlag(FLAG_AO_PREFIX);
     const aoRadius = getAoRadiusFromFlag(aoFlag, FLAG_AO_PREFIX);
 
+    const hardTargetFlag = Game.flags[FLAG_HARD_TARGET] || null;
+
     const waypointFlagNames = getWaypointFlagNames(FLAG_ASSEMBLY);
 
     const waitPos = toPos(assemblyFlag.pos);
 
-    // ✅ Compat "attack" flag: use D if present, else fall back to Z.
-    const attackFlag = aoFlag || assemblyFlag;
+    // ✅ Compat "attack" flag:
+    // Priority:
+    // 1) DH (hard target tile)
+    // 2) D / D<number> (AO)
+    // 3) Z (fallback)
+    const attackFlag = hardTargetFlag || aoFlag || assemblyFlag;
     const attackPos = attackFlag ? toPos(attackFlag.pos) : null;
 
-    // Target room should be AO room if present; otherwise stay in assembly room.
-    const targetRoom = aoFlag ? aoFlag.pos.roomName : assemblyFlag.pos.roomName;
+    // Target room:
+    // - If DH is present, engage only in that room
+    // - Else if AO present, use AO room
+    // - Else stay in assembly room
+    const targetRoom = hardTargetFlag
+        ? hardTargetFlag.pos.roomName
+        : (aoFlag ? aoFlag.pos.roomName : assemblyFlag.pos.roomName);
 
-    // AO center prefers the AO flag position; fallback to assembly.
-    const aoCenterPos = aoFlag ? toPos(aoFlag.pos) : waitPos;
+    // AO center:
+    // - If DH present, lock center to DH tile (keeps engage gating in correct room)
+    // - Else prefer AO flag position; fallback to assembly.
+    const aoCenterPos = hardTargetFlag
+        ? toPos(hardTargetFlag.pos)
+        : (aoFlag ? toPos(aoFlag.pos) : waitPos);
 
     const entry = {
         sponsorRoom,
@@ -170,7 +188,7 @@ function buildFlagDismantleCache() {
         waypointFlagNames,
         ao: {
             targetRoom,
-            radius: aoRadius,
+            radius: hardTargetFlag ? 0 : aoRadius,
             centerPos: aoCenterPos
         }
     };

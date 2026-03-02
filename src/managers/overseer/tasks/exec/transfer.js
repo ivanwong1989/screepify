@@ -176,11 +176,11 @@ module.exports = function execTransferTask(ctx) {
 
     // Energy missions may use the generic gather selector.
     if (mission.data && mission.data.sourceId) {
-        task = execGatherTask({ creep, room, options: { allowedIds: [mission.data.sourceId] } });
+        task = execGatherTask({ creep, room, options: { allowedIds: [mission.data.sourceId], allowPartial } });
     } else {
         const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
         const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
-        task = execGatherTask({ creep, room, options: { allowedIds, excludeIds, preferNearestAvailable: isSupply } });
+        task = execGatherTask({ creep, room, options: { allowedIds, excludeIds, preferNearestAvailable: isSupply, allowPartial } });
     }
 
     if (task) {
