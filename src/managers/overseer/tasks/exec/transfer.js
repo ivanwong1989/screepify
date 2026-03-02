@@ -57,6 +57,13 @@ module.exports = function execTransferTask(ctx) {
     // so big haulers don't stall or abort when the source amount is small.
     helpers.updateState(creep, resourceType, { requireFull: !allowPartial, allowPartialWork: isSupply || allowPartial });
 
+    // Sticky deliver for partial routes:
+    // If we already have some cargo for this mission, commit to delivery to prevent "yo-yo" bouncing
+    // back to source when new resources appear mid-trip.
+    if (allowPartial && creep.store.getUsedCapacity(resourceType) > 0) {
+        creep.memory.taskState = 'working';
+    }
+
     if (!isSupply && previousState === 'working' && creep.memory.taskState === 'gathering') {
         log(`abort flip working->gathering (non-supply)`);
         delete creep.memory.missionName;

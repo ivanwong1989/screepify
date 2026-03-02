@@ -9,7 +9,7 @@ module.exports = function execDecongestTask(ctx) {
                 if (creep.pos.inRangeTo(currentTarget.pos, 1)) {
                     delete creep.memory.missionName;
                     delete creep.memory.taskState;
-                    creep.say('parked');
+                    //creep.say('parked');
                     return null;
                 }
                 return { type: 'move', targetId: currentTarget.id };
@@ -21,7 +21,7 @@ module.exports = function execDecongestTask(ctx) {
                 if (creep.pos.inRangeTo(currentTarget.pos, 1)) {
                     delete creep.memory.missionName;
                     delete creep.memory.taskState;
-                    creep.say('parked');
+                    //creep.say('parked');
                     return null;
                 }
                 return { type: 'move', targetName: currentTarget.name };
@@ -42,7 +42,7 @@ module.exports = function execDecongestTask(ctx) {
             if (creep.pos.inRangeTo(target.pos, 1)) {
                 delete creep.memory.missionName;
                 delete creep.memory.taskState;
-                creep.say('parked');
+                //creep.say('parked');
                 return null;
             }
             if (target instanceof Flag) {

@@ -159,7 +159,7 @@ var managerTasks = {
                             delete creep.memory.taskState;
                             delete creep.memory.scout;
                             delete creep.memory.task;
-                            creep.say('home');
+                            //creep.say('home');
                             return;
                         }
                         if (!creep.memory.task) {
@@ -180,7 +180,7 @@ var managerTasks = {
                         delete creep.memory.taskState;
                         delete creep.memory.scout;
                         delete creep.memory.task;
-                        creep.say('role');
+                        //creep.say('role');
                         return;
                     }
                     // Update status
@@ -242,7 +242,7 @@ var managerTasks = {
                 
                 if (creep.memory.ticketId) this.updateReservation(creep, 'ACTIVE');
 
-                creep.say(bestMission.type);
+                //creep.say(bestMission.type);
                 if (creep.memory.idleTicks) delete creep.memory.idleTicks;
             }
         });
@@ -292,7 +292,7 @@ var managerTasks = {
                                     range: 1
                                 };
                             }
-                            creep.say('recycle');
+                            //creep.say('recycle');
                         }
                     }
                 }
@@ -573,6 +573,9 @@ var managerTasks = {
             //console.log(`[tasks] creep=${creep.name} mission=${mission.name} no task produced`);
             delete creep.memory.task;
         }
+
+        // Telegraph what the creep intends to do (throttled to avoid spam).
+        this.telegraphCreep(creep, mission, legacyTask);
     },
 
     assignTowerAction: function(tower, mission, room) {
@@ -730,6 +733,214 @@ var managerTasks = {
         if (intent.action) return intent;
         const { type, ...rest } = intent;
         return { ...rest, action: type };
+    },
+
+
+    // --- Fun stuff --------------------- it's a game afterall ---- 
+    // --- Smart Ant Labor Flavor ---
+    getAntPhrase: function(creep, mission, action) {
+        const m = mission && mission.type;
+        const role = creep && creep.memory && creep.memory.role;
+
+        const byMission = {
+            harvest: [
+                "dig fast ⛏",
+                "mine mine ⛏",
+                "ants dig 🐜",
+                "rock pls 🪨"
+            ],
+            remote_harvest: [
+                "far dig 😩",
+                "long walk 🚶",
+                "no wifi 📡",
+                "remote job 🌍"
+            ],
+            upgrade: [
+                "big brain 🧠",
+                "lvl up ⚡",
+                "brain food ⚡",
+                "smart ant 🐜"
+            ],
+            build: [
+                "buildy 🚧",
+                "lego time 🧱",
+                "more wall 🧱",
+                "stack pls 📦"
+            ],
+            repair: [
+                "fix it 🩹",
+                "who broke 😑",
+                "tape job 🩹",
+                "glue pls 🧴"
+            ],
+            dismantle: [
+                "break it 🔨",
+                "smash pls 💥",
+                "no wall 🗿",
+                "rip base 😈"
+            ],
+            transfer: [
+                "haul it 📦",
+                "heavy bro 💪",
+                "stack E ⚡",
+                "carry pls 🐜"
+            ],
+            remote_haul: [
+                "far haul 😭",
+                "road trip 🚚",
+                "heavy trip 💪",
+                "long carry 🐜"
+            ]
+        };
+
+        const byRole = {
+            upgrader: [
+                "brain ant 🧠",
+                "smart job ⚡"
+            ],
+            repairer: [
+                "fix squad 🩹"
+            ],
+            remote_worker: [
+                "exile ant 😩"
+            ],
+            hauler: [
+                "muscle ant 💪"
+            ]
+        };
+
+        const generic = [
+            "ant job 🐜",
+            "for queen 👑",
+            "no rest 😤",
+            "tiny boss 👀",
+            "payday? 💰",
+            "ant life 🐜"
+        ];
+
+        let pool = null;
+
+        if (m && byMission[m]) {
+            pool = byMission[m];
+        } else if (role && byRole[role]) {
+            pool = byRole[role];
+        } else {
+            pool = generic;
+        }
+
+        return pool[Math.floor(Math.random() * pool.length)];
+    },
+
+
+    // ---- Creep telegraphing via creep.say ----
+    // Enable/disable by setting: global.TASK_TELEGRAPH = true/false
+    // Throttling is handled per-creep to keep console readable.
+    telegraphCreep: function(creep, mission, legacyTask) {
+        try {
+            // Default ON unless explicitly disabled.
+            if (global && global.TASK_TELEGRAPH === false) return;
+            if (!creep || creep.spawning) return;
+
+            const action = legacyTask && (legacyTask.action || legacyTask.type);
+            if (!action) return;
+
+            // Throttle: only say when message changes, or every N ticks.
+            const EVERY = (global && Number.isFinite(global.TASK_TELEGRAPH_EVERY)) ? global.TASK_TELEGRAPH_EVERY : 5;
+
+            const msg = this.formatTelegraph(creep, mission, legacyTask);
+            if (!msg) return;
+
+            const mem = creep.memory || (creep.memory = {});
+            const last = mem._telegraph || {};
+            const changed = last.msg !== msg;
+            const due = !last.t || (Game.time - last.t) >= EVERY;
+
+            if (changed || due) {
+                creep.say(msg, true);
+                mem._telegraph = { msg, t: Game.time };
+            }
+        } catch (e) {
+            // Never let say logic break tasking.
+        }
+    },
+
+    formatTelegraph: function(creep, mission, legacyTask) {
+        const action = legacyTask && (legacyTask.action || legacyTask.type);
+        if (!action) return null;
+
+        // Random fun ant chatter (low chance)
+        const FUN_CHANCE = 0.15; // 15%
+
+        if (Math.random() < FUN_CHANCE) {
+            return this.getAntPhrase(creep, mission, action);
+        }
+
+        // Compact icons (fallbacks are short ASCII to avoid weird font widths).
+        const icon = (a) => {
+            switch (a) {
+                case 'move': return '➡';
+                case 'withdraw': return '⇣';
+                case 'transfer': return '⇡';
+                case 'harvest': return '⛏';
+                case 'build': return '🚧';
+                case 'repair': return '🩹';
+                case 'upgrade': return '⚡';
+                case 'pickup': return '📦';
+                case 'dismantle': return '🔨';
+                case 'reserve': return '📌';
+                case 'claim': return '👑';
+                case 'drop': return '⬇';
+                default: return null;
+            }
+        };
+
+        const short = (a) => {
+            switch (a) {
+                case 'move': return 'mv';
+                case 'withdraw': return 'wd';
+                case 'transfer': return 'tr';
+                case 'harvest': return 'hv';
+                case 'build': return 'bu';
+                case 'repair': return 'rp';
+                case 'upgrade': return 'up';
+                case 'pickup': return 'pk';
+                case 'dismantle': return 'ds';
+                case 'reserve': return 'rs';
+                case 'claim': return 'cl';
+                case 'drop': return 'dr';
+                default: return 'do';
+            }
+        };
+
+        // Prefer icons if they exist; otherwise ASCII.
+        let msg = icon(action) || short(action);
+
+        // Optional: show resource hint for logistics actions.
+        if ((action === 'withdraw' || action === 'transfer' || action === 'pickup' || action === 'drop') && legacyTask.resourceType) {
+            // Single-letter-ish resource hint.
+            const r = legacyTask.resourceType;
+            if (r === RESOURCE_ENERGY) msg += 'E';
+            else if (typeof r === 'string' && r.length > 0) msg += r[0].toUpperCase();
+        }
+
+        // Optional: show mission hint when action is just moving (so we know *why* we're moving).
+        if (action === 'move' && mission && mission.type) {
+            // 1-char-ish mission hint to avoid huge bubbles.
+            const m = mission.type;
+            const hint =
+                (m === 'upgrade') ? 'U' :
+                (m === 'build' || m === 'remote_build') ? 'B' :
+                (m === 'repair' || m === 'remote_repair') ? 'R' :
+                (m === 'transfer' || m === 'remote_haul') ? 'T' :
+                (m === 'harvest' || m === 'remote_harvest' || m === 'mineral') ? 'H' :
+                (m === 'dismantle') ? 'D' :
+                (m === 'remote_reserve') ? 'V' :
+                (m === 'remote_claim') ? 'C' :
+                null;
+            if (hint) msg += hint;
+        }
+
+        return msg;
     },
 
 };

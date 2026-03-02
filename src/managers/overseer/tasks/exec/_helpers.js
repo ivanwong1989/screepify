@@ -23,21 +23,21 @@ function updateState(creep, resourceType, options = {}) {
 
     if (creep.memory.taskState === 'working' && used === 0) {
         creep.memory.taskState = 'idle';
-        creep.say('idle');
+        //creep.say('idle');
     }
 
     if (creep.memory.taskState === 'gathering' && free === 0) {
         creep.memory.taskState = 'idle';
-        creep.say('idle');
+        //creep.say('idle');
     }
 
     if (creep.memory.taskState === 'idle' || creep.memory.taskState === 'init' || !creep.memory.taskState) {
         if (used > 0 && (!requireFull || free === 0 || allowPartialWork)) {
             creep.memory.taskState = 'working';
-            creep.say('work');
+            //creep.say('work');
         } else {
             creep.memory.taskState = 'gathering';
-            creep.say('gather');
+            //creep.say('gather');
         }
     }
 }
