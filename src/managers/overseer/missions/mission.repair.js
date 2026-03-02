@@ -17,8 +17,8 @@ module.exports = {
             4: { start: 150000, target: 300000 },
             5: { start: 300000, target: 500000 },
             6: { start: 500000, target: 1300000 },
-            7: { start: 3000000, target: 5000000 },
-            8: { start: 5000000, target: 10000000 }
+            7: { start: 2000000, target: 3000000 },
+            8: { start: 3500000, target: 5000000 }
         };
         const settings = FORTIFY_SETTINGS[rcl] || FORTIFY_SETTINGS[0];
         const FORTIFY_START_HITS = settings.start;
@@ -142,8 +142,8 @@ module.exports = {
 
             // Backlog scaling:
             // +2 work for every 8 repair targets (tune this)
-            const BACKLOG_PER = 8;
-            const BACKLOG_WORK_PER_CHUNK = 2;
+            const BACKLOG_PER = 12;
+            const BACKLOG_WORK_PER_CHUNK = 1;
             const backlogWork = Math.floor(repairTargets.length / BACKLOG_PER) * BACKLOG_WORK_PER_CHUNK;
 
             // Urgency boosts (optional but nice):
@@ -151,7 +151,7 @@ module.exports = {
             const siegeBoost = (hostilesPresent || siegeMode) ? 6 : 0; // extra repairs during active threat
 
             // Hard cap so we don't spawn-repair the whole economy
-            const MAX_REPAIR_WORK_TARGET = 60;
+            const MAX_REPAIR_WORK_TARGET = 50;
 
             const repairWorkTarget = Math.min(
                 MAX_REPAIR_WORK_TARGET,
@@ -227,19 +227,89 @@ module.exports = {
 
         if (fortifyTargets.length > 0) {
             // Fortify stays capped in *targets* (prevents jumping around),
-            // but can scale in *workers per target* and flip spawn on when dire.
-            const FORTIFY_TARGET_CAP = 3;
-            const FORTIFY_SPAWN_THRESHOLD = 25;       // backlog size where we allow spawning for fortify
-            const FORTIFY_MAX_COUNT_PER_TARGET = 4;   // up to N workers per fortify target
-            const FORTIFY_BACKLOG_STEP = 20;          // every +N fortify targets increases count (when dire)
-            const REPAIR_BACKLOG_BLOCK_SPAWN = 15;    // don't spawn for fortify if repairs are still huge
+            // but scales in *workers per target* based on long-term net income (EMA) + storage buffers.
+            //
+            // Goals:
+            //  - Never grind storage to 0
+            //  - Fortify more when we have sustained positive income
+            //  - Prefer fortify during UPGRADING (spend mode), be conservative during STOCKPILING (save mode)
 
-            const direFortify = siegeMode || hostilesPresent || (fortifyTargets.length >= FORTIFY_SPAWN_THRESHOLD);
-            const allowFortifySpawn = direFortify && (repairTargets.length <= REPAIR_BACKLOG_BLOCK_SPAWN);
-            const extra = direFortify ? Math.floor(fortifyTargets.length / FORTIFY_BACKLOG_STEP) : 0;
-            const fortifyCountPerTarget = Math.max(
-                1,
-                Math.min(FORTIFY_MAX_COUNT_PER_TARGET, 1 + extra)
+            const FORTIFY_TARGET_CAP = 3;
+
+            // Hard caps (safety)
+            const FORTIFY_MAX_COUNT_PER_TARGET = 4;
+            const MAX_FORTIFY_WORK_TARGET = 20; // total desired WORK across all fortify missions (rough)
+
+            // Don't spawn fortifiers while repairs are still huge
+            const REPAIR_BACKLOG_BLOCK_SPAWN = 15;
+
+            // Economy signals (source of truth: intel)
+            const overseerMem = room.memory.overseer || {}; // fallback only
+            const economyState = (intel && intel.economyState)
+                ? intel.economyState
+                : (overseerMem.economyState || 'STOCKPILING'); // 'STOCKPILING' | 'UPGRADING'
+            const econFlow = (intel && intel.economyFlow)
+                ? intel.economyFlow
+                : (overseerMem.economyFlow || {});
+            const flowLong = (typeof econFlow.longAvg === 'number')
+                ? econFlow.longAvg
+                : (typeof econFlow.avg === 'number' ? econFlow.avg : 0); // fallback
+
+            // Storage guardrails (RCL-scaled floor with hysteresis)
+            const storageEnergy = intel.storageEnergy || 0;
+            const RCL_FLOOR = {
+                1: 0,
+                2: 0,
+                3: 5000,
+                4: 15000,
+                5: 30000,
+                6: 50000,
+                7: 100000,
+                8: 150000
+            };
+            const floor = RCL_FLOOR[rcl] || 30000;
+            const ceiling = floor * 2;
+
+            // Threat / urgency
+            const direFortify = siegeMode || hostilesPresent;
+
+            // Budget shaping:
+            // - In STOCKPILING: keep most income as net positive accumulation
+            // - In UPGRADING: allow a bit more spending, but still keep accumulation unless dire
+            const keepFrac = (economyState === 'UPGRADING') ? 0.55 : 0.75; // keep this fraction of net income
+            const bufferRatio = (ceiling <= floor)
+                ? 0
+                : Math.max(0, Math.min(1, (storageEnergy - floor) / (ceiling - floor)));
+
+            // If long-term net is negative, don't spawn fortifiers (unless dire AND above ceiling).
+            const income = Math.max(0, flowLong);
+            const spendableIncome = income * (1 - keepFrac);
+
+            // Convert income to a conservative "work target" (rough proxy). Buffer ratio gates aggressiveness.
+            const fortifyWorkTarget = Math.min(
+                MAX_FORTIFY_WORK_TARGET,
+                Math.floor(spendableIncome * (economyState === 'UPGRADING' ? 1.2 : 0.8) * (direFortify ? 1.2 : 1.0) * bufferRatio)
+            );
+
+            // We can still do opportunistic fortify (spawn=false) even when budget is 0.
+            const stats = managerSpawner.checkBody('worker', budget);
+            const fortifyWorkPerCreep = stats.work || 1;
+
+            // Total fortify workers we *want* (across selected targets)
+            const desiredFortifyWorkers = Math.max(0, Math.ceil(fortifyWorkTarget / fortifyWorkPerCreep));
+
+            // Spawn rules:
+            // - Always block spawn if repair backlog is big
+            // - Otherwise:
+            //    - If dire: allow spawn if we're not below floor (and preferably above ceiling)
+            //    - If not dire: allow spawn only in UPGRADING, with positive long income, and storage above ceiling
+            const allowFortifySpawn = (
+                (repairTargets.length <= REPAIR_BACKLOG_BLOCK_SPAWN) &&
+                (
+                    (direFortify && storageEnergy >= floor && (storageEnergy >= ceiling || income > 0)) ||
+                    (!direFortify && economyState === 'UPGRADING' && income > 0 && storageEnergy >= ceiling)
+                ) &&
+                desiredFortifyWorkers > 0
             );
 
             const sortedForts = [...fortifyTargets].sort((a, b) => {
@@ -247,6 +317,7 @@ module.exports = {
                 const bRatio = b.hitsMax > 0 ? (b.hits / b.hitsMax) : 1;
                 return aRatio - bRatio;
             });
+
             const stickyFortTargets = [];
             const stickyFortIds = new Set();
             sortedForts.forEach(target => {
@@ -255,21 +326,33 @@ module.exports = {
                     stickyFortIds.add(target.id);
                 }
             });
+
             const fortifyCount = Math.min(
                 sortedForts.length,
                 Math.max(FORTIFY_TARGET_CAP, stickyFortTargets.length)
             );
+
             const selectedForts = stickyFortTargets.concat(
                 sortedForts
                     .filter(target => !stickyFortIds.has(target.id))
                     .slice(0, Math.max(0, fortifyCount - stickyFortTargets.length))
             );
 
+            // Scale workers per target based on desired total workers and number of selected targets
+            const fortifyCountPerTarget = Math.max(
+                1,
+                Math.min(
+                    FORTIFY_MAX_COUNT_PER_TARGET,
+                    selectedForts.length > 0 ? Math.ceil(desiredFortifyWorkers / selectedForts.length) : 1
+                )
+            );
+
             debug(
                 'mission.repair',
-                `[Fortify] ${room.name} targets=${selectedForts.length}/${fortifyTargets.length} ` +
-                `countPerTarget=${fortifyCountPerTarget} spawn=${allowFortifySpawn} dire=${direFortify} ` +
-                `repairBacklog=${repairTargets.length}`
+                `[Fortify] ${room.name} state=${economyState} flowLong=${flowLong.toFixed(2)} ` +
+                `storage=${storageEnergy} floor=${floor} ceiling=${ceiling} buffer=${bufferRatio.toFixed(2)} ` +
+                `targets=${selectedForts.length}/${fortifyTargets.length} countPerTarget=${fortifyCountPerTarget} ` +
+                `spawn=${allowFortifySpawn} dire=${direFortify} repairBacklog=${repairTargets.length}`
             );
 
             selectedForts.forEach(target => {

@@ -34,6 +34,42 @@ module.exports = {
 
         const links = intel.structures[STRUCTURE_LINK] || [];
 
+        // --- Route gating helpers (scalable for tiny -> giga haulers) ---
+        // Problem this solves: once haulers get large, "amount < cap * X" gating causes small-but-important sources
+        // (e.g., storage links, leftovers) to never generate hauling missions.
+        //
+        // Solution:
+        //  - Use bounded absolute min amounts (clamped by cap but never exploding).
+        //  - Add an "age override" so small leftovers are eventually cleaned up.
+        const roomMem = (Memory.rooms && Memory.rooms[room.name]) ? Memory.rooms[room.name] : (Memory.rooms[room.name] = {});
+        const routeAgeMem = roomMem._logisticsRouteAge || (roomMem._logisticsRouteAge = {});
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+        // Attach to module instance so other methods can use them without refactoring callsites.
+        this._getRoutePolicy = (type, resourceType, cap) => {
+            // Non-energy should generally be moved immediately.
+            if (resourceType && resourceType !== RESOURCE_ENERGY) return { minAmount: 1, maxAgeTicks: 0, allowPartial: true };
+
+            // Energy policies
+            if (type === 'link_out') return { minAmount: 1, maxAgeTicks: 20, allowPartial: true };
+            if (type === 'outflow') return { minAmount: 1, maxAgeTicks: 0, allowPartial: true };
+            if (type === 'scavenge') return { minAmount: clamp(Math.floor(cap * 0.15), 50, 300), maxAgeTicks: 200, allowPartial: true };
+            if (type === 'mining') return { minAmount: clamp(Math.floor(cap * 0.35), 100, 800), maxAgeTicks: 450, allowPartial: false };
+            if (type === 'consolidation') return { minAmount: clamp(Math.floor(cap * 0.25), 100, 800), maxAgeTicks: 650, allowPartial: false };
+            if (type === 'terminal_stock') return { minAmount: clamp(Math.floor(cap * 0.25), 50, 800), maxAgeTicks: 650, allowPartial: false };
+            return { minAmount: clamp(Math.floor(cap * 0.25), 50, 800), maxAgeTicks: 650, allowPartial: false };
+        };
+
+        this._getRouteAgeTicks = (routeKey, amount) => {
+            if (!routeKey) return 0;
+            if (!amount || amount <= 0) {
+                if (routeAgeMem[routeKey]) delete routeAgeMem[routeKey];
+                return 0;
+            }
+            if (!routeAgeMem[routeKey]) routeAgeMem[routeKey] = Game.time;
+            return Math.max(0, Game.time - routeAgeMem[routeKey]);
+        };
+
         // 1. Identify active hauling missions
         intel.myCreeps.forEach(c => {
             if (c.memory.missionName && c.memory.missionName.startsWith('haul:')) {
@@ -203,7 +239,7 @@ module.exports = {
         for (const m of activeMissions.values()) missions.push(m);
     },
 
-    getHaulSlotsForRoute: function(source, target, resourceType, carryParts, explicitNeed) {
+    getHaulSlotsForRoute: function(source, target, resourceType, carryParts, explicitNeed, type, routeKey) {
         const cap = Math.max(50, carryParts * 50);
         let amount = 0;
         const isNonEnergy = resourceType && resourceType !== RESOURCE_ENERGY;
@@ -216,8 +252,18 @@ module.exports = {
             amount = source.amount || 0;
         }
 
-        if (amount <= 0) return 0;
-        if (!isNonEnergy && amount < cap * 0.5) return 0;
+        if (amount <= 0) {
+            // Clear age memory if we stop seeing resources on this route.
+            if (this._getRouteAgeTicks) this._getRouteAgeTicks(routeKey, 0);
+            return 0;
+        }
+
+        // Scalable gating (energy only): bounded min threshold + age override.
+        if (!isNonEnergy && typeof this._getRoutePolicy === 'function' && typeof this._getRouteAgeTicks === 'function') {
+            const policy = this._getRoutePolicy(type, resourceType, cap);
+            const ageTicks = this._getRouteAgeTicks(routeKey, amount);
+            if (policy && amount < policy.minAmount && ageTicks < policy.maxAgeTicks) return 0;
+        }
 
         const dist = source.pos.getRangeTo(target.pos);
         const travelTicks = dist * 2 + 10;
@@ -233,8 +279,12 @@ module.exports = {
     addLogisticsMissionsForRoute: function(activeMissions, coveredRouteSlots, source, target, isEmergency, type, resourceType, carryParts, explicitNeed) {
         const baseName = `haul:${source.id}:${target.id}`;
         const routeKey = resourceType ? `${baseName}:${resourceType}` : baseName;
-        const slots = this.getHaulSlotsForRoute(source, target, resourceType, carryParts, explicitNeed);
+        const slots = this.getHaulSlotsForRoute(source, target, resourceType, carryParts, explicitNeed, type, routeKey);
         if (slots <= 0) return;
+
+        const cap = Math.max(50, carryParts * 50);
+        const policy = (typeof this._getRoutePolicy === 'function') ? this._getRoutePolicy(type, resourceType, cap) : null;
+        const allowPartial = !!(policy && policy.allowPartial);
 
         for (let i = 0; i < slots; i += 1) {
             const missionName = `${routeKey}:s${i}`;
@@ -245,7 +295,7 @@ module.exports = {
                 type: 'transfer',
                 archetype: 'hauler',
                 targetId: target.id,
-                data: { sourceId: source.id, resourceType: resourceType },
+                data: { sourceId: source.id, resourceType: resourceType, allowPartial: allowPartial },
                 requirements: { archetype: 'hauler', count: 1, spawn: false },
                 priority: this.getLogisticsPriority(type, target, isEmergency)
             });

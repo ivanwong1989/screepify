@@ -5,6 +5,7 @@ module.exports = function execTransferTask(ctx) {
     const { creep, mission, room } = ctx;
     const resourceType = (mission.data && mission.data.resourceType) ? mission.data.resourceType : RESOURCE_ENERGY;
     const isSupply = !!(mission.data && mission.data.mode === 'supply');
+    const allowPartial = !!(mission.data && mission.data.allowPartial);
     const EMPTY_SOURCE_TIMEOUT = 20;
     const previousState = creep.memory.taskState;
     const debug = !!(mission.data && mission.data.debug) || (Memory.debugTransfer === true);
@@ -51,7 +52,10 @@ module.exports = function execTransferTask(ctx) {
         }
     }
 
-    helpers.updateState(creep, resourceType, { requireFull: true, allowPartialWork: isSupply });
+    // Default behavior was requireFull=true for non-supply missions.
+    // For certain logistics routes (e.g., link_out / small scavenges), we want to allow partial loads
+    // so big haulers don't stall or abort when the source amount is small.
+    helpers.updateState(creep, resourceType, { requireFull: !allowPartial, allowPartialWork: isSupply || allowPartial });
 
     if (!isSupply && previousState === 'working' && creep.memory.taskState === 'gathering') {
         log(`abort flip working->gathering (non-supply)`);

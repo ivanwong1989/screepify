@@ -1,9 +1,13 @@
 // utils/sparkStats.js
 'use strict';
 
-const SPARK = '▁▂▃▄▅▆▇█';
+const SPARK = '⣀⣄⣤⣦⣶⣷⣿';
 
-function clamp(n, lo, hi) { return n < lo ? lo : (n > hi ? hi : n); }
+function clamp(n, lo, hi) {
+    // NaN-safe clamp
+    if (!Number.isFinite(n)) return lo;
+    return n < lo ? lo : (n > hi ? hi : n);
+}
 
 function sparkline(values, min = null, max = null) {
     if (!values || values.length === 0) return '';
@@ -24,7 +28,8 @@ function sparkline(values, min = null, max = null) {
     let out = '';
     for (let i = 0; i < values.length; i++) {
         const t = (values[i] - min) / span; // 0..1
-        const idx = clamp(Math.floor(t * 8), 0, 7);
+        const levels = SPARK.length;
+        const idx = clamp(Math.floor(t * levels), 0, levels - 1);
         out += SPARK[idx];
     }
     return out;
@@ -63,13 +68,15 @@ function formatNumber(n) {
 
 }
 
-function printSeries(name, { label = name, min = null, max = null } = {}) {
+function printSeries(name, { label = name, min = null, max = null, labelWidth = 0 } = {}) {
     const root = ensureRoot();
     const s = root.series[name];
-    if (!s || !s.data || s.data.length === 0) return `${label}: (no data)`;
+    const raw = String(label);
+    const padded = (labelWidth && labelWidth > 0) ? raw.padEnd(labelWidth, ' ') : raw;
+    if (!s || !s.data || s.data.length === 0) return `${padded}: (no data)`;
     const last = s.data[s.data.length - 1];
     const line = sparkline(s.data, min, max);
-    return `${label}: ${line}  last=${formatNumber(last)}`;
+    return `${padded}: ${line}  last=${formatNumber(last)}`;
 }
 
 module.exports = {

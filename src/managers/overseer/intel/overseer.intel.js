@@ -200,7 +200,7 @@ const overseerIntel = {
             }
         }
 
-        return {
+        const intel = {
             sources, minerals, myCreeps, hostiles: cache.hostiles || [],
             constructionSites: cache.constructionSites || [],
             structures, dropped, ruins, flags, tombstones,
@@ -212,6 +212,12 @@ const overseerIntel = {
             terminalEnergy, terminalCapacity, hasTerminal: !!terminal,
             haulerCapacity, allEnergySources
         };
+
+        // Economy is computed in intel and should be treated as the source of truth downstream.
+        intel.economyState = this.determineEconomyState(room, intel);
+        intel.economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || { avg: 0, longAvg: 0 };
+
+        return intel;
     },
 
     determineOpState: function(room, intel) {
@@ -245,36 +251,89 @@ const overseerIntel = {
         const totalCapacity = logisticsCapacity + intel.storageCapacity;
 
         // Track net energy flow (in/out of logistics + storage) to inform state changes.
+        // We DO NOT sample every tick (too noisy with batch hauling). Instead we sample every N ticks,
+        // compute a per-tick rate over that window, then EMA it with a low alpha for long horizon.
+        const SAMPLE_TICKS = 20;     // <-- feature #1: sample period
+        const ALPHA = 0.02;         // <-- feature #2: long-horizon EMA (less jumpy)
+
         if (!room.memory.overseer.economyFlow) {
             room.memory.overseer.economyFlow = {
                 avg: 0,
-                lastTotal: totalStored,
-                lastTick: Game.time,
+                longAvg: 0,
+
+                // sampling state
+                lastSampleTotal: totalStored,
+                lastSampleTick: Game.time,
+
+                // last computed sample (for logs/debug)
+                lastPerTick: 0,
+                lastDelta: 0,
+                lastDt: 0,
+
+                // logging window state
                 lastLogTotal: totalStored,
                 lastLogTick: Game.time
             };
         }
+
         const flow = room.memory.overseer.economyFlow;
-        const dt = Math.max(1, Game.time - (flow.lastTick || Game.time));
-        const delta = totalStored - (flow.lastTotal || totalStored);
-        const perTick = delta / dt;
-        const ALPHA = 0.2; // smoothing factor for EMA
-        flow.avg = (flow.avg === undefined || flow.avg === null) ? perTick : ((flow.avg * (1 - ALPHA)) + (perTick * ALPHA));
-        flow.lastTotal = totalStored;
-        flow.lastTick = Game.time;
-        room.memory.overseer.economyFlow = flow;
+
+        // Normalize legacy/partial memory (prevents 'undefined' in logs and weird dt math)
+        if (flow.lastSampleTotal === undefined) flow.lastSampleTotal = totalStored;
+        if (flow.lastSampleTick === undefined) flow.lastSampleTick = Game.time;
+        if (flow.lastPerTick === undefined) flow.lastPerTick = 0;
+        if (flow.lastDelta === undefined) flow.lastDelta = 0;
+        if (flow.lastDt === undefined) flow.lastDt = 0;
+        if (flow.lastLogTotal === undefined) flow.lastLogTotal = totalStored;
+        if (flow.lastLogTick === undefined) flow.lastLogTick = Game.time;
+        if (flow.avg === undefined || flow.avg === null || Number.isNaN(flow.avg)) flow.avg = 0;
+        if (flow.longAvg === undefined || flow.longAvg === null || Number.isNaN(flow.longAvg)) flow.longAvg = flow.avg;
+
+        // only compute a new sample every SAMPLE_TICKS (or on first init)
+        const since = Game.time - (flow.lastSampleTick || Game.time);
+        if (since >= SAMPLE_TICKS) {
+            const dt = Math.max(1, Game.time - (flow.lastSampleTick || Game.time));
+            const delta = totalStored - (flow.lastSampleTotal || totalStored);
+            const perTick = delta / dt;
+
+            flow.lastPerTick = perTick;
+            flow.lastDelta = delta;
+            flow.lastDt = dt;
+
+            // EMA update on sampled perTick (long horizon)
+            flow.avg = (flow.avg === undefined || flow.avg === null)
+                ? perTick
+                : ((flow.avg * (1 - ALPHA)) + (perTick * ALPHA));
+
+            flow.longAvg = flow.avg;
+
+            flow.lastSampleTotal = totalStored;
+            flow.lastSampleTick = Game.time;
+
+            room.memory.overseer.economyFlow = flow;
+        }
 
         const FLOW_POSITIVE = 2;
         const FLOW_NEGATIVE = -2;
 
-        if (Game.time % 50 === 0) {
+        // Log every 50 ticks; report the most recent sampled perTick + EMA
+        if (Game.time % 50 === 0 && flow._lastLoggedAt !== Game.time) {
+            flow._lastLoggedAt = Game.time;
             const logDt = Math.max(1, Game.time - (flow.lastLogTick || Game.time));
             const logDelta = totalStored - (flow.lastLogTotal || totalStored);
             const logPerTick = logDelta / logDt;
+
             flow.lastLogTotal = totalStored;
             flow.lastLogTick = Game.time;
             room.memory.overseer.economyFlow = flow;
-            debug('overseer', `[Overseer] ${room.name} Flow: total=${totalStored} tickDelta=${delta} tickDt=${dt} tickPerTick=${perTick.toFixed(2)} windowDelta=${logDelta} windowDt=${logDt} windowPerTick=${logPerTick.toFixed(2)} avg=${flow.avg.toFixed(2)}`);
+
+            debug(
+                'overseer',
+                `[Overseer] ${room.name} Flow: total=${totalStored} ` +
+                `sampleDt=${flow.lastDt} sampleDelta=${flow.lastDelta} samplePerTick=${(flow.lastPerTick || 0).toFixed(2)} ` +
+                `windowDt=${logDt} windowDelta=${logDelta} windowPerTick=${logPerTick.toFixed(2)} ` +
+                `avg=${(flow.avg || 0).toFixed(2)}`
+            );
         }
 
         const override = room.memory.overseer.economyOverride;
@@ -306,7 +365,7 @@ const overseerIntel = {
             if (current === 'STOCKPILING' && (totalStored >= UPGRADE_START)) current = 'UPGRADING';
             else if (current === 'UPGRADING' && (totalStored <= UPGRADE_STOP)) current = 'STOCKPILING';
         }
-        
+        room.memory.overseer.economyState = current;
         return current;
     }
 };
