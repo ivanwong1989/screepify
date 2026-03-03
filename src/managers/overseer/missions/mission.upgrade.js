@@ -9,22 +9,14 @@ module.exports = {
         const CRITICAL_DOWNGRADE_TICKS = 5000;
         const isCritical = ticksToDowngrade < CRITICAL_DOWNGRADE_TICKS;
 
-        const flowAvg = economyFlow && Number.isFinite(economyFlow.avg) ? economyFlow.avg : 0;
-        const STOCKPILE_PERIOD = 50;
-        const STOCKPILE_WINDOW = 40; // 20% uptime while stockpiling (if flow is non-negative)
-        const allowStockpileWindow = (Game.time % STOCKPILE_PERIOD) < STOCKPILE_WINDOW;
-        const allowStockpileUpgrade = isCritical || (flowAvg >= 0 && allowStockpileWindow);
-
-        if (economyState === 'STOCKPILING' && !allowStockpileUpgrade) return;
-
         let upgradePriority = 50;
         let desiredWork = 5;
         let spawnAllowed = true;
 
         if (economyState === 'STOCKPILING') {
-            desiredWork = 1;
+            desiredWork = 1;                 // keep minimal trickle if existing creeps exist
             upgradePriority = 10;
-            spawnAllowed = isCritical;
+            spawnAllowed = isCritical;       // ONLY spawn if downgrade critical
             if (isCritical) upgradePriority = 100;
         }
 
@@ -46,14 +38,18 @@ module.exports = {
             const upDeficit = Math.max(0, desiredWork - upCensus.workParts);
             const upNeeded = Math.ceil(upDeficit / workPerCreep);
             upCount = Math.min(upCensus.count + upNeeded, intel.availableControllerSpaces);
-            if (desiredWork > 0 && upCount < 1) upCount = 1;
+            if (!(economyState === 'STOCKPILING' && !isCritical) && desiredWork > 0 && upCount < 1) upCount = 1;
         }
 
         if (intel.constructionSites.length > 0) {
             upCount = Math.max(1, desiredCount);
         }
+
+        // Persist existing upgraders until creep death (do not de-assign by collapsing the requirement).
+        // While stockpiling, we normally stop spawning new upgraders unless the stockpile window is open.
         if (economyState === 'STOCKPILING' && !isCritical) {
-            upCount = Math.min(upCount, 1);
+            // Keep existing upgraders only. Do not spawn new ones.
+            upCount = Math.min(upCensus.count, intel.availableControllerSpaces);
         }
 
         debug('mission.upgrade', `[Upgrade] ${room.name} count=${upCensus.count} workParts=${upCensus.workParts}/${desiredWork} ` +

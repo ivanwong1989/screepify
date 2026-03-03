@@ -13,9 +13,13 @@ module.exports = {
             const isEfficient = efficientSources.has(source.id);
             const hasContainer = !!source.containerId;   // <-- ADD THIS
             const canDropMine = isEfficient;
+            // --- bootstrap gating ---
+            const hasHauler = intel.myCreeps.some(c => c.memory.role === 'hauler');
+            const hasLogistics = hasHauler; // simple for now
+            const canUseStaticDrop = isEfficient && hasLogistics;
 
             let mode = 'mobile';
-            if (canDropMine) {
+            if (canUseStaticDrop) {
                 mode = hasContainer ? 'static' : 'static_drop';
             }
 
