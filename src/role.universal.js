@@ -1,5 +1,3 @@
-const scoutUtils = require('managers_overseer_utils_overseer.scout');
-
 function getBorderDirection(pos) {
     if (!pos) return null;
     if (pos.x === 0) return FIND_EXIT_LEFT;
@@ -267,13 +265,6 @@ var roleUniversal = {
         }
 
         let task = creep.memory.task;
-
-        if (creep.memory.role === 'scout') {
-            scoutUtils.ensureScoutTask(creep, task);
-            task = creep.memory.task;
-            const scoutData = creep.memory.scout || (task && task.scout);
-            if (scoutData) scoutUtils.recordRemoteIntel(creep, scoutData);
-        }
 
         if (!task) return;
 

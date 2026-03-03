@@ -369,7 +369,9 @@ function computeSupportCohesive(room, leader, support, leaderTo, leaderDir, form
         const isTrail = isSamePos(pos, leader.pos);
         if (isTrail) {
             const preferTrail = formation && formation.travelSupportMode === 'trail';
-            s += preferTrail ? -120 : 80;
+            // Even in auto/combat, prefer stepping into leader's vacated tile over entering swamp.
+            // (hardReject already ensures allowedByVacating(movePlan,pos) for trail)
+            s += preferTrail ? -120 : -10;
         }
 
         // Priority layer (candidate generation order)

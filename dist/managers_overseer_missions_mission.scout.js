@@ -1,20 +1,17 @@
 module.exports = {
     generate: function(room, intel, context, missions) {
+        // Full mission-driven adjacent-room scouting.
+        // Mission owns: target selection + scheduling. Creep just executes move/hold and records intel via executor/utils.
+
         const DEFAULT_SCOUT_INTERVAL = 500;
         const MIN_SCOUT_INTERVAL = 25;
-        const memoryInterval = (room.memory && room.memory.overseer && Number.isFinite(room.memory.overseer.scoutInterval))
-            ? room.memory.overseer.scoutInterval
-            : null;
-        const SCOUT_INTERVAL = Math.max(
-            MIN_SCOUT_INTERVAL,
-            memoryInterval !== null ? memoryInterval : DEFAULT_SCOUT_INTERVAL
-        );
-        if (context.opState === 'EMERGENCY') return;
-        // if we are just starting out low rcl, no need for auto gen as well. we only start seeing around rcl 3
-        if (!room.controller || room.controller.level < 3) return;
+        const DEFAULT_HOLD_TIME = 10;
 
-        // if disabled remoteMissionsEnabled, then no need for auto gen scout missions
-        if (Memory.remoteMissionsEnabled === false) return; 
+        if (context && context.opState === 'EMERGENCY') return;
+        if (!room || !room.controller || room.controller.level < 3) return;
+
+        // If remote missions are disabled globally, do not auto-gen scouts.
+        if (Memory.remoteMissionsEnabled === false) return;
 
         const exits = Game.map.describeExits(room.name);
         if (!exits) return;
@@ -23,65 +20,92 @@ module.exports = {
         if (adjacent.length === 0) return;
 
         if (!room.memory.overseer) room.memory.overseer = {};
-        if (!room.memory.overseer.remote) room.memory.overseer.remote = { rooms: {} };
-        if (!room.memory.overseer.remote.rooms) room.memory.overseer.remote.rooms = {};
-        if (!Array.isArray(room.memory.overseer.remote.skipRooms)) room.memory.overseer.remote.skipRooms = [];
-        if (room.memory.overseer.remote.enabled === undefined) room.memory.overseer.remote.enabled = true;
+        if (!room.memory.overseer.scout) room.memory.overseer.scout = {};
 
-        const remoteMemory = room.memory.overseer.remote;
-        const remoteRooms = remoteMemory.rooms;
-        const skipSet = new Set(remoteMemory.skipRooms || []);
+        const scoutMem = room.memory.overseer.scout;
 
-        const isOwnedRoomWithSpawn = (candidate) => {
-            if (!candidate || !candidate.controller || !candidate.controller.my) return false;
-            const spawns = candidate.find(FIND_MY_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_SPAWN
-            });
+        const memInterval = Number.isFinite(scoutMem.interval) ? scoutMem.interval : null;
+        const interval = Math.max(
+            MIN_SCOUT_INTERVAL,
+            memInterval !== null ? memInterval : DEFAULT_SCOUT_INTERVAL
+        );
+
+        const holdTime = Number.isFinite(scoutMem.holdTime) ? scoutMem.holdTime : DEFAULT_HOLD_TIME;
+
+        if (scoutMem.enabled === undefined) scoutMem.enabled = true;
+        if (scoutMem.enabled === false) return;
+
+        if (!Array.isArray(scoutMem.skipRooms)) scoutMem.skipRooms = [];
+        if (!scoutMem.rooms) scoutMem.rooms = {};
+
+        const skipSet = new Set(scoutMem.skipRooms || []);
+        const roomsMem = scoutMem.rooms;
+
+        const isOwnedRoomWithSpawn = (candidateRoom) => {
+            if (!candidateRoom || !candidateRoom.controller || !candidateRoom.controller.my) return false;
+            const spawns = candidateRoom.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_SPAWN });
             return spawns.length > 0;
         };
 
         const addSkipRoom = (name) => {
             if (!name) return;
-            if (!remoteMemory.skipRooms.includes(name)) remoteMemory.skipRooms.push(name);
-            if (remoteRooms[name]) delete remoteRooms[name];
+            if (!scoutMem.skipRooms.includes(name)) scoutMem.skipRooms.push(name);
+            if (roomsMem && roomsMem[name]) delete roomsMem[name];
+            skipSet.add(name);
         };
 
         const available = [];
-        adjacent.forEach(name => {
-            if (skipSet.has(name)) return;
+        for (const name of adjacent) {
+            if (!name) continue;
+            if (skipSet.has(name)) continue;
+
+            // Auto-skip adjacent owned rooms (w/ spawn) if visible.
             const visible = Game.rooms[name];
-            if (isOwnedRoomWithSpawn(visible)) {
+            if (visible && isOwnedRoomWithSpawn(visible)) {
                 addSkipRoom(name);
-                return;
+                continue;
             }
+
             available.push(name);
-        });
+        }
 
         if (available.length === 0) return;
 
-        available.forEach(name => {
-            if (!remoteRooms[name]) remoteRooms[name] = { lastScout: 0 };
-        });
+        // Ensure memory entries exist for available rooms.
+        for (const name of available) {
+            if (!roomsMem[name]) roomsMem[name] = { lastScout: 0, lastSeen: 0 };
+        }
 
         const now = Game.time;
-        const dueRooms = available.filter(name => {
-            const lastScout = (remoteRooms[name] && remoteRooms[name].lastScout) || 0;
-            return (now - lastScout) >= SCOUT_INTERVAL;
-        });
 
-        const missionName = `scout:${room.name}`;
+        // Pick next target only when due, otherwise scout idles at home.
+        const due = available
+            .map(name => ({ name, lastScout: (roomsMem[name] && roomsMem[name].lastScout) || 0 }))
+            .filter(e => (now - e.lastScout) >= interval);
+
+        let targetRoom = null;
+        if (due.length > 0) {
+            due.sort((a, b) => {
+                if (a.lastScout !== b.lastScout) return a.lastScout - b.lastScout;
+                // stable tie-break
+                return ('' + a.name).localeCompare('' + b.name);
+            });
+            targetRoom = due[0].name;
+        }
+
+        // Census (assigned scouts for sponsor room)
         const creepList = Object.values(Game.creeps);
         const assigned = creepList.filter(c =>
             c.memory && c.memory.role === 'scout' && c.memory.room === room.name
         );
-
-        if (dueRooms.length === 0 && assigned.length === 0) return;
 
         const census = {
             count: assigned.length,
             workParts: assigned.reduce((sum, c) => sum + c.getActiveBodyparts(WORK), 0),
             carryParts: assigned.reduce((sum, c) => sum + c.getActiveBodyparts(CARRY), 0)
         };
+
+        const missionName = `scout:${room.name}`;
 
         missions.push({
             name: missionName,
@@ -94,9 +118,10 @@ module.exports = {
             data: {
                 sponsorRoom: room.name,
                 rooms: available,
-                interval: SCOUT_INTERVAL,
-                holdTime: 10,
-                repeat: true
+                interval: interval,
+                holdTime: holdTime,
+                targetRoom: targetRoom,
+                adjacentOnly: true
             },
             priority: 20,
             census: census,

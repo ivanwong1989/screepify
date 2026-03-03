@@ -372,7 +372,13 @@ function chooseSupportAdjacency(leaderPos, support, costs, ao, opts) {
 
             const dist = support.pos.getRangeTo(p);
             const cost = costs ? costs.get(x, y) : 254;
-            const score = (Number.isFinite(cost) ? cost : 254) + (dist * 3);
+            let score = (Number.isFinite(cost) ? cost : 254) + (dist * 3);
+            // --- Swamp comfort penalty (support preference layer) ---
+            const terrain = room.getTerrain().get(x, y);
+            if (terrain === TERRAIN_MASK_SWAMP) {
+                score += 20; // tune 15–30 if needed
+            }
+            
             if (!best || score < best.score) {
                 best = { x, y, score };
             }

@@ -11,6 +11,10 @@ module.exports = {
 
         let upgradePriority = 50;
         let desiredWork = 5;
+        if (room.controller.level < 3) {
+            // Early RCL rush to Tower defense
+            desiredWork = 15;
+        }
         let spawnAllowed = true;
 
         if (economyState === 'STOCKPILING') {
