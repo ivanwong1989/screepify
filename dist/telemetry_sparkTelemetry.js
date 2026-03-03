@@ -59,28 +59,9 @@ function getCfg() {
     // in future when we have more telemetry, the telemetry enabled will be the master switch
     if(t.sparkStatsPrint === true && t.enabled === true) t.enabled = true;
 
-    // Energy scaling config (optional)
-    if (typeof t.energyTarget !== 'number') t.energyTarget = 800000; // empire target
-    if (typeof t.energyMode !== 'string') t.energyMode = 'pct'; // 'abs' | 'pct' | 'delta'
-    // Normalize user input from console (trim/case-insensitive)
-    t.energyMode = String(t.energyMode).trim().toLowerCase();
-    if (t.energyMode !== 'abs' && t.energyMode !== 'pct' && t.energyMode !== 'delta') {
-        t.energyMode = 'pct';
-    }
-
     return t;
 }
 
-function totalMyStorageEnergy() {
-    let energy = 0;
-    for (const rName in Game.rooms) {
-        const room = Game.rooms[rName];
-        if (!room.controller || !room.controller.my) continue;
-        const storage = room.storage;
-        if (storage) energy += (storage.store.energy || 0);
-    }
-    return energy;
-}
 
 function getRoomEconomyTotalStored(room) {
     // Mirror Overseer: storage + logistics containers (exclude mining containers)
@@ -118,19 +99,6 @@ function sample() {
     accAdd(acc, 'cpu.now', Game.cpu.getUsed());
     accAdd(acc, 'cpu.ema', Number(Memory.avgCpu || 0));
     accAdd(acc, 'cpu.bucket', Game.cpu.bucket);
-
-    const e = totalMyStorageEnergy();
-
-    if (cfg.energyMode === 'abs') {
-        accAdd(acc, 'energy.storage', e);
-    } else if (cfg.energyMode === 'delta') {
-        const last = (typeof Memory._lastTotalStorageE === 'number') ? Memory._lastTotalStorageE : e;
-        Memory._lastTotalStorageE = e;
-        accAdd(acc, 'energy.delta', e - last); // will be SUMed later
-    } else { // 'pct'
-        const pct = clamp((e / cfg.energyTarget) * 100, 0, 100);
-        accAdd(acc, 'energy.pct', pct);
-    }
 
     // Economy (raw)
     let empireTotal = 0;
@@ -186,18 +154,6 @@ function sample() {
         sparkStats.pushSeries('cpu.bucket', v == null ? 0 : v, { maxLen: cfg.maxLen });
     }
 
-    // Energy: last for gauge-ish series, sum for delta
-    if (cfg.energyMode === 'abs') {
-        const v = emitAgg(acc, 'energy.storage', 'last');
-        sparkStats.pushSeries('energy.storage', v == null ? 0 : v, { maxLen: cfg.maxLen });
-    } else if (cfg.energyMode === 'delta') {
-        const v = emitAgg(acc, 'energy.delta', 'sum');
-        sparkStats.pushSeries('energy.delta', v == null ? 0 : v, { maxLen: cfg.maxLen });
-    } else {
-        const v = emitAgg(acc, 'energy.pct', 'last');
-        sparkStats.pushSeries('energy.pct', v == null ? 0 : v, { maxLen: cfg.maxLen });
-    }
-
     // Economy: last values (already smoothed upstream in Overseer)
     for (const k in acc.m) {
         if (k.startsWith('econ.')) {
@@ -224,15 +180,6 @@ function print() {
     lines.push(['cpu.now', { label: 'CPU used' }]);
     lines.push(['cpu.ema', { label: 'CPU ema', min: 0, max: Game.cpu.limit }]);
     lines.push(['cpu.bucket', { label: 'CPU bucket', min: 0, max: 10000 }]);
-
-    // Energy
-    if (cfg.energyMode === 'abs') {
-        lines.push(['energy.storage', { label: 'Storage E' }]);
-    } else if (cfg.energyMode === 'delta') {
-        lines.push(['energy.delta', { label: 'Storage Δ' }]);
-    } else {
-        lines.push(['energy.pct', { label: 'Storage %', min: 0, max: 100 }]);
-    }
 
     // --- Economy flow (Overseer economyFlow.avg / lastPerTick) ---
     lines.push(['econ.empire.total', { label: 'Econ total' }]);

@@ -14,7 +14,53 @@ module.exports = function execTransferTask(ctx) {
         console.log(`[Transfer:${creep.name}] ${msg}`);
     };
 
-    const findOtherDumpTarget = (type) => {
+    const fmtN = (v) => (v === undefined || v === null) ? '-' : String(v);
+    const fmtTask = (t) => {
+        if (!t) return 'null';
+        const amt = (t.amount !== undefined && t.amount !== null) ? ` amt=${t.amount}` : '';
+        const rt = (t.resourceType !== undefined && t.resourceType !== null) ? ` res=${t.resourceType}` : '';
+        const tid = (t.targetId) ? ` -> ${t.targetId}` : '';
+        return `${t.type}${rt}${amt}${tid}`;
+    };
+
+    // Amount hint (optional): used to cap per-action withdraw/transfer for "excess/need" routes.
+    // Prevents big haulers from over-withdrawing (e.g., terminal overflow below stock target).
+    const getAmountHint = () => {
+        if (!mission || !mission.data) return null;
+        const v = mission.data.amountHint;
+        if (v === undefined || v === null) return null;
+        const n = Number(v);
+        if (!isFinite(n)) return null;
+        if (n <= 0) return 0;
+        return Math.floor(n);
+    };
+
+    // --- Persist amountHint onto creep memory so mission.logistics can reconstruct it next tick ---
+    const _hint = getAmountHint();
+    if (_hint !== null) {
+        if (!creep.memory._haulHints) creep.memory._haulHints = {};
+        creep.memory._haulHints[mission.name] = _hint;
+    } else if (creep.memory._haulHints && creep.memory._haulHints[mission.name] !== undefined) {
+        // avoid stale hints if mission reuses same name without a hint
+        delete creep.memory._haulHints[mission.name];
+        if (Object.keys(creep.memory._haulHints).length === 0) delete creep.memory._haulHints;
+    }
+
+    const capByHintAndCapacity = (hint, capacity) => {
+        if (hint === null) return null; // no cap
+        if (hint <= 0) return 0;
+        return Math.max(0, Math.min(hint, capacity));
+    };
+
+    
+    const capByHintRemaining = (hint, carried, capacity) => {
+        if (hint === null) return null; // no cap
+        const rem = Math.max(0, hint - (carried || 0));
+        return Math.max(0, Math.min(rem, capacity));
+    };
+
+
+const findOtherDumpTarget = (type) => {
         // For "dump-other", prefer stable sinks to avoid oscillation loops (e.g., dumping into containers then re-withdrawing).
         if (!type) return null;
         if (room.storage && room.storage.store && room.storage.store.getFreeCapacity(type) > 0) return room.storage;
@@ -47,7 +93,8 @@ module.exports = function execTransferTask(ctx) {
         if ((creep.store[type] || 0) <= 0) continue;
         const dumpTarget = findOtherDumpTarget(type) || findDumpTarget(type);
         if (dumpTarget) {
-            log(`dump-other ${type} -> ${dumpTarget.id}`);
+            const carried = creep.store.getUsedCapacity(type) || 0;
+            log(`dump-other ${type} -> ${dumpTarget.id} carried=${carried}`);
             return { type: 'transfer', targetId: dumpTarget.id, resourceType: type };
         }
     }
@@ -57,12 +104,64 @@ module.exports = function execTransferTask(ctx) {
     // so big haulers don't stall or abort when the source amount is small.
     helpers.updateState(creep, resourceType, { requireFull: !allowPartial, allowPartialWork: isSupply || allowPartial });
 
-    // Sticky deliver for partial routes:
-    // If we already have some cargo for this mission, commit to delivery to prevent "yo-yo" bouncing
-    // back to source when new resources appear mid-trip.
-    if (allowPartial && creep.store.getUsedCapacity(resourceType) > 0) {
-        creep.memory.taskState = 'working';
+    // --- Partial-route anti-pingpong "pressure" model ---
+    // Goal: when allowPartial=true and we already carry some cargo (meaning we *could* deliver),
+    // avoid endless re-deciding between different gather sources (pickup/withdraw targets).
+    // We ONLY increase pressure when the gather decision CHANGES (type/target), not by elapsed ticks.
+    const PRESSURE_KEY = '_transferPressure';
+    const pressure = (creep.memory[PRESSURE_KEY] || (creep.memory[PRESSURE_KEY] = { flips: 0, lastSig: null }));
+    const flipThreshold = (mission.data && typeof mission.data.partialFlipThreshold === 'number')
+        ? mission.data.partialFlipThreshold
+        : 2; // default: after 2 gather-decision flips, force delivery
+
+    const resetPressure = () => {
+        pressure.flips = 0;
+        pressure.lastSig = null;
+    };
+
+    // Reset pressure when empty or when we're in delivery mode.
+    if (creep.store.getUsedCapacity(resourceType) === 0 || creep.memory.taskState === 'working') {
+        resetPressure();
     }
+
+    // Resolve a delivery target WITHOUT mutating mission state.
+    // Used only to decide whether "we actually could deliver now".
+    const resolveDeliverTarget = () => {
+        let t = null;
+
+        if (resourceType === RESOURCE_ENERGY &&
+            mission.targetType === 'transfer_list' &&
+            mission.data &&
+            mission.data.targetIds) {
+            const targets = mission.data.targetIds
+                .map(id => helpers.getCachedObject(creep.room, id))
+                .filter(x => x && x.store && x.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+            t = creep.pos.findClosestByRange(targets);
+            if (t) return t;
+        }
+
+        if (mission.targetId) {
+            t = helpers.getCachedObject(creep.room, mission.targetId);
+            if (t && t.store && typeof t.store.getFreeCapacity === 'function' && t.store.getFreeCapacity(resourceType) > 0) {
+                return t;
+            }
+        }
+
+        return null;
+    };
+
+    // If this mission has an amountHint, treat it as a *total* cap to move for this mission instance.
+    // Once we already carry >= hint, stop withdrawing more and go deliver now (prevents draining past stockTargets).
+    const hintNow = getAmountHint();
+    if (hintNow !== null && !isSupply && creep.memory.taskState !== 'working') {
+        const carriedNow = creep.store.getUsedCapacity(resourceType) || 0;
+        if (carriedNow >= hintNow && carriedNow > 0) {
+            log(`carry>=hint (${carriedNow}>=${hintNow}), force deliver`);
+            creep.memory.taskState = 'working';
+            return execTransferTask(ctx);
+        }
+    }
+
 
     if (!isSupply && previousState === 'working' && creep.memory.taskState === 'gathering') {
         log(`abort flip working->gathering (non-supply)`);
@@ -96,8 +195,21 @@ module.exports = function execTransferTask(ctx) {
                 delete creep.memory.taskState;
                 return null;
             }
-            log(`deliver ${resourceType} -> ${target.id}`);
-            return { type: 'transfer', targetId: target.id, resourceType: resourceType };
+            const hint = getAmountHint();
+            const carried = creep.store.getUsedCapacity(resourceType) || 0;
+            // If we somehow carry more than the hint (shouldn't happen), only deliver up to the hint.
+            const amt = capByHintAndCapacity(hint, carried);
+            log(`deliver ${resourceType} -> ${target.id} carried=${carried} hint=${fmtN(hint)} amt=${fmtN(amt)}`);
+            if (amt === 0) {
+                // Nothing meaningful to deliver for hinted routes, abort mission cleanly.
+                log(`abort deliver amountHint=0 for ${resourceType}`);
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                return null;
+            }
+            return (amt !== null)
+                ? { type: 'transfer', targetId: target.id, resourceType: resourceType, amount: amt }
+                : { type: 'transfer', targetId: target.id, resourceType: resourceType };
         }
 
         if (resourceType !== RESOURCE_ENERGY) {
@@ -123,8 +235,26 @@ module.exports = function execTransferTask(ctx) {
             }
         } else if (source && source.store && (source.store[resourceType] || 0) > 0) {
             if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
-            log(`withdraw ${resourceType} from ${source.id}`);
-            return { type: 'withdraw', targetId: source.id, resourceType: resourceType };
+            const hint = getAmountHint();
+            const free = creep.store.getFreeCapacity(resourceType) || 0;
+            const carried = creep.store.getUsedCapacity(resourceType) || 0;
+            const amt = capByHintRemaining(hint, carried, free);
+            log(`withdraw ${resourceType} from ${source.id} carried=${carried} free=${free} hint=${fmtN(hint)} amt=${fmtN(amt)}`);
+            if (amt === 0) {
+                // No remaining hinted amount -> if carrying, deliver; else abort.
+                if (creep.store.getUsedCapacity(resourceType) > 0) {
+                    log(`amountHint=0 but carrying ${resourceType}, switch to working`);
+                    creep.memory.taskState = 'working';
+                    return execTransferTask(ctx);
+                }
+                log(`abort withdraw amountHint=0 for ${resourceType}`);
+                delete creep.memory.missionName;
+                delete creep.memory.taskState;
+                return null;
+            }
+            return (amt !== null)
+                ? { type: 'withdraw', targetId: source.id, resourceType: resourceType, amount: amt }
+                : { type: 'withdraw', targetId: source.id, resourceType: resourceType };
         }
         if (creep.store.getUsedCapacity(resourceType) > 0) {
             log(`source empty but already carrying ${resourceType}, switch to working`);
@@ -164,7 +294,26 @@ module.exports = function execTransferTask(ctx) {
             if (chosen) {
                 log(`gather ${resourceType} from ${chosen.id}`);
                 if (chosen instanceof Resource) return { type: 'pickup', targetId: chosen.id };
-                return { type: 'withdraw', targetId: chosen.id, resourceType: resourceType };
+
+                const hint = getAmountHint();
+                const free = creep.store.getFreeCapacity(resourceType) || 0;
+                const carried = creep.store.getUsedCapacity(resourceType) || 0;
+                const amt = capByHintRemaining(hint, carried, free);
+                if (amt === 0) {
+                    if (creep.store.getUsedCapacity(resourceType) > 0) {
+                        log(`amountHint=0 but carrying ${resourceType}, switch to working`);
+                        creep.memory.taskState = 'working';
+                        return execTransferTask(ctx);
+                    }
+                    log(`abort withdraw amountHint=0 for ${resourceType}`);
+                    delete creep.memory.missionName;
+                    delete creep.memory.taskState;
+                    return null;
+                }
+
+                return (amt !== null)
+                    ? { type: 'withdraw', targetId: chosen.id, resourceType: resourceType, amount: amt }
+                    : { type: 'withdraw', targetId: chosen.id, resourceType: resourceType };
             }
         }
 
@@ -183,9 +332,53 @@ module.exports = function execTransferTask(ctx) {
         task = execGatherTask({ creep, room, options: { allowedIds, excludeIds, preferNearestAvailable: isSupply, allowPartial } });
     }
 
-    if (task) {
+    
+if (task) {
         if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
-        log(`gather task ${task.type} -> ${task.targetId || ''}`);
+
+        // Pressure model: if allowPartial and we already carry some cargo, only allow a limited number
+        // of "gather decision" flips (changing pickup/withdraw target) before we force delivery.
+        if (allowPartial && creep.store.getUsedCapacity(resourceType) > 0) {
+            const deliverTarget = resolveDeliverTarget();
+            if (deliverTarget) {
+                const sig = `${task.type}:${task.targetId || ''}`;
+                if (pressure.lastSig && pressure.lastSig !== sig) {
+                    pressure.flips++;
+                    log(`pressure flip=${pressure.flips}/${flipThreshold} ${pressure.lastSig} -> ${sig}`);
+                }
+                pressure.lastSig = sig;
+
+                if (pressure.flips >= flipThreshold) {
+                    log(`pressure threshold reached, force deliver -> ${deliverTarget.id}`);
+                    creep.memory.taskState = 'working';
+                    resetPressure();
+                    return execTransferTask(ctx);
+                }
+            } else {
+                // If we can't actually deliver, don't penalize indecision.
+                resetPressure();
+            }
+        }
+
+
+        // If this is a hinted route and gather chose 'withdraw', cap the withdraw amount by remaining hint.
+        if (task.type === 'withdraw' && hintNow !== null) {
+            const free = creep.store.getFreeCapacity(resourceType) || 0;
+            const carried = creep.store.getUsedCapacity(resourceType) || 0;
+            const amt = capByHintRemaining(hintNow, carried, free);
+            if (amt === 0) {
+                log(`hint exhausted during gather, force deliver`);
+                creep.memory.taskState = 'working';
+                resetPressure();
+                return execTransferTask(ctx);
+            }
+            task.amount = amt;
+        }
+        
+        // If withdraw and we computed a cap, task.amount may be set below; log shows both.
+        const carriedNow = creep.store.getUsedCapacity(resourceType) || 0;
+        const freeNow = creep.store.getFreeCapacity(resourceType) || 0;
+        log(`gather task ${fmtTask(task)} carried=${carriedNow} free=${freeNow} hint=${fmtN(hintNow)}`);
         return task;
     }
 

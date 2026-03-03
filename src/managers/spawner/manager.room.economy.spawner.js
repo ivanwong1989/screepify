@@ -193,8 +193,8 @@ var managerSpawner = {
         let body = [WORK, CARRY, MOVE];
         let cost = 200;
         
-        // Max WORK for a standard source is 5
-        while (cost + 100 <= budget && body.filter(p => p === WORK).length < 5) {
+        // Max WORK for a standard source is 5, we use 7 for our inefficiencies
+        while (cost + 100 <= budget && body.filter(p => p === WORK).length < 7) {
             body.push(WORK);
             cost += 100;
         }

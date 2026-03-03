@@ -50,7 +50,7 @@ module.exports = {
             const census = getMissionCensus(missionName);
             const archStats = managerSpawner.checkBody('miner', budget);
             
-            const targetWork = 5;
+            const targetWork = 7;
             const workPerCreep = archStats.work || 1;
             const desiredCount = Math.min(Math.ceil(targetWork / workPerCreep), source.availableSpaces);
 

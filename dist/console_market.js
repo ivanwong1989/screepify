@@ -2,24 +2,27 @@ var managerMarket = require('managers_structures_manager.terminal');
 
 function showMarketHelp() {
     const lines = [
-        'market()                          - show this help',
-        'market(\"status\")                   - show market auto-trade status',
-        'market(\"status\", roomName)         - show market auto-trade status for a room',
-        'market(\"on\") / market(\"off\")       - enable or disable auto-trading',
-        'market(\"set\", { ... })             - patch global market settings',
-        'market(\"room\", roomName, { ... })  - patch per-room overrides',
-        'market(\"room\", roomName, \"status\") - show market auto-trade status for a room',
-        'market(\"room\", roomName, \"on|off\") - enable/disable per-room trading',
-        'market(\"room\", roomName, \"report\") - show mineral totals (ledger + terminal)',
-        'market(\"calc\", roomName, \"force\"?) - show buy/sell calc details for a room',
-        'market(\"order\", \"buy\", room, resource, price, amount, \"tag\"?)  - create & track a BUY order',
-        'market(\"order\", \"sell\", room, resource, price, amount, \"tag\"?) - create & track a SELL order',
-        'market(\"orders\")                 - list tracked manual orders',
-        'market(\"order\", \"cancel\", orderId)  - cancel an order (and mark inactive)',
-        'market(\"order\", \"untrack\", orderId) - stop tracking (does not cancel)',
-        'example: market(\"set\", { stockTargets: { LO: 2000 }, buy: { LO: { maxPrice: 1.5 } } })',
-        'example: market(\"set\", { stockTargets: { energy: 100000 }, sell: { energy: { minPrice: 0.01 } } })',
-        'example: market(\"set\", { energyValue: 16, maxOverpayPct: 0.08, sellBufferPct: 0.05 })'
+        'market()                            - show this help',
+        'market("status")                     - show global + room enablement',
+        'market("status", roomName)           - show market config for a room',
+        'market("on") / market("off")         - master switch only (globalEnabled)',
+        'market("all", "on|off")              - set ALL rooms on/off (does not change globalEnabled)',
+        'market("set", { ... })               - apply patch to ALL EXISTING rooms (no global params stored)',
+        'market("room", roomName, { ... })    - patch per-room settings',
+        'market("reset", roomName)           - reset a room back to safe defaults',
+        'market("resetAll")                  - reset ALL rooms back to safe defaults',
+        'market("room", roomName, "status")   - show market settings for a room',
+        'market("room", roomName, "on|off")   - enable/disable a room',
+        'market("room", roomName, "report")   - show mineral totals (ledger + terminal)',
+        'market("calc", roomName, "force"?)   - show buy/sell calc details for a room',
+        'market("order", "buy", room, resource, price, amount, "tag"?)  - create & track a BUY order',
+        'market("order", "sell", room, resource, price, amount, "tag"?) - create & track a SELL order',
+        'market("orders")                     - list tracked manual orders',
+        'market("order", "cancel", orderId)   - cancel an order (and mark inactive)',
+        'market("order", "untrack", orderId)  - stop tracking (does not cancel)',
+        'example: market("set", { runEvery: 25, energyReserve: 20000 })',
+        'example: market("room", "W1N1", { stockTargets: { LO: 2000 }, buy: { LO: { maxPrice: 1.5 } } })',
+        ''
     ];
     for (const line of lines) console.log(line);
     return 'Done';
@@ -189,18 +192,31 @@ module.exports = function registerMarketConsole() {
         }
 
         if (cmd === 'on' || cmd === 'enable') {
-            managerMarket.applyPatch({ enabled: true });
+            const cfg = managerMarket.getConfig();
+            cfg.globalEnabled = true;
             const msg = managerMarket.summarize();
             console.log(msg);
             return msg;
         }
 
         if (cmd === 'off' || cmd === 'disable') {
-            managerMarket.applyPatch({ enabled: false });
+            const cfg = managerMarket.getConfig();
+            cfg.globalEnabled = false;
             const msg = managerMarket.summarize();
             console.log(msg);
             return msg;
         }
+
+        if (cmd === 'all') {
+            const mode = args[0] ? ('' + args[0]).trim().toLowerCase() : '';
+            if (mode !== 'on' && mode !== 'off') return 'Usage: market("all", "on|off")';
+            const current = managerMarket.getConfig();
+            managerMarket.applyPatch({ globalEnabled: current && current.globalEnabled !== false, enabled: mode === 'on' });
+            const msg = managerMarket.summarize();
+            console.log(msg);
+            return msg;
+        }
+
 
         if (cmd === 'set') {
             const patch = args[0];
@@ -229,6 +245,24 @@ module.exports = function registerMarketConsole() {
                 managerMarket.applyRoomPatch(roomName, patch);
             }
             const msg = managerMarket.summarizeRoom(roomName);
+            console.log(msg);
+            return msg;
+        }
+
+        if (cmd === 'reset') {
+            const roomName = normalizeRoomName(args[0]);
+            if (!roomName) return 'Usage: market("reset", "W1N1")';
+            managerMarket.resetRoom(roomName);
+            const msg = managerMarket.summarizeRoom(roomName);
+            console.log(msg);
+            return msg;
+        }
+
+        if (cmd === 'resetAll') {
+            const cfg = managerMarket.getConfig();
+            const rooms = Object.keys((cfg && cfg.rooms) || {});
+            for (const rn of rooms) managerMarket.resetRoom(rn);
+            const msg = managerMarket.summarize();
             console.log(msg);
             return msg;
         }

@@ -105,12 +105,24 @@ module.exports = {
                         const baseName = `haul:${sourceId}:${targetId}`;
                         const routeKey = resourceType ? `${baseName}:${resourceType}` : baseName;
                         const fullMissionName = slot ? `${routeKey}:${slot}` : routeKey;
+                        // --- preserve hint from creep memory (written by transfer.js) ---
+                        const amountHint =
+                            c.memory &&
+                            c.memory._haulHints &&
+                            c.memory._haulHints[fullMissionName] !== undefined
+                                ? c.memory._haulHints[fullMissionName]
+                                : null;
+
                         const mission = {
                             name: fullMissionName,
                             type: 'transfer',
                             archetype: 'hauler',
                             targetId: targetId,
-                            data: { sourceId: sourceId, resourceType: resourceType },
+                            data: {
+                                sourceId: sourceId,
+                                resourceType: resourceType,
+                                amountHint: amountHint
+                            },
                             requirements: { archetype: 'hauler', count: 1, spawn: false },
                             priority: this.getLogisticsPriority(type, target, isEmergency)
                         };
@@ -183,47 +195,258 @@ module.exports = {
             }
         }
 
-        const mineralTarget = terminal || storage;
-        if (mineralTarget) {
-            const targetType = terminal ? 'terminal_stock' : 'consolidation';
+        // --- Mineral logistics with terminal stockTargets (Memory.market.rooms.<room>.stockTargets) ---
+        const hasTerminal = !!terminal;
+        const hasStorage = !!storage;
 
-            const allStructureLists = Object.values(intel.structures || {});
-            const seenStructures = new Set();
-            allStructureLists.forEach(list => {
-                if (!Array.isArray(list)) return;
-                list.forEach(source => {
-                    if (!source || !source.store) return;
-                    if (source.id === mineralTarget.id) return;
-                    if (source.structureType === STRUCTURE_LAB) return;
-                    if (seenStructures.has(source.id)) return;
-                    seenStructures.add(source.id);
-                    for (const resourceType in source.store) {
-                        if (resourceType === RESOURCE_ENERGY) continue;
-                        if ((source.store[resourceType] || 0) <= 0) continue;
-                        this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, mineralTarget, isEmergency, targetType, resourceType, carryParts);
+        // Read room stockTargets safely (no optional chaining needed)
+        let stockTargets = null;
+        if (Memory.market && Memory.market.rooms && Memory.market.rooms[room.name]) {
+            stockTargets = Memory.market.rooms[room.name].stockTargets || null;
+        }
+
+
+        // Terminal stockTargets can create "ping-pong" near the target (flush then refill).
+        // Fix: add per-mineral MODE LOCK + per-tick RESERVATIONS so we never schedule both directions
+        // and never overshoot targets due to multiple haulers/slots.
+        //
+        // Notes:
+        // - This only affects terminal <-> storage decisions for minerals (and later could be reused for terminal energy target).
+        // - Energy logistics elsewhere remains untouched.
+        const haulCap = Math.max(50, carryParts * 50);
+
+        // Stateless terminal plan (target-aware) using a percentage deadband.
+        // We avoid persistent state (mode locks / reservations). Instead we:
+        // - Use a deadband sized as a % of target so we don't thrash on tiny deltas.
+        // - Enforce terminal_stock routes as single-servicer (see getHaulSlotsForRoute).
+        // - Pull minerals into terminal primarily from storage; other sources consolidate to storage first.
+        //
+        // Deadband: clamp(ceil(target * 5%), 50, 2000)
+        const getDeadband = (tgt) => clamp(Math.ceil(tgt * 0.05), 50, 2000);
+
+        // Build a per-mineral terminal plan (stateless).
+        // - targeted (tgt > 0): FILL / FLUSH / HOLD around target with deadband
+        // - untargeted (tgt <= 0): flush_all if terminal has any
+        const terminalPlan = {};
+        if (hasTerminal) {
+            const keys = new Set();
+            if (stockTargets) Object.keys(stockTargets).forEach(k => keys.add(k));
+            Object.keys(terminal.store || {}).forEach(k => keys.add(k));
+
+            keys.forEach(resourceType => {
+                if (!resourceType || resourceType === RESOURCE_ENERGY) return;
+
+                const tgt = (stockTargets && stockTargets[resourceType]) ? stockTargets[resourceType] : 0;
+                const termAmt = terminal.store[resourceType] || 0;
+
+                if (tgt > 0) {
+                    const db = getDeadband(tgt);
+                    const lo = tgt - db;
+                    const hi = tgt + db;
+
+                    if (termAmt < lo) {
+                        terminalPlan[resourceType] = { action: 'fill', need: Math.max(0, tgt - termAmt), tgt: tgt, termAmt: termAmt, db: db };
+                    } else if (termAmt > hi) {
+                        terminalPlan[resourceType] = { action: 'flush', excess: Math.max(0, termAmt - tgt), tgt: tgt, termAmt: termAmt, db: db };
+                    } else {
+                        terminalPlan[resourceType] = { action: 'hold', tgt: tgt, termAmt: termAmt, db: db };
                     }
-                });
-            });
-
-            intel.dropped.forEach(source => {
-                if (!source || source.resourceType === RESOURCE_ENERGY || source.amount <= 0) return;
-                this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, mineralTarget, isEmergency, 'scavenge', source.resourceType, carryParts);
-            });
-
-            const scavengeStores = [
-                ...intel.ruins,
-                ...intel.tombstones
-            ];
-            scavengeStores.forEach(source => {
-                const store = source && source.store ? source.store : null;
-                if (!store) return;
-                for (const resourceType in store) {
-                    if (resourceType === RESOURCE_ENERGY) continue;
-                    if ((store[resourceType] || 0) <= 0) continue;
-                    this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, mineralTarget, isEmergency, 'scavenge', resourceType, carryParts);
+                } else {
+                    if (termAmt > 0) terminalPlan[resourceType] = { action: 'flush_all', excess: termAmt, tgt: 0, termAmt: termAmt, db: 0 };
                 }
             });
         }
+
+        // Decide desired sink for a mineral based on the terminal plan.
+        // - If plan says FILL: sink=terminal (but we will only source from storage)
+        // - Else: prefer storage (hold zone, or while flushing)
+
+        // - If plan says FILL: sink=terminal, with remaining need
+        // - Else: prefer storage (hold zone, or while flushing)
+        const decideMineralSink = (resourceType, source) => {
+            const plan = terminalPlan ? terminalPlan[resourceType] : null;
+
+            if (hasTerminal && plan && plan.action === 'fill') {
+                // To keep terminal_stock single-servicer and predictable, pull from storage only.
+                if (source && source.structureType === STRUCTURE_STORAGE) {
+                    return { sink: terminal, sinkType: 'terminal_stock', need: plan.need };
+                }
+            }
+
+            if (hasStorage) return { sink: storage, sinkType: 'consolidation', need: null };
+
+            return { sink: terminal, sinkType: 'terminal_stock', need: null };
+        };
+
+        // Track remaining terminal fill need per mineral for THIS tick (stateless, prevents overscheduling).
+        const fillRemaining = {};
+        if (terminalPlan) {
+            for (const r in terminalPlan) {
+                const plan = terminalPlan[r];
+                if (plan && plan.action === 'fill' && plan.need > 0) fillRemaining[r] = plan.need;
+            }
+        }
+        const takeFill = (resourceType, available) => {
+            const rem = fillRemaining[resourceType] || 0;
+            if (rem <= 0 || !available || available <= 0) return 0;
+            const take = Math.min(rem, available, haulCap);
+            if (take > 0) fillRemaining[resourceType] = rem - take;
+            return take;
+        };
+
+
+
+        // 1) Flush excess/untargeted minerals OUT of terminal into storage (only when plan says FLUSH/FLUSH_ALL).
+        if (hasTerminal && hasStorage) {
+            for (const resourceType in terminalPlan) {
+                const plan = terminalPlan[resourceType];
+                if (!plan) continue;
+                if (plan.action !== 'flush' && plan.action !== 'flush_all') continue;
+
+                const amount = plan.excess || 0;
+                if (amount <= 0) continue;
+
+                const termNow = terminal.store[resourceType] || 0;
+                const flushAmt = Math.min(amount, termNow);
+                if (flushAmt <= 0) continue;
+                this.addLogisticsMissionsForRoute(
+                    activeMissions,
+                    coveredRouteSlots,
+                    terminal,
+                    storage,
+                    isEmergency,
+                    'consolidation',
+                    resourceType,
+                    carryParts,
+                    flushAmt
+                );
+            }
+        }
+
+        // 2) Consolidate minerals from structures to the chosen sink per mineral (policy-driven).
+        // IMPORTANT: if filling terminal, cap by remaining need (per-tick fillRemaining) so we don't overshoot.
+        const allStructureLists = Object.values(intel.structures || {});
+        const seenStructures = new Set();
+
+        allStructureLists.forEach(list => {
+            if (!Array.isArray(list)) return;
+            list.forEach(source => {
+                if (!source || !source.store) return;
+                if (source.structureType === STRUCTURE_LAB) return;
+                if (source.structureType === STRUCTURE_TERMINAL) return; // terminal handled by terminalPlan (avoid hold->storage drain)
+                if (seenStructures.has(source.id)) return;
+                seenStructures.add(source.id);
+
+                for (const resourceType in source.store) {
+                    if (resourceType === RESOURCE_ENERGY) continue;
+
+                    const amt = source.store[resourceType] || 0;
+                    if (amt <= 0) continue;
+
+                    const decision = decideMineralSink(resourceType, source);
+                    const sink = decision.sink;
+                    if (!sink) continue;
+                    if (source.id === sink.id) continue;
+
+                    if (sink === terminal && decision.need !== null && decision.need !== undefined) {
+                    const take = takeFill(resourceType, Math.min(decision.need, amt));
+                    if (take <= 0) continue;
+
+                        this.addLogisticsMissionsForRoute(
+                            activeMissions,
+                            coveredRouteSlots,
+                            source,
+                            sink,
+                            isEmergency,
+                            decision.sinkType,
+                            resourceType,
+                            carryParts,
+                            take
+                        );
+                    } else {
+                        this.addLogisticsMissionsForRoute(
+                            activeMissions,
+                            coveredRouteSlots,
+                            source,
+                            sink,
+                            isEmergency,
+                            decision.sinkType,
+                            resourceType,
+                            carryParts
+                        );
+                    }
+                }
+            });
+        });
+
+        // Dropped minerals
+        intel.dropped.forEach(source => {
+            if (!source || source.resourceType === RESOURCE_ENERGY || source.amount <= 0) return;
+
+            const resourceType = source.resourceType;
+            const decision = decideMineralSink(resourceType, source);
+            const sink = decision.sink;
+            if (!sink) return;
+
+            if (sink === terminal && decision.need !== null && decision.need !== undefined) {
+                const take = takeFill(resourceType, Math.min(decision.need, source.amount));
+                if (take <= 0) return;
+
+                this.addLogisticsMissionsForRoute(
+                    activeMissions,
+                    coveredRouteSlots,
+                    source,
+                    sink,
+                    isEmergency,
+                    decision.sinkType,
+                    resourceType,
+                    carryParts,
+                    take
+                );
+            } else {
+                this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, sink, isEmergency, 'scavenge', resourceType, carryParts);
+            }
+        });
+
+        // Ruins + tombstones minerals
+        const scavengeStores = [
+            ...(intel.ruins || []),
+            ...(intel.tombstones || [])
+        ];
+        scavengeStores.forEach(source => {
+            const store = source && source.store ? source.store : null;
+            if (!store) return;
+
+            for (const resourceType in store) {
+                if (resourceType === RESOURCE_ENERGY) continue;
+
+                const amt = store[resourceType] || 0;
+                if (amt <= 0) continue;
+
+                const decision = decideMineralSink(resourceType, source);
+                const sink = decision.sink;
+                if (!sink) continue;
+
+                if (sink === terminal && decision.need !== null && decision.need !== undefined) {
+                    const take = takeFill(resourceType, Math.min(decision.need, amt));
+                    if (take <= 0) continue;
+
+                    this.addLogisticsMissionsForRoute(
+                        activeMissions,
+                        coveredRouteSlots,
+                        source,
+                        sink,
+                        isEmergency,
+                        decision.sinkType,
+                        resourceType,
+                        carryParts,
+                        take
+                    );
+                } else {
+                    this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, sink, isEmergency, 'scavenge', resourceType, carryParts);
+                }
+            }
+        });
 
         if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
             nonMiningContainers.filter(c => c.store[RESOURCE_ENERGY] >= 500 && c.id !== intel.controllerContainerId).forEach(source => {
@@ -242,6 +465,11 @@ module.exports = {
     getHaulSlotsForRoute: function(source, target, resourceType, carryParts, explicitNeed, type, routeKey) {
         const cap = Math.max(50, carryParts * 50);
         let amount = 0;
+
+        // terminal_stock is intentionally single-servicer to avoid contention/ping-pong.
+        if (type === 'terminal_stock') {
+            // We'll compute amount below; return 1 slot if there is any meaningful amount.
+        }
         const isNonEnergy = resourceType && resourceType !== RESOURCE_ENERGY;
         if (explicitNeed !== undefined && explicitNeed !== null) {
             amount = explicitNeed;
@@ -257,6 +485,12 @@ module.exports = {
             if (this._getRouteAgeTicks) this._getRouteAgeTicks(routeKey, 0);
             return 0;
         }
+
+        if (type === 'terminal_stock') {
+            // Always cap to a single hauler for terminal stock management.
+            return 1;
+        }
+
 
         // Scalable gating (energy only): bounded min threshold + age override.
         if (!isNonEnergy && typeof this._getRoutePolicy === 'function' && typeof this._getRouteAgeTicks === 'function') {
@@ -286,6 +520,11 @@ module.exports = {
         const policy = (typeof this._getRoutePolicy === 'function') ? this._getRoutePolicy(type, resourceType, cap) : null;
         const allowPartial = !!(policy && policy.allowPartial);
 
+        // If an explicitNeed is provided, distribute it across slots so multiple haulers don't each pull the full need.
+        const hasNeed = (explicitNeed !== undefined && explicitNeed !== null && Number.isFinite(Number(explicitNeed)) && Number(explicitNeed) > 0);
+        const totalNeed = hasNeed ? Math.floor(Number(explicitNeed)) : null;
+        const perSlotNeed = hasNeed ? Math.max(1, Math.ceil(totalNeed / slots)) : null;
+
         for (let i = 0; i < slots; i += 1) {
             const missionName = `${routeKey}:s${i}`;
             if (activeMissions.has(missionName)) continue;
@@ -295,7 +534,12 @@ module.exports = {
                 type: 'transfer',
                 archetype: 'hauler',
                 targetId: target.id,
-                data: { sourceId: source.id, resourceType: resourceType, allowPartial: allowPartial },
+                data: {
+                    sourceId: source.id,
+                    resourceType: resourceType,
+                    allowPartial: allowPartial,
+                    amountHint: (hasNeed ? Math.max(0, Math.min(perSlotNeed, totalNeed - (i * perSlotNeed))) : null)
+                },
                 requirements: { archetype: 'hauler', count: 1, spawn: false },
                 priority: this.getLogisticsPriority(type, target, isEmergency)
             });

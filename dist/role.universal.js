@@ -324,13 +324,35 @@ var roleUniversal = {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
-            case 'transfer':
-                if (creep.transfer(target, task.resourceType) === ERR_NOT_IN_RANGE) {
+            case 'transfer': 
+                var amount = null;
+                if (task && task.amount !== undefined && task.amount !== null) {
+                    amount = Number(task.amount);
+                    if (!isFinite(amount) || amount <= 0) amount = null;
+                    else amount = Math.floor(amount);
+                }
+
+                var res;
+                if (amount !== null) res = creep.transfer(target, task.resourceType, amount);
+                else res = creep.transfer(target, task.resourceType);
+
+                if (res === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;
             case 'withdraw':
-                if (creep.withdraw(target, task.resourceType) === ERR_NOT_IN_RANGE) {
+                var amount = null;
+                if (task && task.amount !== undefined && task.amount !== null) {
+                    amount = Number(task.amount);
+                    if (!isFinite(amount) || amount <= 0) amount = null;
+                    else amount = Math.floor(amount);
+                }
+
+                var res;
+                if (amount !== null) res = creep.withdraw(target, task.resourceType, amount);
+                else res = creep.withdraw(target, task.resourceType);
+
+                if (res === ERR_NOT_IN_RANGE) {
                     moveToTarget(creep, target, task.range);
                 }
                 break;

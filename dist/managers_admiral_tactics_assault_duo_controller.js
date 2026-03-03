@@ -510,19 +510,28 @@ function planForPair(mission, leaderInput, supportInput, context) {
     );
 
     if (runtime.phase === 'ENGAGE' && engageInAORoom && target) {
+        // Determine which callback should be active for this tick
+        const useCombat = (runtime.phase === 'ENGAGE') && engageInAORoom;
+
+        const activeRoomCallback = useCombat
+            ? runtime.combatRoomCallback
+            : runtime.travelRoomCallback;
+
+        const tacticalRuntime = Object.assign({}, runtime, {
+            roomCallback: activeRoomCallback
+        });
+
         tactical = duoTactics.decideAnchor(
             leader,
             support,
-            runtime,
+            tacticalRuntime, // 👈 pass correct callback
             flags,
             ao,
             target,
             {
-                // Stable per-mission key for duoTactics caches (works even across respawns).
                 duoKey: String(runtimeKey),
                 holdCenterRange: tunedNumber('holdCenterRange', 1, 0, 3),
                 preferRoads: true,
-                // Debug anchor selection to diagnose movement oddities.
                 debug: true,
                 logDuo: true
             }
@@ -725,6 +734,9 @@ function planForPair(mission, leaderInput, supportInput, context) {
         const rej = (move && move.debug && move.debug.rejects)
                     ? JSON.stringify(move.debug.rejects)
                     : '';
+        const bh = (move && move.debug && move.debug.border)
+                    ? JSON.stringify(move.debug.border)
+                    : '';
         const reason =
         (move && move.step && move.step.reason) ? move.step.reason :
         (move && move.debug && move.debug.reason) ? move.debug.reason :
@@ -755,7 +767,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
         logDuo(
             runtime,
             mission,
-            `phase=${runtime.phase} mode=${mode} allowStep=${allowStep} assembled=${runtime.assembled.done ? 1 : 0} spawnAllow=${runtime.spawn.allow ? 1 : 0} cohesive=${cohesive} dist=${dist} regroup=${runtime.regroup ? 1 : 0} hasTargetPos=${hasTargetPos} hasRouteTarget=${hasRouteTarget} predSep=${predictedSeparation} suppress=${suppressCombat} Lfat=${lfat} Sfat=${sfat} Lnext=${formatPos(leaderNext)} Snext=${formatPos(supportNext)} spin=${spinCount} rally=${formatPos(rallyPos)} routeTarget=${formatPos(routeTarget)} goal=${goalLabel} intent=${intentLabel} tactical=${tacticalAnchor} tRange=${tacticalRange} tReason=${tacticalReason} tHint=${tacticalSupportHint} waypoint=${waypointIndex}/${waypoints.length} leader=${formatCreep(leader)} support=${formatCreep(support)} target=${targetLabel} rej=${rej} reason=${reason} who=${who}`
+            `phase=${runtime.phase} mode=${mode} allowStep=${allowStep} assembled=${runtime.assembled.done ? 1 : 0} spawnAllow=${runtime.spawn.allow ? 1 : 0} cohesive=${cohesive} dist=${dist} regroup=${runtime.regroup ? 1 : 0} hasTargetPos=${hasTargetPos} hasRouteTarget=${hasRouteTarget} predSep=${predictedSeparation} suppress=${suppressCombat} Lfat=${lfat} Sfat=${sfat} Lnext=${formatPos(leaderNext)} Snext=${formatPos(supportNext)} spin=${spinCount} rally=${formatPos(rallyPos)} routeTarget=${formatPos(routeTarget)} goal=${goalLabel} intent=${intentLabel} tactical=${tacticalAnchor} tRange=${tacticalRange} tReason=${tacticalReason} tHint=${tacticalSupportHint} waypoint=${waypointIndex}/${waypoints.length} leader=${formatCreep(leader)} support=${formatCreep(support)} target=${targetLabel} rej=${rej} bh=${bh} reason=${reason} who=${who}`
         );
     }
 

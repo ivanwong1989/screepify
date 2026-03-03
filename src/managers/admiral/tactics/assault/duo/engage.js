@@ -56,12 +56,29 @@ function selectTarget(creep, flags, ao) {
     } catch (e) {
         // ignore
     }
-    if (!hostileStructures) {
-        hostileStructures = filterOutAllies(creep.room.find(FIND_HOSTILE_STRUCTURES));
-    }
-    hostileStructures = hostileStructures.filter(s => s.structureType !== STRUCTURE_CONTROLLER && inAO(s.pos, ao));
+
+    hostileStructures = hostileStructures.filter(s =>
+        s.structureType !== STRUCTURE_CONTROLLER &&
+        s.structureType !== STRUCTURE_WALL &&
+        s.structureType !== STRUCTURE_RAMPART &&
+        inAO(s.pos, ao)
+    );
+
     if (hostileStructures.length > 0) {
         return creep.pos.findClosestByRange(hostileStructures);
+    }
+
+    // --- Fallback: attack weakest wall/rampart inside AO ---
+    // Walls are NOT "hostile structures", so we must scan FIND_STRUCTURES.
+    let walls = creep.room.find(FIND_STRUCTURES, {
+        filter: s =>
+            (s.structureType === STRUCTURE_WALL) &&
+            inAO(s.pos, ao)
+    });
+
+    if (walls && walls.length > 0) {
+        walls.sort((a, b) => a.hits - b.hits);
+        return walls[0];
     }
 
     // Attack flag tile preference (only if inside AO too)

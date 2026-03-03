@@ -43,7 +43,7 @@ function healUrgencyScore(target, healer) {
     return score;
 }
 
-function chooseBestHealTarget(healer, primaryBuddy, extraCandidates) {
+function chooseBestHealTarget(healer, primaryBuddy, extraCandidates, forcePreHeal) {
     if (!healer || getActiveHealParts(healer) <= 0) return null;
 
     const candidates = [];
@@ -58,7 +58,6 @@ function chooseBestHealTarget(healer, primaryBuddy, extraCandidates) {
         if (!t) continue;
 
         const r = getHealRange(healer, t);
-        // Can we heal it this tick?
         if (r > 3) continue;
 
         const s = healUrgencyScore(t, healer);
@@ -66,6 +65,12 @@ function chooseBestHealTarget(healer, primaryBuddy, extraCandidates) {
             bestScore = s;
             best = t;
         }
+    }
+
+    // --- PRE-HEAL LOGIC ---
+    // If no one needs healing but we're in danger, self-heal anyway.
+    if ((!best || bestScore <= 0) && forcePreHeal) {
+        return healer;
     }
 
     return best;
@@ -86,7 +91,8 @@ function buildLeaderActions(creep, buddy, target, suppressCombat) {
     const actions = [];
 
     // Better healing: self vs buddy based on urgency
-    const healTarget = chooseBestHealTarget(creep, buddy);
+    const inDanger = hasAdjacentHostile(creep);
+    const healTarget = chooseBestHealTarget(creep, buddy, null, inDanger);
     pushHealAction(actions, creep, healTarget);
 
     if (suppressCombat || !target) return actions;
@@ -104,7 +110,8 @@ function buildLeaderActions(creep, buddy, target, suppressCombat) {
 function buildSupportActions(creep, leader, target, suppressCombat) {
     const actions = [];
 
-    const healTarget = chooseBestHealTarget(creep, leader);
+    const inDanger = hasAdjacentHostile(creep);
+    const healTarget = chooseBestHealTarget(creep, leader, null, inDanger);
     pushHealAction(actions, creep, healTarget);
 
     if (suppressCombat) return actions;

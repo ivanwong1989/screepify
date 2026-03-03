@@ -115,77 +115,107 @@ function ensureMarketConfig() {
     if (!Memory.market || typeof Memory.market !== 'object') Memory.market = {};
     const cfg = Memory.market;
 
-    if (!cfg._initialized) {
-        cfg.enabled = (typeof cfg.enabled === 'boolean') ? cfg.enabled : DEFAULTS.enabled;
-        cfg.runEvery = clampNumber(cfg.runEvery, DEFAULTS.runEvery, 1);
-        cfg.minCredits = clampNumber(cfg.minCredits, DEFAULTS.minCredits, 0);
-        cfg.energyReserve = clampNumber(cfg.energyReserve, DEFAULTS.energyReserve, 0);
-        cfg.terminalEnergyTarget = clampNumber(cfg.terminalEnergyTarget, DEFAULTS.terminalEnergyTarget, 0);
-        cfg.terminalEnergyMax = clampNumber(cfg.terminalEnergyMax, DEFAULTS.terminalEnergyMax, 0);
-        cfg.maxDealsPerRoom = clampNumber(cfg.maxDealsPerRoom, DEFAULTS.maxDealsPerRoom, 0);
-        cfg.energyValue = clampNumber(cfg.energyValue, DEFAULTS.energyValue, 0);
-        cfg.maxOverpayPct = clampNumber(cfg.maxOverpayPct, DEFAULTS.maxOverpayPct, 0);
-        cfg.sellBufferPct = clampNumber(cfg.sellBufferPct, DEFAULTS.sellBufferPct, 0);
-        if (!cfg.buy || typeof cfg.buy !== 'object') cfg.buy = {};
-        if (!cfg.sell || typeof cfg.sell !== 'object') cfg.sell = {};
-        if (!cfg.rooms || typeof cfg.rooms !== 'object') cfg.rooms = {};
-        if (!cfg.stockTargets || typeof cfg.stockTargets !== 'object') cfg.stockTargets = {};
-        if (!cfg.manualOrders || typeof cfg.manualOrders !== 'object') cfg.manualOrders = {};
-        for (const resourceType of Object.keys(DEFAULT_RESOURCE_CONFIG)) {
-            const spec = DEFAULT_RESOURCE_CONFIG[resourceType];
-            if (spec.buy && !cfg.buy[resourceType]) {
-                cfg.buy[resourceType] = Object.assign({}, spec.buy);
-            }
-            if (spec.sell && !cfg.sell[resourceType]) {
-                cfg.sell[resourceType] = Object.assign({}, spec.sell);
-            }
-            if (typeof spec.target === 'number' && !(resourceType in cfg.stockTargets)) {
-                cfg.stockTargets[resourceType] = spec.target;
-            }
-        }
-        mergeLegacyStockTargets(cfg, cfg.stockTargets);
-        cfg._initialized = true;
-    }
+    // ---- New model (per-room configs) ----
+    // Root only keeps:
+    //  - globalEnabled (master switch)
+    //  - rooms[roomName] (all tuning lives here)
+    //  - defaultsPatch (optional "apply to all rooms" patch)
+    //  - manualOrders (account-wide tracking)
+    //
+    // Back-compat: older root-level fields are treated as "legacy defaults"
+    // and copied into room configs lazily.
 
-    cfg.enabled = cfg.enabled !== false;
-    cfg.runEvery = clampNumber(cfg.runEvery, DEFAULTS.runEvery, 1);
-    cfg.minCredits = clampNumber(cfg.minCredits, DEFAULTS.minCredits, 0);
-    cfg.energyReserve = clampNumber(cfg.energyReserve, DEFAULTS.energyReserve, 0);
-    cfg.terminalEnergyTarget = clampNumber(cfg.terminalEnergyTarget, DEFAULTS.terminalEnergyTarget, 0);
-    cfg.terminalEnergyMax = clampNumber(cfg.terminalEnergyMax, DEFAULTS.terminalEnergyMax, 0);
-    cfg.maxDealsPerRoom = clampNumber(cfg.maxDealsPerRoom, DEFAULTS.maxDealsPerRoom, 0);
-    cfg.energyValue = clampNumber(cfg.energyValue, DEFAULTS.energyValue, 0);
-    cfg.maxOverpayPct = clampNumber(cfg.maxOverpayPct, DEFAULTS.maxOverpayPct, 0);
-    cfg.sellBufferPct = clampNumber(cfg.sellBufferPct, DEFAULTS.sellBufferPct, 0);
-    if (!cfg.buy || typeof cfg.buy !== 'object') cfg.buy = {};
-    if (!cfg.sell || typeof cfg.sell !== 'object') cfg.sell = {};
     if (!cfg.rooms || typeof cfg.rooms !== 'object') cfg.rooms = {};
-    if (!cfg.stockTargets || typeof cfg.stockTargets !== 'object') cfg.stockTargets = {};
     if (!cfg.manualOrders || typeof cfg.manualOrders !== 'object') cfg.manualOrders = {};
+    if (!cfg.defaultsPatch || typeof cfg.defaultsPatch !== 'object') cfg.defaultsPatch = {};
+
+    // Back-compat: old cfg.enabled becomes globalEnabled (master).
+    if (typeof cfg.globalEnabled !== 'boolean') {
+        if (typeof cfg.enabled === 'boolean') cfg.globalEnabled = cfg.enabled;
+        else cfg.globalEnabled = DEFAULTS.enabled;
+    }
+    cfg.globalEnabled = cfg.globalEnabled !== false;
+
+    cfg._initialized = true;
+    return cfg;
+}
+
+function clonePlain(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    return JSON.parse(JSON.stringify(obj));
+}
+
+function applyRoomDefaults(roomCfg) {
+    roomCfg.enabled = (typeof roomCfg.enabled === 'boolean') ? roomCfg.enabled : true;
+    roomCfg.runEvery = clampNumber(roomCfg.runEvery, DEFAULTS.runEvery, 1);
+    roomCfg.minCredits = clampNumber(roomCfg.minCredits, DEFAULTS.minCredits, 0);
+    roomCfg.energyReserve = clampNumber(roomCfg.energyReserve, DEFAULTS.energyReserve, 0);
+    roomCfg.terminalEnergyTarget = clampNumber(roomCfg.terminalEnergyTarget, DEFAULTS.terminalEnergyTarget, 0);
+    roomCfg.terminalEnergyMax = clampNumber(roomCfg.terminalEnergyMax, DEFAULTS.terminalEnergyMax, 0);
+    roomCfg.maxDealsPerRoom = clampNumber(roomCfg.maxDealsPerRoom, DEFAULTS.maxDealsPerRoom, 0);
+    roomCfg.energyValue = clampNumber(roomCfg.energyValue, DEFAULTS.energyValue, 0);
+    roomCfg.maxOverpayPct = clampNumber(roomCfg.maxOverpayPct, DEFAULTS.maxOverpayPct, 0);
+    roomCfg.sellBufferPct = clampNumber(roomCfg.sellBufferPct, DEFAULTS.sellBufferPct, 0);
+
+    if (!roomCfg.buy || typeof roomCfg.buy !== 'object') roomCfg.buy = {};
+    if (!roomCfg.sell || typeof roomCfg.sell !== 'object') roomCfg.sell = {};
+    if (!roomCfg.stockTargets || typeof roomCfg.stockTargets !== 'object') roomCfg.stockTargets = {};
+
     for (const resourceType of Object.keys(DEFAULT_RESOURCE_CONFIG)) {
         const spec = DEFAULT_RESOURCE_CONFIG[resourceType];
-        if (spec.buy && !cfg.buy[resourceType]) {
-            cfg.buy[resourceType] = Object.assign({}, spec.buy);
-        }
-        if (spec.sell && !cfg.sell[resourceType]) {
-            cfg.sell[resourceType] = Object.assign({}, spec.sell);
-        }
-        if (typeof spec.target === 'number' && !(resourceType in cfg.stockTargets)) {
-            cfg.stockTargets[resourceType] = spec.target;
-        }
-    }
-    mergeLegacyStockTargets(cfg, cfg.stockTargets);
-
-    if (cfg.rooms && typeof cfg.rooms === 'object') {
-        for (const roomName of Object.keys(cfg.rooms)) {
-            const roomCfg = cfg.rooms[roomName];
-            if (!roomCfg || typeof roomCfg !== 'object') continue;
-            if (!roomCfg.stockTargets || typeof roomCfg.stockTargets !== 'object') roomCfg.stockTargets = {};
-            mergeLegacyStockTargets(roomCfg, roomCfg.stockTargets);
+        if (spec.buy && !roomCfg.buy[resourceType]) roomCfg.buy[resourceType] = Object.assign({}, spec.buy);
+        if (spec.sell && !roomCfg.sell[resourceType]) roomCfg.sell[resourceType] = Object.assign({}, spec.sell);
+        if (typeof spec.target === 'number' && !(resourceType in roomCfg.stockTargets)) {
+            roomCfg.stockTargets[resourceType] = spec.target;
         }
     }
 
-    return cfg;
+    mergeLegacyStockTargets(roomCfg, roomCfg.stockTargets);
+}
+
+function ensureRoomConfig(roomName) {
+    const base = ensureMarketConfig();
+    const key = ('' + roomName).trim().toUpperCase();
+    if (!key) return null;
+
+    if (!base.rooms[key] || typeof base.rooms[key] !== 'object') base.rooms[key] = {};
+    const roomCfg = base.rooms[key];
+
+    // 1) Start with base defaults
+    applyRoomDefaults(roomCfg);
+
+    // 2) Apply any "apply to all rooms" patch (persisted)
+    if (base.defaultsPatch && typeof base.defaultsPatch === 'object') {
+        mergePatch(roomCfg, base.defaultsPatch);
+        applyRoomDefaults(roomCfg);
+    }
+
+    // 3) Back-compat: migrate older root-level tuning into per-room config
+    // If you still have Memory.market.runEvery / buy / sell / stockTargets etc from older versions,
+    // we treat them as defaults and copy them into rooms if the room doesn't already override.
+    const legacy = base; // root object may still contain old keys
+    const legacyKeys = [
+        'runEvery','minCredits','energyReserve','terminalEnergyTarget','terminalEnergyMax',
+        'maxDealsPerRoom','energyValue','maxOverpayPct','sellBufferPct'
+    ];
+    for (const k of legacyKeys) {
+        if (roomCfg[k] === undefined && legacy[k] !== undefined) roomCfg[k] = legacy[k];
+    }
+    if (legacy.buy && typeof legacy.buy === 'object') {
+        roomCfg.buy = Object.assign({}, legacy.buy, roomCfg.buy);
+    }
+    if (legacy.sell && typeof legacy.sell === 'object') {
+        roomCfg.sell = Object.assign({}, legacy.sell, roomCfg.sell);
+    }
+    if (legacy.stockTargets && typeof legacy.stockTargets === 'object') {
+        roomCfg.stockTargets = Object.assign({}, legacy.stockTargets, roomCfg.stockTargets);
+    }
+    mergeLegacyStockTargets(roomCfg, roomCfg.stockTargets);
+
+    // Normalize again after merges
+    applyRoomDefaults(roomCfg);
+
+    return roomCfg;
 }
 
 function normalizeManualOrderMeta(meta) {
@@ -237,28 +267,58 @@ function mergePatch(target, patch) {
 }
 
 function applyMarketPatch(patch) {
+    // NOTE: This intentionally does NOT mutate any global parameters other than what
+    // individual room configs already contain. It is a convenience helper to apply a
+    // patch to ALL EXISTING rooms.
+    //
+    // Global config is purposely tiny to avoid "global vs room" confusion:
+    //  - Memory.market.globalEnabled is the master switch
+    //  - Everything else lives under Memory.market.rooms[roomName]
     const cfg = ensureMarketConfig();
-    mergePatch(cfg, patch);
+    const p = (patch && typeof patch === 'object') ? patch : {};
+
+    // Guard: do not allow this path to change the master switch.
+    // (Use market("on") / market("off") for that.)
+    const roomPatch = Object.assign({}, p);
+    delete roomPatch.enabled;
+    delete roomPatch.globalEnabled;
+
+    if (Object.keys(roomPatch).length === 0) return cfg;
+
+    for (const roomName of Object.keys(cfg.rooms || {})) {
+        const roomCfg = ensureRoomConfig(roomName);
+        if (!roomCfg) continue;
+        mergePatch(roomCfg, roomPatch);
+        applyRoomDefaults(roomCfg);
+    }
+
     return ensureMarketConfig();
 }
 
 function applyRoomPatch(roomName, patch) {
     const cfg = ensureMarketConfig();
-    const key = ('' + roomName).trim();
+    const key = ('' + roomName).trim().toUpperCase();
     if (!key) return cfg;
-    if (!cfg.rooms[key] || typeof cfg.rooms[key] !== 'object') cfg.rooms[key] = {};
-    mergePatch(cfg.rooms[key], patch);
+    const roomCfg = ensureRoomConfig(key);
+    if (!roomCfg) return cfg;
+    mergePatch(roomCfg, patch);
+    return ensureMarketConfig();
+}
+
+function resetRoomConfig(roomName) {
+    const cfg = ensureMarketConfig();
+    const key = ('' + roomName).trim().toUpperCase();
+    if (!key) return cfg;
+
+    // Drop any existing overrides for the room, then re-seed via ensureRoomConfig
+    cfg.rooms[key] = {};
+    ensureRoomConfig(key);
     return ensureMarketConfig();
 }
 
 function getRoomConfig(base, roomName) {
-    const override = base.rooms && base.rooms[roomName];
-    if (!override || typeof override !== 'object') return base;
-    const merged = Object.assign({}, base, override);
-    merged.buy = Object.assign({}, base.buy, override.buy);
-    merged.sell = Object.assign({}, base.sell, override.sell);
-    merged.stockTargets = Object.assign({}, base.stockTargets, override.stockTargets);
-    return merged;
+    // base is ignored in the per-room config model (kept for older call sites).
+    return ensureRoomConfig(roomName);
 }
 
 function getRoomTotals(room) {
@@ -386,16 +446,18 @@ function formatAmountSteps(steps) {
 
 function getRunStatus(room, cfg) {
     const reasons = [];
+    const base = ensureMarketConfig();
     if (!Game.market) reasons.push('no market');
     if (!room) reasons.push('no room');
     if (room && !room.terminal) reasons.push('no terminal');
     if (room && (!room.controller || !room.controller.my)) reasons.push('not owned');
-    if (!cfg.enabled) reasons.push('disabled');
-    if (cfg.maxDealsPerRoom <= 0) reasons.push('maxDealsPerRoom=0');
+    if (!base.globalEnabled) reasons.push('global disabled');
+    if (!cfg || !cfg.enabled) reasons.push('room disabled');
+    if (cfg && cfg.maxDealsPerRoom <= 0) reasons.push('maxDealsPerRoom=0');
     if (room && room.terminal && room.terminal.cooldown && room.terminal.cooldown > 0) {
         reasons.push(`terminal cooldown=${room.terminal.cooldown}`);
     }
-    if (room && !shouldRunThisTick(room.name, cfg.runEvery)) {
+    if (room && cfg && !shouldRunThisTick(room.name, cfg.runEvery)) {
         reasons.push(`runEvery=${cfg.runEvery} not scheduled`);
     }
     if (room && room._opState === 'EMERGENCY') reasons.push('room emergency');
@@ -893,10 +955,29 @@ function trySell(room, cfg, totals) {
     return false;
 }
 
+function summarizeGlobalConfig(cfg) {
+    const lines = [];
+    const roomNames = Object.keys((cfg && cfg.rooms) || {}).sort();
+    lines.push(`Market global=${cfg && cfg.globalEnabled ? 'ON' : 'OFF'} rooms=${roomNames.length}`);
+    if (cfg && cfg.defaultsPatch && Object.keys(cfg.defaultsPatch).length > 0) {
+        lines.push(`DefaultsPatch keys: ${Object.keys(cfg.defaultsPatch).sort().join(', ')}`);
+    }
+    if (roomNames.length > 0) {
+        lines.push('Room enablement:');
+        for (const name of roomNames.slice(0, 20)) {
+            const rc = cfg.rooms[name];
+            const en = rc && rc.enabled !== false;
+            lines.push(`${name}: ${en ? 'ON' : 'OFF'}`);
+        }
+        if (roomNames.length > 20) lines.push(`(+${roomNames.length - 20} more)`);
+    }
+    return lines.join('\n');
+}
+
 function summarizeConfig(cfg) {
     const lines = [];
     lines.push(
-        `Market auto=${cfg.enabled ? 'ON' : 'OFF'} runEvery=${cfg.runEvery} ` +
+        `Room market=${cfg && cfg.enabled ? 'ON' : 'OFF'} runEvery=${cfg.runEvery} ` +
         `energyReserve=${cfg.energyReserve} terminalEnergyTarget=${cfg.terminalEnergyTarget} terminalEnergyMax=${cfg.terminalEnergyMax} ` +
         `minCredits=${cfg.minCredits} maxDeals=${cfg.maxDealsPerRoom} ` +
         `energyValue=${cfg.energyValue} maxOverpayPct=${cfg.maxOverpayPct} sellBufferPct=${cfg.sellBufferPct}`
@@ -958,15 +1039,19 @@ const managerTerminal = {
         return applyRoomPatch(roomName, patch);
     },
 
-    summarize: function() {
+        resetRoom: function(roomName) {
+        return resetRoomConfig(roomName);
+    },
+
+summarize: function() {
         const cfg = ensureMarketConfig();
-        return summarizeConfig(cfg);
+        return summarizeGlobalConfig(cfg);
     },
 
     summarizeRoom: function(roomName) {
-        const cfg = ensureMarketConfig();
-        const merged = getRoomConfig(cfg, roomName);
-        return summarizeConfig(merged);
+        const roomCfg = ensureRoomConfig(roomName);
+        if (!roomCfg) return 'Unknown room: ' + roomName;
+        return summarizeConfig(roomCfg);
     },
 
     // ---- Manual Market Orders (created via console) ----
@@ -1081,13 +1166,13 @@ const managerTerminal = {
         if (!room.controller || !room.controller.my) return;
 
         const base = ensureMarketConfig();
-        if (!base.enabled) return;
+        if (!base.globalEnabled) return;
 
         // keep manual order records tidy (cheap)
         cleanupManualOrders(base);
 
         const cfg = getRoomConfig(base, room.name);
-        if (!cfg.enabled) return;
+        if (!cfg || !cfg.enabled) return;
         if (cfg.maxDealsPerRoom <= 0) return;
         if (room.terminal.cooldown && room.terminal.cooldown > 0) return;
         if (!shouldRunThisTick(room.name, cfg.runEvery)) return;
