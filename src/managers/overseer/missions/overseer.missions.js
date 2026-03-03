@@ -49,12 +49,40 @@ const overseerMissions = {
         // Pre-calculate efficiency for harvest/logistics
         const efficientSources = new Set();
         const potentialHarvester = managerSpawner.checkBody('miner', budget);
+
+        // baseline rule (your existing intent, but keep as-is)
         intel.sources.forEach(s => {
             const needed = Math.ceil(5 / (potentialHarvester.work || 1));
-            if (needed <= s.availableSpaces && (budget > 300 || s.hasContainer || intel.haulerCapacity > 0)) {
-                efficientSources.add(s.id);
-            }
+            const viable = needed <= s.availableSpaces;
+
+            const isEfficient =
+                viable &&
+                (budget > 300 || s.hasContainer || intel.haulerCapacity > 0);
+
+            if (isEfficient) efficientSources.add(s.id);
         });
+
+        // Bootstrap: if nothing qualifies yet (common at RCL1), allow 1 source anyway.
+        // This breaks the hauler chicken-and-egg without making everything "efficient".
+        if (efficientSources.size === 0) {
+            // Pick the most viable source (most spaces). If tie, just take first.
+            let best = null;
+            let bestSpaces = -1;
+
+            intel.sources.forEach(s => {
+                const needed = Math.ceil(5 / (potentialHarvester.work || 1));
+                const viable = needed <= s.availableSpaces;
+                if (!viable) return;
+
+                const spaces = s.availableSpaces || 0;
+                if (spaces > bestSpaces) {
+                    best = s;
+                    bestSpaces = spaces;
+                }
+            });
+
+            if (best) efficientSources.add(best.id);
+        }
 
         const economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || null;
         const context = { opState, economyState, budget, getMissionCensus, efficientSources, economyFlow };

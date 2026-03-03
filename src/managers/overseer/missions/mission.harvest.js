@@ -4,7 +4,6 @@ module.exports = {
     generate: function(room, intel, context, missions) {
         const { opState, budget, getMissionCensus, efficientSources } = context;
         const isEmergency = opState === 'EMERGENCY';
-        let availableHaulerCapacity = intel.haulerCapacity;
         const spawns = intel.structures[STRUCTURE_SPAWN] || [];
         const extensions = intel.structures[STRUCTURE_EXTENSION] || [];
         const towers = intel.structures[STRUCTURE_TOWER] || [];
@@ -12,14 +11,13 @@ module.exports = {
 
         intel.sources.forEach(source => {
             const isEfficient = efficientSources.has(source.id);
-            const hasCap = availableHaulerCapacity >= 300;
-            const canDropMine = (source.hasContainer || hasCap) && isEfficient;
-            
-            if (canDropMine && !source.hasContainer) availableHaulerCapacity -= 300;
+            const hasContainer = !!source.containerId;   // <-- ADD THIS
+            const canDropMine = isEfficient;
 
-            const hasContainer = !!source.containerId;
-            let mode = canDropMine ? 'static' : 'mobile';
-            if (mode === 'static' && !hasContainer) mode = 'mobile';
+            let mode = 'mobile';
+            if (canDropMine) {
+                mode = hasContainer ? 'static' : 'static_drop';
+            }
 
             let containerId = hasContainer ? source.containerId : null;
             let dropoffIds = [];
@@ -27,11 +25,18 @@ module.exports = {
             let dropoffRange = 1;
 
             if (mode === 'static') {
+                // container/link drop-mining
                 const linkId = source.linkId || null;
                 if (linkId) dropoffIds.push(linkId);
                 if (containerId) dropoffIds.push(containerId);
                 fallback = 'none';
+            } else if (mode === 'static_drop') {
+                // early drop-mining: no container/link yet
+                dropoffIds = [];
+                fallback = 'none';
+                // keep dropoffRange = 1 (unused here, but consistent)
             } else {
+                // mobile harvesting: direct deliver
                 const spawnExt = [
                     ...spawns.filter(s => s.store && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0).map(s => s.id),
                     ...extensions.filter(e => e.store && e.store.getFreeCapacity(RESOURCE_ENERGY) > 0).map(e => e.id)
@@ -48,8 +53,7 @@ module.exports = {
 
             const missionName = `harvest:${source.id}`;
             const census = getMissionCensus(missionName);
-            const archStats = managerSpawner.checkBody('miner', budget);
-            
+            const archStats = managerSpawner.checkBody('miner', budget, { mode });
             const targetWork = 7;
             const workPerCreep = archStats.work || 1;
             const desiredCount = Math.min(Math.ceil(targetWork / workPerCreep), source.availableSpaces);
@@ -83,10 +87,18 @@ module.exports = {
                 `spaces=${source.availableSpaces}`);
 
             const hasValidSource = !!source.id;
-            const hasValidMode = mode === 'static' || mode === 'mobile';
+            const hasValidMode = (mode === 'static' || mode === 'static_drop' || mode === 'mobile');
+
+            // static: must have a containerId and at least one dropoff (container/link)
             const hasValidStatic = mode !== 'static' || (containerId && dropoffIds.length > 0);
+
+            // static_drop: must NOT require container/dropoffs
+            const hasValidStaticDrop = mode !== 'static_drop' || (containerId === null && dropoffIds.length === 0);
+
+            // mobile: must have an array (can be empty but should be array)
             const hasValidMobile = mode !== 'mobile' || Array.isArray(dropoffIds);
-            if (!hasValidSource || !hasValidMode || !hasValidStatic || !hasValidMobile) {
+
+            if (!hasValidSource || !hasValidMode || !hasValidStatic || !hasValidStaticDrop || !hasValidMobile) {
                 debug('mission.harvest', `[Harvest] ${room.name} ${source.id} blocked: invalid contract`);
                 return;
             }

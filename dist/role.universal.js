@@ -153,8 +153,8 @@ function getOpportunisticDesiredHits(room, st) {
 function tryOpportunisticRepair(creep, currentTask) {
     if (!creep || creep.spawning) return false;
 
-    // Only if we have energy + WORK
-    if (!creep.store || creep.store[RESOURCE_ENERGY] <= 0) return false;
+    // Only if we have energy + energy is above 50% of carry capacity + WORK
+    if (!creep.store || (creep.store[RESOURCE_ENERGY] <= 0.5*creep.store.getCapacity())) return false;
     if (creep.getActiveBodyparts(WORK) <= 0) return false;
 
     // Don't double-repair on a real repair task (let the mission do its job)

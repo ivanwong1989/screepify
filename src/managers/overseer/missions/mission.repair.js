@@ -214,7 +214,7 @@ module.exports = {
                     type: 'repair',
                     archetype: 'worker',
                     targetId: target.id,
-                    data: { sourceIds: intel.allEnergySources.map(s => s.id) },
+                    data: { sourceIds: intel.allEnergySources.map(s => s.id), allowPartial: true },
                     requirements: {
                         archetype: 'worker',
                         count: 1,
@@ -361,7 +361,7 @@ module.exports = {
                     type: 'repair',
                     archetype: 'worker',
                     targetId: target.id,
-                    data: { sourceIds: intel.allEnergySources.map(s => s.id), fortify: true },
+                    data: { sourceIds: intel.allEnergySources.map(s => s.id), fortify: true, allowPartial: true },
                     requirements: {
                         archetype: 'worker',
                         count: fortifyCountPerTarget,

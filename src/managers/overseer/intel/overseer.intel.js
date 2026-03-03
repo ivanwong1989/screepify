@@ -360,10 +360,9 @@ const overseerIntel = {
             if (current === 'STOCKPILING' && totalStored >= UPGRADE_START && flow.avg >= FLOW_POSITIVE) current = 'UPGRADING';
             else if (current === 'UPGRADING' && (totalStored <= UPGRADE_STOP || flow.avg <= FLOW_NEGATIVE)) current = 'STOCKPILING';
         } else { // Without storage, the flow tracking is too undeterministic since there's no buffer. do not use flow EMA.
-            const UPGRADE_START = totalCapacity * 0.8;
-            const UPGRADE_STOP = totalCapacity * 0.2;
-            if (current === 'STOCKPILING' && (totalStored >= UPGRADE_START)) current = 'UPGRADING';
-            else if (current === 'UPGRADING' && (totalStored <= UPGRADE_STOP)) current = 'STOCKPILING';
+            // Also most probably without storage means low RCL. focus should be on upgrading still we have. 
+            // We should always we in UPGRADING mode. 
+            current = 'UPGRADING';
         }
         room.memory.overseer.economyState = current;
         return current;

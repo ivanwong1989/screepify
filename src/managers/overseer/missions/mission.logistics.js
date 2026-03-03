@@ -53,6 +53,7 @@ module.exports = {
             // Energy policies
             if (type === 'link_out') return { minAmount: 1, maxAgeTicks: 20, allowPartial: true };
             if (type === 'outflow') return { minAmount: 1, maxAgeTicks: 0, allowPartial: true };
+            if (type === 'drop_mining') return { minAmount: 1, maxAgeTicks: 15, allowPartial: true };
             if (type === 'scavenge') return { minAmount: clamp(Math.floor(cap * 0.15), 50, 300), maxAgeTicks: 200, allowPartial: true };
             if (type === 'mining') return { minAmount: clamp(Math.floor(cap * 0.35), 100, 800), maxAgeTicks: 450, allowPartial: false };
             if (type === 'consolidation') return { minAmount: clamp(Math.floor(cap * 0.25), 100, 800), maxAgeTicks: 650, allowPartial: false };
@@ -150,19 +151,62 @@ module.exports = {
         });
 
         const inflowSinks = [
-            ...(storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0 ? [storage] : []),
-            ...nonMiningContainers.filter(c => c.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+        ...(storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0 ? [storage] : []),
+        ...nonMiningContainers.filter(c => c.store.getFreeCapacity(RESOURCE_ENERGY) > 0),
+        //...(intel.structures[STRUCTURE_SPAWN] || []).filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
         ];
 
         if (inflowSinks.length > 0) {
+            // --- Drop-mine pickup (small piles near efficient sources) + normal scavenge ---
+            const effSources = intel.sources.filter(s => efficientSources.has(s.id));
+
+            // Drop-mine pickup: allow ALL adjacent piles (like scavenge)
+            intel.dropped.forEach(r => {
+                if (!r || r.resourceType !== RESOURCE_ENERGY || (r.amount || 0) <= 0) return;
+
+                // Only consider drops adjacent to efficient sources
+                const isAdjacentToEffSource = effSources.some(s =>
+                    s && s.pos && r.pos && r.pos.inRangeTo(s.pos, 1)
+                );
+
+                if (!isAdjacentToEffSource) return;
+
+                const bestSink = r.pos.findClosestByRange(inflowSinks);
+                if (!bestSink) return;
+
+                this.addLogisticsMissionsForRoute(
+                    activeMissions,
+                    coveredRouteSlots,
+                    r,
+                    bestSink,
+                    isEmergency,
+                    'drop_mining',
+                    RESOURCE_ENERGY,
+                    carryParts
+                );
+            });
+
+            // Normal scavenge (keep your >100 threshold)
             const scavengeSources = [
                 ...intel.dropped.filter(r => r.resourceType === RESOURCE_ENERGY && r.amount > 100),
                 ...intel.ruins.filter(r => r.store[RESOURCE_ENERGY] > 0),
                 ...intel.tombstones.filter(t => t.store[RESOURCE_ENERGY] > 0)
             ];
+
             scavengeSources.forEach(source => {
                 const bestSink = source.pos.findClosestByRange(inflowSinks);
-                if (bestSink) this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, bestSink, isEmergency, 'scavenge', RESOURCE_ENERGY, carryParts);
+                if (bestSink) {
+                    this.addLogisticsMissionsForRoute(
+                        activeMissions,
+                        coveredRouteSlots,
+                        source,
+                        bestSink,
+                        isEmergency,
+                        'scavenge',
+                        RESOURCE_ENERGY,
+                        carryParts
+                    );
+                }
             });
 
             miningContainers.filter(c => c.store[RESOURCE_ENERGY] >= (carryParts * 50)).forEach(source => {
@@ -511,6 +555,10 @@ module.exports = {
     },
 
     addLogisticsMissionsForRoute: function(activeMissions, coveredRouteSlots, source, target, isEmergency, type, resourceType, carryParts, explicitNeed) {
+        // If the target is full... no need to scehdule this mission....
+        const rt = resourceType || RESOURCE_ENERGY;
+        if (target && target.store && target.store.getFreeCapacity(rt) <= 0) return;
+        
         const baseName = `haul:${source.id}:${target.id}`;
         const routeKey = resourceType ? `${baseName}:${resourceType}` : baseName;
         const slots = this.getHaulSlotsForRoute(source, target, resourceType, carryParts, explicitNeed, type, routeKey);
@@ -568,6 +616,7 @@ module.exports = {
         }
         if (type === 'link_out') return 55;
         if (type === 'scavenge') return 45;
+        if (type === 'drop_mining') return 47;
         if (type === 'mining') return 30;
         if (type === 'terminal_stock') return 20;
         return 10;

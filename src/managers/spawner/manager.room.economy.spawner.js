@@ -112,10 +112,21 @@ var managerSpawner = {
         }
     },
 
-    checkBody: function(type, budget) {
-        let archetype = type;
+    checkBody: function(type, budget, opts) {
+        const archetype = type;
 
-        const mission = { archetype: archetype };
+        // Allow callers to influence body generation (e.g. miner mode=mobile)
+        // opts can be:
+        //  - undefined
+        //  - { mode: 'mobile' }  (will be attached to mission.data)
+        //  - a full mission-like object (will be used as-is)
+        let mission;
+        if (opts && typeof opts === 'object' && (opts.archetype || opts.requirements)) {
+            mission = opts;
+        } else {
+            mission = { archetype: archetype };
+            if (opts && typeof opts === 'object') mission.data = opts;
+        }
         const body = this.generateBody(mission, budget);
         const cost = this.calculateBodyCost(body);
         
@@ -152,6 +163,10 @@ var managerSpawner = {
             return this.generateMilitaryBody(budget, mission.requirements.body);
         }
         if (mission.archetype === 'miner') {
+            // Mobile harvesters need extra mobility early (1W 1C 2M ratio per segment)
+            if (mission && mission.data && mission.data.mode === 'mobile') {
+                return this.generateMobileMinerBody(budget);
+            }
             return this.generateMinerBody(budget);
         } else if (mission.archetype === 'remote_miner') {
             return this.generateRemoteMinerBody(budget);
@@ -201,6 +216,32 @@ var managerSpawner = {
         
         return this.sortBody(body);
     },
+
+    generateMobileMinerBody: function(budget) {
+        // Mobile miners: 1 WORK, 1 CARRY, 2 MOVE per segment (250)
+        // Keep WORK modest (cap at 5) so we don't over-invest in stationary mining while walking.
+        const segment = [WORK, CARRY, MOVE, MOVE];
+        if (budget < 250) {
+            if (budget >= 200) return this.sortBody([WORK, CARRY, MOVE]);
+            if (budget >= 150) return this.sortBody([WORK, MOVE]);
+            if (budget >= 100) return this.sortBody([WORK]);
+            return this.sortBody([MOVE]);
+        }
+
+        let body = segment.slice();
+        let cost = 250;
+        let workCount = 1;
+        const MAX_WORK = 5;
+
+        while (cost + 250 <= budget && body.length + 4 <= 50 && workCount + 1 <= MAX_WORK) {
+            body = body.concat(segment);
+            cost += 250;
+            workCount += 1;
+        }
+
+        return this.sortBody(body);
+    },
+
 
     generateRemoteMinerBody: function(budget) {
         // Remote miners travel: extra MOVE compared to local static miners.

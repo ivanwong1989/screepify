@@ -26,9 +26,6 @@ module.exports = {
             upgradePriority = 10;
             spawnAllowed = isCritical;
             if (isCritical) upgradePriority = 100;
-        } else if (intel.energyAvailable >= intel.energyCapacityAvailable * 0.95) {
-            upgradePriority = 80;
-            desiredWork = 15;
         }
 
         if (intel.constructionSites.length > 0) {

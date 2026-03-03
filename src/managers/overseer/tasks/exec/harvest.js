@@ -48,7 +48,7 @@ module.exports = function execHarvestTask(ctx) {
         helpers.unassignMission(creep);
         return null;
     }
-    if (mode !== 'static' && mode !== 'mobile') {
+    if (mode !== 'static' && mode !== 'static_drop' && mode !== 'mobile') {
         logContractError(creep, `invalid mode ${mode}`);
         helpers.unassignMission(creep);
         return null;
@@ -132,6 +132,31 @@ module.exports = function execHarvestTask(ctx) {
             if (transferTarget) {
                 return { type: 'transfer', targetId: transferTarget.id, resourceType, range: dropoffRange };
             }
+            if (fallback === 'upgrade' && creep.room.controller && creep.room.controller.my) {
+                return { type: 'upgrade', targetId: creep.room.controller.id };
+            }
+        }
+
+        return { type: 'harvest', targetId: sourceId };
+    }
+
+    if (mode === 'static_drop') {
+        // Early drop-mining: no container/link yet. Stand next to source and drop when full.
+        if (!creep.pos.inRangeTo(source.pos, 1)) {
+            return { type: 'move', targetId: sourceId, range: 1 };
+        }
+
+        helpers.updateState(creep, resourceType, { allowPartialWork: true });
+
+        // If we're in "working" state (i.e., carrying something) OR full, we drop to create a pile for haulers.
+        if (creep.memory.taskState === 'working' || creep.store.getFreeCapacity(resourceType) === 0) {
+            // Optional: if explicit dropoffs exist (future-proof), prefer transferring instead of dropping.
+            const transferTarget = getFirstValidDropoff(creep.room, dropoffIds, resourceType);
+            if (transferTarget) {
+                return { type: 'transfer', targetId: transferTarget.id, resourceType, range: dropoffRange };
+            }
+            if (overflowPolicy === 'drop') return { type: 'drop', resourceType: resourceType };
+
             if (fallback === 'upgrade' && creep.room.controller && creep.room.controller.my) {
                 return { type: 'upgrade', targetId: creep.room.controller.id };
             }

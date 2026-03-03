@@ -33,11 +33,11 @@ module.exports = function execRepairTask(ctx) {
 
     let task = null;
     if (mission.data && mission.data.sourceId) {
-        task = execGatherTask({ creep, room, options: { allowedIds: [mission.data.sourceId] } });
+        task = execGatherTask({ creep, room, options: { allowedIds: [mission.data.sourceId], allowPartial: !!mission.data.allowPartial } });
     } else {
         const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
         const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
-        task = execGatherTask({ creep, room, options: { allowedIds, excludeIds } });
+        task = execGatherTask({ creep, room, options: { allowedIds, excludeIds, allowPartial: !!mission.data.allowPartial } });
     }
 
     if (!task) {

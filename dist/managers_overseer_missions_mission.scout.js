@@ -10,6 +10,8 @@ module.exports = {
             memoryInterval !== null ? memoryInterval : DEFAULT_SCOUT_INTERVAL
         );
         if (context.opState === 'EMERGENCY') return;
+        // if we are just starting out low rcl, no need for auto gen as well. we only start seeing around rcl 3
+        if (!room.controller || room.controller.level < 3) return;
 
         // if disabled remoteMissionsEnabled, then no need for auto gen scout missions
         if (Memory.remoteMissionsEnabled === false) return; 
