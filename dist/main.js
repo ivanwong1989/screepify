@@ -1,6 +1,8 @@
 var registerGlobals = require('bootstrap_globals');
 var registerConsole = require('console_index');
+var MemoryHack = require('utils_memoryHack');
 
+MemoryHack.register();
 registerGlobals();
 registerConsole();
 
@@ -70,6 +72,9 @@ profiler.registerObject(require('managers_overseer_missions_mission.user.transfe
 module.exports.loop = function() {
     //profiler.wrap(function() {
         // Main.js logic should go here.
+
+        // --- Memhack ---
+        MemoryHack.runHack();
 
         // --- Quick dirty shard detection and pixel farm for now --- 
         // --- shard-specific pixel logic ---

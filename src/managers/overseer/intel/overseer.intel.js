@@ -345,20 +345,20 @@ const overseerIntel = {
         if (room.storage) {
             const rcl = (room.controller && room.controller.level) ? room.controller.level : 1;
             const rclThresholds = {
-                1: { start: 10000, stop: 2000 },
-                2: { start: 20000, stop: 5000 },
-                3: { start: 30000, stop: 7000 },
-                4: { start: 40000, stop: 9000 },
-                5: { start: 100000, stop: 20000 },
-                6: { start: 300000, stop: 50000 },
-                7: { start: 800000, stop: 150000 },
-                8: { start: 900000, stop: 700000 }
+                1: { start: 10000, stop: 5000 },
+                2: { start: 20000, stop: 10000 },
+                3: { start: 30000, stop: 15000 },
+                4: { start: 40000, stop: 20000 },
+                5: { start: 100000, stop: 80000 },
+                6: { start: 200000, stop: 150000 },
+                7: { start: 500000, stop: 450000 },
+                8: { start: 700000, stop: 500000 }
             };
             const threshold = rclThresholds[rcl] || rclThresholds[5];
             const UPGRADE_START = threshold.start;
             const UPGRADE_STOP = threshold.stop;
-            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START && flow.avg >= FLOW_POSITIVE) current = 'UPGRADING';
-            else if (current === 'UPGRADING' && (totalStored <= UPGRADE_STOP || flow.avg <= FLOW_NEGATIVE)) current = 'STOCKPILING';
+            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START) current = 'UPGRADING';
+            else if (current === 'UPGRADING' && (totalStored <= UPGRADE_STOP)) current = 'STOCKPILING';
         } else { // Without storage, the flow tracking is too undeterministic since there's no buffer. do not use flow EMA.
             // Also most probably without storage means low RCL. focus should be on upgrading still we have. 
             // We should always we in UPGRADING mode. 
