@@ -143,7 +143,7 @@ var managerSpawner = {
         const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
         // --- HACKISH BODY BUDGET RESTRICTION, TO IMPROVE LATER ---
         if (archetype === 'remote_worker' || archetype === 'remote_hauler') {
-            budget = Math.min(budget, 1200);
+            budget = Math.min(budget, 3000);
         }
         if (archetype === 'dismantler') {
             budget = Math.min(budget, 2100);
@@ -243,20 +243,20 @@ var managerSpawner = {
     },
 
 
-    generateRemoteMinerBody: function(budget) {
+    generateRemoteMinerBody: function (budget) {
         // Remote miners travel: extra MOVE compared to local static miners.
         // Base: WORK, CARRY, MOVE, MOVE (250)
         if (budget < 250) {
-            if (budget >= 200) return this.sortBody([WORK, CARRY, MOVE]);
-            if (budget >= 150) return this.sortBody([WORK, MOVE]);
-            if (budget >= 100) return this.sortBody([WORK]);
-            return this.sortBody([MOVE]);
+            if (budget >= 200) return this.sortBody([WORK, CARRY, MOVE]); // 200
+            if (budget >= 150) return this.sortBody([WORK, MOVE]);        // 150
+            if (budget >= 100) return this.sortBody([WORK]);              // 100
+            return this.sortBody([MOVE]);                                 // 50
         }
 
         let body = [WORK, CARRY, MOVE, MOVE];
         let cost = 250;
-        let workCount = 1;
-        const MAX_WORK = 5;
+        let workCount = 1; // FIX: base has 1 WORK, not 2
+        const MAX_WORK = 7;
 
         // Segment: WORK, WORK, MOVE (250)
         while (cost + 250 <= budget && body.length + 3 <= 50 && workCount + 2 <= MAX_WORK) {
@@ -265,11 +265,17 @@ var managerSpawner = {
             workCount += 2;
         }
 
-        // If budget allows, add a final WORK to approach 5 total.
-        if (workCount < MAX_WORK && cost + 100 <= budget && body.length + 1 <= 50) {
-            body.push(WORK);
-            cost += 100;
-            workCount += 1;
+        // Try to add one more WORK with a MOVE if possible (keeps travel speed reasonable)
+        if (workCount < MAX_WORK) {
+            if (cost + 150 <= budget && body.length + 2 <= 50) {
+                body.push(WORK, MOVE);   // 150
+                cost += 150;
+                workCount += 1;
+            } else if (cost + 100 <= budget && body.length + 1 <= 50) {
+                body.push(WORK);         // 100
+                cost += 100;
+                workCount += 1;
+            }
         }
 
         return this.sortBody(body);

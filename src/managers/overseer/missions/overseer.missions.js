@@ -90,10 +90,10 @@ const overseerMissions = {
         // Run all mission generators
         missionModules.tower.generate(room, intel, context, missions);
         missionModules.scout.generate(room, intel, context, missions);
-        missionModules.remoteBuild.generate(room, intel, context, missions);
+        //missionModules.remoteBuild.generate(room, intel, context, missions);
         //missionModules.remoteRepair.generate(room, intel, context, missions);
-        missionModules.remoteHarvest.generate(room, intel, context, missions);
-        missionModules.remoteHaul.generate(room, intel, context, missions);
+        //missionModules.remoteHarvest.generate(room, intel, context, missions);
+        //missionModules.remoteHaul.generate(room, intel, context, missions);
         missionModules.userRemoteReserve.generate(room, intel, context, missions);
         missionModules.userRemoteClaim.generate(room, intel, context, missions);
         missionModules.userRemoteMove2Flag.generate(room, intel, context, missions);

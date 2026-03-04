@@ -9,11 +9,50 @@ module.exports = function execRemoteHaulTask(ctx) {
     const pickupMode = data.pickupMode || 'container';
     const pickupRange = Number.isFinite(data.pickupRange) ? data.pickupRange : 1;
 
+    // NEW: lane metadata (consumed by role.universal later)
+    const laneKeyToPickup = data.laneKeyToPickup || data.laneKey || null;
+    const laneKeyToDropoff = data.laneKeyToDropoff || data.laneKey || null;
+    const homeRoom = data.homeRoom || creep.memory.room || null;
+
+    const moveMeta = (extra) => {
+        const dir = extra && extra.dir;
+        const chosenLaneKey = (dir === 'toDropoff') ? laneKeyToDropoff : laneKeyToPickup;
+
+        // If laneKey/homeRoom missing, still return meta (but universal can ignore).
+        return Object.assign({
+            moveMode: 'lane',
+            laneKey: chosenLaneKey,
+            homeRoom: homeRoom
+        }, extra || {});
+    };
+
+    const log = (msg) => debug('mission.remote.haul', `[RemoteHaulTask] ${creep.name} ${msg}`);
+    const st = creep.memory._remoteHaulState || (creep.memory._remoteHaulState = {});
+    const logOnce = (sig, msg) => {
+        if (st._lastLogSig === sig) return;
+        st._lastLogSig = sig;
+        log(msg);
+    };
+
     helpers.updateState(creep, resourceType, { requireFull: true });
+
+    if (st._lastTaskState !== creep.memory.taskState) {
+        st._lastTaskState = creep.memory.taskState;
+        logOnce(`state:${st._lastTaskState}`, `state=${st._lastTaskState} res=${resourceType}`);
+    }
 
     if (creep.memory.taskState === 'working') {
         if (dropoffPos && creep.room.name !== dropoffPos.roomName) {
-            return { type: 'move', targetPos: { x: dropoffPos.x, y: dropoffPos.y, roomName: dropoffPos.roomName }, range: 1 };
+            logOnce(
+                `move:dropoff:${dropoffPos.roomName}`,
+                `move->dropoff ${dropoffPos.roomName} lane=${laneKeyToDropoff || '-'}`
+            );
+            return {
+                type: 'move',
+                targetPos: { x: dropoffPos.x, y: dropoffPos.y, roomName: dropoffPos.roomName },
+                range: 1,
+                meta: moveMeta({ dir: 'toDropoff' })
+            };
         }
 
         let target = data.dropoffId ? Game.getObjectById(data.dropoffId) : null;
@@ -29,19 +68,32 @@ module.exports = function execRemoteHaulTask(ctx) {
 
         if (target) {
             if (target.store && target.store.getFreeCapacity(resourceType) === 0) {
-                return { type: 'move', targetId: target.id, range: 1 };
+                logOnce(`dropoff-full:${target.id}`, `dropoff full target=${target.id}`);
+                return { type: 'move', targetId: target.id, range: 1, meta: moveMeta({ dir: 'toDropoff' }) };
             }
+            logOnce(`transfer:${target.id}`, `transfer -> ${target.id} res=${resourceType}`);
             return { type: 'transfer', targetId: target.id, resourceType: resourceType };
         }
+        logOnce('no-dropoff', 'no dropoff target');
         return null;
     }
 
     if (pickupPos && creep.room.name !== pickupPos.roomName) {
-        return { type: 'move', targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName }, range: 1 };
+        logOnce(
+            `move:pickup:${pickupPos.roomName}`,
+            `move->pickup ${pickupPos.roomName} lane=${laneKeyToPickup || '-'} mode=${pickupMode}`
+        );
+        return {
+            type: 'move',
+            targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName },
+            range: 1,
+            meta: moveMeta({ dir: 'toPickup' })
+        };
     }
 
     const pickup = data.pickupId ? Game.getObjectById(data.pickupId) : null;
     if (pickup && pickup.store && (pickup.store[resourceType] || 0) > 0) {
+        logOnce(`withdraw:${pickup.id}`, `withdraw -> ${pickup.id} res=${resourceType}`);
         return { type: 'withdraw', targetId: pickup.id, resourceType: resourceType };
     }
 
@@ -49,7 +101,10 @@ module.exports = function execRemoteHaulTask(ctx) {
     const tombstone = creep.pos.findClosestByRange(cache.tombstones || [], {
         filter: t => t.store && (t.store[resourceType] || 0) > 50
     });
-    if (tombstone) return { type: 'withdraw', targetId: tombstone.id, resourceType: resourceType };
+    if (tombstone) {
+        logOnce(`withdraw:tomb:${tombstone.id}`, `withdraw tombstone -> ${tombstone.id} res=${resourceType}`);
+        return { type: 'withdraw', targetId: tombstone.id, resourceType: resourceType };
+    }
 
     const dropped = creep.pos.findClosestByRange(cache.dropped || [], {
         filter: r => {
@@ -60,11 +115,24 @@ module.exports = function execRemoteHaulTask(ctx) {
             return true;
         }
     });
-    if (dropped) return { type: 'pickup', targetId: dropped.id };
-
-    if (pickupMode === 'drop' && pickupPos) {
-        return { type: 'move', targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName }, range: pickupRange };
+    if (dropped) {
+        logOnce(`pickup:${dropped.id}`, `pickup -> ${dropped.id} res=${resourceType}`);
+        return { type: 'pickup', targetId: dropped.id };
     }
 
+    if (pickupMode === 'drop' && pickupPos) {
+        logOnce(
+            `wait:pickup:${pickupPos.roomName}`,
+            `wait pickup range=${pickupRange} pos=${pickupPos.roomName}:${pickupPos.x},${pickupPos.y}`
+        );
+        return {
+            type: 'move',
+            targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName },
+            range: pickupRange,
+            meta: moveMeta({ dir: 'toPickup' })
+        };
+    }
+
+    logOnce('no-task', `no task mode=${pickupMode} res=${resourceType}`);
     return null;
 };

@@ -1,6 +1,6 @@
 // managers_admiral_tactics_assault_duo_engage.js
 
-const { getHostilesInRoom, filterOutAllies } = require('managers_admiral_tactics_assault_common_threat');
+const { getHostilesInRoom, filterOutAllies, isAllyOwner } = require('managers_admiral_tactics_assault_common_threat');
 
 function toRoomPos(p) {
     if (!p) return null;
@@ -25,6 +25,7 @@ function isSourceKeeperOwned(o) {
 }
 
 function selectTarget(creep, flags, ao) {
+    console.log(`[engage] selectTarget ENTER tick=${Game.time} room=${creep.room.name}`);
     if (!creep || !creep.room) return null;
 
     // HARD AO ROOM GATE
@@ -87,7 +88,7 @@ function selectTarget(creep, flags, ao) {
 
         const filtered = (structuresAt || []).filter(s =>
             s.structureType !== STRUCTURE_CONTROLLER &&
-            !filterOutAllies([s]).length === false // ally-safe check
+            filterOutAllies([s]).length > 0 // ally-safe check
         );
 
         if (filtered.length > 0) return filtered[0];
@@ -102,6 +103,16 @@ function selectTarget(creep, flags, ao) {
         }).filter(s => inAO(s.pos, ao));
         if (nearby.length > 0) return nearby[0];
     }
+
+
+   console.log(
+    `[assault.duo][selectTarget] room=${creep.room.name}` +
+    ` hostiles=${hostiles.length}` +
+    ` engageable=${engageable.length}` +
+    ` hostileStructs=${(hostileStructures && hostileStructures.length) || 0}` +
+    ` walls=${(walls && walls.length) || 0}` +
+    ` allies=${(Memory.allies && Memory.allies.length) || 0}`
+  );
 
     return null;
 }

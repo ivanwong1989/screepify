@@ -35,15 +35,11 @@ module.exports = function execTransferTask(ctx) {
         return Math.floor(n);
     };
 
-    // --- Persist amountHint onto creep memory so mission.logistics can reconstruct it next tick ---
     const _hint = getAmountHint();
     if (_hint !== null) {
-        if (!creep.memory._haulHints) creep.memory._haulHints = {};
-        creep.memory._haulHints[mission.name] = _hint;
-    } else if (creep.memory._haulHints && creep.memory._haulHints[mission.name] !== undefined) {
-        // avoid stale hints if mission reuses same name without a hint
-        delete creep.memory._haulHints[mission.name];
-        if (Object.keys(creep.memory._haulHints).length === 0) delete creep.memory._haulHints;
+        creep.memory._haulHint = _hint;
+    } else if (creep.memory._haulHint !== undefined) {
+        delete creep.memory._haulHint;
     }
 
     const capByHintAndCapacity = (hint, capacity) => {

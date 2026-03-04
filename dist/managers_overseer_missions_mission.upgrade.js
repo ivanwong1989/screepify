@@ -10,7 +10,7 @@ module.exports = {
         const isCritical = ticksToDowngrade < CRITICAL_DOWNGRADE_TICKS;
 
         let upgradePriority = 50;
-        let desiredWork = 5;
+        let desiredWork = 10;
         if (room.controller.level < 3) {
             // Early RCL rush to Tower defense
             desiredWork = 15;

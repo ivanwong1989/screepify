@@ -130,6 +130,122 @@ function moveToTarget(creep, target, range) {
     creep.moveTo(target, { range: moveRange, reusePath: 20 });
 }
 
+// ============================================================
+// Lane move support (heap-first, reset-safe, fallback to Memory)
+// ============================================================
+
+function getHeapLane(homeRoomName, laneKey) {
+    if (!homeRoomName || !laneKey) return null;
+
+    const root = global.__remoteHaulLaneCache;
+    if (!root || !root.rooms) return null;
+
+    const roomCache = root.rooms[homeRoomName];
+    if (!roomCache || !roomCache.lanes) return null;
+
+    const lane = roomCache.lanes[laneKey];
+    if (!lane) return null;
+
+    // Optional: reject stale lanes if generator stored t/sig.
+    // (If absent, still allow it; tryMoveByLane will validate path shape.)
+    if (lane.t != null && lane.sig != null) {
+        // no TTL check here; generator handles TTL. universal should stay dumb + safe.
+    }
+
+    return lane;
+}
+
+function getMemoryLane(homeRoomName, laneKey) {
+    const homeRoom = Game.rooms[homeRoomName];
+    if (!homeRoom || !homeRoom.memory || !homeRoom.memory.overseer) return null;
+    const lanes = homeRoom.memory.overseer.lanes;
+    if (!lanes) return null;
+    return lanes[laneKey] || null;
+}
+
+function getOwnedLane(creep, laneKey, homeRoomName) {
+    if (!laneKey || !homeRoomName) return null;
+
+    // 1) Prefer heap (no Memory serialization cost)
+    const heapLane = getHeapLane(homeRoomName, laneKey);
+    if (heapLane) return heapLane;
+
+    // 2) Fallback to Memory (back-compat)
+    return getMemoryLane(homeRoomName, laneKey);
+}
+
+function tryMoveByLane(creep, lane, destPos, range) {
+    if (!creep || !lane) return false;
+
+    const moveRange = Number.isFinite(range) ? range : 1;
+    if (destPos && creep.pos.inRangeTo(destPos, moveRange)) return true;
+
+    // Border nudge logic should keep priority (avoid being stuck on exits).
+    if (getBorderDirection(creep.pos)) return false;
+
+    let path = null;
+
+    // Preferred: multi-room safe lane path (array of compact positions)
+    if (Array.isArray(lane.p) && lane.p.length) {
+        try {
+            path = lane.p.map(pt => new RoomPosition(pt.x, pt.y, pt.r || pt.roomName));
+        } catch (e) {
+            path = null;
+        }
+    }
+
+    // Back-compat: Room.serializePath string (single-room style)
+    if (!path && lane.s) {
+        try {
+            path = Room.deserializePath(lane.s);
+        } catch (e) {
+            path = null;
+        }
+    }
+
+    if (!path || !path.length) return false;
+
+    // moveByPath() requires creep.pos to be in the path array.
+    // We try three options:
+    //  1) exact match (ideal)
+    //  2) "snap" if we're adjacent to a path tile in the same room (common near borders/traffic)
+    //  3) otherwise fall back to moveTo()
+    let idx = -1;
+    for (let i = 0; i < path.length; i++) {
+        const p = path[i];
+        if (p.roomName === creep.pos.roomName && p.x === creep.pos.x && p.y === creep.pos.y) {
+            idx = i;
+            break;
+        }
+    }
+
+    let usePath = path;
+
+    if (idx === -1) {
+        // Try snapping to a nearby step in the same room.
+        let snapIdx = -1;
+        for (let i = 0; i < path.length; i++) {
+            const p = path[i];
+            if (p.roomName !== creep.pos.roomName) continue;
+            const dx = Math.abs(p.x - creep.pos.x);
+            const dy = Math.abs(p.y - creep.pos.y);
+            if (dx <= 1 && dy <= 1) { snapIdx = i; break; }
+        }
+        if (snapIdx === -1) return false;
+
+        // Build a small synthetic path that includes current pos first.
+        // moveByPath() will move to the *next* entry after creep.pos.
+        usePath = [creep.pos].concat(path.slice(snapIdx));
+    }
+
+    const code = creep.moveByPath(usePath);
+    creep.memory._laneLastMoveByPathCode = code;
+
+    // IMPORTANT: moveByPath can return OK even when the creep doesn't physically move (blocked or fatigued).
+    // Treat OK / ERR_TIRED as "we handled movement" so callers don't trigger expensive fallback pathfinding.
+    return code === OK || code === ERR_TIRED;
+}
+
 function getOpportunisticDesiredHits(room, st) {
     if (!st || !st.hitsMax) return 0;
 
@@ -293,10 +409,6 @@ var roleUniversal = {
         }
 
         // Opportunistic micro-repair while traveling (does NOT stop movement)
-        // Do not return early — we still want to execute the actual task (including move).
-        // NOTE: For primary 'repair' tasks, we only attempt opportunistic repair if the primary repair is NOT in range
-        // (see the 'repair' case below), so workers can still patch nearby stuff while walking.
-        // Do not have harvesters in 'harvest' task do repair. 
         if (task.action !== 'repair' && task.action !== 'harvest') {
             tryOpportunisticRepair(creep, task);
         }
@@ -305,8 +417,29 @@ var roleUniversal = {
             case 'move':
                 if (target) {
                     const targetPos = target.pos ? target.pos : target;
-                    if (!creep.pos.isEqualTo(targetPos)) {
-                        moveToTarget(creep, targetPos, task.range);
+
+                    if (!creep.pos.inRangeTo(targetPos, Number.isFinite(task.range) ? task.range : 1)) {
+                        // NEW: lane-aware move (only when explicitly requested)
+                        const meta = task.meta;
+                        const wantLane = meta && meta.moveMode === 'lane' && meta.laneKey && meta.homeRoom;
+                        if (wantLane) {
+                            const lane = getOwnedLane(creep, meta.laneKey, meta.homeRoom);
+                            const moved = tryMoveByLane(creep, lane, targetPos, task.range);
+                            const laneSig = `lane:${meta.laneKey}:${targetPos.roomName}:${moved ? 'ok' : 'fallback'}`;
+                            if (creep.memory._laneLogSig !== laneSig) {
+                                creep.memory._laneLogSig = laneSig;
+                                debug(
+                                    'mission.remote.haul',
+                                    `[Lane] ${creep.name} key=${meta.laneKey} home=${meta.homeRoom} ` +
+                                    `to=${targetPos.roomName} moved=${moved} code=${creep.memory._laneLastMoveByPathCode} lane=${lane ? 'hit' : 'miss'}`
+                                );
+                            }
+                            if (!moved) {
+                                moveToTarget(creep, targetPos, task.range);
+                            }
+                        } else {
+                            moveToTarget(creep, targetPos, task.range);
+                        }
                     }
                 }
                 break;

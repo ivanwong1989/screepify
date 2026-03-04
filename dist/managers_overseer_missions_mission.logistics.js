@@ -34,16 +34,50 @@ module.exports = {
 
         const links = intel.structures[STRUCTURE_LINK] || [];
 
-        // --- Route gating helpers (scalable for tiny -> giga haulers) ---
-        // Problem this solves: once haulers get large, "amount < cap * X" gating causes small-but-important sources
-        // (e.g., storage links, leftovers) to never generate hauling missions.
-        //
-        // Solution:
-        //  - Use bounded absolute min amounts (clamped by cap but never exploding).
-        //  - Add an "age override" so small leftovers are eventually cleaned up.
-        const roomMem = (Memory.rooms && Memory.rooms[room.name]) ? Memory.rooms[room.name] : (Memory.rooms[room.name] = {});
-        const routeAgeMem = roomMem._logisticsRouteAge || (roomMem._logisticsRouteAge = {});
+        // --- Route age cache ---
+        // This is NOT worth putting in persistent Memory (serialization cost + memory bloat).
+        // Use global heap cache; it resets on global reset which is fine (it's only a gating hint).
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+        if (!global.__logisticsRouteAge) {
+            global.__logisticsRouteAge = {
+                rooms: Object.create(null),
+                lastPrune: 0
+            };
+        }
+
+        const ageRoot = global.__logisticsRouteAge;
+        const routeAgeMem = ageRoot.rooms[room.name] || (ageRoot.rooms[room.name] = Object.create(null));
+
+        // Prune occasionally to avoid unbounded heap growth.
+        // - Drop entries older than PRUNE_TTL
+        // - Cap max entries per room
+        const PRUNE_EVERY = 200;
+        const PRUNE_TTL = 2000;
+        const MAX_KEYS_PER_ROOM = 1500;
+
+        if ((Game.time - (ageRoot.lastPrune || 0)) >= PRUNE_EVERY) {
+            ageRoot.lastPrune = Game.time;
+
+            for (const rn in ageRoot.rooms) {
+                const rm = ageRoot.rooms[rn];
+                if (!rm) continue;
+
+                // TTL prune
+                for (const k in rm) {
+                    const t = rm[k];
+                    if (!t || (Game.time - t) > PRUNE_TTL) delete rm[k];
+                }
+
+                // Size cap prune (best-effort)
+                const keys = Object.keys(rm);
+                if (keys.length > MAX_KEYS_PER_ROOM) {
+                    keys.sort((a, b) => rm[a] - rm[b]); // oldest first
+                    const removeN = keys.length - MAX_KEYS_PER_ROOM;
+                    for (let i = 0; i < removeN; i++) delete rm[keys[i]];
+                }
+            }
+        }
 
         // Attach to module instance so other methods can use them without refactoring callsites.
         this._getRoutePolicy = (type, resourceType, cap) => {
@@ -108,10 +142,8 @@ module.exports = {
                         const fullMissionName = slot ? `${routeKey}:${slot}` : routeKey;
                         // --- preserve hint from creep memory (written by transfer.js) ---
                         const amountHint =
-                            c.memory &&
-                            c.memory._haulHints &&
-                            c.memory._haulHints[fullMissionName] !== undefined
-                                ? c.memory._haulHints[fullMissionName]
+                            (c.memory && c.memory._haulHint !== undefined)
+                                ? c.memory._haulHint
                                 : null;
 
                         const mission = {

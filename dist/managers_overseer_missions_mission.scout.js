@@ -107,6 +107,12 @@ module.exports = {
 
         const missionName = `scout:${room.name}`;
 
+        debug(
+            'mission.scout',
+            `[Scout] ${room.name} rooms=${available.length} due=${due.length} ` +
+            `target=${targetRoom || 'none'} interval=${interval} hold=${holdTime} scouts=${census.count}`
+        );
+
         missions.push({
             name: missionName,
             type: 'scout',
