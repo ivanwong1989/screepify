@@ -1,3 +1,4 @@
+const heap = require('utils_heap');
 const helpers = require('managers_overseer_tasks_exec__helpers');
 
 module.exports = function execRemoteHaulTask(ctx) {
@@ -27,7 +28,12 @@ module.exports = function execRemoteHaulTask(ctx) {
     };
 
     const log = (msg) => debug('mission.remote.haul', `[RemoteHaulTask] ${creep.name} ${msg}`);
-    const st = creep.memory._remoteHaulState || (creep.memory._remoteHaulState = {});
+    // Volatile per-creep runtime state (avoid writing to Memory).
+    // If heap resets, state is rebuilt automatically and only affects logs.
+    let st;
+    const store = heap.getStore('remoteHaul');
+    store.creeps = store.creeps || {};
+    st = store.creeps[creep.name] || (store.creeps[creep.name] = {});
     const logOnce = (sig, msg) => {
         if (st._lastLogSig === sig) return;
         st._lastLogSig = sig;

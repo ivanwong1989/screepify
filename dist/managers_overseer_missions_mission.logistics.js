@@ -4,6 +4,17 @@ const heap = require('utils_heap');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
+        
+        /* 
+        const t0 = Game.cpu.getUsed();
+        const mark = (label, last) => {
+            const now = Game.cpu.getUsed();
+            if (now - last > 0.1) console.log(`[logi cpu] ${room.name} ${label} +${(now - last).toFixed(2)}`);
+            return now;
+        };
+        let t = t0;
+        */
+
         const { opState, budget, efficientSources } = context;
         const isEmergency = opState === 'EMERGENCY';
         const enableHaulers = efficientSources.size > 0;
@@ -82,6 +93,8 @@ module.exports = {
                 }
             }
         }
+
+        //t = mark('routeAge-prune', t);
 
         // Attach to module instance so other methods can use them without refactoring callsites.
         this._getRoutePolicy = (type, resourceType, cap) => {
@@ -173,6 +186,8 @@ module.exports = {
             }
         });
 
+        //t = mark('active-scan', t);
+
         // 2. Generate New Missions
         const refillSinks = [
             ...(intel.structures[STRUCTURE_SPAWN] || []),
@@ -185,6 +200,8 @@ module.exports = {
             if (coveredTargets.has(target.id)) return;
             this.addSupplyMission(activeMissions, target, isEmergency);
         });
+
+        //t = mark('refill-sinks', t);
 
         const inflowSinks = [
         ...(storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0 ? [storage] : []),
@@ -251,6 +268,8 @@ module.exports = {
             });
         }
 
+        //t = mark('inflow-missions', t);
+
         if (storage && terminal) {
             const baseCfg = managerTerminal.getConfig();
             const roomOverride = (baseCfg.rooms && baseCfg.rooms[room.name]) || null;
@@ -274,6 +293,8 @@ module.exports = {
                 }
             }
         }
+
+        //t = mark('terminal-energy', t);
 
         // --- Mineral logistics with terminal stockTargets (Memory.market.rooms.<room>.stockTargets) ---
         const hasTerminal = !!terminal;
@@ -336,6 +357,8 @@ module.exports = {
                 }
             });
         }
+
+        //t = mark('terminal-plan', t);
 
         // Decide desired sink for a mineral based on the terminal plan.
         // - If plan says FILL: sink=terminal (but we will only source from storage)
@@ -403,6 +426,8 @@ module.exports = {
             }
         }
 
+        //t = mark('terminal-flush', t);
+
         // 2) Consolidate minerals from structures to the chosen sink per mineral (policy-driven).
         // IMPORTANT: if filling terminal, cap by remaining need (per-tick fillRemaining) so we don't overshoot.
         const allStructureLists = Object.values(intel.structures || {});
@@ -458,6 +483,8 @@ module.exports = {
                 }
             });
         });
+
+        //t = mark('structure-minerals', t);
 
         // Dropped minerals
         intel.dropped.forEach(source => {
@@ -528,6 +555,8 @@ module.exports = {
             }
         });
 
+        //t = mark('scavenge-minerals', t);
+
         if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
             nonMiningContainers.filter(c => c.store[RESOURCE_ENERGY] >= 500 && c.id !== intel.controllerContainerId).forEach(source => {
                 this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, storage, isEmergency, 'consolidation', RESOURCE_ENERGY, carryParts);
@@ -540,6 +569,8 @@ module.exports = {
         }
 
         for (const m of activeMissions.values()) missions.push(m);
+
+        //console.log(`[logi cpu] ${room.name} total ${(Game.cpu.getUsed() - t0).toFixed(2)}`);
     },
 
     getHaulSlotsForRoute: function(source, target, resourceType, carryParts, explicitNeed, type, routeKey) {

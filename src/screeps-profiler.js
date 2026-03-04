@@ -68,7 +68,7 @@ function setupMemory(profileType, duration, filter) {
       filter,
     };
   }
-  console.log(`Profiling type ${profileType} started at ${Game.time + 1} for ${duration} ticks`);
+  console.logUnsafe(`Profiling type ${profileType} started at ${Game.time + 1} for ${duration} ticks`);
 }
 
 function resetMemory() {
@@ -155,7 +155,7 @@ function wrapFunction(name, originalFunction) {
 function hookUpPrototypes() {
   for (const { name, val } of Profiler.prototypes) {
     if (!val) {
-      console.log(`skipping prototype hook ${name}, object appears to be missing`);
+      console.logUnsafe(`skipping prototype hook ${name}, object appears to be missing`);
       continue;
     }
     profileObjectFunctions(val, name);
@@ -223,8 +223,8 @@ function profileObjectFunctions(object, label) {
 function profileFunction(fn, functionName) {
   const fnName = functionName || fn.name;
   if (!fnName) {
-    console.log('Couldn\'t find a function name for - ', fn);
-    console.log('Will not profile this function.');
+    console.logUnsafe('Couldn\'t find a function name for - ', fn);
+    console.logUnsafe('Will not profile this function.');
     return fn;
   }
 
@@ -233,7 +233,7 @@ function profileFunction(fn, functionName) {
 
 const Profiler = {
   printProfile() {
-    console.log(Profiler.output());
+    console.logUnsafe(Profiler.output());
   },
 
   emailProfile() {
@@ -246,7 +246,7 @@ const Profiler = {
     const filename = `callgrind.${shardId}.${Game.time}`;
     const data = Profiler.callgrind();
     if (!data) {
-      console.log('No profile data to download');
+      console.logUnsafe('No profile data to download');
       return;
     }
     /* eslint-disable */
@@ -267,7 +267,7 @@ const Profiler = {
     </script>
     `;
     /* eslint-enable */
-    console.log(
+    console.logUnsafe(
       download
       .split('\n')
       .map((s) => s.trim())
@@ -504,7 +504,7 @@ module.exports = {
       // var profilerTime = (end - start) - (callbackEnd - callbackStart);
       // var callbackTime = callbackEnd - callbackStart;
       // var unaccounted = end - profilerTime - callbackTime;
-      // console.log('total-', end, 'profiler-', profilerTime, 'callbacktime-',
+      // console.logUnsafe('total-', end, 'profiler-', profilerTime, 'callbacktime-',
       // callbackTime, 'start-', start, 'unaccounted', unaccounted);
       return returnVal;
     }

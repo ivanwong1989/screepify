@@ -1,4 +1,4 @@
-﻿﻿﻿﻿var managerOverseer = require('managers_overseer_manager.room.economy.overseer');
+﻿﻿var managerOverseer = require('managers_overseer_manager.room.economy.overseer');
 var managerTasks = require('managers_overseer_tasks_assign_manager.room.economy.tasks.assign');
 var managerStructures = require('managers_structures_manager.structures');
 var managerSpawner = require('managers_spawner_manager.room.economy.spawner');

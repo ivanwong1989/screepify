@@ -8,7 +8,7 @@
 
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
-const heap = require('utils/heap');
+const heap = require('utils_heap');
 
 const toRoomPosition = (pos) => {
     if (!pos || !pos.roomName) return null;

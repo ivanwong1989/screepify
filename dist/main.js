@@ -14,16 +14,56 @@ var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
 var safemodeManager = require('managers_safemode_safemodeManager');
 
 
-
 // CONSTANTS
 const SAFE_MODE_ROOMS = new Set([
     'W44S28'
 ]);
 
-
+/*
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
-//const profiler = require('screeps-profiler');
+const profiler = require('screeps-profiler');
+
+profiler.registerFN(global.getRoomCache, 'utils.getRoomCache');
+profiler.registerObject(require('runColony'), 'runColony');
+profiler.registerObject(require('managers_overseer_manager.room.economy.overseer'), 'overseer');
+profiler.registerObject(require('managers_admiral_manager.room.military.admiral'), 'admiral');
+profiler.registerObject(require('managers_admiral_manager.room.military.tasks'), 'milTasks');
+profiler.registerObject(require('managers_spawner_manager.room.economy.spawner'), 'spawner');
+profiler.registerObject(require('managers_structures_manager.structures'), 'structures');
+profiler.registerObject(require('telemetry_index'), 'telemetry');
+profiler.registerObject(require('managers_overseer_tasks_assign_manager.room.economy.tasks.assign'), 'tasks.assign');
+profiler.registerObject(require('role.universal'), 'role.universal');
+
+profiler.registerObject(require('managers_overseer_intel_overseer.intel'), 'overseer.intel');
+profiler.registerObject(require('managers_overseer_intel_overseer.resourceLedger'), 'overseer.resourceLedger');
+profiler.registerObject(require('managers_overseer_missions_overseer.missions'), 'overseer.missions');
+profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'overseer.utils');
+
+profiler.registerObject(require('managers_overseer_missions_mission.tower'), 'mission.tower');
+profiler.registerObject(require('managers_overseer_missions_mission.scout'), 'mission.scout');
+profiler.registerObject(require('managers_overseer_missions_mission.remote.build'), 'mission.remote.build');
+profiler.registerObject(require('managers_overseer_missions_mission.remote.repair'), 'mission.remote.repair');
+profiler.registerObject(require('managers_overseer_missions_mission.remote.harvest'), 'mission.remote.harvest');
+profiler.registerObject(require('managers_overseer_missions_mission.remote.haul'), 'mission.remote.haul');
+profiler.registerObject(require('managers_overseer_missions_mission.user.remote.reserve'), 'mission.user.remote.reserve');
+profiler.registerObject(require('managers_overseer_missions_mission.user.remote.claim'), 'mission.user.remote.claim');
+profiler.registerObject(require('managers_overseer_missions_mission.user.remote.move2flag'), 'mission.user.remote.move2flag');
+profiler.registerObject(require('managers_overseer_missions_mission.harvest'), 'mission.harvest');
+profiler.registerObject(require('managers_overseer_missions_mission.mineral'), 'mission.mineral');
+profiler.registerObject(require('managers_overseer_missions_mission.fleet_logistic'), 'mission.fleetLogistic');
+profiler.registerObject(require('managers_overseer_missions_mission.logistics'), 'mission.logistics');
+profiler.registerObject(require('managers_overseer_missions_mission.labs'), 'mission.labs');
+profiler.registerObject(require('managers_overseer_missions_mission.upgrade'), 'mission.upgrade');
+profiler.registerObject(require('managers_overseer_missions_mission.build'), 'mission.build');
+profiler.registerObject(require('managers_overseer_missions_mission.repair'), 'mission.repair');
+profiler.registerObject(require('managers_overseer_missions_mission.decongest'), 'mission.decongest');
+profiler.registerObject(require('managers_overseer_missions_mission.user.dismantle'), 'mission.user.dismantle');
+profiler.registerObject(require('managers_overseer_missions_mission.user.transfer'), 'mission.user.transfer');
+
+*/
+
+
 
 // This line monkey patches the global prototypes.
 //profiler.enable();

@@ -1,19 +1,23 @@
-const execBuildTask = require('managers_overseer_tasks_exec_build');
-const execRepairTask = require('managers_overseer_tasks_exec_repair');
-const execUpgradeTask = require('managers_overseer_tasks_exec_upgrade');
-const execHarvestTask = require('managers_overseer_tasks_exec_harvest');
-const execRemoteHarvestTask = require('managers_overseer_tasks_exec_remoteHarvest');
-const execMineralTask = require('managers_overseer_tasks_exec_mineral');
-const execTransferTask = require('managers_overseer_tasks_exec_transfer');
-const execRemoteHaulTask = require('managers_overseer_tasks_exec_remoteHaul');
-const execRemoteBuildTask = require('managers_overseer_tasks_exec_remoteBuild');
-const execRemoteRepairTask = require('managers_overseer_tasks_exec_remoteRepair');
-const execRemoteMove2FlagTask = require('managers_overseer_tasks_exec_remoteMove2Flag');
-const execDecongestTask = require('managers_overseer_tasks_exec_decongest');
-const execDismantleTask = require('managers_overseer_tasks_exec_dismantle');
-const execReserveTask = require('managers_overseer_tasks_exec_reserve');
-const execClaimTask = require('managers_overseer_tasks_exec_claim');
-const execScoutTask = require('managers_overseer_tasks_exec_scout');
+const { profRequire } = require('utils_profRequire');
+
+const execBuildTask = profRequire('managers_overseer_tasks_exec_build', 'tasks.exec.build');
+const execRepairTask = profRequire('managers_overseer_tasks_exec_repair', 'tasks.exec.repair');
+const execUpgradeTask = profRequire('managers_overseer_tasks_exec_upgrade', 'tasks.exec.upgrade');
+const execHarvestTask = profRequire('managers_overseer_tasks_exec_harvest', 'tasks.exec.harvest');
+const execRemoteHarvestTask = profRequire('managers_overseer_tasks_exec_remoteHarvest', 'tasks.exec.remoteHarvest');
+const execMineralTask = profRequire('managers_overseer_tasks_exec_mineral', 'tasks.exec.mineral');
+const execTransferTask = profRequire('managers_overseer_tasks_exec_transfer', 'tasks.exec.transfer');
+const execRemoteHaulTask = profRequire('managers_overseer_tasks_exec_remoteHaul', 'tasks.exec.remoteHaul');
+const execRemoteBuildTask = profRequire('managers_overseer_tasks_exec_remoteBuild', 'tasks.exec.remoteBuild');
+const execRemoteRepairTask = profRequire('managers_overseer_tasks_exec_remoteRepair', 'tasks.exec.remoteRepair');
+const execRemoteMove2FlagTask = profRequire('managers_overseer_tasks_exec_remoteMove2Flag', 'tasks.exec.remoteMove2Flag');
+const execDecongestTask = profRequire('managers_overseer_tasks_exec_decongest', 'tasks.exec.decongest');
+const execDismantleTask = profRequire('managers_overseer_tasks_exec_dismantle', 'tasks.exec.dismantle');
+const execReserveTask = profRequire('managers_overseer_tasks_exec_reserve', 'tasks.exec.reserve');
+const execClaimTask = profRequire('managers_overseer_tasks_exec_claim', 'tasks.exec.claim');
+const execScoutTask = profRequire('managers_overseer_tasks_exec_scout', 'tasks.exec.scout');
+
+
 
 /**
  * The Task Manager reads the Overseer's demands and missions.
@@ -103,6 +107,7 @@ var managerTasks = {
     },
 
     run: function(room) {
+
         // 1. Read the Contract (Missions)
         // If no missions are published by Overseer, we have nothing to direct.
         
@@ -575,7 +580,7 @@ var managerTasks = {
         }
 
         // Telegraph what the creep intends to do (throttled to avoid spam).
-        this.telegraphCreep(creep, mission, legacyTask);
+        //this.telegraphCreep(creep, mission, legacyTask);
     },
 
     assignTowerAction: function(tower, mission, room) {
@@ -845,7 +850,7 @@ var managerTasks = {
             if (!action) return;
 
             // Throttle: only say when message changes, or every N ticks.
-            const EVERY = (global && Number.isFinite(global.TASK_TELEGRAPH_EVERY)) ? global.TASK_TELEGRAPH_EVERY : 5;
+            const EVERY = (global && Number.isFinite(global.TASK_TELEGRAPH_EVERY)) ? global.TASK_TELEGRAPH_EVERY : 15;
 
             const msg = this.formatTelegraph(creep, mission, legacyTask);
             if (!msg) return;
@@ -869,7 +874,7 @@ var managerTasks = {
         if (!action) return null;
 
         // Random fun ant chatter (low chance)
-        const FUN_CHANCE = 0.15; // 15%
+        const FUN_CHANCE = 0.05; // 15%
 
         if (Math.random() < FUN_CHANCE) {
             return this.getAntPhrase(creep, mission, action);

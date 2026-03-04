@@ -1,3 +1,5 @@
+const bodyCodec = require('utils_bodyCodec');
+
 const DEFAULT_REQUEST_TTL = 10;
 
 const spawnPlanner = {
@@ -36,7 +38,7 @@ const spawnPlanner = {
 
     selectContract: function(room, entries) {
         const history = room.memory.spawnHistory || [];
-        const MAX_CONSECUTIVE = 2;
+        const MAX_CONSECUTIVE = 5;
 
         if (history.length >= MAX_CONSECUTIVE) {
             const lastArchetype = history[history.length - 1];
@@ -102,7 +104,7 @@ const spawnPlanner = {
             bindMode: contract.bindMode,
             bindId: contract.bindId,
             priority: contract.priority,
-            body: body,
+            body: bodyCodec.encodeBody(body),
             cost: cost,
             memory: memory,
             targetRoom: mission && mission.data ? mission.data.targetRoom : null
@@ -110,7 +112,7 @@ const spawnPlanner = {
 
         if (Memory.spawnTickets && Memory.spawnTickets[ticket.ticketId]) {
             const stored = Memory.spawnTickets[ticket.ticketId];
-            stored.body = body;
+            stored.body = bodyCodec.encodeBody(body);
             stored.cost = cost;
             stored.priority = contract.priority;
             stored.memory = memory;

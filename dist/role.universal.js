@@ -1,3 +1,5 @@
+const heap = require('utils_heap');
+
 function getBorderDirection(pos) {
     if (!pos) return null;
     if (pos.x === 0) return FIND_EXIT_LEFT;
@@ -131,47 +133,39 @@ function moveToTarget(creep, target, range) {
 }
 
 // ============================================================
-// Lane move support (heap-first, reset-safe, fallback to Memory)
+// Lane move support (heap-only, reset-safe)
 // ============================================================
 
 function getHeapLane(homeRoomName, laneKey) {
     if (!homeRoomName || !laneKey) return null;
 
-    const root = global.__remoteHaulLaneCache;
-    if (!root || !root.rooms) return null;
+    // Heap is volatile; may be empty after VM reset. Treat as cache only.
+    // Producer (mission.remote.haul) is responsible for rebuilding.
+    let store;
+    try {
+        // utils/heap should exist at top-level utils folder.
+        store = heap && heap.getStore ? heap.getStore('remoteHaul') : null;
+    } catch (e) {
+        store = null;
+    }
+    if (!store || !store.rooms) return null;
 
-    const roomCache = root.rooms[homeRoomName];
+    const roomCache = store.rooms[homeRoomName];
     if (!roomCache || !roomCache.lanes) return null;
 
     const lane = roomCache.lanes[laneKey];
     if (!lane) return null;
 
-    // Optional: reject stale lanes if generator stored t/sig.
-    // (If absent, still allow it; tryMoveByLane will validate path shape.)
-    if (lane.t != null && lane.sig != null) {
-        // no TTL check here; generator handles TTL. universal should stay dumb + safe.
-    }
-
     return lane;
 }
 
-function getMemoryLane(homeRoomName, laneKey) {
-    const homeRoom = Game.rooms[homeRoomName];
-    if (!homeRoom || !homeRoom.memory || !homeRoom.memory.overseer) return null;
-    const lanes = homeRoom.memory.overseer.lanes;
-    if (!lanes) return null;
-    return lanes[laneKey] || null;
-}
 
 function getOwnedLane(creep, laneKey, homeRoomName) {
     if (!laneKey || !homeRoomName) return null;
 
-    // 1) Prefer heap (no Memory serialization cost)
-    const heapLane = getHeapLane(homeRoomName, laneKey);
-    if (heapLane) return heapLane;
-
-    // 2) Fallback to Memory (back-compat)
-    return getMemoryLane(homeRoomName, laneKey);
+    // Heap is the source of truth for lanes.
+    // If heap is empty (VM reset), lanes must be rebuilt by the mission layer.
+    return getHeapLane(homeRoomName, laneKey);
 }
 
 function tryMoveByLane(creep, lane, destPos, range) {

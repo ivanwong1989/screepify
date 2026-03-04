@@ -1,3 +1,5 @@
+const bodyCodec = require('utils_bodyCodec');
+
 module.exports = {
     run: function(allTickets) {
         if (!allTickets || allTickets.length === 0) return;
@@ -141,7 +143,8 @@ module.exports = {
             }
         }
 
-        const result = spawn.spawnCreep(ticket.body, name, { memory: memory });
+        const body = bodyCodec.decodeBody(ticket.body);
+        const result = spawn.spawnCreep(body, name, { memory: memory });
         
         if (result === OK) {
             debug('spawner', `[GlobalSpawner] Spawning ${name} in ${spawn.room.name} for ${ticket.homeRoom} (Ticket: ${ticket.ticketId})`);

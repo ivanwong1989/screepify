@@ -2,6 +2,15 @@
  * Overseer Utils Module
  * Handles census, worker reassignment, and visualization.
  */
+
+
+let heap = null;
+try {
+    heap = require('utils_heap');
+} catch (e) {
+    heap = null; // allow running even if heap module isn't present in this shard/file context
+}
+
 const overseerUtils = {
     analyzeCensus: function(missions, creeps) {
         // Informational only: used for UI/debug and mission logic that depends on "currently assigned".
@@ -175,6 +184,113 @@ const overseerUtils = {
             1,
             { align: 'left', color: color, font: 0.7 }
         );
+        // ------------------------------------------------------------
+        // Debug Visual: Remote Haul cached lanes (heap) with colors + legend
+        // ------------------------------------------------------------
+        if (heap) {
+            const MAX_DRAW = 20;
+            const CROSS_ROOM = true;      // draw in remote rooms too
+            const SHOW_ENDPOINTS = true;  // circles only (no on-tile text labels)
+
+            function hash32(str) {
+                let h = 2166136261;
+                for (let i = 0; i < str.length; i++) {
+                    h ^= str.charCodeAt(i);
+                    h = Math.imul(h, 16777619);
+                }
+                return h >>> 0;
+            }
+
+            function colorFromKey(key) {
+                const hue = hash32(key) % 360;
+                return `hsl(${hue},80%,60%)`;
+            }
+
+            function shortKey(key) {
+                if (!key) return '?';
+                if (key.length <= 22) return key;
+                return key.slice(0, 10) + '…' + key.slice(-10);
+            }
+
+            // Legend is drawn ONLY in the current room (top-right) to avoid text stacking on tiles.
+            const LEGEND_X = 30;
+            let legendY = 1.8;
+
+            function legendRow(stroke, label) {
+                room.visual.rect(LEGEND_X, legendY - 0.3, 0.35, 0.35, { fill: stroke, opacity: 0.9, stroke: 'transparent' });
+                room.visual.text(label, LEGEND_X + 0.5, legendY, {
+                    align: 'left',
+                    color: '#ffffff',
+                    font: 0.45,
+                    stroke: '#000000',
+                    strokeWidth: 0.15
+                });
+                legendY += 0.55;
+            }
+
+            function drawPackedLane(points, stroke) {
+                if (!Array.isArray(points) || points.length < 2) return;
+
+                const style = { width: 0.08, opacity: 0.75, lineStyle: 'dashed', stroke };
+
+                // Draw per-room segments (RoomVisual cannot draw cross-room in one poly)
+                for (let i = 1; i < points.length; i++) {
+                    const a = points[i - 1];
+                    const b = points[i];
+                    if (!a || !b || !a.r || !b.r) continue;
+                    if (a.r !== b.r) continue;
+
+                    if (!CROSS_ROOM && a.r !== room.name) continue;
+
+                    const rv = (a.r === room.name) ? room.visual : new RoomVisual(a.r);
+                    rv.line(a.x, a.y, b.x, b.y, style);
+                }
+
+                if (!SHOW_ENDPOINTS) return;
+
+                const first = points[0];
+                const last = points[points.length - 1];
+
+                if (first && first.r) {
+                    const rv = (first.r === room.name) ? room.visual : new RoomVisual(first.r);
+                    rv.circle(first.x, first.y, { radius: 0.22, fill: 'transparent', stroke, strokeWidth: 0.1, opacity: 0.9 });
+                }
+                if (last && last.r) {
+                    const rv = (last.r === room.name) ? room.visual : new RoomVisual(last.r);
+                    rv.circle(last.x, last.y, { radius: 0.22, fill: 'transparent', stroke, strokeWidth: 0.1, opacity: 0.9 });
+                }
+            }
+
+            // Remote haul lanes heap store
+            const store = heap.getStore('remoteHaul', { ttl: null });
+            const home = store && store[room.name];
+            const lanes = home && home.lanes;
+
+            if (lanes) {
+                const keys = Object.keys(lanes);
+                const drawN = Math.min(keys.length, MAX_DRAW);
+
+                room.visual.text(
+                    `RemoteHaul lanes: ${keys.length} (draw ${drawN})`,
+                    LEGEND_X,
+                    1.1,
+                    { align: 'left', color: '#aaccff', font: 0.5 }
+                );
+
+                for (let i = 0; i < drawN; i++) {
+                    const k = keys[i];
+                    const e = lanes[k];
+                    if (!e || !e.p || !e.p.length) continue;
+
+                    const stroke = colorFromKey(k);
+                    const extra = e.len ? ` len=${e.len}` : '';
+                    legendRow(stroke, `${shortKey(k)}${extra}`);
+
+                    drawPackedLane(e.p, stroke);
+                }
+            }
+        }
+
         let y = 2.5;
         const getFleetCounts = (type) => {
             const m = missions.find(m => m.type === type);
