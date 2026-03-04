@@ -1,25 +1,25 @@
+const heap = require('utils_heap');
+
 function getRoomCache(room) {
     if (!room) return {};
     if (!room._cache) room._cache = {};
-
-    // Initialize heap cache if not present
-    if (!global._roomCache) global._roomCache = {};
-    if (!global._roomCache[room.name]) global._roomCache[room.name] = {};
+    // Heap cache (volatile, rebuilt on VM reset)
+    const roomsHeap = heap.getStore('roomCache');
+    if (!roomsHeap[room.name]) roomsHeap[room.name] = Object.create(null);
 
     const cache = room._cache; // Local tick cache (on room object)
-    const heap = global._roomCache[room.name]; // Heap cache (persistent)
+    const heapRoom = roomsHeap[room.name]; // Heap cache (persistent for this VM)
     const now = Game.time;
-
     // --- Hostile movement tracking (heap, short-lived) ---
     // Used by combatMatrix prediction to bias enemy "next tile".
-    if (!global._enemyLastPos) global._enemyLastPos = {};
+    const enemyLastPos = heap.getStore('enemyLastPos');
     // --- HARD INVALIDATION PER TICK ---
     // If room._cache persists across ticks for any reason, force refresh.
     if (cache.dynamic && cache.dynamic.time !== now) delete cache.dynamic;
     if (cache.current && cache.current.time !== now) delete cache.current;
 
-    // Static hydration should track heap.static.time (not Game.time)
-    if (cache.static && heap.static && cache.static.time !== heap.static.time) delete cache.static;
+    // Static hydration should track heapRoom.static.time (not Game.time)
+    if (cache.static && heapRoom.static && cache.static.time !== heapRoom.static.time) delete cache.static;
     
     const staticInterval = 15;
 
@@ -28,7 +28,7 @@ function getRoomCache(room) {
     const isAlly = (owner) => !!(owner && owner.username && allies.includes(owner.username.toLowerCase()));
 
     // Refresh static IDs in heap if expired
-    if (!heap.static || (heap.static.time + staticInterval) <= now) {
+    if (!heapRoom.static || (heapRoom.static.time + staticInterval) <= now) {
         debug('roomCache', `[RoomCache] Static refreshed ${room.name}`);
         const structures = room.find(FIND_STRUCTURES);
         const flags = room.find(FIND_FLAGS);
@@ -36,7 +36,7 @@ function getRoomCache(room) {
         const minerals = room.find(FIND_MINERALS);
         const hostileStructuresAll = room.find(FIND_HOSTILE_STRUCTURES);
 
-        heap.static = {
+        heapRoom.static = {
             structureIds: structures.map(s => s.id),
             flagNames: flags.map(f => f.name),
             sourceIds: sources.map(s => s.id),
@@ -48,7 +48,7 @@ function getRoomCache(room) {
 
     // Hydrate static objects for the current tick
     if (!cache.static) {
-        const s = heap.static;
+        const s = heapRoom.static;
         const getById = (id) => Game.getObjectById(id);
 
         const structures = s.structureIds.map(getById).filter(o => o);
@@ -90,7 +90,7 @@ function getRoomCache(room) {
 
         // Track last hostile positions (for 1-tick motion vector prediction)
         try {
-            const map = global._enemyLastPos;
+            const map = enemyLastPos;
             // light pruning: every 50 ticks, drop entries older than 5 ticks
             if (now % 50 === 0) {
                 for (const id in map) {

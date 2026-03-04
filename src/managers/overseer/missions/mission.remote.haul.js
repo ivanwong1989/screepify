@@ -1,6 +1,14 @@
-// mission.remote.haul.js (patched: heap-backed lane cache + reset-safe + rate-limited rebuild)
+// mission.remote.haul.js (heap-backed lane cache + reset-safe + rate-limited rebuild; Memory only for settings)
+//
+// Notes:
+// - All non-settings caches live in heap (volatile). After VM reset, heap is empty and we rebuild lazily.
+// - No path point arrays are written to Memory.
+
+'use strict';
+
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
+const heap = require('utils/heap');
 
 const toRoomPosition = (pos) => {
     if (!pos || !pos.roomName) return null;
@@ -13,29 +21,17 @@ const toRoomPosition = (pos) => {
 // Heap lane TTL (ticks). When expired, we may rebuild lazily.
 const LANE_TTL = 10000;
 
-// Memory meta TTL (ticks). Keep small, just for sizing + stability across heap reset.
-const META_TTL = 20000;
-
 // Rate-limit heavy path builds per home-room per tick to avoid spikes on heap reset.
 const MAX_PATH_REBUILDS_PER_TICK_PER_HOME = 2;
 
 // ------------------------------------------------------------
-// Global heap cache helpers (reset-safe).
+// Heap cache helpers (reset-safe). Uses shared utils/heap store.
 // ------------------------------------------------------------
-const getGlobalRoot = () => {
-    if (!global.__remoteHaulLaneCache) {
-        global.__remoteHaulLaneCache = {
-            rooms: Object.create(null), // homeRoom -> { sig, lanes, meta, budgetTick, budgetUsed }
-        };
-    }
-    return global.__remoteHaulLaneCache;
-};
-
 const getRoomHeapCache = (homeRoom) => {
-    const root = getGlobalRoot();
-    let r = root.rooms[homeRoom];
+    const store = heap.getStore('remoteHaul', { ttl: null }); // TTL null: we handle our own per-entry TTLs
+    let r = store[homeRoom];
     if (!r) {
-        r = root.rooms[homeRoom] = {
+        r = store[homeRoom] = {
             sig: null,
             lanes: Object.create(null), // laneKey -> { p, len, t, sig, from, to }
             meta: Object.create(null),  // pickupId -> { pathLen, created }
@@ -96,26 +92,6 @@ const computePathData = (fromPos, toPos, memo) => {
     return data;
 };
 
-// ------------------------------------------------------------
-// Small Memory meta (optional): only keeps signature + per-pickup pathLen.
-// No paths, no point arrays.
-// ------------------------------------------------------------
-const getRoomMemoryMeta = (room) => {
-    if (!room.memory.overseer) room.memory.overseer = {};
-    if (!room.memory.overseer.remoteHaulMeta) {
-        room.memory.overseer.remoteHaulMeta = { sig: null, pickups: {} };
-    }
-    return room.memory.overseer.remoteHaulMeta;
-};
-
-const pruneMeta = (meta) => {
-    if (!meta || !meta.pickups) return;
-    for (const pickupId in meta.pickups) {
-        const e = meta.pickups[pickupId];
-        if (!e || !isFresh(e.t, META_TTL)) delete meta.pickups[pickupId];
-    }
-};
-
 module.exports = {
     generate: function (room, intel, context, missions) {
         if (context.opState === 'EMERGENCY') return;
@@ -158,28 +134,20 @@ module.exports = {
         const targetSignature = `dropoff:${dropoffTarget.id}`;
 
         // Heap cache (per home room)
-        const heap = getRoomHeapCache(room.name);
-        if (heap.sig !== targetSignature) {
-            heap.sig = targetSignature;
-            heap.lanes = Object.create(null);
-            heap.meta = Object.create(null);
+        const h = getRoomHeapCache(room.name);
+        if (h.sig !== targetSignature) {
+            h.sig = targetSignature;
+            h.lanes = Object.create(null);
+            h.meta = Object.create(null);
             // leave budget counters; they reset per tick anyway
         }
-
-        // Tiny Memory meta for stability across heap reset (optional)
-        const memMeta = getRoomMemoryMeta(room);
-        if (memMeta.sig !== targetSignature) {
-            memMeta.sig = targetSignature;
-            memMeta.pickups = {};
-        }
-        pruneMeta(memMeta);
 
         // Tick-local memoization (only within this generate pass)
         const pathMemo = new Map();
 
         // Helper: attempt to get lane from heap
         const getLane = (laneKey) => {
-            const e = heap.lanes[laneKey];
+            const e = h.lanes[laneKey];
             if (!e) return null;
             if (e.sig !== targetSignature) return null;
             if (!e.p || !e.p.length) return null;
@@ -189,31 +157,26 @@ module.exports = {
 
         // Helper: write lane to heap
         const setLane = (laneKey, points, len, fromPos, toPos) => {
-            heap.lanes[laneKey] = {
+            h.lanes[laneKey] = {
                 p: points,
                 len,
                 t: Game.time,
                 sig: targetSignature,
                 from: `${fromPos.roomName}:${fromPos.x},${fromPos.y}`,
-                to: `${toPos.roomName}:${toPos.x},${toPos.y}`, // harmless extra field, for debugging only
+                to: `${toPos.roomName}:${toPos.x},${toPos.y}`, // debugging only
             };
         };
 
         // Helper: get best-known pathLen without forcing path rebuild
         const getKnownPathLen = (pickupId) => {
-            const hm = heap.meta[pickupId];
+            const hm = h.meta[pickupId];
             if (hm && isFresh(hm.created, LANE_TTL) && hm.pathLen) return hm.pathLen;
-
-            const mm = memMeta.pickups[pickupId];
-            if (mm && isFresh(mm.t, META_TTL) && mm.pathLen) return mm.pathLen;
-
             return null;
         };
 
-        // Helper: store pathLen in heap + Memory meta (tiny)
+        // Helper: store pathLen in heap meta (tiny)
         const recordPathLen = (pickupId, pathLen) => {
-            heap.meta[pickupId] = { pathLen, created: Game.time };
-            memMeta.pickups[pickupId] = { pathLen, t: Game.time };
+            h.meta[pickupId] = { pathLen, created: Game.time };
         };
 
         // Helper: rebuild lanes (rate-limited)
@@ -224,13 +187,13 @@ module.exports = {
             if (lf && lr) return { pathLen: lf.len || 1, built: false };
 
             // Budget check to avoid spike after heap reset
-            if (heap.budgetUsed >= MAX_PATH_REBUILDS_PER_TICK_PER_HOME) {
+            if (h.budgetUsed >= MAX_PATH_REBUILDS_PER_TICK_PER_HOME) {
                 // Can't rebuild now. Use known path len if any; else a cheap approximation.
                 const known = getKnownPathLen(pickupId);
                 return { pathLen: known || dropoffPos.getRangeTo(pickupPos), built: false };
             }
 
-            heap.budgetUsed++;
+            h.budgetUsed++;
 
             // Compute both directions (prefer complete, else just record approximate len)
             const f = computePathData(dropoffPos, pickupPos, pathMemo); // dropoff -> pickup

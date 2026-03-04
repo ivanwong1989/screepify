@@ -1,15 +1,19 @@
 'use strict';
 
 const sparkStats = require('utils_sparkStats');
+const heap = require('utils_heap');
 
 function clamp(n, lo, hi) { return n < lo ? lo : (n > hi ? hi : n); }
 
 function getAcc(cfg) {
-    if (!Memory.telemetry) Memory.telemetry = {};
-    if (!Memory.telemetry._sparkAcc) {
-        Memory.telemetry._sparkAcc = { nextEmit: Game.time + cfg.chartEvery, m: {} };
+    // Keep cfg in Memory (settings), but accumulator in heap (volatile)
+    const accStore = heap.getStore('telemetry.sparkAcc');
+
+    if (!accStore._sparkAcc) {
+        accStore._sparkAcc = { nextEmit: Game.time + cfg.chartEvery, m: {} };
     }
-    const acc = Memory.telemetry._sparkAcc;
+
+    const acc = accStore._sparkAcc;
     if (!acc.m) acc.m = {};
     if (typeof acc.nextEmit !== 'number') acc.nextEmit = Game.time + cfg.chartEvery;
     return acc;
@@ -40,28 +44,22 @@ function resetAcc(acc) {
     acc.m = {};
 }
 
+// keep your getCfg() as-is (Memory.telemetry is settings)
 function getCfg() {
-
-    // Central config (override anytime from console)
     if (!Memory.telemetry) Memory.telemetry = {};
     if (!Memory.telemetry.sparkStatsPrint) Memory.telemetry.sparkStatsPrint = {};
     const t = Memory.telemetry;
 
-    // defaults
     if (typeof t.enabled !== 'boolean') t.enabled = true;
-    if (typeof t.sampleEvery !== 'number') t.sampleEvery = 5;   // ticks
-    if (typeof t.sampleEverySlow !== 'number') t.sampleEverySlow = 20; // ticks (long-term)
-    if (typeof t.chartEvery !== 'number') t.chartEvery = 20; // ticks per spark point (canonical)
-    if (typeof t.printEvery !== 'number') t.printEvery = 20;    // ticks
+    if (typeof t.sampleEvery !== 'number') t.sampleEvery = 5;
+    if (typeof t.sampleEverySlow !== 'number') t.sampleEverySlow = 20;
+    if (typeof t.chartEvery !== 'number') t.chartEvery = 20;
+    if (typeof t.printEvery !== 'number') t.printEvery = 20;
     if (typeof t.maxLen !== 'number') t.maxLen = 120;
 
-    // check that we need telemetry enabled, and also sparkStatsPrint enabled.
-    // in future when we have more telemetry, the telemetry enabled will be the master switch
-    if(t.sparkStatsPrint === true && t.enabled === true) t.enabled = true;
-
+    if (t.sparkStatsPrint === true && t.enabled === true) t.enabled = true;
     return t;
 }
-
 
 function getRoomEconomyTotalStored(room) {
     // Mirror Overseer: storage + logistics containers (exclude mining containers)
@@ -86,6 +84,15 @@ function getRoomEconomyTotalStored(room) {
     return logisticsEnergy + storageEnergy;
 }
 
+function getHeapAvgCpu() {
+    const t = heap.getStore('telemetry');
+    const v = t && t.cpu && Number(t.cpu.avgCpu);
+    if (Number.isFinite(v)) return v;
+    // legacy fallback
+    const legacy = Number(Memory.avgCpu);
+    return Number.isFinite(legacy) ? legacy : 0;
+}
+
 function sample() {
     const cfg = getCfg();
     if (!cfg.enabled) return;
@@ -97,7 +104,7 @@ function sample() {
 
     // ---- collect raw values into accumulator ----
     accAdd(acc, 'cpu.now', Game.cpu.getUsed());
-    accAdd(acc, 'cpu.ema', Number(Memory.avgCpu || 0));
+    accAdd(acc, 'cpu.ema', getHeapAvgCpu());
     accAdd(acc, 'cpu.bucket', Game.cpu.bucket);
 
     // Economy (raw)
@@ -170,7 +177,7 @@ function sample() {
 function print() {
     const cfg = getCfg();
     if (!cfg.enabled) return;
-    if (Game.shard && Game.shard.name !== 'shard3') return;
+    if (Game.shard && Game.shard.name !== 'shard3') return;  //!!! future comment, if we expanded to other shards handle this
     if (Game.time % cfg.printEvery !== 0) return;
 
     // Build a full list first so we can align all sparklines to the same start column.

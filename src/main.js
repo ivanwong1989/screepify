@@ -20,18 +20,6 @@ const SAFE_MODE_ROOMS = new Set([
     'W44S28'
 ]);
 
-// Helpers
-function computeCpuMode() {
-  const limit = Game.cpu.limit;
-  const used = Game.cpu.getUsed();      // used so far this tick
-  const bucket = Game.cpu.bucket;
-  const avg = Number(Memory.avgCpu || 0); // you already maintain this in telemetry/cpuEma
-
-  // Simple, stable thresholds (tweak later)
-  if (bucket < 800 || used > limit * 0.92) return 'PANIC';
-  if (bucket < 3500 || avg > limit * 0.85) return 'THROTTLE';
-  return 'FULL';
-}
 
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.

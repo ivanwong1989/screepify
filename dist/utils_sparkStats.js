@@ -1,6 +1,8 @@
 // utils/sparkStats.js
 'use strict';
 
+const heap = require('utils_heap');
+
 const SPARK = '⣀⣄⣤⣦⣶⣷⣿';
 
 function clamp(n, lo, hi) {
@@ -35,16 +37,20 @@ function sparkline(values, min = null, max = null) {
     return out;
 }
 
+// === HEAP ROOT ===
+// Volatile history: survives ticks, dies on VM reset (intended).
 function ensureRoot() {
-    if (!Memory._spark) Memory._spark = { series: {} };
-    if (!Memory._spark.series) Memory._spark.series = {};
-    return Memory._spark;
+    const store = heap.getStore('sparkStats'); // { series: { [name]: { maxLen, data: [] } } }
+    if (!store.series || typeof store.series !== 'object') store.series = Object.create(null);
+    return store;
 }
 
 function getSeries(name, maxLen) {
     const root = ensureRoot();
     const series = root.series;
+
     if (!series[name]) series[name] = { maxLen, data: [] };
+
     const s = series[name];
     if (!s.maxLen || s.maxLen !== maxLen) s.maxLen = maxLen;
     if (!Array.isArray(s.data)) s.data = [];
@@ -63,17 +69,18 @@ function formatNumber(n) {
     if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(2) + 'b';
     if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + 'm';
     if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(2) + 'k';
-    //return String(Math.round(n));
     return n.toFixed(2);
-
 }
 
 function printSeries(name, { label = name, min = null, max = null, labelWidth = 0 } = {}) {
     const root = ensureRoot();
     const s = root.series[name];
+
     const raw = String(label);
     const padded = (labelWidth && labelWidth > 0) ? raw.padEnd(labelWidth, ' ') : raw;
+
     if (!s || !s.data || s.data.length === 0) return `${padded}: (no data)`;
+
     const last = s.data[s.data.length - 1];
     const line = sparkline(s.data, min, max);
     return `${padded}: ${line}  last=${formatNumber(last)}`;

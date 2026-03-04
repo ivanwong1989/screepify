@@ -41,6 +41,8 @@ module.exports = {
         const skipSet = new Set(scoutMem.skipRooms || []);
         const roomsMem = scoutMem.rooms;
 
+        if (scoutMem.rotationIndex === undefined) scoutMem.rotationIndex = 0;
+
         const isOwnedRoomWithSpawn = (candidateRoom) => {
             if (!candidateRoom || !candidateRoom.controller || !candidateRoom.controller.my) return false;
             const spawns = candidateRoom.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_SPAWN });
@@ -78,7 +80,10 @@ module.exports = {
 
         const now = Game.time;
 
-        // Pick next target only when due, otherwise scout idles at home.
+
+        // Target selection:
+        // 1) Prefer stale rooms (due by interval)
+        // 2) Otherwise rotate continuously between available adjacent rooms (round-robin)
         const due = available
             .map(name => ({ name, lastScout: (roomsMem[name] && roomsMem[name].lastScout) || 0 }))
             .filter(e => (now - e.lastScout) >= interval);
@@ -91,6 +96,11 @@ module.exports = {
                 return ('' + a.name).localeCompare('' + b.name);
             });
             targetRoom = due[0].name;
+        } else {
+            const idx = scoutMem.rotationIndex % available.length;
+            targetRoom = available[idx];
+
+            scoutMem.rotationIndex = (idx + 1) % available.length;
         }
 
         // Census (assigned scouts for sponsor room)

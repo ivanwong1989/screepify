@@ -1,5 +1,6 @@
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const managerTerminal = require('managers_structures_manager.terminal');
+const heap = require('utils_heap');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
@@ -36,18 +37,21 @@ module.exports = {
 
         // --- Route age cache ---
         // This is NOT worth putting in persistent Memory (serialization cost + memory bloat).
-        // Use global heap cache; it resets on global reset which is fine (it's only a gating hint).
+        // Use heap (volatile) via utils/heap so it survives module reload patterns and stays consistent.
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-        if (!global.__logisticsRouteAge) {
-            global.__logisticsRouteAge = {
-                rooms: Object.create(null),
-                lastPrune: 0
-            };
-        }
+        // Store shape:
+        // {
+        //   rooms: { [roomName]: { [routeKey]: firstSeenGameTime } },
+        //   lastPrune: Game.time
+        // }
+        const ageRoot = heap.getStore('logisticsRouteAge');
+        if (!ageRoot.rooms) ageRoot.rooms = Object.create(null);
+        if (!Number.isFinite(ageRoot.lastPrune)) ageRoot.lastPrune = 0;
 
-        const ageRoot = global.__logisticsRouteAge;
-        const routeAgeMem = ageRoot.rooms[room.name] || (ageRoot.rooms[room.name] = Object.create(null));
+        const routeAgeMem =
+            ageRoot.rooms[room.name] ||
+            (ageRoot.rooms[room.name] = Object.create(null));
 
         // Prune occasionally to avoid unbounded heap growth.
         // - Drop entries older than PRUNE_TTL

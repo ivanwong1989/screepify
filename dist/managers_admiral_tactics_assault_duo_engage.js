@@ -25,7 +25,7 @@ function isSourceKeeperOwned(o) {
 }
 
 function selectTarget(creep, flags, ao) {
-    console.log(`[engage] selectTarget ENTER tick=${Game.time} room=${creep.room.name}`);
+    //console.log(`[engage] selectTarget ENTER tick=${Game.time} room=${creep.room.name}`);
     if (!creep || !creep.room) return null;
 
     // HARD AO ROOM GATE
@@ -105,14 +105,14 @@ function selectTarget(creep, flags, ao) {
     }
 
 
-   console.log(
+   /*console.log(
     `[assault.duo][selectTarget] room=${creep.room.name}` +
     ` hostiles=${hostiles.length}` +
     ` engageable=${engageable.length}` +
     ` hostileStructs=${(hostileStructures && hostileStructures.length) || 0}` +
     ` walls=${(walls && walls.length) || 0}` +
     ` allies=${(Memory.allies && Memory.allies.length) || 0}`
-  );
+  );*/
 
     return null;
 }

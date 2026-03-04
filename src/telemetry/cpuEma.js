@@ -1,25 +1,36 @@
-function tick() {
-    // 1. Configuration: How many ticks to average over
-    const EMA_WINDOW = 20; // The 'X' ticks
+// telemetry/cpuEma.js
+'use strict';
 
-    // 2. Get the CPU used this tick
-    const cpuUsed = Game.cpu.getUsed();
+const heap = require('utils_heap');
 
-    // 3. Initialize memory if it doesn't exist
-    if (Memory.avgCpu === undefined) {
-        Memory.avgCpu = cpuUsed;
-    }
+const EMA_WINDOW = 20; // ticks
 
-    // 4. Update the Moving Average
-    // Formula: (OldAvg * (X-1) + NewValue) / X
-    Memory.avgCpu = (Memory.avgCpu * (EMA_WINDOW - 1) + cpuUsed) / EMA_WINDOW;
-
-    // 5. Output to console (optional)
-    if (Game.time % 10 === 0) {
-        //console.log(`Average CPU over ${EMA_WINDOW} ticks: ${Memory.avgCpu.toFixed(2)}`);
-    }
+function getStore() {
+    const s = heap.getStore('telemetry'); // shared telemetry heap store
+    if (!s.cpu || typeof s.cpu !== 'object') s.cpu = Object.create(null);
+    return s.cpu;
 }
 
-module.exports = {
-    tick
-};
+function getAvgCpu() {
+    const cpu = getStore();
+    // Fallback to old Memory value if present (migration safety)
+    if (Number.isFinite(cpu.avgCpu)) return cpu.avgCpu;
+    const legacy = Number(Memory.avgCpu);
+    return Number.isFinite(legacy) ? legacy : 0;
+}
+
+function tick() {
+    const cpuUsed = Game.cpu.getUsed();
+    const cpu = getStore();
+
+    const prev = getAvgCpu();
+    const next = (prev * (EMA_WINDOW - 1) + cpuUsed) / EMA_WINDOW;
+
+    cpu.avgCpu = next;
+
+    // Optional: keep legacy Memory mirror for one release if you’re paranoid.
+    // Comment OUT once you’re confident no other module reads Memory.avgCpu.
+    // Memory.avgCpu = next;
+}
+
+module.exports = { tick, getAvgCpu };
