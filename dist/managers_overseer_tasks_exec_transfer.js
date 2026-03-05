@@ -320,12 +320,25 @@ const findOtherDumpTarget = (type) => {
     }
 
     // Energy missions may use the generic gather selector.
-    if (mission.data && mission.data.sourceId) {
-        task = execGatherTask({ creep, room, options: { allowedIds: [mission.data.sourceId], allowPartial } });
-    } else {
-        const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
-        const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
-        task = execGatherTask({ creep, room, options: { allowedIds, excludeIds, preferNearestAvailable: isSupply, allowPartial } });
+    if (resourceType === RESOURCE_ENERGY) {
+        // Supply missions: if storage exists, ONLY pull from storage (stable source, prevents mining-container yo-yo)
+        if (isSupply && room.storage && (room.storage.store[RESOURCE_ENERGY] || 0) > 0) {
+            task = execGatherTask({
+                creep,
+                room,
+                options: {
+                    allowedIds: [room.storage.id],
+                    allowPartial: true,              // deliver as soon as we have any energy
+                    preferNearestAvailable: false    // irrelevant when allowedIds is set, but keep explicit
+                }
+            });
+        } else if (mission.data && mission.data.sourceId) {
+            task = execGatherTask({ creep, room, options: { allowedIds: [mission.data.sourceId], allowPartial } });
+        } else {
+            const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
+            const excludeIds = (mission.data && mission.data.targetIds) ? mission.data.targetIds : null;
+            task = execGatherTask({ creep, room, options: { allowedIds, excludeIds, preferNearestAvailable: isSupply, allowPartial } });
+        }
     }
 
     

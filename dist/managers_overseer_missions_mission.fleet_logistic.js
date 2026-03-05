@@ -9,8 +9,8 @@ module.exports = {
         if (!enableHaulers) return;
 
         // 0. Generate Fleet Mission (stable hauler spawn)
-        const MAX_HAULER_CARRY_PARTS = 16;
-        const MIN_CARRY_PER_SOURCE = 4;
+        const MAX_HAULER_CARRY_PARTS = 25;
+        const MIN_CARRY_PER_SOURCE = 5;
         const LINKED_SOURCE_MIN_CARRY = 3;
         const ENERGY_PER_TICK = 10;
         const TRANSFER_BUFFER_TICKS = 2;

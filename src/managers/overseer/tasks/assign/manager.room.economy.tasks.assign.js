@@ -214,6 +214,44 @@ var managerTasks = {
             }
         });
 
+        // --- Preempt idle:upgrade when real work is underfilled ---
+        const idleUpName = 'idle:upgrade';
+        const idleUp = missionStatus[idleUpName] ? missionStatus[idleUpName].mission : null;
+        const idlePriority = idleUp ? (idleUp.priority || 0) : -99999;
+
+        if (idleUp) {
+            // Quick scan: is there any "real" mission that is underfilled?
+            // (We only consider missions with higher priority than idle upgrade.)
+            let hasUnderfilledRealMission = false;
+
+            for (const name in missionStatus) {
+                if (name === idleUpName) continue;
+                const st = missionStatus[name];
+                const m = st.mission;
+                const pr = m.priority || 0;
+                if (pr <= idlePriority) continue;
+
+                const req = m.requirements || {};
+                if (req.count && st.assignedCount < req.count) {
+                    hasUnderfilledRealMission = true;
+                    break;
+                }
+            }
+
+            if (hasUnderfilledRealMission) {
+                // Unassign idle upgraders so they can be reassigned this tick
+                creeps.forEach(creep => {
+                    if (creep.spawning) return;
+                    if (creep.memory.missionName !== idleUpName) return;
+
+                    delete creep.memory.missionName;
+                    delete creep.memory.taskState;
+                    delete creep.memory.task;
+                    delete creep.memory.scout;
+                });
+            }
+        }
+
         // 4. Assign Idle Creeps
         const localIdle = localCreeps.filter(c => !c.spawning && !c.memory.missionName);
         const remoteIdle = (remote.idle || []).filter(c => !c.spawning && !c.memory.missionName);

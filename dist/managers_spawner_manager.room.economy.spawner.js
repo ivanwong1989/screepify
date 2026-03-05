@@ -152,7 +152,7 @@ var managerSpawner = {
             budget = Math.min(budget, 3000);
         }
         if (archetype === 'hauler' || archetype == 'user_hauler') {
-            budget = Math.min(budget, 2500);
+            budget = Math.min(budget, 4000);
         } 
         // --- BODY BUDGET END ---       
         if (mission.requirements && mission.requirements.body) {

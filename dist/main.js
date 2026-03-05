@@ -21,7 +21,7 @@ const SAFE_MODE_ROOMS = new Set([
     'W44S28'
 ]);
 
-/*
+
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
 const profiler = require('screeps-profiler');
@@ -62,15 +62,15 @@ profiler.registerObject(require('managers_overseer_missions_mission.repair'), 'm
 profiler.registerObject(require('managers_overseer_missions_mission.decongest'), 'mission.decongest');
 profiler.registerObject(require('managers_overseer_missions_mission.user.dismantle'), 'mission.user.dismantle');
 profiler.registerObject(require('managers_overseer_missions_mission.user.transfer'), 'mission.user.transfer');
+profiler.registerObject(require('managers_overseer_missions_mission.idleUpgrade'), 'mission.idleUpgrade');
 
-*/
 
 
 
 // This line monkey patches the global prototypes.
-//profiler.enable();
+profiler.enable();
 module.exports.loop = function() {
-    //profiler.wrap(function() {
+    profiler.wrap(function() {
         // Main.js logic should go here.
 
         // --- Memhack ---
@@ -229,5 +229,5 @@ module.exports.loop = function() {
         telemetry.print();
 
 
-    //});
+    });
 };

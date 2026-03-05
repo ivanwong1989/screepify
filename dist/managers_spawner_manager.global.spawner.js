@@ -63,6 +63,8 @@ module.exports = {
         const homeSpawns = homeRoom ? homeRoom.find(FIND_MY_SPAWNS) : [];
         const remoteCandidates = candidates.filter(s => {
             if (s.room.name === ticket.homeRoom) return false;
+            // ✅ QUICK FIX: miners are static (low MOVE) → never remote-spawn
+            if (ticket.role === 'miner') return false;
             if (s.room.energyAvailable < ticket.cost) return false;
             if (s.room._opState === 'EMERGENCY') return false;
 

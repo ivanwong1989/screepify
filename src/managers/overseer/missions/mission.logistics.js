@@ -4,8 +4,8 @@ const heap = require('utils_heap');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        
-        /* 
+
+        /*
         const t0 = Game.cpu.getUsed();
         const mark = (label, last) => {
             const now = Game.cpu.getUsed();
@@ -35,7 +35,7 @@ module.exports = {
         const terminal = room.terminal;
         const spawns = intel.structures[STRUCTURE_SPAWN] || [];
 
-        const MAX_HAULER_CARRY_PARTS = 16;
+        const MAX_HAULER_CARRY_PARTS = 25;
 
         const haulerStats = managerSpawner.checkBody('hauler', budget);
         const uncappedCarryParts = haulerStats.carry || 1;
@@ -94,7 +94,7 @@ module.exports = {
             }
         }
 
-        //t = mark('routeAge-prune', t);
+        // t = mark('routeAge-prune', t);
 
         // Attach to module instance so other methods can use them without refactoring callsites.
         this._getRoutePolicy = (type, resourceType, cap) => {
@@ -186,22 +186,31 @@ module.exports = {
             }
         });
 
-        //t = mark('active-scan', t);
+        // t = mark('active-scan', t);
 
         // 2. Generate New Missions
-        const refillSinks = [
-            ...(intel.structures[STRUCTURE_SPAWN] || []),
-            ...(intel.structures[STRUCTURE_EXTENSION] || []),
-            ...(intel.structures[STRUCTURE_TOWER] || []),
-            ...(intel.structures[STRUCTURE_LAB] || [])
-        ].filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+        // refill-sinks: avoid rebuilding large arrays + extra filter passes every tick.
+        // Keep exact behavior, but do it in one pass per structure list and reserve targets for THIS tick.
+        const tryAddSupply = (list) => {
+            if (!Array.isArray(list) || list.length === 0) return;
+            for (let i = 0; i < list.length; i++) {
+                const target = list[i];
+                if (!target || !target.store) continue;
+                if (coveredTargets.has(target.id)) continue;
+                if (target.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) continue;
+                this.addSupplyMission(activeMissions, target, isEmergency);
+                // prevent duplicate scheduling within the same tick
+                coveredTargets.add(target.id);
+            }
+        };
 
-        refillSinks.forEach(target => {
-            if (coveredTargets.has(target.id)) return;
-            this.addSupplyMission(activeMissions, target, isEmergency);
-        });
+        tryAddSupply(intel.structures[STRUCTURE_SPAWN]);
+        tryAddSupply(intel.structures[STRUCTURE_EXTENSION]);
+        tryAddSupply(intel.structures[STRUCTURE_TOWER]);
+        // NOTE: labs intentionally included here for energy refill; mineral hauling is handled elsewhere.
+        tryAddSupply(intel.structures[STRUCTURE_LAB]);
 
-        //t = mark('refill-sinks', t);
+        // t = mark('refill-sinks', t);
 
         const inflowSinks = [
         ...(storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0 ? [storage] : []),
@@ -268,7 +277,7 @@ module.exports = {
             });
         }
 
-        //t = mark('inflow-missions', t);
+        // t = mark('inflow-missions', t);
 
         if (storage && terminal) {
             const baseCfg = managerTerminal.getConfig();
@@ -294,7 +303,7 @@ module.exports = {
             }
         }
 
-        //t = mark('terminal-energy', t);
+        // t = mark('terminal-energy', t);
 
         // --- Mineral logistics with terminal stockTargets (Memory.market.rooms.<room>.stockTargets) ---
         const hasTerminal = !!terminal;
@@ -358,7 +367,7 @@ module.exports = {
             });
         }
 
-        //t = mark('terminal-plan', t);
+        // t = mark('terminal-plan', t);
 
         // Decide desired sink for a mineral based on the terminal plan.
         // - If plan says FILL: sink=terminal (but we will only source from storage)
@@ -426,21 +435,49 @@ module.exports = {
             }
         }
 
-        //t = mark('terminal-flush', t);
+        // t = mark('terminal-flush', t);
 
         // 2) Consolidate minerals from structures to the chosen sink per mineral (policy-driven).
         // IMPORTANT: if filling terminal, cap by remaining need (per-tick fillRemaining) so we don't overshoot.
-        const allStructureLists = Object.values(intel.structures || {});
-        const seenStructures = new Set();
+        // Efficiency: avoid Object.values() allocations, avoid nested loops on stores that only contain energy/empty.
+        const hasNonEnergy = (store) => {
+            if (!store) return false;
+            // Fast path for Store API
+            if (typeof store.getUsedCapacity === 'function') {
+                const used = store.getUsedCapacity();
+                if (!used || used <= 0) return false;
+                const usedEnergy = store.getUsedCapacity(RESOURCE_ENERGY) || 0;
+                return (used - usedEnergy) > 0;
+            }
+            // Fallback (should be rare)
+            for (const k in store) {
+                if (k === RESOURCE_ENERGY) continue;
+                if ((store[k] || 0) > 0) return true;
+            }
+            return false;
+        };
 
-        allStructureLists.forEach(list => {
-            if (!Array.isArray(list)) return;
-            list.forEach(source => {
-                if (!source || !source.store) return;
-                if (source.structureType === STRUCTURE_LAB) return;
-                if (source.structureType === STRUCTURE_TERMINAL) return; // terminal handled by terminalPlan (avoid hold->storage drain)
-                if (seenStructures.has(source.id)) return;
-                seenStructures.add(source.id);
+        // If your intel.structures never duplicates the same object across lists, we can skip seenStructures.
+        // Keep a tiny guard anyway (low overhead vs unexpected dupes).
+        const seenStructures = Object.create(null);
+
+        const structsByType = intel.structures || {};
+        for (const stype in structsByType) {
+            const list = structsByType[stype];
+            if (!Array.isArray(list) || list.length === 0) continue;
+
+            // Skip whole lists we never want to scan for minerals.
+            if (stype === STRUCTURE_LAB) continue;      // labs generate lab haul missions elsewhere
+            if (stype === STRUCTURE_TERMINAL) continue; // terminal handled by terminalPlan (avoid hold->storage drain)
+
+            for (let i = 0; i < list.length; i++) {
+                const source = list[i];
+                if (!source || !source.store) continue;
+                if (seenStructures[source.id]) continue;
+                seenStructures[source.id] = 1;
+
+                // Early-exit: skip scanning store keys if it has no non-energy resources.
+                if (!hasNonEnergy(source.store)) continue;
 
                 for (const resourceType in source.store) {
                     if (resourceType === RESOURCE_ENERGY) continue;
@@ -454,8 +491,8 @@ module.exports = {
                     if (source.id === sink.id) continue;
 
                     if (sink === terminal && decision.need !== null && decision.need !== undefined) {
-                    const take = takeFill(resourceType, Math.min(decision.need, amt));
-                    if (take <= 0) continue;
+                        const take = takeFill(resourceType, Math.min(decision.need, amt));
+                        if (take <= 0) continue;
 
                         this.addLogisticsMissionsForRoute(
                             activeMissions,
@@ -481,10 +518,10 @@ module.exports = {
                         );
                     }
                 }
-            });
-        });
+            }
+        }
 
-        //t = mark('structure-minerals', t);
+        // t = mark('structure-minerals', t);
 
         // Dropped minerals
         intel.dropped.forEach(source => {
@@ -555,7 +592,7 @@ module.exports = {
             }
         });
 
-        //t = mark('scavenge-minerals', t);
+        // t = mark('scavenge-minerals', t);
 
         if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
             nonMiningContainers.filter(c => c.store[RESOURCE_ENERGY] >= 500 && c.id !== intel.controllerContainerId).forEach(source => {
