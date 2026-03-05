@@ -3,6 +3,7 @@
  */
 const flagAttackMission = require('managers_admiral_missions_mission.attack.flag');
 const flagDismantleMission = require('managers_admiral_missions_mission.dismantle.flag');
+const rampartDefenseMission = require('managers_admiral_missions_mission.defense.rampart');
 
 function getMissionCensusByName(missionName) {
     let count = 0;
@@ -20,43 +21,20 @@ var admiralMissions = {
         const missions = [];
         const cache = global.getRoomCache(room);
 
-/*         if (state === 'DEFEND' || state === 'SIEGE') {
-            const response = this.calculateResponse(threat, budget, room);
-            missions.push({
-                name: `defend_${room.name}_${response.strategy}`,
-                type: 'defend',
-                archetype: response.archetype,
-                priority: state === 'SIEGE' ? 99 : (state === 'DEFEND' ? 95 : 80), // Max priority during siege
-                requirements: { 
-                    count: response.count,
-                    body: response.bodyPattern 
-                },
-                data: { 
-                    ownerRoom: room.name,
-                    defendRoom: room.name,
-                    anchorPos: (() => {
-                        const anchor = (cache.myStructuresByType[STRUCTURE_SPAWN] || [])[0] || room.controller;
-                        return anchor ? { x: anchor.pos.x, y: anchor.pos.y, roomName: anchor.pos.roomName } : null;
-                    })(),
-                    rules: {
-                        engageRange: 3,
-                        kiteRange: 4
-                    },
-                    // Legacy fields for current defense tactics (Phase 4 will remove)
-                    targetIds: hostiles.map(h => h.id),
-                    strategy: response.strategy,
-                    formation: response.formation // Specifies if creeps should move as DUO/QUAD
-                },
-                census: { count: 0, workParts: 0, carryParts: 0 }
-            });
-        } */
-
         if (flagAttackMission && typeof flagAttackMission.generate === 'function') {
             const attackContext = {
                 budget,
                 getMissionCensus: (missionName) => getMissionCensusByName(missionName)
             };
             flagAttackMission.generate(room, null, attackContext, missions);
+        }
+
+        if (rampartDefenseMission && typeof rampartDefenseMission.generate === 'function') {
+            const defendContext = {
+                budget,
+                getMissionCensus: (missionName) => getMissionCensusByName(missionName)
+            };
+            rampartDefenseMission.generate(room, hostiles, defendContext, missions);
         }
 
         if (flagDismantleMission && typeof flagDismantleMission.generate === 'function') {

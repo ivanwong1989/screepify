@@ -4,6 +4,22 @@ const assaultCombatMatrix = require('managers_admiral_tactics_assault_common_com
 const assaultMemory = require('managers_admiral_tactics_assault_common_memory');
 const combatVis = require('managers_admiral_utils_admiral.visuals.combat');
 
+// Debug helpers
+function _milDbgEnabled() {
+    return !!(global.Memory && Memory.debugDefense);
+}
+
+function _milDbgEvery(n) {
+    n = n || 10;
+    return (Game.time % n) === 0;
+}
+
+function _milDbgLog(msg) {
+    if (!_milDbgEnabled()) return;
+    if (!_milDbgEvery(10)) return;
+    console.log(msg);
+}
+
 function isMilitaryRole(role) {
     return role === 'defender' || role === 'brawler' || role === 'assault' || role === 'drainer';
 }
@@ -16,13 +32,13 @@ function getOwnedCreeps(roomName) {
 
 function selectMissions(room) {
     const allMissions = room._missions || [];
-    return allMissions.filter(m => m.type === 'defend' || m.type === 'assault');
+    return allMissions.filter(m => m && (m.type === 'defend' || m.type === 'defense' || m.type === 'assault'));
 }
 
 function isEligibleForMission(creep, mission) {
     if (!creep || !mission) return false;
     const role = creep.memory && creep.memory.role;
-    if (mission.type === 'defend') return role === 'defender' || role === 'brawler';
+    if (mission.type === 'defend' || mission.type === 'defense') return role === 'defender' || role === 'brawler';
     if (mission.type === 'assault') {
         const assaultMode = mission.data && mission.data.assaultMode;
         if (assaultMode === 'dismantle') return role === 'assault' || role === 'dismantler';
@@ -230,7 +246,7 @@ function allocateCreeps(room, missions) {
 function runMission(mission, assignedCreeps, context) {
     if (!mission || !assignedCreeps || assignedCreeps.length === 0) return;
     const room = context.room;
-    if (mission.type === 'defend') {
+    if (mission.type === 'defend' || mission.type === 'defense') {
         const hostiles = context.hostiles || [];
         const primaryTarget = defenseTactics.selectPrimaryTarget(hostiles);
         assignedCreeps.forEach(creep => {
@@ -254,7 +270,15 @@ function runMission(mission, assignedCreeps, context) {
 var militaryTasks = {
     run: function(room) {
         const missions = selectMissions(room);
-        const assignments = allocateCreeps(room, missions);
+        
+        if (_milDbgEnabled() && _milDbgEvery(10)) {
+            const all = room._missions || [];
+            if (all.length && missions.length === 0) {
+                const types = all.slice(0, 6).map(m => (m && m.type) ? String(m.type) : 'null');
+                _milDbgLog(`[MIL][tasks] ${room.name} selected=0 but _missions=${all.length}; types(sample)=${types.join(',')}`);
+            }
+        }
+const assignments = allocateCreeps(room, missions);
         const cache = global.getRoomCache(room);
         const hostiles = cache.hostiles || []; // keep this for ctx.hostiles / defense logic
 

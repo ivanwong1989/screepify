@@ -192,6 +192,23 @@ var roleDefender = {
             logCombat(`[Defender] ${creep.name} Tick: ${Game.time} Pos: ${creep.pos} Task: ${JSON.stringify(task)}`);
         }
 
+
+        // --- Debug: why am I idle? ---
+        if (!task) {
+            if (Memory.debugDefense) {
+                const key = `_dbgIdle_${Game.time}`;
+                // Log once per 10 ticks per creep to avoid spam/CPU
+                if (!creep.memory[key] && (Game.time % 10 === 0)) {
+                    creep.memory[key] = 1;
+                    console.log(
+                        `[DEF][idle] ${creep.name} t=${Game.time} room=${creep.room.name} ` +
+                        `mission=${creep.memory.missionName || '-'} home=${creep.memory.room || '-'} ` +
+                        `trav=${creep.memory._travellingToHome ? 1 : 0}`
+                    );
+                }
+            }
+            return;
+        }
         if (!task) return;
 
         // 1. Execute Movement (Basic command)
