@@ -195,40 +195,71 @@ module.exports = {
         }
 
         // --- Priority 0.5: Heal ---
-        const damagedCreeps = intel.myCreeps.filter(c => c.hits < c.hitsMax);
-        if (damagedCreeps.length > 0) {
+        // Avoid allocating arrays when there are no damaged creeps.
+        let damagedCreepIds = null;
+        for (const c of intel.myCreeps) {
+            if (c && c.hits < c.hitsMax) {
+                if (damagedCreepIds === null) damagedCreepIds = [];
+                damagedCreepIds.push(c.id);
+            }
+        }
+        if (damagedCreepIds && damagedCreepIds.length > 0) {
             missions.push({
                 name: 'tower:heal',
                 type: 'tower_heal',
-                targetIds: damagedCreeps.map(c => c.id),
+                targetIds: damagedCreepIds,
                 priority: 950
             });
-            debug('mission.tower', `[Tower] ${room.name} heal targets=${damagedCreeps.length}`);
+            debug('mission.tower', `[Tower] ${room.name} heal targets=${damagedCreepIds.length}`);
         }
 
         // --- Priority 4.5: Repair ---
         // Only if we have reasonable energy and normal repair creep missions fail to keep up, meaning very lot HP
         if (intel.energyAvailable > intel.energyCapacityAvailable * 0.5) {
-            const allStructures = [].concat(...Object.values(intel.structures));
-            const damagedStructures = allStructures.filter(s =>
-                s.hits < s.hitsMax &&
-                (s.hits / s.hitsMax) < 0.6 &&
-                s.structureType !== STRUCTURE_WALL &&
-                s.structureType !== STRUCTURE_RAMPART
-            );
-            const criticalForts = allStructures.filter(s =>
-                (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) &&
-                s.hits < 5000
-            );
-            const allRepair = [...criticalForts, ...damagedStructures];
-            if (allRepair.length > 0) {
+            // Avoid flattening + double-filtering the entire structures set.
+            // Preserve original ordering bias: critical forts first, then other damaged structures.
+            let criticalIds = null;
+            let damagedIds = null;
+
+            const byType = intel.structures || {};
+            for (const type in byType) {
+                const list = byType[type];
+                if (!list || list.length === 0) continue;
+
+                for (const s of list) {
+                    if (!s) continue;
+                    if (s.hits >= s.hitsMax) continue;
+
+                    const st = s.structureType;
+                    if (st === STRUCTURE_WALL || st === STRUCTURE_RAMPART) {
+                        if (s.hits < 5000) {
+                            if (criticalIds === null) criticalIds = [];
+                            criticalIds.push(s.id);
+                        }
+                        continue;
+                    }
+
+                    // Non-fort structures: only repair if <60% hp
+                    if ((s.hits / s.hitsMax) < 0.6) {
+                        if (damagedIds === null) damagedIds = [];
+                        damagedIds.push(s.id);
+                    }
+                }
+            }
+
+            const hasRepairs = (criticalIds && criticalIds.length) || (damagedIds && damagedIds.length);
+            if (hasRepairs) {
+                const targetIds = criticalIds && criticalIds.length
+                    ? (damagedIds && damagedIds.length ? criticalIds.concat(damagedIds) : criticalIds)
+                    : damagedIds;
+
                 missions.push({
                     name: 'tower:repair',
                     type: 'tower_repair',
-                    targetIds: allRepair.map(s => s.id),
+                    targetIds,
                     priority: 40
                 });
-                debug('mission.tower', `[Tower] ${room.name} repair targets=${allRepair.length}`);
+                debug('mission.tower', `[Tower] ${room.name} repair targets=${targetIds.length}`);
             }
         }
     }

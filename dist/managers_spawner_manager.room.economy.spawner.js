@@ -127,16 +127,24 @@ var managerSpawner = {
             mission = { archetype: archetype };
             if (opts && typeof opts === 'object') mission.data = opts;
         }
+
         const body = this.generateBody(mission, budget);
-        const cost = this.calculateBodyCost(body);
-        
-        return {
-            body: body,
-            cost: cost,
-            work: body.filter(p => p === WORK).length,
-            carry: body.filter(p => p === CARRY).length,
-            move: body.filter(p => p === MOVE).length
-        };
+
+        // Single-pass stats (avoid filter() allocations and extra iterations).
+        let cost = 0;
+        let work = 0;
+        let carry = 0;
+        let move = 0;
+
+        for (let i = 0; i < body.length; i++) {
+            const part = body[i];
+            cost += BODYPART_COST[part] || 0;
+            if (part === WORK) work++;
+            else if (part === CARRY) carry++;
+            else if (part === MOVE) move++;
+        }
+
+        return { body, cost, work, carry, move };
     },
 
     generateBody: function(mission, budget) {
@@ -207,13 +215,17 @@ var managerSpawner = {
         // Base: WORK, CARRY, MOVE (200)
         let body = [WORK, CARRY, MOVE];
         let cost = 200;
-        
+
+        // Track counts as we build (no filter() in loop)
+        let workCount = 1; // base has 1 WORK
+
         // Max WORK for a standard source is 5, we use 7 for our inefficiencies
-        while (cost + 100 <= budget && body.filter(p => p === WORK).length < 7) {
+        while (cost + 100 <= budget && workCount < 7) {
             body.push(WORK);
             cost += 100;
+            workCount++;
         }
-        
+
         return this.sortBody(body);
     },
 

@@ -45,6 +45,46 @@ module.exports = {
         if (haulTargets.length === 0) return;
 
         const links = intel.structures[STRUCTURE_LINK] || [];
+        // --- Per-tick caches (behavior-preserving) ---
+        // Avoid repeated Game.getObjectById and repeated range computations within this tick.
+        const _idCache = new Map();
+        const _cacheObj = (o) => { if (o && o.id) _idCache.set(o.id, o); };
+        const _cacheList = (list) => {
+            if (!Array.isArray(list) || list.length === 0) return;
+            for (let i = 0; i < list.length; i++) _cacheObj(list[i]);
+        };
+
+        // Cache common room objects / intel lists (visible objects only).
+        _cacheObj(storage);
+        _cacheObj(terminal);
+        _cacheList(allContainers);
+        _cacheList(links);
+        _cacheList(spawns);
+        if (intel && intel.structures) {
+            for (const k in intel.structures) _cacheList(intel.structures[k]);
+        }
+        _cacheList(intel.sources);
+        _cacheList(intel.dropped);
+        _cacheList(intel.ruins);
+        _cacheList(intel.tombstones);
+
+        // Range caches for this tick.
+        this._routeDistCache = new Map();
+
+        const _posKey = (pos) => (pos ? `${pos.roomName}:${pos.x}:${pos.y}` : '');
+        const _closestByRange = (pos, sinks) => {
+            if (!pos || !Array.isArray(sinks) || sinks.length === 0) return null;
+            let best = null;
+            let bestR = Infinity;
+            for (let i = 0; i < sinks.length; i++) {
+                const s = sinks[i];
+                if (!s || !s.pos) continue;
+                const r = pos.getRangeTo(s.pos);
+                if (r < bestR) { bestR = r; best = s; }
+            }
+            return best;
+        };
+
 
         // --- Route age cache ---
         // This is NOT worth putting in persistent Memory (serialization cost + memory bloat).
@@ -212,29 +252,53 @@ module.exports = {
 
         // t = mark('refill-sinks', t);
 
-        const inflowSinks = [
-        ...(storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0 ? [storage] : []),
-        ...nonMiningContainers.filter(c => c.store.getFreeCapacity(RESOURCE_ENERGY) > 0),
+        const inflowSinks = [];
+        if (storage && storage.store && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) inflowSinks.push(storage);
+        if (nonMiningContainers && nonMiningContainers.length > 0) {
+            for (let i = 0; i < nonMiningContainers.length; i++) {
+                const c = nonMiningContainers[i];
+                if (!c || !c.store) continue;
+                if (c.store.getFreeCapacity(RESOURCE_ENERGY) > 0) inflowSinks.push(c);
+            }
+        }
         //...(intel.structures[STRUCTURE_SPAWN] || []).filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
-        ];
 
         if (inflowSinks.length > 0) {
             // --- Drop-mine pickup (small piles near efficient sources) + normal scavenge ---
-            const effSources = intel.sources.filter(s => efficientSources.has(s.id));
+            const effSources = (intel.sources || []).filter(s => s && efficientSources.has(s.id));
+
+            // Precompute tiles adjacent to efficient sources (range 1). Behavior: identical to `inRangeTo(source, 1)`.
+            const effAdj = new Set();
+            if (effSources.length > 0) {
+                for (let i = 0; i < effSources.length; i++) {
+                    const s = effSources[i];
+                    if (!s || !s.pos) continue;
+                    const rn = s.pos.roomName;
+                    const sx = s.pos.x;
+                    const sy = s.pos.y;
+                    for (let dx = -1; dx <= 1; dx++) {
+                        const x = sx + dx;
+                        if (x < 0 || x > 49) continue;
+                        for (let dy = -1; dy <= 1; dy++) {
+                            const y = sy + dy;
+                            if (y < 0 || y > 49) continue;
+                            effAdj.add(`${rn}:${x}:${y}`);
+                        }
+                    }
+                }
+            }
 
             // Drop-mine pickup: allow ALL adjacent piles (like scavenge)
-            intel.dropped.forEach(r => {
-                if (!r || r.resourceType !== RESOURCE_ENERGY || (r.amount || 0) <= 0) return;
+            for (let i = 0; i < intel.dropped.length; i++) {
+                const r = intel.dropped[i];
+                if (!r || r.resourceType !== RESOURCE_ENERGY || (r.amount || 0) <= 0) continue;
 
                 // Only consider drops adjacent to efficient sources
-                const isAdjacentToEffSource = effSources.some(s =>
-                    s && s.pos && r.pos && r.pos.inRangeTo(s.pos, 1)
-                );
+                if (effAdj.size === 0) continue;
+                if (!effAdj.has(_posKey(r.pos))) continue;
 
-                if (!isAdjacentToEffSource) return;
-
-                const bestSink = r.pos.findClosestByRange(inflowSinks);
-                if (!bestSink) return;
+                const bestSink = _closestByRange(r.pos, inflowSinks);
+                if (!bestSink) continue;
 
                 this.addLogisticsMissionsForRoute(
                     activeMissions,
@@ -246,17 +310,29 @@ module.exports = {
                     RESOURCE_ENERGY,
                     carryParts
                 );
-            });
+            }
 
             // Normal scavenge (keep your >100 threshold)
-            const scavengeSources = [
-                ...intel.dropped.filter(r => r.resourceType === RESOURCE_ENERGY && r.amount > 100),
-                ...intel.ruins.filter(r => r.store[RESOURCE_ENERGY] > 0),
-                ...intel.tombstones.filter(t => t.store[RESOURCE_ENERGY] > 0)
-            ];
+            const scavengeSources = [];
+            for (let i = 0; i < intel.dropped.length; i++) {
+                const r = intel.dropped[i];
+                if (!r) continue;
+                if (r.resourceType === RESOURCE_ENERGY && (r.amount || 0) > 100) scavengeSources.push(r);
+            }
+            for (let i = 0; i < intel.ruins.length; i++) {
+                const r = intel.ruins[i];
+                if (!r || !r.store) continue;
+                if ((r.store[RESOURCE_ENERGY] || 0) > 0) scavengeSources.push(r);
+            }
+            for (let i = 0; i < intel.tombstones.length; i++) {
+                const t = intel.tombstones[i];
+                if (!t || !t.store) continue;
+                if ((t.store[RESOURCE_ENERGY] || 0) > 0) scavengeSources.push(t);
+            }
 
-            scavengeSources.forEach(source => {
-                const bestSink = source.pos.findClosestByRange(inflowSinks);
+            for (let i = 0; i < scavengeSources.length; i++) {
+                const source = scavengeSources[i];
+                const bestSink = _closestByRange(source.pos, inflowSinks);
                 if (bestSink) {
                     this.addLogisticsMissionsForRoute(
                         activeMissions,
@@ -269,12 +345,15 @@ module.exports = {
                         carryParts
                     );
                 }
-            });
+            }
 
-            miningContainers.filter(c => c.store[RESOURCE_ENERGY] >= (carryParts * 50)).forEach(source => {
-                const bestSink = source.pos.findClosestByRange(inflowSinks);
+            for (let i = 0; i < miningContainers.length; i++) {
+                const source = miningContainers[i];
+                if (!source || !source.store) continue;
+                if ((source.store[RESOURCE_ENERGY] || 0) < (carryParts * 50)) continue;
+                const bestSink = _closestByRange(source.pos, inflowSinks);
                 if (bestSink) this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, bestSink, isEmergency, 'mining', RESOURCE_ENERGY, carryParts);
-            });
+            }
         }
 
         // t = mark('inflow-missions', t);
@@ -647,7 +726,20 @@ module.exports = {
             if (policy && amount < policy.minAmount && ageTicks < policy.maxAgeTicks) return 0;
         }
 
-        const dist = source.pos.getRangeTo(target.pos);
+        let dist = 0;
+        const distCache = this._routeDistCache;
+        if (distCache && source && target) {
+            const k = `${source.id}:${target.id}`;
+            const cached = distCache.get(k);
+            if (cached !== undefined) {
+                dist = cached;
+            } else {
+                dist = source.pos.getRangeTo(target.pos);
+                distCache.set(k, dist);
+            }
+        } else {
+            dist = source.pos.getRangeTo(target.pos);
+        }
         const travelTicks = dist * 2 + 10;
         const roundTrip = travelTicks * 2 + 10;
         const demandTrips = amount / cap;

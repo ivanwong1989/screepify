@@ -1,3 +1,6 @@
+const { getHostilesInRoom, filterOutAllies } = require('managers_admiral_tactics_assault_common_threat');
+
+
 function getActiveHealParts(c) {
     return c ? c.getActiveBodyparts(HEAL) : 0;
 }
@@ -117,13 +120,17 @@ function buildSupportActions(creep, leader, target, suppressCombat) {
     if (suppressCombat) return actions;
 
     // ...keep your existing attack target selection logic...
-    // (unchanged)
+    // (only change is ally-safe hostiles/structures selection)
     let attackTarget = null;
     if (target && target.pos && target.pos.roomName === creep.room.name) {
         attackTarget = target;
     } else {
-        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
-        const structures = creep.room.find(FIND_HOSTILE_STRUCTURES);
+        // ✅ Ally-safe:
+        // - hostiles: uses cache if available, otherwise filters allies from FIND_HOSTILE_CREEPS
+        // - structures: filter allies out too (important if your cache includes ally-owned)
+        const hostiles = getHostilesInRoom(creep.room);
+        const structures = filterOutAllies(creep.room.find(FIND_HOSTILE_STRUCTURES) || []);
+
         if ((hostiles && hostiles.length > 0) || (structures && structures.length > 0)) {
             attackTarget = creep.pos.findClosestByRange(hostiles.concat(structures));
         }
