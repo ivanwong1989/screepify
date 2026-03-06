@@ -1,10 +1,9 @@
 /**
  * Rampart Guard Defense Mission
  *
- * Spawns 1–2 cheap melee "biters" that:
- * - NEVER chase outside the room
- * - Prefer standing on ramparts
- * - Attack enemies adjacent to ramparts
+ * Spawns a cheap melee "biter" ONLY when tower analysis says
+ * that towers alone are insufficient but towers + 1 defender
+ * would flip the result at the chosen intercept.
  *
  * Hook: called by admiral.missions.js like the other mission generators.
  */
@@ -39,6 +38,14 @@ module.exports = {
         if (!room || !room.controller || !room.controller.my) return;
         if (!Array.isArray(hostiles) || hostiles.length === 0) return;
 
+        const intel = room.memory && room.memory.intel;
+        const assist = intel && intel.defenseAssist;
+
+        // V1: defense spawning is tower-assist driven, not hostile-presence driven.
+        if (!assist || assist.evaluated !== true) return;
+        if (assist.needsMeleeAssist !== true) return;
+        if (assist.interceptType !== 'rampart' && assist.interceptType !== 'ring') return;
+
         const cache = global.getRoomCache(room);
         const { budget, getMissionCensus } = context || {};
 
@@ -46,8 +53,8 @@ module.exports = {
         const cost = getBodyCost(body);
         const spawnAllowed = !cost || (Number.isFinite(budget) && budget >= cost);
 
-        // 1–2 defenders is usually enough; scale lightly by hostile count
-        const desired = Math.min(2, Math.max(1, hostiles.length >= 2 ? 2 : 1));
+        // V1 contract: only spawn exactly 1 defender when +1 flips the outcome.
+        const desired = 1;
 
         const missionName = `defendRampart_${room.name}`;
         const census = typeof getMissionCensus === 'function'
@@ -68,8 +75,7 @@ module.exports = {
             archetype: 'defender',
             priority: 97,
 
-            // IMPORTANT: spawnSlots makes spawning much more robust against duplicate missions,
-            // because the spawn planner can dedupe by slot key rather than summing desired.
+            // spawn planner can dedupe by slot key rather than summing desired.
             spawnSlots: makeSpawnSlots(room.name, desired),
 
             requirements: {
@@ -82,20 +88,19 @@ module.exports = {
             data: {
                 ownerRoom: room.name,
                 defendRoom: room.name,
-
-                // IMPORTANT: contracts code often expects targetRoom for defend keying
-                // (prevents weird defend:<room>:undefined keys).
                 targetRoom: room.name,
 
                 anchorPos: toPos(anchor && anchor.pos),
 
-                // Optional: gives you knobs later without rewriting
                 rules: {
-                    maxDefenders: 2
+                    maxDefenders: 1
                 },
 
-                // For tactics convenience
-                hostileIds
+                // For tactics convenience / intercept-aware behavior
+                hostileIds,
+                assistTargetId: assist.targetId || null,
+                interceptType: assist.interceptType || null,
+                interceptPos: assist.interceptPos || null
             },
             census
         });

@@ -24,7 +24,7 @@ const spawnContracts = {
                     debug('spawner', `[SpawnContracts] duo gate mission=${mission.name} assembled=1 -> desired=0 (no fulfill)`);
                 }
             }
-            
+
             if (mission.type === 'assault' && mission.data && mission.data.mode === 'SOLO') {
                 const runtimeKey = mission.data.squadKey || mission.name;
                 const runtime = assaultMemory.getSoloRuntime && assaultMemory.getSoloRuntime(runtimeKey);
@@ -36,13 +36,15 @@ const spawnContracts = {
                 }
             }
             // ----
-            
+
             const role = mission.archetype || req.archetype;
             if (!role) return;
 
             const desiredRaw = Math.max(1, req.count || 1);
             const desired = (desiredOverride !== null) ? desiredOverride : desiredRaw;
             const priority = mission.priority || 0;
+            const bodySpec = this.getBodySpec(mission);
+            const metadata = this.getContractMetadata(mission);
 
             if (req.spawnFromFleet) {
                 const contract = this.makeContract({
@@ -51,7 +53,9 @@ const spawnContracts = {
                     desired,
                     priority,
                     bindMode: 'pool',
-                    bindId: null
+                    bindId: null,
+                    bodySpec,
+                    metadata
                 });
                 this.mergeContract(byId, entries, contract, mission, 'pool');
                 debug('spawner', `[SpawnContracts] pool ${contract.contractId} desired=${desired} mission=${mission.name}`);
@@ -67,7 +71,9 @@ const spawnContracts = {
                         desired: 1,
                         priority,
                         bindMode: 'target',
-                        bindId: key
+                        bindId: key,
+                        bodySpec,
+                        metadata
                     });
                     this.mergeContract(byId, entries, contract, mission, 'target');
                     debug('spawner', `[SpawnContracts] target ${contract.contractId} desired=1 mission=${mission.name}`);
@@ -81,7 +87,9 @@ const spawnContracts = {
                 desired,
                 priority,
                 bindMode: 'mission',
-                bindId: mission.name
+                bindId: mission.name,
+                bodySpec,
+                metadata
             });
             this.mergeContract(byId, entries, contract, mission, 'mission');
             debug('spawner', `[SpawnContracts] mission ${contract.contractId} desired=${desired} mission=${mission.name}`);
@@ -105,15 +113,38 @@ const spawnContracts = {
             existing.contract.priority = contract.priority;
         }
 
+        this.mergeContractMetadata(existing.contract, contract);
+
         if (kind === 'pool' && existing.contract.bindMode === 'pool') {
             // Keep the first mission as representative; no-op for now.
+        }
+    },
+
+    mergeContractMetadata: function(existingContract, newContract) {
+        const existingLead = Number(existingContract && existingContract.replaceLeadTicks);
+        const newLead = Number(newContract && newContract.replaceLeadTicks);
+
+        if (Number.isFinite(newLead)) {
+            if (!Number.isFinite(existingLead) || newLead > existingLead) {
+                existingContract.replaceLeadTicks = newLead;
+            }
+        }
+
+        if (!existingContract.travelFromSpawnId && newContract.travelFromSpawnId) {
+            existingContract.travelFromSpawnId = newContract.travelFromSpawnId;
+        }
+        if (!Number.isFinite(existingContract.sourceDistance) && Number.isFinite(newContract.sourceDistance)) {
+            existingContract.sourceDistance = newContract.sourceDistance;
+        }
+        if (!Number.isFinite(existingContract.travelTicks) && Number.isFinite(newContract.travelTicks)) {
+            existingContract.travelTicks = newContract.travelTicks;
         }
     },
 
     makeContract: function(fields) {
         const bindLabel = fields.bindMode === 'pool' ? 'pool' : fields.bindId;
         const contractId = `home=${fields.homeRoom}|role=${fields.role}|bind=${fields.bindMode}:${bindLabel}`;
-        return {
+        const contract = {
             contractId,
             homeRoom: fields.homeRoom,
             role: fields.role,
@@ -123,6 +154,48 @@ const spawnContracts = {
             bindId: fields.bindId,
             bodySpec: fields.bodySpec || { budget: 0 }
         };
+
+        const metadata = fields.metadata || null;
+        if (metadata) {
+            if (Number.isFinite(metadata.replaceLeadTicks)) contract.replaceLeadTicks = metadata.replaceLeadTicks;
+            if (Number.isFinite(metadata.sourceDistance)) contract.sourceDistance = metadata.sourceDistance;
+            if (Number.isFinite(metadata.travelTicks)) contract.travelTicks = metadata.travelTicks;
+            if (metadata.travelFromSpawnId) contract.travelFromSpawnId = metadata.travelFromSpawnId;
+        }
+
+        return contract;
+    },
+
+    getBodySpec: function(mission) {
+        if (mission && mission.bodySpec) return mission.bodySpec;
+        return { budget: 0 };
+    },
+
+    getContractMetadata: function(mission) {
+        const data = mission && mission.data;
+        if (!data) return null;
+
+        const out = {};
+        let hasAny = false;
+
+        if (Number.isFinite(data.preSpawnLeadTicks)) {
+            out.replaceLeadTicks = data.preSpawnLeadTicks;
+            hasAny = true;
+        }
+        if (Number.isFinite(data.sourceDistance)) {
+            out.sourceDistance = data.sourceDistance;
+            hasAny = true;
+        }
+        if (Number.isFinite(data.travelTicks)) {
+            out.travelTicks = data.travelTicks;
+            hasAny = true;
+        }
+        if (data.travelFromSpawnId) {
+            out.travelFromSpawnId = data.travelFromSpawnId;
+            hasAny = true;
+        }
+
+        return hasAny ? out : null;
     },
 
     getTargetKeys: function(mission, roomName, desired) {

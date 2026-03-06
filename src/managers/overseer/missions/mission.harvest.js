@@ -1,4 +1,124 @@
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
+const heap = require('utils_heap');
+
+const HARVEST_TRAVEL_CACHE_TTL = 200;
+const HARVEST_TRAVEL_STORE = 'harvestTravel';
+
+function getSourceAnchorPos(room, source) {
+    if (!room || !source || !source.pos) return null;
+
+    if (source.containerId) {
+        const container = Game.getObjectById(source.containerId);
+        if (container && container.pos) return container.pos;
+    }
+
+    const terrain = room.getTerrain();
+    let best = null;
+
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+
+            const x = source.pos.x + dx;
+            const y = source.pos.y + dy;
+            if (x < 1 || x > 48 || y < 1 || y > 48) continue;
+            if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+
+            const structures = room.lookForAt(LOOK_STRUCTURES, x, y) || [];
+            let blocked = false;
+            for (let i = 0; i < structures.length; i++) {
+                const s = structures[i];
+                if (
+                    s.structureType !== STRUCTURE_ROAD &&
+                    s.structureType !== STRUCTURE_CONTAINER &&
+                    !(s.structureType === STRUCTURE_RAMPART && s.my)
+                ) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (blocked) continue;
+
+            const pos = new RoomPosition(x, y, room.name);
+            if (!best) best = pos;
+            if (terrain.get(x, y) !== TERRAIN_MASK_SWAMP) return pos;
+        }
+    }
+
+    return best;
+}
+
+function estimateTravelTicks(pathLen, bodyLen, moveParts) {
+    if (!pathLen || pathLen <= 0) return 0;
+    if (!bodyLen || bodyLen <= 0) return pathLen;
+    if (!moveParts || moveParts <= 0) return pathLen * bodyLen;
+
+    const ticksPerStep = Math.max(1, Math.ceil(bodyLen / (2 * moveParts)));
+    return pathLen * ticksPerStep;
+}
+
+function getHarvestTravelEstimate(room, spawns, source, archStats) {
+    if (!room || !source || !source.id || !spawns || spawns.length === 0) {
+        return {
+            sourceDistance: 0,
+            travelTicks: 0,
+            preSpawnLeadTicks: 0,
+            travelFromSpawnId: null
+        };
+    }
+
+    const store = heap.getStore(HARVEST_TRAVEL_STORE, { ttl: HARVEST_TRAVEL_CACHE_TTL });
+    const cacheKey = `${room.name}:${source.id}`;
+    let cached = store[cacheKey];
+
+    if (!cached) {
+        const anchorPos = getSourceAnchorPos(room, source);
+        if (!anchorPos) {
+            cached = {
+                sourceDistance: 0,
+                travelFromSpawnId: null
+            };
+        } else {
+            let bestPathLen = Infinity;
+            let bestSpawnId = null;
+
+            for (let i = 0; i < spawns.length; i++) {
+                const spawn = spawns[i];
+                if (!spawn || !spawn.pos) continue;
+
+                const path = spawn.pos.findPathTo(anchorPos, {
+                    range: 0,
+                    ignoreCreeps: true,
+                    maxOps: 2000
+                });
+                const pathLen = path ? path.length : 0;
+
+                if (pathLen < bestPathLen) {
+                    bestPathLen = pathLen;
+                    bestSpawnId = spawn.id;
+                }
+            }
+
+            cached = {
+                sourceDistance: Number.isFinite(bestPathLen) && bestPathLen !== Infinity ? bestPathLen : 0,
+                travelFromSpawnId: bestSpawnId
+            };
+        }
+
+        store[cacheKey] = cached;
+    }
+
+    const bodyLen = archStats && archStats.body ? archStats.body.length : 0;
+    const moveParts = archStats && archStats.move ? archStats.move : 0;
+    const travelTicks = estimateTravelTicks(cached.sourceDistance, bodyLen, moveParts);
+
+    return {
+        sourceDistance: cached.sourceDistance || 0,
+        travelTicks: travelTicks,
+        preSpawnLeadTicks: travelTicks,
+        travelFromSpawnId: cached.travelFromSpawnId || null
+    };
+}
 
 module.exports = {
     generate: function(room, intel, context, missions) {
@@ -11,11 +131,9 @@ module.exports = {
 
         intel.sources.forEach(source => {
             const isEfficient = efficientSources.has(source.id);
-            const hasContainer = !!source.containerId;   // <-- ADD THIS
-            const canDropMine = isEfficient;
-            // --- bootstrap gating ---
+            const hasContainer = !!source.containerId;
             const hasHauler = intel.myCreeps.some(c => c.memory.role === 'hauler');
-            const hasLogistics = hasHauler; // simple for now
+            const hasLogistics = hasHauler;
             const canUseStaticDrop = isEfficient && hasLogistics;
 
             let mode = 'mobile';
@@ -29,18 +147,14 @@ module.exports = {
             let dropoffRange = 1;
 
             if (mode === 'static') {
-                // container/link drop-mining
                 const linkId = source.linkId || null;
                 if (linkId) dropoffIds.push(linkId);
                 if (containerId) dropoffIds.push(containerId);
                 fallback = 'none';
             } else if (mode === 'static_drop') {
-                // early drop-mining: no container/link yet
                 dropoffIds = [];
                 fallback = 'none';
-                // keep dropoffRange = 1 (unused here, but consistent)
             } else {
-                // mobile harvesting: direct deliver
                 const spawnExt = [
                     ...spawns.filter(s => s.store && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0).map(s => s.id),
                     ...extensions.filter(e => e.store && e.store.getFreeCapacity(RESOURCE_ENERGY) > 0).map(e => e.id)
@@ -58,13 +172,13 @@ module.exports = {
             const missionName = `harvest:${source.id}`;
             const census = getMissionCensus(missionName);
             const archStats = managerSpawner.checkBody('miner', budget, { mode });
+            const travel = getHarvestTravelEstimate(room, spawns, source, archStats);
             const targetWork = 7;
             const workPerCreep = archStats.work || 1;
             const desiredCount = Math.min(Math.ceil(targetWork / workPerCreep), source.availableSpaces);
 
             let reqCount = 0;
             if (census.workParts >= targetWork) {
-                // If we're already saturated on work parts, avoid locking in extra miners.
                 reqCount = Math.max(1, desiredCount);
             } else {
                 const deficit = Math.max(0, targetWork - census.workParts);
@@ -73,33 +187,21 @@ module.exports = {
                 if (reqCount === 0 && targetWork > 0) reqCount = 1;
             }
 
-            if (mode === 'static' && reqCount > 1) {
-                // 1 container tile can only host 1 miner. The rest become overflow miners.
-                // Keep reqCount as-is (still allowed), but define roles.
-                // NOTE: This assumes source.availableSpaces >= reqCount is already enforced.
-            }
-
             const staticRolesBySlot = {};
             if (mode === 'static' && reqCount > 1) {
-                staticRolesBySlot["0"] = "container";
-                for (let i = 1; i < reqCount; i++) staticRolesBySlot[String(i)] = "overflow";
+                staticRolesBySlot['0'] = 'container';
+                for (let i = 1; i < reqCount; i++) staticRolesBySlot[String(i)] = 'overflow';
             }
 
             debug('mission.harvest', `[Harvest] ${room.name} ${source.id} mode=${mode} ` +
                 `count=${census.count} workParts=${census.workParts}/${targetWork} ` +
                 `workPerCreep=${workPerCreep} desired=${desiredCount} req=${reqCount} ` +
-                `spaces=${source.availableSpaces}`);
+                `spaces=${source.availableSpaces} dist=${travel.sourceDistance} travel=${travel.travelTicks}`);
 
             const hasValidSource = !!source.id;
             const hasValidMode = (mode === 'static' || mode === 'static_drop' || mode === 'mobile');
-
-            // static: must have a containerId and at least one dropoff (container/link)
             const hasValidStatic = mode !== 'static' || (containerId && dropoffIds.length > 0);
-
-            // static_drop: must NOT require container/dropoffs
             const hasValidStaticDrop = mode !== 'static_drop' || (containerId === null && dropoffIds.length === 0);
-
-            // mobile: must have an array (can be empty but should be array)
             const hasValidMobile = mode !== 'mobile' || Array.isArray(dropoffIds);
 
             if (!hasValidSource || !hasValidMode || !hasValidStatic || !hasValidStaticDrop || !hasValidMobile) {
@@ -133,7 +235,11 @@ module.exports = {
                     containerId: containerId,
                     dropoffRange: dropoffRange,
                     staticRolesBySlot: staticRolesBySlot,
-                    overflowPolicy: "drop"
+                    overflowPolicy: 'drop',
+                    sourceDistance: travel.sourceDistance,
+                    travelTicks: travel.travelTicks,
+                    preSpawnLeadTicks: travel.preSpawnLeadTicks,
+                    travelFromSpawnId: travel.travelFromSpawnId
                 },
                 priority: isEmergency ? 1000 : 100
             });

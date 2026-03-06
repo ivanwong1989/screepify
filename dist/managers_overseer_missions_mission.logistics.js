@@ -747,7 +747,31 @@ module.exports = {
 
         let slots = Math.ceil((demandTrips * roundTrip) / desiredClearTicks);
         slots = Math.max(slots, 1);
-        return Math.min(Math.max(slots, 0), 3);
+        slots = Math.min(Math.max(slots, 0), 3);
+
+        // Surgical anti-oversubscription guard for queued energy hauling:
+        // if an extra slot would only service a tiny tail amount, keep that
+        // hauler free for more valuable work (extensions/spawns/towers/etc).
+        //
+        // Apply only when:
+        // - this is NOT an explicitNeed route (those already split via amountHint)
+        // - energy routes only
+        // - route policy says we do NOT want partial-style servicing
+        if (!isNonEnergy && (explicitNeed === undefined || explicitNeed === null) && slots > 1 &&
+            typeof this._getRoutePolicy === 'function' && typeof this._getRouteAgeTicks === 'function') {
+            const policy = this._getRoutePolicy(type, resourceType, cap);
+            const ageTicks = this._getRouteAgeTicks(routeKey, amount);
+
+            if (policy && !policy.allowPartial) {
+                while (slots > 1) {
+                    const tailAmount = Math.max(0, amount - (cap * (slots - 1)));
+                    if (tailAmount >= policy.minAmount || ageTicks >= policy.maxAgeTicks) break;
+                    slots -= 1;
+                }
+            }
+        }
+
+        return slots;
     },
 
     addLogisticsMissionsForRoute: function(activeMissions, coveredRouteSlots, source, target, isEmergency, type, resourceType, carryParts, explicitNeed) {

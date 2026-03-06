@@ -20,7 +20,7 @@ function getRoomCache(room) {
 
     // Static hydration should track heapRoom.static.time (not Game.time)
     if (cache.static && heapRoom.static && cache.static.time !== heapRoom.static.time) delete cache.static;
-    
+
     const staticInterval = 15;
 
     if (!Array.isArray(Memory.allies)) Memory.allies = [];
@@ -57,17 +57,20 @@ function getRoomCache(room) {
         const hostileStructuresAll = s.hostileStructureIds.map(getById).filter(o => o);
         const flags = s.flagNames.map(name => Game.flags[name]).filter(f => f && f.pos.roomName === room.name);
 
-        const structuresByType = structures.reduce((acc, s) => {
-            acc[s.structureType] = acc[s.structureType] || [];
-            acc[s.structureType].push(s);
+        const structuresByType = structures.reduce((acc, st) => {
+            acc[st.structureType] = acc[st.structureType] || [];
+            acc[st.structureType].push(st);
             return acc;
         }, {});
-        const myStructures = structures.filter(s => s.my);
-        const myStructuresByType = myStructures.reduce((acc, s) => {
-            acc[s.structureType] = acc[s.structureType] || [];
-            acc[s.structureType].push(s);
+        const myStructures = structures.filter(st => st.my);
+        const myStructuresByType = myStructures.reduce((acc, st) => {
+            acc[st.structureType] = acc[st.structureType] || [];
+            acc[st.structureType].push(st);
             return acc;
         }, {});
+
+        const mySpawns = myStructuresByType[STRUCTURE_SPAWN] || [];
+        const defenseAnchor = (mySpawns.length > 0 ? mySpawns[0] : null) || room.storage || room.controller || null;
 
         cache.static = {
             structures,
@@ -78,6 +81,7 @@ function getRoomCache(room) {
             sources,
             minerals,
             hostileStructuresAll,
+            defenseAnchor,
             time: s.time
         };
     }
@@ -101,16 +105,23 @@ function getRoomCache(room) {
             for (const h of hostiles) {
                 if (!h || !h.id || !h.pos) continue;
                 const existing = map[h.id];
-                map[h.id] = { x: h.pos.x, y: h.pos.y, roomName: h.pos.roomName, time: now, prev: existing && existing.time === now - 1 ? { x: existing.x, y: existing.y, roomName: existing.roomName, time: existing.time } : (existing && existing.prev ? existing.prev : null) };
+                map[h.id] = {
+                    x: h.pos.x,
+                    y: h.pos.y,
+                    roomName: h.pos.roomName,
+                    time: now,
+                    prev: existing && existing.time === now - 1
+                        ? { x: existing.x, y: existing.y, roomName: existing.roomName, time: existing.time }
+                        : (existing && existing.prev ? existing.prev : null)
+                };
             }
-        } catch (e) {
-            // do nothing
-        }
+        } catch (e) {}
+
         const dropped = room.find(FIND_DROPPED_RESOURCES);
         const ruins = room.find(FIND_RUINS);
         const tombstones = room.find(FIND_TOMBSTONES);
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
-        const hostileStructures = cache.static.hostileStructuresAll.filter(s => !isAlly(s.owner));
+        const hostileStructures = cache.static.hostileStructuresAll.filter(st => !isAlly(st.owner));
         const sourcesActive = cache.static.sources.filter(s => s.energy > 0);
 
         cache.dynamic = {
