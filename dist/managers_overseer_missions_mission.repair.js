@@ -218,6 +218,7 @@ module.exports = {
                     requirements: {
                         archetype: 'worker',
                         count: 1,
+                        spawn: true,
                         spawnFromFleet: true
                     },
                     priority: isCritical(target) ? 85 : 65
