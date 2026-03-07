@@ -305,10 +305,10 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
         rangedMidWeight = 1.10,    // d==2
         rangedFarWeight = 1.00,    // d==3
 
-        // tower danger
-        towerMinCostNear = 200,  // <=5
-        towerMinCostMid = 120,   // <=10
-        towerMinCostFar = 60,    // <=20
+        // tower danger (reduced so combat planner still finds anchors)
+        towerMinCostNear = 45,   // <=5
+        towerMinCostMid = 24,    // <=10
+        towerMinCostFar = 10,    // <=20
 
         // if you want to ignore “harmless” hostiles (e.g. no attack parts)
         ignoreHarmless = true,
@@ -564,9 +564,11 @@ function applyThreatOverlay(room, costs, hostiles, opts) {
         const tx = t.pos.x, ty = t.pos.y;
 
         addMaxInRangeChebyshevThreat(tx, ty, 20, (d) => {
-            if (d <= 5) return towerMinCostNear;
-            if (d <= 10) return towerMinCostMid;
-            if (d <= 20) return towerMinCostFar;
+            const energyScale = ((t.store && t.store.energy) || 0) / TOWER_CAPACITY;
+
+            if (d <= 5)  return Math.floor(towerMinCostNear * energyScale);
+            if (d <= 10) return Math.floor(towerMinCostMid  * energyScale);
+            if (d <= 20) return Math.floor(towerMinCostFar  * energyScale);
             return 0;
         });
     }

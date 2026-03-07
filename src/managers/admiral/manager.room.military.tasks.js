@@ -325,9 +325,9 @@ const assignments = allocateCreeps(room, missions);
                 rangedMinCostNear: 80,
                 rangedMinCostFar: 45,
 
-                towerMinCostNear: 220,
-                towerMinCostMid: 140,
-                towerMinCostFar: 70,
+                towerMinCostNear: 45,   // <=5
+                towerMinCostMid: 24,    // <=10
+                towerMinCostFar: 10,    // <=20
 
                 ignoreHarmless: true,
             },

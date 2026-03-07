@@ -2153,22 +2153,22 @@ function planV3(request) {
 
                     trySwapOrYield();
 
-// Prevent support from stepping onto leader's CURRENT tile during border staging.
+                    // Prevent support from stepping onto leader's CURRENT tile during border staging.
                     // This avoids "support stacks onto leader then crosses" conga behavior on the pre-cross side.
                     // HOWEVER: allow stepping into leader's current tile if the leader is vacating it this tick (swap / move-into-vacated).
-                    if (!supportStaged && s && s.to && isSamePos(s.to, leader.pos)) {
-                        const leaderIsMovingAway = l && l.to && !isSamePos(l.to, leader.pos);
-                        if (!leaderIsMovingAway) {
-                            s.dir = null;
-                            s.to = support.pos;
-                        }
-                    }
+                    //if (!supportStaged && s && s.to && isSamePos(s.to, leader.pos)) {
+                    //    const leaderIsMovingAway = l && l.to && !isSamePos(l.to, leader.pos);
+                    //    if (!leaderIsMovingAway) {
+                    //        s.dir = null;
+                    //        s.to = support.pos;
+                    //    }
+                    //}
 
 
                 // Prevent leader from pathing onto support's CURRENT tile during border staging.
                 // PF treats creeps as high-cost, not blocked, so it may still choose the support tile.
                 // If support is not vacating this tick, that becomes a hard deadlock (leader tries to move into occupied tile).
-                if (!leaderStaged && l && l.to && isSamePos(l.to, support.pos)) {
+                /*if (!leaderStaged && l && l.to && isSamePos(l.to, support.pos)) {
                     const supportIsMovingAway = s && s.to && !isSamePos(s.to, support.pos);
                     if (!supportIsMovingAway) {
                         // Try one quick reroute by injecting a short-lived hard block on the support tile.
@@ -2200,7 +2200,7 @@ function planV3(request) {
                             l.to = leader.pos;
                         }
                     }
-                }                
+                }  */              
                 
                 return {
                         ok: true,
@@ -2500,13 +2500,13 @@ function planV3(request) {
         // relative to the support's planned end, prefer holding the leader (prevents "running away").
         //
         // NOTE: border hygiene is still enforced later by applyBorderHygieneToStep(...).
-        try {
-            if (leaderToR && supportToR && leaderToR.getRangeTo(supportToR) > leader.pos.getRangeTo(supportToR)) {
-                leaderToR = leader.pos;
-            }
-        } catch (e) {
-            leaderToR = leader.pos;
-        }
+        //try {
+        //    if (leaderToR && supportToR && leaderToR.getRangeTo(supportToR) > leader.pos.getRangeTo(supportToR)) {
+        //        leaderToR = leader.pos;
+        //    }
+        //} catch (e) {
+        //    leaderToR = leader.pos;
+        //}
 
         // Fail-safe: prevent illegal stacking.
         // Prefer letting the leader advance while the support HOLDS (faster convergence),

@@ -6,18 +6,34 @@ const getNearDeathLeadTicks = (leadTicks) => {
         : NEAR_DEATH_BUFFER;
 };
 
+const getTickCache = (key) => {
+    if (!global[key] || global[key].time !== Game.time) {
+        global[key] = { time: Game.time, map: Object.create(null) };
+    }
+    return global[key].map;
+};
+
 const getHomeSpawnBusyTicks = (creep) => {
     if (!creep || !creep.memory || typeof getRoomCache !== 'function') return 0;
 
     const homeRoomName = creep.memory.room || creep.memory.homeRoom;
     if (!homeRoomName) return 0;
 
+    const byRoom = getTickCache('_spawnBusyTicksByRoomCache');
+    if (byRoom[homeRoomName] !== undefined) return byRoom[homeRoomName];
+
     const room = Game.rooms[homeRoomName];
-    if (!room) return 0;
+    if (!room) {
+        byRoom[homeRoomName] = 0;
+        return 0;
+    }
 
     const cache = getRoomCache(room);
     const spawns = (cache && cache.myStructuresByType && cache.myStructuresByType[STRUCTURE_SPAWN]) || [];
-    if (!spawns.length) return 0;
+    if (!spawns.length) {
+        byRoom[homeRoomName] = 0;
+        return 0;
+    }
 
     let minRemaining = Infinity;
     let hasBusy = false;
@@ -30,7 +46,9 @@ const getHomeSpawnBusyTicks = (creep) => {
         if (remaining < minRemaining) minRemaining = remaining;
     }
 
-    return hasBusy ? minRemaining : 0;
+    const value = hasBusy ? minRemaining : 0;
+    byRoom[homeRoomName] = value;
+    return value;
 };
 
 
@@ -39,8 +57,12 @@ const shouldIgnoreForNearDeath = (creep, role, leadTicks) => {
     if (role !== 'miner' && role !== 'hauler') return false;
     if (!Number.isFinite(creep.ticksToLive)) return false;
 
-    const spawnTime = creep.body ? creep.body.length * 3 : 0;
     const lead = getNearDeathLeadTicks(leadTicks);
+    const key = `${creep.name}|${role}|${lead}`;
+    const nearDeathCache = getTickCache('_spawnNearDeathCache');
+    if (nearDeathCache[key] !== undefined) return nearDeathCache[key];
+
+    const spawnTime = creep.body ? creep.body.length * 3 : 0;
     const spawnBusyTicks = getHomeSpawnBusyTicks(creep);
     const threshold = spawnTime + lead + spawnBusyTicks;
 
@@ -50,7 +72,9 @@ const shouldIgnoreForNearDeath = (creep, role, leadTicks) => {
         `spawnTime=${spawnTime} leadTicks=${lead} spawnBusy=${spawnBusyTicks} threshold=${threshold}`
     );
 
-    return creep.ticksToLive <= threshold;
+    const shouldIgnore = creep.ticksToLive <= threshold;
+    nearDeathCache[key] = shouldIgnore;
+    return shouldIgnore;
 };
 
 const getSpawningNamesCached = (spawningNamesFallback) => {
@@ -62,11 +86,17 @@ const getSpawningNamesCached = (spawningNamesFallback) => {
     for (const rn in Game.rooms) {
         const room = Game.rooms[rn];
         if (!room.controller || !room.controller.my) continue;
-        const spawns = room.find(FIND_MY_SPAWNS);
+        let spawns = null;
+        if (typeof getRoomCache === 'function') {
+            const cache = getRoomCache(room);
+            spawns = (cache && cache.myStructuresByType && cache.myStructuresByType[STRUCTURE_SPAWN]) || null;
+        }
+        if (!spawns) spawns = room.find(FIND_MY_SPAWNS);
         for (const spawn of spawns) {
-            if (spawn.spawning) names.add(spawn.spawning.name);
+            if (spawn && spawn.spawning) names.add(spawn.spawning.name);
         }
     }
+    global._spawningNamesCache = { time: Game.time, names };
     return names;
 };
 
@@ -111,7 +141,10 @@ const spawnCensus = {
                 const index = Memory.rooms[home].spawnTicketsByKey;
                 const list = index[contractId];
                 if (list && list.length > 0) {
-                    index[contractId] = list.filter(tid => tid !== ticketId);
+                    for (let i = list.length - 1; i >= 0; i--) {
+                        if (list[i] === ticketId) list.splice(i, 1);
+                    }
+                    if (list.length === 0) delete index[contractId];
                 }
             }
         };

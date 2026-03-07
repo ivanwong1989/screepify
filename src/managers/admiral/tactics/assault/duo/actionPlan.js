@@ -94,8 +94,8 @@ function buildLeaderActions(creep, buddy, target, suppressCombat) {
     const actions = [];
 
     // Better healing: self vs buddy based on urgency
-    const inDanger = hasAdjacentHostile(creep);
-    const healTarget = chooseBestHealTarget(creep, buddy, null, inDanger);
+    //const inDanger = hasAdjacentHostile(creep); always preheal
+    const healTarget = chooseBestHealTarget(creep, buddy, null, true);
     pushHealAction(actions, creep, healTarget);
 
     if (suppressCombat || !target) return actions;
@@ -113,8 +113,8 @@ function buildLeaderActions(creep, buddy, target, suppressCombat) {
 function buildSupportActions(creep, leader, target, suppressCombat) {
     const actions = [];
 
-    const inDanger = hasAdjacentHostile(creep);
-    const healTarget = chooseBestHealTarget(creep, leader, null, inDanger);
+    //const inDanger = hasAdjacentHostile(creep);  We want to always pre-heal
+    const healTarget = chooseBestHealTarget(creep, leader, null, true);
     pushHealAction(actions, creep, healTarget);
 
     if (suppressCombat) return actions;

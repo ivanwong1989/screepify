@@ -565,7 +565,7 @@ function decideAnchor(leader, support, runtime, flags, ao, target, opts) {
     // If our *current tile* is inside the combatMatrix predictive aura / danger band (e.g. +20),
     // we should prefer kiting outward (favor r>=4 for ranged) rather than closing to r=3.
     // If not inside that aura, we should close to r=3 so we can actually shoot.
-    const kiteCostThreshold = Number.isFinite(opts.kiteCostThreshold) ? opts.kiteCostThreshold : 20;
+    const kiteCostThreshold = Number.isFinite(opts.kiteCostThreshold) ? opts.kiteCostThreshold : 60;
     const myTileCostRaw = costs.get(leader.pos.x, leader.pos.y);
     const myTileCost = (myTileCostRaw === 255) ? 254 : myTileCostRaw;
     const kiteLikely = (rr.style === 'ranged') && !!(targetPos && targetPos.roomName === leader.room.name) && (myTileCost >= kiteCostThreshold);
@@ -818,7 +818,7 @@ if (!disableCone && rangeHasTarget && targetPos) {
 
                 if (shouldGate) {
                     // Huge penalty (acts like a gate unless there are literally no options)
-                    const wg = (weights && Number.isFinite(weights.closeGate)) ? weights.closeGate : 5000;
+                    const wg = (weights && Number.isFinite(weights.closeGate)) ? weights.closeGate : 90;
                     closeRiskPenalty += wg;
                     stats.closeGate += 1;
                 }
