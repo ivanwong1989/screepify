@@ -799,7 +799,7 @@ module.exports = {
      * Mission names are route+slot (`...:s0`, `...:s1`, ...) so each slot can be tracked independently.
      */
     addLogisticsMissionsForRoute: function(activeMissions, coveredRouteSlots, source, target, isEmergency, type, resourceType, carryParts, explicitNeed) {
-        // If target cannot accept this resource, do not schedule the route.
+        // If the target is full... no need to schedule this mission....
         const rt = resourceType || RESOURCE_ENERGY;
         if (target && target.store && target.store.getFreeCapacity(rt) <= 0) return;
         
@@ -809,18 +809,89 @@ module.exports = {
         if (slots <= 0) return;
 
         const cap = Math.max(50, carryParts * 50);
-        const policy = (typeof this._getRoutePolicy === 'function') ? this._getRoutePolicy(type, resourceType, cap) : null;
+        const policy = (typeof this._getRoutePolicy === 'function')
+            ? this._getRoutePolicy(type, resourceType, cap)
+            : null;
         const allowPartial = !!(policy && policy.allowPartial);
+        const isNonEnergy = !!(resourceType && resourceType !== RESOURCE_ENERGY);
 
-        // Split explicit need across slots so each creep gets a bounded hint.
-        const hasNeed = (explicitNeed !== undefined && explicitNeed !== null && Number.isFinite(Number(explicitNeed)) && Number(explicitNeed) > 0);
+        // Figure out how much is currently visible / desired on this route.
+        let visibleAmount = 0;
+        if (explicitNeed !== undefined && explicitNeed !== null) {
+            visibleAmount = Math.max(0, Math.floor(Number(explicitNeed)) || 0);
+        } else if (source && source.store) {
+            visibleAmount = source.store[rt] || 0;
+        } else if (source && source.amount !== undefined && source.amount !== null) {
+            visibleAmount = source.amount || 0;
+        }
+
+        if (visibleAmount <= 0) return;
+
+        // Reserve amount for already-existing slots first.
+        // This is the missing behavior: if s0 is already active/covered,
+        // later slot creation should see less remaining amount.
+        let remaining = visibleAmount;
+
+        for (let i = 0; i < slots; i += 1) {
+            const missionName = `${routeKey}:s${i}`;
+            if (!activeMissions.has(missionName) && !coveredRouteSlots.has(missionName)) continue;
+
+            let reserved = cap;
+            const existing = activeMissions.get(missionName);
+            if (
+                existing &&
+                existing.data &&
+                existing.data.amountHint !== undefined &&
+                existing.data.amountHint !== null &&
+                Number.isFinite(Number(existing.data.amountHint))
+            ) {
+                reserved = Math.max(0, Math.floor(Number(existing.data.amountHint)));
+            }
+
+            remaining = Math.max(0, remaining - reserved);
+        }
+
+        // Preserve explicitNeed splitting behavior for callers that use it.
+        const hasNeed =
+            explicitNeed !== undefined &&
+            explicitNeed !== null &&
+            Number.isFinite(Number(explicitNeed)) &&
+            Number(explicitNeed) > 0;
+
         const totalNeed = hasNeed ? Math.floor(Number(explicitNeed)) : null;
         const perSlotNeed = hasNeed ? Math.max(1, Math.ceil(totalNeed / slots)) : null;
+
+        // Reuse existing age override concept for small tails.
+        const ageTicks =
+            (!isNonEnergy && typeof this._getRouteAgeTicks === 'function')
+                ? this._getRouteAgeTicks(routeKey, visibleAmount)
+                : 0;
 
         for (let i = 0; i < slots; i += 1) {
             const missionName = `${routeKey}:s${i}`;
             if (activeMissions.has(missionName)) continue;
             if (coveredRouteSlots.has(missionName)) continue;
+            if (remaining <= 0) break;
+
+            // For normal energy routes that do NOT allow partial servicing,
+            // don't create a new extra slot for a tiny leftover tail unless age overrides it.
+            if (
+                !hasNeed &&
+                !isNonEnergy &&
+                policy &&
+                !policy.allowPartial &&
+                remaining < policy.minAmount &&
+                ageTicks < policy.maxAgeTicks
+            ) {
+                break;
+            }
+
+            const amountHint = hasNeed
+                ? Math.max(0, Math.min(perSlotNeed, remaining))
+                : Math.max(0, Math.min(cap, remaining));
+
+            if (amountHint <= 0) break;
+
             activeMissions.set(missionName, {
                 name: missionName,
                 type: 'transfer',
@@ -830,11 +901,14 @@ module.exports = {
                     sourceId: source.id,
                     resourceType: resourceType,
                     allowPartial: allowPartial,
-                    amountHint: (hasNeed ? Math.max(0, Math.min(perSlotNeed, totalNeed - (i * perSlotNeed))) : null)
+                    amountHint: amountHint
                 },
                 requirements: { archetype: 'hauler', count: 1, spawn: false },
                 priority: this.getLogisticsPriority(type, target, isEmergency)
             });
+
+            coveredRouteSlots.add(missionName);
+            remaining -= amountHint;
         }
     },
 

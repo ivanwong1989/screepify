@@ -3,6 +3,20 @@ const managerTerminal = require('managers_structures_manager.terminal');
 const heap = require('utils_heap');
 
 module.exports = {
+    /**
+     * Build all hauling/transfer missions for the current tick.
+     *
+     * High-level flow:
+     * 1) Reconstruct currently active haul routes from creep memory.
+     * 2) Add urgent refill missions (spawn/extension/tower/lab energy).
+     * 3) Add inflow routes (dropped energy, scavenge, mining containers, links, consolidation).
+     * 4) Apply terminal energy target logic.
+     * 5) Apply terminal mineral stock-target plan (fill/flush/hold with deadband).
+     * 6) Push generated missions into the shared `missions` array.
+     *
+     * This function intentionally does all decisions per tick from live state; route "age"
+     * is kept in heap (volatile) to bias scheduling without growing persistent Memory.
+     */
     generate: function(room, intel, context, missions) {
 
         /*
@@ -21,10 +35,12 @@ module.exports = {
 
         if (!enableHaulers) return;
 
+        // Active mission set for this tick. Includes reconstructed + newly generated missions.
         const activeMissions = new Map();
         const coveredSources = new Set();
         const coveredSourceResources = new Set();
         const coveredTargets = new Set();
+        // Slot-aware route coverage (`haul:source:target[:resource]:sN`) to prevent duplicate scheduling.
         const coveredRouteSlots = new Set();
 
         const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
@@ -35,6 +51,7 @@ module.exports = {
         const terminal = room.terminal;
         const spawns = intel.structures[STRUCTURE_SPAWN] || [];
 
+        // Soft cap keeps hauler sizing in a practical range even if budget allows larger bodies.
         const MAX_HAULER_CARRY_PARTS = 25;
 
         const haulerStats = managerSpawner.checkBody('hauler', budget);
@@ -46,7 +63,7 @@ module.exports = {
 
         const links = intel.structures[STRUCTURE_LINK] || [];
         // --- Per-tick caches (behavior-preserving) ---
-        // Avoid repeated Game.getObjectById and repeated range computations within this tick.
+        // Local object and distance caches reduce CPU churn from repeated lookups/range calls.
         const _idCache = new Map();
         const _cacheObj = (o) => { if (o && o.id) _idCache.set(o.id, o); };
         const _cacheList = (list) => {
@@ -68,7 +85,7 @@ module.exports = {
         _cacheList(intel.ruins);
         _cacheList(intel.tombstones);
 
-        // Range caches for this tick.
+        // Range cache key: `${source.id}:${target.id}` used by slot sizing.
         this._routeDistCache = new Map();
 
         const _posKey = (pos) => (pos ? `${pos.roomName}:${pos.x}:${pos.y}` : '');
@@ -87,8 +104,8 @@ module.exports = {
 
 
         // --- Route age cache ---
-        // This is NOT worth putting in persistent Memory (serialization cost + memory bloat).
-        // Use heap (volatile) via utils/heap so it survives module reload patterns and stays consistent.
+        // Tracks "how long a route has been waiting with resources present".
+        // Stored in heap (not Memory) to avoid serialization cost and long-term bloat.
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
         // Store shape:
@@ -136,7 +153,7 @@ module.exports = {
 
         // t = mark('routeAge-prune', t);
 
-        // Attach to module instance so other methods can use them without refactoring callsites.
+        // Helpers are attached on `this` so downstream methods can use them with minimal refactor.
         this._getRoutePolicy = (type, resourceType, cap) => {
             // Non-energy should generally be moved immediately.
             if (resourceType && resourceType !== RESOURCE_ENERGY) return { minAmount: 1, maxAgeTicks: 0, allowPartial: true };
@@ -162,7 +179,7 @@ module.exports = {
             return Math.max(0, Game.time - routeAgeMem[routeKey]);
         };
 
-        // 1. Identify active hauling missions
+        // 1) Reconstruct active hauling missions from creep memory so we preserve continuity.
         intel.myCreeps.forEach(c => {
             if (c.memory.missionName && c.memory.missionName.startsWith('haul:')) {
                 const parts = c.memory.missionName.split(':');
@@ -203,6 +220,7 @@ module.exports = {
                                 ? c.memory._haulHint
                                 : null;
 
+                        // Preserve per-mission transfer hint so each slot can avoid over-pulling.
                         const mission = {
                             name: fullMissionName,
                             type: 'transfer',
@@ -228,9 +246,8 @@ module.exports = {
 
         // t = mark('active-scan', t);
 
-        // 2. Generate New Missions
-        // refill-sinks: avoid rebuilding large arrays + extra filter passes every tick.
-        // Keep exact behavior, but do it in one pass per structure list and reserve targets for THIS tick.
+        // 2) Generate new missions
+        // Refill sinks in one pass and reserve target ids immediately to avoid duplicates this tick.
         const tryAddSupply = (list) => {
             if (!Array.isArray(list) || list.length === 0) return;
             for (let i = 0; i < list.length; i++) {
@@ -395,13 +412,10 @@ module.exports = {
         }
 
 
-        // Terminal stockTargets can create "ping-pong" near the target (flush then refill).
-        // Fix: add per-mineral MODE LOCK + per-tick RESERVATIONS so we never schedule both directions
-        // and never overshoot targets due to multiple haulers/slots.
-        //
-        // Notes:
-        // - This only affects terminal <-> storage decisions for minerals (and later could be reused for terminal energy target).
-        // - Energy logistics elsewhere remains untouched.
+        // Terminal minerals use a stateless planning pass:
+        // - compute fill/flush/hold around target with deadband
+        // - cap terminal fill by per-tick remaining need to avoid overshoot across slots
+        // - keep terminal_stock as single-servicer (see getHaulSlotsForRoute)
         const haulCap = Math.max(50, carryParts * 50);
 
         // Stateless terminal plan (target-aware) using a percentage deadband.
@@ -413,7 +427,7 @@ module.exports = {
         // Deadband: clamp(ceil(target * 5%), 50, 2000)
         const getDeadband = (tgt) => clamp(Math.ceil(tgt * 0.05), 50, 2000);
 
-        // Build a per-mineral terminal plan (stateless).
+        // Build per-mineral terminal intent:
         // - targeted (tgt > 0): FILL / FLUSH / HOLD around target with deadband
         // - untargeted (tgt <= 0): flush_all if terminal has any
         const terminalPlan = {};
@@ -448,10 +462,7 @@ module.exports = {
 
         // t = mark('terminal-plan', t);
 
-        // Decide desired sink for a mineral based on the terminal plan.
-        // - If plan says FILL: sink=terminal (but we will only source from storage)
-        // - Else: prefer storage (hold zone, or while flushing)
-
+        // Decide where each mineral should end up this tick.
         // - If plan says FILL: sink=terminal, with remaining need
         // - Else: prefer storage (hold zone, or while flushing)
         const decideMineralSink = (resourceType, source) => {
@@ -487,7 +498,7 @@ module.exports = {
 
 
 
-        // 1) Flush excess/untargeted minerals OUT of terminal into storage (only when plan says FLUSH/FLUSH_ALL).
+        // 1) Flush excess/untargeted minerals from terminal into storage.
         if (hasTerminal && hasStorage) {
             for (const resourceType in terminalPlan) {
                 const plan = terminalPlan[resourceType];
@@ -516,9 +527,8 @@ module.exports = {
 
         // t = mark('terminal-flush', t);
 
-        // 2) Consolidate minerals from structures to the chosen sink per mineral (policy-driven).
-        // IMPORTANT: if filling terminal, cap by remaining need (per-tick fillRemaining) so we don't overshoot.
-        // Efficiency: avoid Object.values() allocations, avoid nested loops on stores that only contain energy/empty.
+        // 2) Consolidate minerals from structures to the chosen sink.
+        // If filling terminal, consume from `fillRemaining` so total scheduled intake stays bounded.
         const hasNonEnergy = (store) => {
             if (!store) return false;
             // Fast path for Store API
@@ -536,8 +546,7 @@ module.exports = {
             return false;
         };
 
-        // If your intel.structures never duplicates the same object across lists, we can skip seenStructures.
-        // Keep a tiny guard anyway (low overhead vs unexpected dupes).
+        // Guard against accidental duplicate objects across structure lists.
         const seenStructures = Object.create(null);
 
         const structsByType = intel.structures || {};
@@ -545,7 +554,7 @@ module.exports = {
             const list = structsByType[stype];
             if (!Array.isArray(list) || list.length === 0) continue;
 
-            // Skip whole lists we never want to scan for minerals.
+            // Skip lists handled by dedicated systems/logic.
             if (stype === STRUCTURE_LAB) continue;      // labs generate lab haul missions elsewhere
             if (stype === STRUCTURE_TERMINAL) continue; // terminal handled by terminalPlan (avoid hold->storage drain)
 
@@ -602,7 +611,7 @@ module.exports = {
 
         // t = mark('structure-minerals', t);
 
-        // Dropped minerals
+        // 3) Dropped minerals
         intel.dropped.forEach(source => {
             if (!source || source.resourceType === RESOURCE_ENERGY || source.amount <= 0) return;
 
@@ -631,7 +640,7 @@ module.exports = {
             }
         });
 
-        // Ruins + tombstones minerals
+        // 4) Ruins + tombstones minerals
         const scavengeStores = [
             ...(intel.ruins || []),
             ...(intel.tombstones || [])
@@ -673,6 +682,7 @@ module.exports = {
 
         // t = mark('scavenge-minerals', t);
 
+        // 5) Energy consolidation/link drain into storage when capacity exists.
         if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
             nonMiningContainers.filter(c => c.store[RESOURCE_ENERGY] >= 500 && c.id !== intel.controllerContainerId).forEach(source => {
                 this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, source, storage, isEmergency, 'consolidation', RESOURCE_ENERGY, carryParts);
@@ -689,6 +699,22 @@ module.exports = {
         //console.log(`[logi cpu] ${room.name} total ${(Game.cpu.getUsed() - t0).toFixed(2)}`);
     },
 
+    /**
+     * Estimate concurrent hauler slots (0..3) needed for one route.
+     *
+     * Inputs:
+     * - source/target: pickup and dropoff objects
+     * - resourceType: null/undefined means energy by default
+     * - carryParts: carry body parts for this room's hauler design
+     * - explicitNeed: optional bounded quantity requested by caller
+     * - type: route class (`mining`, `scavenge`, `terminal_stock`, ...)
+     * - routeKey: stable key for age gating
+     *
+     * Behavior:
+     * - terminal_stock is forced to one hauler to avoid contention.
+     * - energy routes are gated by minAmount + age override (route policy).
+     * - non-energy generally moves immediately.
+     */
     getHaulSlotsForRoute: function(source, target, resourceType, carryParts, explicitNeed, type, routeKey) {
         const cap = Math.max(50, carryParts * 50);
         let amount = 0;
@@ -719,7 +745,7 @@ module.exports = {
         }
 
 
-        // Scalable gating (energy only): bounded min threshold + age override.
+        // Energy route gating: allow small amounts only after they've aged long enough.
         if (!isNonEnergy && typeof this._getRoutePolicy === 'function' && typeof this._getRouteAgeTicks === 'function') {
             const policy = this._getRoutePolicy(type, resourceType, cap);
             const ageTicks = this._getRouteAgeTicks(routeKey, amount);
@@ -749,14 +775,8 @@ module.exports = {
         slots = Math.max(slots, 1);
         slots = Math.min(Math.max(slots, 0), 3);
 
-        // Surgical anti-oversubscription guard for queued energy hauling:
-        // if an extra slot would only service a tiny tail amount, keep that
-        // hauler free for more valuable work (extensions/spawns/towers/etc).
-        //
-        // Apply only when:
-        // - this is NOT an explicitNeed route (those already split via amountHint)
-        // - energy routes only
-        // - route policy says we do NOT want partial-style servicing
+        // Anti-oversubscription: trim extra slots if they only cover a tiny remainder
+        // and policy prefers batching over partial servicing.
         if (!isNonEnergy && (explicitNeed === undefined || explicitNeed === null) && slots > 1 &&
             typeof this._getRoutePolicy === 'function' && typeof this._getRouteAgeTicks === 'function') {
             const policy = this._getRoutePolicy(type, resourceType, cap);
@@ -774,8 +794,12 @@ module.exports = {
         return slots;
     },
 
+    /**
+     * Add one or more slot-scoped haul missions for a route.
+     * Mission names are route+slot (`...:s0`, `...:s1`, ...) so each slot can be tracked independently.
+     */
     addLogisticsMissionsForRoute: function(activeMissions, coveredRouteSlots, source, target, isEmergency, type, resourceType, carryParts, explicitNeed) {
-        // If the target is full... no need to scehdule this mission....
+        // If the target is full... no need to schedule this mission....
         const rt = resourceType || RESOURCE_ENERGY;
         if (target && target.store && target.store.getFreeCapacity(rt) <= 0) return;
         
@@ -785,18 +809,89 @@ module.exports = {
         if (slots <= 0) return;
 
         const cap = Math.max(50, carryParts * 50);
-        const policy = (typeof this._getRoutePolicy === 'function') ? this._getRoutePolicy(type, resourceType, cap) : null;
+        const policy = (typeof this._getRoutePolicy === 'function')
+            ? this._getRoutePolicy(type, resourceType, cap)
+            : null;
         const allowPartial = !!(policy && policy.allowPartial);
+        const isNonEnergy = !!(resourceType && resourceType !== RESOURCE_ENERGY);
 
-        // If an explicitNeed is provided, distribute it across slots so multiple haulers don't each pull the full need.
-        const hasNeed = (explicitNeed !== undefined && explicitNeed !== null && Number.isFinite(Number(explicitNeed)) && Number(explicitNeed) > 0);
+        // Figure out how much is currently visible / desired on this route.
+        let visibleAmount = 0;
+        if (explicitNeed !== undefined && explicitNeed !== null) {
+            visibleAmount = Math.max(0, Math.floor(Number(explicitNeed)) || 0);
+        } else if (source && source.store) {
+            visibleAmount = source.store[rt] || 0;
+        } else if (source && source.amount !== undefined && source.amount !== null) {
+            visibleAmount = source.amount || 0;
+        }
+
+        if (visibleAmount <= 0) return;
+
+        // Reserve amount for already-existing slots first.
+        // This is the missing behavior: if s0 is already active/covered,
+        // later slot creation should see less remaining amount.
+        let remaining = visibleAmount;
+
+        for (let i = 0; i < slots; i += 1) {
+            const missionName = `${routeKey}:s${i}`;
+            if (!activeMissions.has(missionName) && !coveredRouteSlots.has(missionName)) continue;
+
+            let reserved = cap;
+            const existing = activeMissions.get(missionName);
+            if (
+                existing &&
+                existing.data &&
+                existing.data.amountHint !== undefined &&
+                existing.data.amountHint !== null &&
+                Number.isFinite(Number(existing.data.amountHint))
+            ) {
+                reserved = Math.max(0, Math.floor(Number(existing.data.amountHint)));
+            }
+
+            remaining = Math.max(0, remaining - reserved);
+        }
+
+        // Preserve explicitNeed splitting behavior for callers that use it.
+        const hasNeed =
+            explicitNeed !== undefined &&
+            explicitNeed !== null &&
+            Number.isFinite(Number(explicitNeed)) &&
+            Number(explicitNeed) > 0;
+
         const totalNeed = hasNeed ? Math.floor(Number(explicitNeed)) : null;
         const perSlotNeed = hasNeed ? Math.max(1, Math.ceil(totalNeed / slots)) : null;
+
+        // Reuse existing age override concept for small tails.
+        const ageTicks =
+            (!isNonEnergy && typeof this._getRouteAgeTicks === 'function')
+                ? this._getRouteAgeTicks(routeKey, visibleAmount)
+                : 0;
 
         for (let i = 0; i < slots; i += 1) {
             const missionName = `${routeKey}:s${i}`;
             if (activeMissions.has(missionName)) continue;
             if (coveredRouteSlots.has(missionName)) continue;
+            if (remaining <= 0) break;
+
+            // For normal energy routes that do NOT allow partial servicing,
+            // don't create a new extra slot for a tiny leftover tail unless age overrides it.
+            if (
+                !hasNeed &&
+                !isNonEnergy &&
+                policy &&
+                !policy.allowPartial &&
+                remaining < policy.minAmount &&
+                ageTicks < policy.maxAgeTicks
+            ) {
+                break;
+            }
+
+            const amountHint = hasNeed
+                ? Math.max(0, Math.min(perSlotNeed, remaining))
+                : Math.max(0, Math.min(cap, remaining));
+
+            if (amountHint <= 0) break;
+
             activeMissions.set(missionName, {
                 name: missionName,
                 type: 'transfer',
@@ -806,14 +901,21 @@ module.exports = {
                     sourceId: source.id,
                     resourceType: resourceType,
                     allowPartial: allowPartial,
-                    amountHint: (hasNeed ? Math.max(0, Math.min(perSlotNeed, totalNeed - (i * perSlotNeed))) : null)
+                    amountHint: amountHint
                 },
                 requirements: { archetype: 'hauler', count: 1, spawn: false },
                 priority: this.getLogisticsPriority(type, target, isEmergency)
             });
+
+            coveredRouteSlots.add(missionName);
+            remaining -= amountHint;
         }
     },
 
+    /**
+     * Add a generic "supply this structure with energy" mission.
+     * Source is selected by the transfer behavior using mode='supply'.
+     */
     addSupplyMission: function(activeMissions, target, isEmergency) {
         const missionName = `supply:${target.id}`;
         if (activeMissions.has(missionName)) return;
@@ -828,6 +930,12 @@ module.exports = {
         });
     },
 
+    /**
+     * Priority model:
+     * - `outflow` (spawn/extension/tower refill) is highest; boosted in emergency.
+     * - throughput helpers (`link_out`, `scavenge`, `drop_mining`) are mid-tier.
+     * - bulk background work (`mining`, `terminal_stock`, consolidation) is lower.
+     */
     getLogisticsPriority: function(type, target, isEmergency) {
         if (type === 'outflow') {
             if (target.structureType === STRUCTURE_TOWER) return isEmergency ? 950 : 95;
