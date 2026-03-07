@@ -404,7 +404,8 @@ var roleUniversal = {
 
         // Opportunistic micro-repair while traveling (does NOT stop movement)
         if (task.action !== 'repair' && task.action !== 'harvest') {
-            tryOpportunisticRepair(creep, task);
+            //tryOpportunisticRepair(creep, task);
+            ;
         }
 
         switch(task.action) {
@@ -493,7 +494,7 @@ var roleUniversal = {
                 const res = creep.repair(target);
                 if (res === ERR_NOT_IN_RANGE) {
                     // Still traveling to the real repair target — allow opportunistic repair en route.
-                    tryOpportunisticRepair(creep, task);
+                    //tryOpportunisticRepair(creep, task);
                     moveToTarget(creep, target, task.range);
                 }
                 break;
