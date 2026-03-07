@@ -258,6 +258,15 @@ function getOpportunisticDesiredHits(room, st) {
     return st.hitsMax;
 }
 
+function getCreepHashSeed(creep) {
+    if (!creep || !creep.name) return 0;
+    let hash = 0;
+    for (let i = 0; i < creep.name.length; i++) {
+        hash = ((hash * 31) + creep.name.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash);
+}
+
 function tryOpportunisticRepair(creep, currentTask) {
     if (!creep || creep.spawning) return false;
 
@@ -282,6 +291,18 @@ function tryOpportunisticRepair(creep, currentTask) {
     // Throttle: at most once per tick (in case run() gets called twice)
     if (creep._oppRepairTick === Game.time) return false;
     creep._oppRepairTick = Game.time;
+
+    // Heavy scan throttle: per-creep stagger + lower frequency (~10-20 ticks).
+    const mem = creep.memory;
+    if (!Number.isFinite(mem._oppRepairSeed)) {
+        mem._oppRepairSeed = getCreepHashSeed(creep) % 97;
+    }
+    const seed = mem._oppRepairSeed;
+    if (!Number.isFinite(mem._oppRepairNextScan)) {
+        mem._oppRepairNextScan = Game.time + (seed % 13);
+    }
+    if (Game.time < mem._oppRepairNextScan) return false;
+    mem._oppRepairNextScan = Game.time + 10 + ((Game.time + seed) % 11);
 
     // Pick nearby damaged structures
     // Prefer roomCache (avoids fresh room.find / findInRange scans).
@@ -404,8 +425,7 @@ var roleUniversal = {
 
         // Opportunistic micro-repair while traveling (does NOT stop movement)
         if (task.action !== 'repair' && task.action !== 'harvest') {
-            //tryOpportunisticRepair(creep, task);
-            ;
+            tryOpportunisticRepair(creep, task);
         }
 
         switch(task.action) {
@@ -494,7 +514,7 @@ var roleUniversal = {
                 const res = creep.repair(target);
                 if (res === ERR_NOT_IN_RANGE) {
                     // Still traveling to the real repair target — allow opportunistic repair en route.
-                    //tryOpportunisticRepair(creep, task);
+                    tryOpportunisticRepair(creep, task);
                     moveToTarget(creep, target, task.range);
                 }
                 break;
