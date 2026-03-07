@@ -370,12 +370,18 @@ const assignments = allocateCreeps(room, missions);
                     const numberThreshold = Number.isFinite(+v.combatNumberThreshold)
                         ? Math.max(0, Math.min(254, +v.combatNumberThreshold))
                         : 120;
+                    const showHeatmap = !!v.combatHeatmap;
 
                     // NEW knobs (optional)
-                    const showLowNumbers = (v.combatLowNumbers == null) ? true : !!v.combatLowNumbers;
+                    const showLowNumbers = (v.combatLowNumbers == null) ? false : !!v.combatLowNumbers;
                     const lowNumberThreshold = Number.isFinite(+v.combatLowNumberThreshold)
                         ? Math.max(0, Math.min(254, +v.combatLowNumberThreshold))
                         : 3;
+                    const showHostileThreat = (v.combatHostileThreat == null) ? true : !!v.combatHostileThreat;
+                    const showTowerDanger = (v.combatTowerDanger == null) ? true : !!v.combatTowerDanger;
+                    const towerDangerRange = Number.isFinite(+v.combatTowerDangerRange)
+                        ? Math.max(1, Math.min(20, +v.combatTowerDangerRange))
+                        : 8;
 
                     function parsePosString(s) {
                         // accepts "W8N3:13,16"
@@ -438,11 +444,15 @@ const assignments = allocateCreeps(room, missions);
                                 step,
                                 minCost,
                                 legend: true,
+                                showHeatmap,
                                 showNumbers,
                                 numberThreshold,
 
                                 showLowNumbers,
                                 lowNumberThreshold,
+                                showHostileThreat,
+                                showTowerDanger,
+                                towerDangerRange,
 
                                 anchorPositions: anchorsByRoom[aoRoomName] || []
                             });
