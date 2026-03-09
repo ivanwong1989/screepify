@@ -258,13 +258,34 @@ function getOpportunisticDesiredHits(room, st) {
     return st.hitsMax;
 }
 
+function getOpportunisticRoomTargets(roomName) {
+    if (!roomName) return null;
+    let store;
+    try {
+        store = heap && heap.getStore ? heap.getStore('overseerOpportunisticRepair') : null;
+    } catch (e) {
+        store = null;
+    }
+    if (!store || !store.rooms) return null;
+    const roomStore = store.rooms[roomName];
+    if (!roomStore || !Array.isArray(roomStore.targets)) return null;
+    return roomStore.targets;
+}
+
 function getCreepHashSeed(creep) {
     if (!creep || !creep.name) return 0;
-    let hash = 0;
-    for (let i = 0; i < creep.name.length; i++) {
-        hash = ((hash * 31) + creep.name.charCodeAt(i)) | 0;
+    let h = 0;
+    const name = creep.name;
+    for (let i = 0; i < name.length; i++) {
+        h = ((h * 31) + name.charCodeAt(i)) | 0;
     }
-    return Math.abs(hash);
+    return Math.abs(h);
+}
+
+function shouldTryOpportunisticRepairThisTick(creep) {
+    const seed = getCreepHashSeed(creep) % 10;
+    // Deterministic 30% tick gate (3/10).
+    return ((Game.time + seed) % 10) < 3;
 }
 
 function tryOpportunisticRepair(creep, currentTask) {
@@ -292,62 +313,34 @@ function tryOpportunisticRepair(creep, currentTask) {
     if (creep._oppRepairTick === Game.time) return false;
     creep._oppRepairTick = Game.time;
 
-    // Heavy scan throttle: per-creep stagger + lower frequency (~10-20 ticks).
-    const mem = creep.memory;
-    if (!Number.isFinite(mem._oppRepairSeed)) {
-        mem._oppRepairSeed = getCreepHashSeed(creep) % 97;
-    }
-    const seed = mem._oppRepairSeed;
-    if (!Number.isFinite(mem._oppRepairNextScan)) {
-        mem._oppRepairNextScan = Game.time + (seed % 13);
-    }
-    if (Game.time < mem._oppRepairNextScan) return false;
-    mem._oppRepairNextScan = Game.time + 10 + ((Game.time + seed) % 11);
+    // Cheap stagger gate to spread CPU: only ~30% of creeps evaluate each tick.
+    if (!shouldTryOpportunisticRepairThisTick(creep)) return false;
 
-    // Pick nearby damaged structures
-    // Prefer roomCache (avoids fresh room.find / findInRange scans).
-    let candidates;
-    if (room && global.getRoomCache) {
-        const cache = global.getRoomCache(room);
-        const structs = cache && cache.structures;
-        if (structs && structs.length) {
-            candidates = structs.filter((st) => {
-                if (!st || !st.hitsMax) return false;
+    const targets = getOpportunisticRoomTargets(room.name);
+    if (!targets || targets.length === 0) return false;
 
-                // Only consider nearby (match old findInRange radius=3)
-                if (!st.pos || st.pos.getRangeTo(creep.pos) > 3) return false;
+    let target = null;
+    let bestRatio = 1;
+    for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        if (!t || t.roomName !== room.name) continue;
+        if (Math.abs(t.x - creep.pos.x) > 3 || Math.abs(t.y - creep.pos.y) > 3) continue;
+        if (!creep.pos.inRangeTo(t.x, t.y, 3)) continue;
 
-                const desired = getOpportunisticDesiredHits(room, st);
-                if (desired <= 0) return false;          // no policy for fortifications => skip
-                if (st.hits >= desired) return false;    // already at/above desired cap
+        const st = Game.getObjectById(t.id);
+        if (!st || !st.hitsMax) continue;
 
-                // Skip if only tiny scratch (relative to desired cap)
-                return st.hits < (desired * 0.95);
-            });
+        const desired = Number.isFinite(t.desiredHits) ? t.desiredHits : getOpportunisticDesiredHits(room, st);
+        if (desired <= 0 || st.hits >= desired || st.hits >= (desired * 0.95)) continue;
+
+        const ratio = st.hits / desired;
+        if (ratio < bestRatio) {
+            bestRatio = ratio;
+            target = st;
         }
     }
-    if (!candidates) {
-        candidates = creep.pos.findInRange(FIND_STRUCTURES, 3, {
-            filter: (st) => {
-                if (!st || !st.hitsMax) return false;
+    if (!target) return false;
 
-                const desired = getOpportunisticDesiredHits(room, st);
-                if (desired <= 0) return false;
-                if (st.hits >= desired) return false;
-
-                return st.hits < (desired * 0.85);
-            }
-        });
-    }
-    if (!candidates || candidates.length === 0) return false;
-
-    candidates.sort((a, b) => {
-        const da = getOpportunisticDesiredHits(room, a) || a.hitsMax;
-        const db = getOpportunisticDesiredHits(room, b) || b.hitsMax;
-        return (a.hits / da) - (b.hits / db);
-    });
-
-    const target = candidates[0];
     const res = creep.repair(target);
     return res === OK;
 }

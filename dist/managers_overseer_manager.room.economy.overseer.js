@@ -1,5 +1,6 @@
 const overseerIntel = require('managers_overseer_intel_overseer.intel');
 const overseerResourceLedger = require('managers_overseer_intel_overseer.resourceLedger');
+const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
 const overseerMissions = require('managers_overseer_missions_overseer.missions');
 const overseerUtils = require('managers_overseer_utils_overseer.utils');
 
@@ -57,6 +58,13 @@ var managerOverseer = {
 
         // 1. Gather Intel
         const intel = overseerIntel.gather(room);
+        const combatState = room.memory && room.memory.admiral && room.memory.admiral.state;
+        const hostilesPresent = intel.hostiles && intel.hostiles.length > 0;
+        const previousRepairScan = overseerOpportunisticRepair.getRoomScan(room.name);
+        overseerOpportunisticRepair.scan(room, intel, {
+            scanInterval: 7,
+            forceScan: hostilesPresent || combatState === 'SIEGE' || !!(previousRepairScan && previousRepairScan.critical)
+        });
 
         // 2. Build Resource Ledger (room stock snapshot)
         const ledger = overseerResourceLedger.gather(room, intel);

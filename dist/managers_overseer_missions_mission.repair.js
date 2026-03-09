@@ -1,11 +1,11 @@
 const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
+const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
         const { opState, budget, getMissionCensus } = context;
         if (opState === 'EMERGENCY') return;
 
-        const REPAIR_SCAN_INTERVAL = 7; // ticks
         const CRITICAL_WALL_HITS = 5000;
 
         const rcl = room.controller ? room.controller.level : 0;
@@ -38,17 +38,13 @@ module.exports = {
         const CRITICAL_GENERAL_RATIO = 0.8;
         const CRITICAL_DECAYABLE_RATIO = 0.7;
 
-        if (!room.memory.overseer) room.memory.overseer = {};
-        if (!room.memory.overseer.repairCache) {
-            room.memory.overseer.repairCache = { lastScan: 0, targets: [], critical: false, fortifyIds: [] };
-        }
-        const repairCache = room.memory.overseer.repairCache;
-        if (!Array.isArray(repairCache.fortifyIds)) repairCache.fortifyIds = [];
-        const now = Game.time;
         const hostilesPresent = intel.hostiles && intel.hostiles.length > 0;
         const combatState = room.memory.admiral && room.memory.admiral.state;
         const siegeMode = combatState === 'SIEGE';
-        const previousFortifyIds = new Set(repairCache.fortifyIds);
+        // Scanner is the source of truth for IDs; mission only refreshes objects.
+        const scanStore = overseerOpportunisticRepair.getRoomScan(room.name);
+        if (!scanStore) return;
+        const previousFortifyIds = new Set(Array.isArray(scanStore.fortifyIds) ? scanStore.fortifyIds : []);
 
         const isCritical = (s) => {
             if (!s || !s.hitsMax) return false;
@@ -75,60 +71,36 @@ module.exports = {
             });
         };
 
-        const forceScan = hostilesPresent || siegeMode || repairCache.critical;
-        const shouldScan = forceScan || !repairCache.lastScan || (now - repairCache.lastScan) >= REPAIR_SCAN_INTERVAL;
-
         let repairTargets = [];
         let fortifyTargets = [];
         let criticalFound = false;
+        // Consume scanner output (already classified in the intel layer),
+        // then re-validate object liveness/state before issuing missions.
+        const cachedTargets = Array.isArray(scanStore.targetIds) ? scanStore.targetIds : [];
+        const refreshedTargets = cachedTargets
+            .map(id => Game.getObjectById(id))
+            .filter(s => s && (needsRepair(s) || isCritical(s) || getActiveForts([s]).length > 0));
 
-        if (shouldScan) {
-            const allStructures = [].concat(...Object.values(intel.structures));
-        
-            const decayables = allStructures.filter(s => 
-                (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && needsRepair(s)
-            );
-            const others = allStructures.filter(s => 
-                s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_CONTAINER &&
-                s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && needsRepair(s)
-            );
-            const activeForts = getActiveForts(allStructures);
-            const criticalForts = activeForts.filter(isCritical);
-            const nonCriticalForts = activeForts.filter(s => !isCritical(s));
+        const decayables = refreshedTargets.filter(s =>
+            (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && needsRepair(s)
+        );
+        const others = refreshedTargets.filter(s =>
+            s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_CONTAINER &&
+            s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && needsRepair(s)
+        );
+        const activeForts = getActiveForts(refreshedTargets);
+        const criticalForts = activeForts.filter(isCritical);
+        const nonCriticalForts = activeForts.filter(s => !isCritical(s));
 
-            repairTargets.push(...decayables, ...others, ...criticalForts);
-            fortifyTargets.push(...nonCriticalForts);
-            criticalFound = repairTargets.some(isCritical);
+        repairTargets = decayables.concat(others, criticalForts);
+        fortifyTargets = nonCriticalForts;
+        criticalFound = repairTargets.some(isCritical);
 
-            repairCache.targets = repairTargets.concat(fortifyTargets).map(s => s.id);
-            repairCache.lastScan = now;
-            repairCache.critical = criticalFound;
-            repairCache.fortifyIds = activeForts.map(s => s.id);
-        } else {
-            const cachedTargets = repairCache.targets || [];
-            const refreshedTargets = cachedTargets
-                .map(id => Game.getObjectById(id))
-                .filter(s => s && (needsRepair(s) || isCritical(s) || getActiveForts([s]).length > 0));
-
-            const decayables = refreshedTargets.filter(s => 
-                (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && needsRepair(s)
-            );
-            const others = refreshedTargets.filter(s => 
-                s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_CONTAINER &&
-                s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART && needsRepair(s)
-            );
-            const activeForts = getActiveForts(refreshedTargets);
-            const criticalForts = activeForts.filter(isCritical);
-            const nonCriticalForts = activeForts.filter(s => !isCritical(s));
-
-            repairTargets = decayables.concat(others, criticalForts);
-            fortifyTargets = nonCriticalForts;
-            criticalFound = repairTargets.some(isCritical);
-
-            repairCache.targets = repairTargets.concat(fortifyTargets).map(s => s.id);
-            repairCache.critical = criticalFound;
-            repairCache.fortifyIds = activeForts.map(s => s.id);
-        }
+        // Keep heap payload fresh after liveness filtering, so next tick can stay cheap.
+        scanStore.repairIds = repairTargets.map(s => s.id);
+        scanStore.fortifyIds = activeForts.map(s => s.id);
+        scanStore.targetIds = repairTargets.concat(fortifyTargets).map(s => s.id);
+        scanStore.critical = criticalFound;
 
         if (repairTargets.length === 0 && fortifyTargets.length === 0) return;
 
@@ -140,8 +112,7 @@ module.exports = {
             // Baseline (existing behavior): small steady repair throughput by RCL
             const baseWork = 5 + Math.max(0, rcl - 3) * 2;
 
-            // Backlog scaling:
-            // +2 work for every 8 repair targets (tune this)
+            // Backlog scaling: increase target WORK as queue grows.
             const BACKLOG_PER = 12;
             const BACKLOG_WORK_PER_CHUNK = 1;
             const backlogWork = Math.floor(repairTargets.length / BACKLOG_PER) * BACKLOG_WORK_PER_CHUNK;
@@ -150,7 +121,7 @@ module.exports = {
             const criticalBoost = criticalFound ? 10 : 0;              // slam harder when critical exists
             const siegeBoost = (hostilesPresent || siegeMode) ? 6 : 0; // extra repairs during active threat
 
-            // Hard cap so we don't spawn-repair the whole economy
+            // Hard cap so repair pressure cannot consume the entire economy.
             const MAX_REPAIR_WORK_TARGET = 50;
 
             const repairWorkTarget = Math.min(
@@ -185,6 +156,7 @@ module.exports = {
 
         const stickyRepairTargets = [];
         const stickyRepairIds = new Set();
+        // Keep existing repair missions sticky to reduce target thrash/repathing.
         sortedTargets.forEach(target => {
             if (getMissionCount(`repair:${target.id}`) > 0) {
                 stickyRepairTargets.push(target);
@@ -292,7 +264,7 @@ module.exports = {
                 Math.floor(spendableIncome * (economyState === 'UPGRADING' ? 1.2 : 0.8) * (direFortify ? 1.2 : 1.0) * bufferRatio)
             );
 
-            // We can still do opportunistic fortify (spawn=false) even when budget is 0.
+            // We can still publish fortify work for existing creeps (spawn=false).
             const stats = managerSpawner.checkBody('worker', budget);
             const fortifyWorkPerCreep = stats.work || 1;
 
@@ -321,6 +293,7 @@ module.exports = {
 
             const stickyFortTargets = [];
             const stickyFortIds = new Set();
+            // Sticky fortify targets reduce switching between walls/ramparts.
             sortedForts.forEach(target => {
                 if (getMissionCount(`fortify:${target.id}`) > 0) {
                     stickyFortTargets.push(target);
