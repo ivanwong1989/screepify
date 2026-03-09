@@ -320,7 +320,7 @@ const overseerUtils = {
 
             // Remote haul lanes heap store
             const store = heap.getStore('remoteHaul', { ttl: null });
-            const home = store && store[room.name];
+            const home = store && store.rooms && store.rooms[room.name];
             const lanes = home && home.lanes;
 
             if (lanes) {

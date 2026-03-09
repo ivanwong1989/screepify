@@ -45,6 +45,48 @@ function computeSourcesInfo(room) {
     const containers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
     const terrain = room.getTerrain();
 
+    const chooseStandPos = (sourcePos) => {
+        if (!sourcePos) return null;
+
+        let best = null;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const x = sourcePos.x + dx;
+                const y = sourcePos.y + dy;
+                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+
+                const t = terrain.get(x, y);
+                if (t === TERRAIN_MASK_WALL) continue;
+
+                let clearance = 0;
+                for (let nx = -1; nx <= 1; nx++) {
+                    for (let ny = -1; ny <= 1; ny++) {
+                        if (nx === 0 && ny === 0) continue;
+                        const cx = x + nx;
+                        const cy = y + ny;
+                        if (cx < 0 || cx > 49 || cy < 0 || cy > 49) continue;
+                        if (terrain.get(cx, cy) !== TERRAIN_MASK_WALL) clearance++;
+                    }
+                }
+
+                const borderPenalty = (x <= 1 || x >= 48 || y <= 1 || y >= 48) ? 100 : 0;
+                const swampPenalty = (t === TERRAIN_MASK_SWAMP) ? 10 : 0;
+                const score = borderPenalty + swampPenalty - clearance;
+
+                if (!best
+                    || score < best.score
+                    || (score === best.score && (y < best.y || (y === best.y && x < best.x)))) {
+                    best = { x, y, score };
+                }
+            }
+        }
+
+        return best
+            ? { x: best.x, y: best.y, roomName: sourcePos.roomName }
+            : null;
+    };
+
     return sources.map(source => {
         const nearbyContainers = containers.filter(c => c.pos.inRangeTo(source.pos, 1));
         let availableSpaces = 0;
@@ -61,6 +103,9 @@ function computeSourcesInfo(room) {
         }
 
         const container = nearbyContainers.length > 0 ? nearbyContainers[0] : null;
+        const standPos = container
+            ? { x: container.pos.x, y: container.pos.y, roomName: container.pos.roomName }
+            : chooseStandPos(source.pos);
 
         return {
             id: source.id,
@@ -70,7 +115,8 @@ function computeSourcesInfo(room) {
             availableSpaces,
             hasContainer: !!container,
             containerId: container ? container.id : null,
-            containerPos: container ? { x: container.pos.x, y: container.pos.y, roomName: container.pos.roomName } : null
+            containerPos: container ? { x: container.pos.x, y: container.pos.y, roomName: container.pos.roomName } : null,
+            standPos: standPos
         };
     });
 }

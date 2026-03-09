@@ -17,6 +17,9 @@ module.exports = {
             entry.sourcesInfo.forEach(source => {
                 if (!source || !source.id) return;
                 const hasContainer = !!(source.hasContainer || source.containerId);
+                const standPos = source.standPos
+                    ? { x: source.standPos.x, y: source.standPos.y, roomName: source.standPos.roomName || name }
+                    : null;
 
                 const missionName = `remote:harvest:${name}:${source.id}`;
                 const census = getMissionCensus(missionName);
@@ -45,6 +48,7 @@ module.exports = {
                         sourcePos: { x: source.x, y: source.y, roomName: name },
                         containerId: hasContainer ? source.containerId : null,
                         containerPos: hasContainer ? (source.containerPos || null) : null,
+                        standPos: standPos,
                         mode: hasContainer ? 'static' : 'drop'
                     },
                     priority: 80,

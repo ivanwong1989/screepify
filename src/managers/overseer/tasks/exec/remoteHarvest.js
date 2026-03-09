@@ -7,6 +7,7 @@ module.exports = function execRemoteHarvestTask(ctx) {
     const sourcePos = helpers.toRoomPosition(data.sourcePos || mission.pos);
     const remoteRoom = data.remoteRoom || (sourcePos && sourcePos.roomName);
     const containerPos = helpers.toRoomPosition(data.containerPos);
+    const standPos = helpers.toRoomPosition(data.standPos);
 
     // 1) Travel to remote
     if (remoteRoom && creep.room.name !== remoteRoom) {
@@ -38,6 +39,9 @@ module.exports = function execRemoteHarvestTask(ctx) {
     } else if (!container && containerPos && !creep.pos.isEqualTo(containerPos)) {
         // Container missing/destroyed: still allow standing on the remembered tile (good for rebuilding later).
         return { type: 'move', targetPos: { x: containerPos.x, y: containerPos.y, roomName: containerPos.roomName }, range: 0 };
+    } else if (!container && standPos && !creep.pos.isEqualTo(standPos)) {
+        // Drop mining: keep miner on deterministic stand tile so hauler lanes can anchor to it.
+        return { type: 'move', targetPos: { x: standPos.x, y: standPos.y, roomName: standPos.roomName }, range: 0 };
     }
 
     // 4) State machine (working/gathering) from your helpers

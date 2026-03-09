@@ -48,7 +48,8 @@ module.exports = function execRemoteHaulTask(ctx) {
     }
 
     if (creep.memory.taskState === 'working') {
-        if (dropoffPos && creep.room.name !== dropoffPos.roomName) {
+        const dropoffMoveRange = 1;
+        if (dropoffPos && !creep.pos.inRangeTo(dropoffPos, dropoffMoveRange)) {
             logOnce(
                 `move:dropoff:${dropoffPos.roomName}`,
                 `move->dropoff ${dropoffPos.roomName} lane=${laneKeyToDropoff || '-'}`
@@ -56,7 +57,7 @@ module.exports = function execRemoteHaulTask(ctx) {
             return {
                 type: 'move',
                 targetPos: { x: dropoffPos.x, y: dropoffPos.y, roomName: dropoffPos.roomName },
-                range: 1,
+                range: dropoffMoveRange,
                 meta: moveMeta({ dir: 'toDropoff' })
             };
         }
@@ -84,7 +85,7 @@ module.exports = function execRemoteHaulTask(ctx) {
         return null;
     }
 
-    if (pickupPos && creep.room.name !== pickupPos.roomName) {
+    if (pickupPos && !creep.pos.inRangeTo(pickupPos, pickupRange)) {
         logOnce(
             `move:pickup:${pickupPos.roomName}`,
             `move->pickup ${pickupPos.roomName} lane=${laneKeyToPickup || '-'} mode=${pickupMode}`
@@ -92,7 +93,7 @@ module.exports = function execRemoteHaulTask(ctx) {
         return {
             type: 'move',
             targetPos: { x: pickupPos.x, y: pickupPos.y, roomName: pickupPos.roomName },
-            range: 1,
+            range: pickupRange,
             meta: moveMeta({ dir: 'toPickup' })
         };
     }

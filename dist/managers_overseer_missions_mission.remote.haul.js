@@ -7,7 +7,8 @@
 'use strict';
 
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
-const heap = require('utils_heap');
+const remoteHaulPathing = require('managers_overseer_utils_overseer.remoteHaulPathing');
+const REMOTE_HAUL_LANE_LAYOUT_VERSION = 3;
 
 const toRoomPosition = (pos) => {
     if (!pos || !pos.roomName) return null;
@@ -15,80 +16,6 @@ const toRoomPosition = (pos) => {
     const y = Number(pos.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return new RoomPosition(x, y, pos.roomName);
-};
-
-// Heap lane TTL (ticks). When expired, we may rebuild lazily.
-const LANE_TTL = 10000;
-
-// Rate-limit heavy path builds per home-room per tick to avoid spikes on heap reset.
-const MAX_PATH_REBUILDS_PER_TICK_PER_HOME = 2;
-
-// ------------------------------------------------------------
-// Heap cache helpers (reset-safe). Uses shared utils/heap store.
-// ------------------------------------------------------------
-const getRoomHeapCache = (homeRoom) => {
-    const store = heap.getStore('remoteHaul', { ttl: null }); // TTL null: we handle our own per-entry TTLs
-    let r = store[homeRoom];
-    if (!r) {
-        r = store[homeRoom] = {
-            sig: null,
-            lanes: Object.create(null), // laneKey -> { p, len, t, sig, from, to }
-            meta: Object.create(null),  // pickupId -> { pathLen, created }
-            budgetTick: -1,
-            budgetUsed: 0,
-        };
-    }
-
-    // Reset per-tick rebuild budget
-    if (r.budgetTick !== Game.time) {
-        r.budgetTick = Game.time;
-        r.budgetUsed = 0;
-    }
-    return r;
-};
-
-const isFresh = (t, ttl) => (t != null) && (Game.time - t <= ttl);
-
-const packPathPoints = (fromPos, path) => {
-    // Multi-room safe compact points: [{r,x,y},...]
-    // Include fromPos as first point so moveByPath can start immediately.
-    const pts = [];
-    if (fromPos && fromPos.roomName) {
-        pts.push({ r: fromPos.roomName, x: fromPos.x, y: fromPos.y });
-    }
-    if (Array.isArray(path)) {
-        for (let i = 0; i < path.length; i++) {
-            const p = path[i];
-            if (!p) continue;
-            pts.push({ r: p.roomName, x: p.x, y: p.y });
-        }
-    }
-    return pts;
-};
-
-const computePathData = (fromPos, toPos, memo) => {
-    if (!fromPos || !toPos) return { len: 1, points: null, incomplete: true };
-
-    const key = `${fromPos.roomName}:${fromPos.x},${fromPos.y}:${toPos.roomName}:${toPos.x},${toPos.y}`;
-    if (memo && memo.has(key)) return memo.get(key);
-
-    const result = PathFinder.search(fromPos, { pos: toPos, range: 1 }, {
-        maxOps: 4000,
-        plainCost: 2,
-        swampCost: 10,
-    });
-
-    const len = result.incomplete
-        ? fromPos.getRangeTo(toPos)
-        : (result.path ? result.path.length : 0);
-
-    const points = (!result.incomplete && result.path && result.path.length)
-        ? packPathPoints(fromPos, result.path)
-        : null;
-
-    const data = { len: len || 1, points, incomplete: !!result.incomplete };
-    if (memo) memo.set(key, data);
-    return data;
 };
 
 module.exports = {
@@ -129,99 +56,30 @@ module.exports = {
         // ============================================================
         // Signature invalidation (dropoff changes).
         // ============================================================
-        const targetSignature = `dropoff:${dropoffTarget.id}`;
+        const targetSignature = `v${REMOTE_HAUL_LANE_LAYOUT_VERSION}:dropoff:${dropoffTarget.id}`;
+        const laneManager = remoteHaulPathing.createLaneManager(room.name, targetSignature);
 
-        // Heap cache (per home room)
-        const h = getRoomHeapCache(room.name);
-        if (h.sig !== targetSignature) {
-            h.sig = targetSignature;
-            h.lanes = Object.create(null);
-            h.meta = Object.create(null);
-            // leave budget counters; they reset per tick anyway
-        }
+        const sortedEntries = entries
+            .slice()
+            .sort((a, b) => String(a && a.name || '').localeCompare(String(b && b.name || '')));
 
-        // Tick-local memoization (only within this generate pass)
-        const pathMemo = new Map();
-
-        // Helper: attempt to get lane from heap
-        const getLane = (laneKey) => {
-            const e = h.lanes[laneKey];
-            if (!e) return null;
-            if (e.sig !== targetSignature) return null;
-            if (!e.p || !e.p.length) return null;
-            if (!isFresh(e.t, LANE_TTL)) return null;
-            return e;
-        };
-
-        // Helper: write lane to heap
-        const setLane = (laneKey, points, len, fromPos, toPos) => {
-            h.lanes[laneKey] = {
-                p: points,
-                len,
-                t: Game.time,
-                sig: targetSignature,
-                from: `${fromPos.roomName}:${fromPos.x},${fromPos.y}`,
-                to: `${toPos.roomName}:${toPos.x},${toPos.y}`, // debugging only
-            };
-        };
-
-        // Helper: get best-known pathLen without forcing path rebuild
-        const getKnownPathLen = (pickupId) => {
-            const hm = h.meta[pickupId];
-            if (hm && isFresh(hm.created, LANE_TTL) && hm.pathLen) return hm.pathLen;
-            return null;
-        };
-
-        // Helper: store pathLen in heap meta (tiny)
-        const recordPathLen = (pickupId, pathLen) => {
-            h.meta[pickupId] = { pathLen, created: Game.time };
-        };
-
-        // Helper: rebuild lanes (rate-limited)
-        const maybeRebuildLanes = (pickupId, dropoffPos, pickupPos, laneKeyToPickup, laneKeyToDropoff) => {
-            // If both lanes exist and fresh: nothing to do
-            const lf = getLane(laneKeyToPickup);
-            const lr = getLane(laneKeyToDropoff);
-            if (lf && lr) return { pathLen: lf.len || 1, built: false };
-
-            // Budget check to avoid spike after heap reset
-            if (h.budgetUsed >= MAX_PATH_REBUILDS_PER_TICK_PER_HOME) {
-                // Can't rebuild now. Use known path len if any; else a cheap approximation.
-                const known = getKnownPathLen(pickupId);
-                return { pathLen: known || dropoffPos.getRangeTo(pickupPos), built: false };
-            }
-
-            h.budgetUsed++;
-
-            // Compute both directions (prefer complete, else just record approximate len)
-            const f = computePathData(dropoffPos, pickupPos, pathMemo); // dropoff -> pickup
-            const r = computePathData(pickupPos, dropoffPos, pathMemo); // pickup -> dropoff
-
-            const pathLen = (f && f.len) ? f.len : (dropoffPos.getRangeTo(pickupPos) || 1);
-            recordPathLen(pickupId, pathLen);
-
-            if (Array.isArray(f.points) && f.points.length >= 2) {
-                setLane(laneKeyToPickup, f.points, pathLen, dropoffPos, pickupPos);
-            }
-            if (Array.isArray(r.points) && r.points.length >= 2) {
-                setLane(laneKeyToDropoff, r.points, (r.len || pathLen), pickupPos, dropoffPos);
-            }
-
-            return { pathLen, built: true };
-        };
-
-        entries.forEach(({ name, entry, enabled }) => {
+        sortedEntries.forEach(({ name, entry, enabled }) => {
             if (!enabled || !entry || !Array.isArray(entry.sourcesInfo)) return;
 
-            entry.sourcesInfo.forEach(source => {
+            const sources = entry.sourcesInfo
+                .slice()
+                .sort((a, b) => String(a && a.id || '').localeCompare(String(b && b.id || '')));
+
+            sources.forEach(source => {
                 if (!source || !source.id) return;
 
                 const hasContainer = !!(source.containerId && source.containerPos);
                 const pickupId = hasContainer ? source.containerId : source.id;
+                const standPos = source.standPos ? toRoomPosition(source.standPos) : null;
 
                 const pickupPos = hasContainer
                     ? toRoomPosition(source.containerPos)
-                    : new RoomPosition(source.x, source.y, name);
+                    : (standPos || new RoomPosition(source.x, source.y, name));
 
                 if (!pickupPos) return;
 
@@ -239,10 +97,10 @@ module.exports = {
                 const laneKeyToDropoff = `${laneKeyBase}:R`;
 
                 // Get/refresh lane + pathLen without writing big blobs to Memory
-                let pathLen = getKnownPathLen(pickupId) || 1;
+                let pathLen = laneManager.getKnownPathLen(pickupId) || 1;
 
                 // If lanes are missing/expired, try to rebuild (rate-limited).
-                const rebuilt = maybeRebuildLanes(pickupId, dropoffPos, pickupPos, laneKeyToPickup, laneKeyToDropoff);
+                const rebuilt = laneManager.ensureLanes(pickupId, dropoffPos, pickupPos, laneKeyToPickup, laneKeyToDropoff);
                 pathLen = rebuilt.pathLen || pathLen;
 
                 const roundTrip = (pathLen * 2) + TRANSFER_BUFFER_TICKS;
@@ -279,7 +137,7 @@ module.exports = {
                         dropoffPos: { x: dropoffTarget.pos.x, y: dropoffTarget.pos.y, roomName: dropoffTarget.pos.roomName },
                         resourceType: RESOURCE_ENERGY,
                         pickupMode: hasContainer ? 'container' : 'drop',
-                        pickupRange: hasContainer ? 1 : 2,
+                        pickupRange: hasContainer ? 1 : (standPos ? 1 : 2),
 
                         // Movement lane info (directional)
                         laneKeyToPickup: laneKeyToPickup,
