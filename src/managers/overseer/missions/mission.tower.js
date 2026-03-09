@@ -1,3 +1,5 @@
+const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
+
 module.exports = {
 
     generate: function(room, intel, context, missions) {
@@ -6,6 +8,17 @@ module.exports = {
         const RAMPART_INTERCEPT_RANGE = 8;
         const DEFENSE_RING_RADIUS = 8;
         const RING_SEARCH_RADIUS = 2;
+        const debugCategories = Memory.debugCategories;
+        const towerDebugEnabled = !!Memory.debug && (
+            !debugCategories ||
+            typeof debugCategories !== 'object' ||
+            !!debugCategories['mission.tower']
+        );
+        const towerDebug = (buildMessage) => {
+            if (!towerDebugEnabled) return;
+            const message = (typeof buildMessage === 'function') ? buildMessage() : buildMessage;
+            debug('mission.tower', message);
+        };
 
         // --- Boost-aware helpers ---
         const getBoostedHealPowerPerPart = (boost, isRanged) => {
@@ -303,8 +316,7 @@ module.exports = {
         intel.defenseAssist = evaluateDefenseAssist();
 
         if (intel.defenseAssist && intel.defenseAssist.evaluated) {
-            debug(
-                'mission.tower',
+            towerDebug(() =>
                 `[TowerAssist] ${room.name} ` +
                 `hostiles=${intel.defenseAssist.hostileCount} ` +
                 `target=${intel.defenseAssist.targetId || 'none'} ` +
@@ -317,10 +329,10 @@ module.exports = {
 
         // --- Priority 0: Defense (Smart + Focus Fire + Anti-Waste) ---
         if (intel.hostiles.length === 0) {
-            debug('mission.tower', '[Tower] ' + room.name + ' defense: no hostiles');
+            towerDebug(() => '[Tower] ' + room.name + ' defense: no hostiles');
         } else {
             if (activeTowers.length === 0) {
-                debug('mission.tower', '[Tower] ' + room.name + ' hostiles present but towers=0 (cache?)');
+                towerDebug(() => '[Tower] ' + room.name + ' hostiles present but towers=0 (cache?)');
             } else {
                 let bestTarget = null;
                 let bestScore = -Infinity;
@@ -346,8 +358,7 @@ module.exports = {
                     const healerBias = healInfo.healAt1 * 5;
                     const score = (effectiveDps * 2) - hostile.hits + healerBias;
 
-                    debug(
-                        'mission.tower',
+                    towerDebug(() =>
                         '[Tower] ' + room.name +
                         ' cand id=' + (hostile.name || hostile.id) +
                         ' hits=' + hostile.hits +
@@ -374,8 +385,7 @@ module.exports = {
                     }
                 }
                 // Summary before gate decision
-                debug(
-                    'mission.tower',
+                towerDebug(() =>
                     '[Tower] ' + room.name +
                     ' best=' + (bestTarget ? (bestTarget.name || bestTarget.id) : 'none') +
                     ' bestEff=' + (bestDbg ? Math.round(bestDbg.effectiveDps) : 'n/a') +
@@ -393,8 +403,7 @@ module.exports = {
                     });
 
                     // Debug scoring (keep it one-line friendly)
-                    debug(
-                        'mission.tower',
+                    towerDebug(() =>
                         `[Tower] ${room.name} focus=${bestTarget.name || bestTarget.id} ` +
                         `towers=${activeTowers.length} ` +
                         `rawDmg=${Math.round(bestDbg.rawTowerDamage)} toughDmg=${Math.round(bestDbg.towerDamage)} ` +
@@ -403,8 +412,7 @@ module.exports = {
                         `score=${Math.round(bestDbg.score)}`
                     );
                 } else {
-                    debug(
-                        'mission.tower',
+                    towerDebug(() =>
                         `[Tower] ${room.name} skip-attack (cannot outdamage heal/tough) ` +
                         `hostiles=${intel.hostiles.length} towers=${activeTowers.length}`
                     );
@@ -428,56 +436,24 @@ module.exports = {
                 targetIds: damagedCreepIds,
                 priority: 950
             });
-            debug('mission.tower', `[Tower] ${room.name} heal targets=${damagedCreepIds.length}`);
+            towerDebug(() => `[Tower] ${room.name} heal targets=${damagedCreepIds.length}`);
         }
 
         // --- Priority 4.5: Repair ---
-        // Only if we have reasonable energy and normal repair creep missions fail to keep up, meaning very lot HP
+        // Reuse opportunistic repair heap scan instead of re-scanning all structures here.
         if (intel.energyAvailable > intel.energyCapacityAvailable * 0.5) {
-            // Avoid flattening + double-filtering the entire structures set.
-            // Preserve original ordering bias: critical forts first, then other damaged structures.
-            let criticalIds = null;
-            let damagedIds = null;
-
-            const byType = intel.structures || {};
-            for (const type in byType) {
-                const list = byType[type];
-                if (!list || list.length === 0) continue;
-
-                for (const s of list) {
-                    if (!s) continue;
-                    if (s.hits >= s.hitsMax) continue;
-
-                    const st = s.structureType;
-                    if (st === STRUCTURE_WALL || st === STRUCTURE_RAMPART) {
-                        if (s.hits < 5000) {
-                            if (criticalIds === null) criticalIds = [];
-                            criticalIds.push(s.id);
-                        }
-                        continue;
-                    }
-
-                    // Non-fort structures: only repair if <60% hp
-                    if ((s.hits / s.hitsMax) < 0.6) {
-                        if (damagedIds === null) damagedIds = [];
-                        damagedIds.push(s.id);
-                    }
-                }
-            }
-
-            const hasRepairs = (criticalIds && criticalIds.length) || (damagedIds && damagedIds.length);
-            if (hasRepairs) {
-                const targetIds = criticalIds && criticalIds.length
-                    ? (damagedIds && damagedIds.length ? criticalIds.concat(damagedIds) : criticalIds)
-                    : damagedIds;
-
+            const repairScan = overseerOpportunisticRepair.getRoomScan(room.name);
+            const targetIds = (repairScan && repairScan.repairIds && repairScan.repairIds.length > 0)
+                ? repairScan.repairIds
+                : null;
+            if (targetIds) {
                 missions.push({
                     name: 'tower:repair',
                     type: 'tower_repair',
                     targetIds,
                     priority: 40
                 });
-                debug('mission.tower', `[Tower] ${room.name} repair targets=${targetIds.length}`);
+                towerDebug(() => `[Tower] ${room.name} repair targets=${targetIds.length}`);
             }
         }
     }

@@ -387,11 +387,12 @@ var managerTasks = {
 
         // 6. Assign Towers
         room._towerTasks = {}; // Initialize ephemeral task list for this tick
+        room._towerAlloc = { needs: Object.create(null), objects: Object.create(null) };
         const towers = cache.myStructuresByType[STRUCTURE_TOWER] || [];
         towers.forEach(tower => {
             const bestMission = this.findBestTowerMission(tower, missionsSorted);
             if (bestMission) {
-                this.assignTowerAction(tower, bestMission, room);
+                this.assignTowerAction(tower, bestMission, room, room._towerAlloc);
             }
         });
     },
@@ -674,19 +675,19 @@ var managerTasks = {
         //this.telegraphCreep(creep, mission, legacyTask);
     },
 
-    assignTowerAction: function(tower, mission, room) {
+    assignTowerAction: function(tower, mission, room, allocCtx) {
         let action = null;
         let targetId = null;
 
         if (mission.type === 'tower_attack') {
             action = 'attack';
-            targetId = this.findBestTarget(tower, mission.targetIds, action);
+            targetId = this.findBestTarget(tower, mission, action, allocCtx);
         } else if (mission.type === 'tower_heal') {
             action = 'heal';
-            targetId = this.findBestTarget(tower, mission.targetIds, action);
+            targetId = this.findBestTarget(tower, mission, action, allocCtx);
         } else if (mission.type === 'tower_repair') {
             action = 'repair';
-            targetId = this.findBestTarget(tower, mission.targetIds, action);
+            targetId = this.findBestTarget(tower, mission, action, allocCtx);
         }
 
         if (action && targetId) {
@@ -694,10 +695,69 @@ var managerTasks = {
         }
     },
 
-    findBestTarget: function(tower, targetIds, action) {
+    getTowerEffectAtRange: function(action, range) {
+        const optimal = Number.isFinite(global.TOWER_OPTIMAL_RANGE) ? global.TOWER_OPTIMAL_RANGE : 5;
+        const falloffRange = Number.isFinite(global.TOWER_FALLOFF_RANGE) ? global.TOWER_FALLOFF_RANGE : 20;
+        const falloff = Number.isFinite(global.TOWER_FALLOFF) ? global.TOWER_FALLOFF : 0.75;
+
+        const base =
+            action === 'heal'
+                ? (Number.isFinite(global.TOWER_POWER_HEAL) ? global.TOWER_POWER_HEAL : 400)
+                : action === 'repair'
+                    ? (Number.isFinite(global.TOWER_POWER_REPAIR) ? global.TOWER_POWER_REPAIR : 800)
+                    : (Number.isFinite(global.TOWER_POWER_ATTACK) ? global.TOWER_POWER_ATTACK : 600);
+
+        const clamped = Math.max(1, Math.min(Number.isFinite(range) ? range : falloffRange, 50));
+        if (clamped <= optimal) return base;
+        if (clamped >= falloffRange) return base * (1 - falloff);
+        const ratio = (clamped - optimal) / Math.max(1, (falloffRange - optimal));
+        return base * (1 - (falloff * ratio));
+    },
+
+    findBestTarget: function(tower, mission, action, allocCtx) {
+        const targetIds = mission && mission.targetIds;
         if (!targetIds || targetIds.length === 0) return null;
-        const targets = targetIds.map(id => this.getCachedObject(tower.room, id)).filter(t => t);
+        const targets = targetIds.map(id => {
+            if (allocCtx && allocCtx.objects && allocCtx.objects[id] !== undefined) return allocCtx.objects[id];
+            const obj = this.getCachedObject(tower.room, id);
+            if (allocCtx && allocCtx.objects) allocCtx.objects[id] = obj || null;
+            return obj;
+        }).filter(t => t);
         if (targets.length === 0) return null;
+
+        if (action === 'heal' || action === 'repair') {
+            const missionKey = `${action}:${mission.name || 'anon'}`;
+            let needs = allocCtx && allocCtx.needs ? allocCtx.needs[missionKey] : null;
+            if (!needs) {
+                needs = Object.create(null);
+                for (const t of targets) {
+                    const deficit = (t && Number.isFinite(t.hitsMax) && Number.isFinite(t.hits))
+                        ? Math.max(0, t.hitsMax - t.hits)
+                        : 0;
+                    needs[t.id] = deficit;
+                }
+                if (allocCtx && allocCtx.needs) allocCtx.needs[missionKey] = needs;
+            }
+
+            let best = null;
+            let bestRange = Infinity;
+            for (const t of targets) {
+                if ((needs[t.id] || 0) <= 0) continue;
+                const range = tower.pos.getRangeTo(t.pos);
+                if (range < bestRange) {
+                    best = t;
+                    bestRange = range;
+                }
+            }
+
+            if (!best) {
+                return null;
+            }
+
+            const effect = this.getTowerEffectAtRange(action, bestRange);
+            needs[best.id] = Math.max(0, (needs[best.id] || 0) - effect);
+            return best.id;
+        }
 
         if (action !== 'attack') {
             const target = tower.pos.findClosestByRange(targets);
