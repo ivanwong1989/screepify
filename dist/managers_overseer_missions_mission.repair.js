@@ -1,5 +1,75 @@
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
 
+const REPAIR_BASELINE_CACHE_TTL = 1000;
+const REPAIR_BASELINE_SAFETY_FACTOR = 1.2;
+const ROAD_SWAMP_DECAY_RATIO = Number.isFinite(global.CONSTRUCTION_COST_ROAD_SWAMP_RATIO) ? global.CONSTRUCTION_COST_ROAD_SWAMP_RATIO : 5;
+const ROAD_WALL_DECAY_RATIO = Number.isFinite(global.CONSTRUCTION_COST_ROAD_WALL_RATIO) ? global.CONSTRUCTION_COST_ROAD_WALL_RATIO : 150;
+
+const getRepairBaselineCache = () => {
+    if (!global._repairBaselineCache) global._repairBaselineCache = Object.create(null);
+    return global._repairBaselineCache;
+};
+
+const computeBaselineRepairWork = (room) => {
+    if (!room) return { work: 0, roadPlain: 0, roadSwamp: 0, roadWall: 0, containers: 0 };
+    const structures = room.find(FIND_STRUCTURES);
+    const terrain = room.getTerrain();
+
+    let roadPlain = 0;
+    let roadSwamp = 0;
+    let roadWall = 0;
+    let containers = 0;
+
+    for (const s of structures) {
+        if (!s || !s.pos) continue;
+        if (s.structureType === STRUCTURE_CONTAINER) {
+            containers++;
+            continue;
+        }
+        if (s.structureType !== STRUCTURE_ROAD) continue;
+
+        const mask = terrain.get(s.pos.x, s.pos.y);
+        if (mask & TERRAIN_MASK_WALL) {
+            roadWall++;
+        } else if (mask & TERRAIN_MASK_SWAMP) {
+            roadSwamp++;
+        } else {
+            roadPlain++;
+        }
+    }
+
+    const roadDecayPerTick =
+        (roadPlain * (ROAD_DECAY_AMOUNT / ROAD_DECAY_TIME)) +
+        (roadSwamp * ((ROAD_DECAY_AMOUNT * ROAD_SWAMP_DECAY_RATIO) / ROAD_DECAY_TIME)) +
+        (roadWall * ((ROAD_DECAY_AMOUNT * ROAD_WALL_DECAY_RATIO) / ROAD_DECAY_TIME));
+
+    const containerDecayPerTick = containers * (CONTAINER_DECAY / CONTAINER_DECAY_TIME_OWNED);
+    const totalDecayPerTick = roadDecayPerTick + containerDecayPerTick;
+    const work = (totalDecayPerTick / REPAIR_POWER) * REPAIR_BASELINE_SAFETY_FACTOR;
+
+    return { work, roadPlain, roadSwamp, roadWall, containers };
+};
+
+const getBaselineRepairWork = (room) => {
+    const cache = getRepairBaselineCache();
+    const roomName = room.name;
+    const cached = cache[roomName];
+    if (cached && cached.expiresAt > Game.time) return cached;
+
+    const fresh = computeBaselineRepairWork(room);
+    const entry = {
+        work: fresh.work,
+        roadPlain: fresh.roadPlain,
+        roadSwamp: fresh.roadSwamp,
+        roadWall: fresh.roadWall,
+        containers: fresh.containers,
+        updated: Game.time,
+        expiresAt: Game.time + REPAIR_BASELINE_CACHE_TTL
+    };
+    cache[roomName] = entry;
+    return entry;
+};
+
 module.exports = {
     generate: function(room, intel, context, missions) {
         const { opState, getMissionCensus } = context;
@@ -104,29 +174,20 @@ module.exports = {
         if (repairTargets.length === 0 && fortifyTargets.length === 0) return;
 
         let desiredCount = 0;
+        let repairWorkTarget = 0;
+        let repairBaselineWork = 0;
+        let criticalBoostWork = 0;
+        let siegeBoostWork = 0;
         if (repairTargets.length > 0) {
-            // Baseline (existing behavior): small steady repair throughput by RCL
-            const baseWork = 5 + Math.max(0, rcl - 3) * 2;
-
-            // Backlog scaling: increase target WORK as queue grows.
-            const BACKLOG_PER = 12;
-            const BACKLOG_WORK_PER_CHUNK = 1;
-            const backlogWork = Math.floor(repairTargets.length / BACKLOG_PER) * BACKLOG_WORK_PER_CHUNK;
-
-            // Urgency boosts (optional but nice):
-            const criticalBoost = criticalFound ? 10 : 0;              // slam harder when critical exists
-            const siegeBoost = (hostilesPresent || siegeMode) ? 6 : 0; // extra repairs during active threat
-
-            // Hard cap so repair pressure cannot consume the entire economy.
-            const MAX_REPAIR_WORK_TARGET = 50;
-
-            const repairWorkTarget = Math.min(
-                MAX_REPAIR_WORK_TARGET,
-                baseWork + backlogWork + criticalBoost + siegeBoost
-            );
+            const baseline = getBaselineRepairWork(room);
+            repairBaselineWork = baseline.work || 0;
+            criticalBoostWork = criticalFound ? 8 : 0;
+            siegeBoostWork = (hostilesPresent || siegeMode) ? 6 : 0;
+            const MAX_REPAIR_WORK_TARGET = 20;
+            repairWorkTarget = Math.min(MAX_REPAIR_WORK_TARGET, repairBaselineWork + criticalBoostWork + siegeBoostWork);
 
             const ESTIMATED_WORK_PER_WORKER = 4;
-            desiredCount = Math.ceil(repairWorkTarget / ESTIMATED_WORK_PER_WORKER);
+            desiredCount = Math.max(1, Math.ceil(repairWorkTarget / ESTIMATED_WORK_PER_WORKER));
         }
 
         const getRepairGroup = (s) => {
@@ -160,19 +221,22 @@ module.exports = {
             }
         });
 
+        const selectedStickyTargets = stickyRepairTargets.slice(0, Math.max(0, desiredCount));
         const targetCount = Math.min(
             sortedTargets.length,
-            Math.max(desiredCount, stickyRepairTargets.length)
+            Math.max(desiredCount, selectedStickyTargets.length)
         );
-        const selectedTargets = stickyRepairTargets.concat(
+        const selectedTargets = selectedStickyTargets.concat(
             sortedTargets
                 .filter(target => !stickyRepairIds.has(target.id))
-                .slice(0, Math.max(0, targetCount - stickyRepairTargets.length))
+                .slice(0, Math.max(0, targetCount - selectedStickyTargets.length))
         );
 
         if (selectedTargets.length > 0) {
             debug('mission.repair', `[Repair] ${room.name} targets=${targetCount}/${repairTargets.length} ` +
-                `desiredWorkers=${desiredCount} critical=${criticalFound}`);
+                `desiredWorkers=${desiredCount} baselineWork=${repairBaselineWork.toFixed(2)} ` +
+                `criticalBoost=${criticalBoostWork} siegeBoost=${siegeBoostWork} ` +
+                `workTarget=${repairWorkTarget.toFixed(2)} critical=${criticalFound}`);
         }
 
         if (selectedTargets.length > 0) {

@@ -240,7 +240,8 @@ function buildBoostLogisticsMissions(room, cfg, labs, labById) {
             },
             requirements: {
                 archetype: 'hauler',
-                count: 1,
+                minCount: 1,
+                maxCount: 1,
                 spawn: false
             },
             priority: cfg.transferPriority
@@ -404,7 +405,8 @@ const enqueue = (sourceId, targetId, resourceType, label) => {
             },
             requirements: {
                 archetype: 'hauler',
-                count: 1,
+                minCount: 1,
+                maxCount: 1,
                 spawn: false
             },
             priority: cfg.transferPriority

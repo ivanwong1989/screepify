@@ -560,12 +560,14 @@ var managerTasks = {
         const requiredCarry = Number.isFinite(req.requiredCarry) ? req.requiredCarry : 0;
         const requiredClaim = Number.isFinite(req.requiredClaim) ? req.requiredClaim : 0;
         const maxCount = Number.isFinite(req.maxCount) ? req.maxCount : null;
+        const hasDemandFloor = minCount > 0 || requiredWork > 0 || requiredCarry > 0 || requiredClaim > 0;
 
         if (maxCount !== null && status.assignedCount >= maxCount) return false;
         if (status.assignedCount < minCount) return true;
         if (status.assignedWorkParts < requiredWork) return true;
         if (status.assignedCarryParts < requiredCarry) return true;
         if (status.assignedClaimParts < requiredClaim) return true;
+        if (!hasDemandFloor && maxCount !== null && status.assignedCount < maxCount) return true;
         return false;
     },
 
