@@ -1,4 +1,5 @@
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
+const heap = require('utils_heap');
 
 
 // Auto-road planner for remote harvesting:
@@ -6,7 +7,7 @@ const remoteUtils = require('managers_overseer_utils_overseer.remote');
 // from the nearest exit -> each source (inside the remote room only). Remote build workers will pick them up.
 // Auto-road planner for remote harvesting:
 // When we have vision in a remote room, we opportunistically place a small number of road construction sites
-// using *cached remote lanes* when available (CPU cheap + consistent), falling back to PathFinder otherwise.
+// using *cached remote haul lanes* only, so road placement matches hauler traffic.
 //
 // Supported cached formats (best-effort, all optional):
 // - sourcesInfo[].laneKey -> lookup in Memory.lanes / room.memory.overseer.lanes
@@ -128,6 +129,8 @@ if (existingSites && existingSites.length >= MAX_REMOTE_CONSTRUCTION_SITES) {
     // ---- Lane helpers (matches mission.remote.haul.js format) ----
     // lanes[laneKey] = { p: [{r,x,y},...], len, t, sig, ... }
     const laneStores = [];
+    const heapLanes = getHeapLaneStore();
+    if (heapLanes) laneStores.push(heapLanes);
     if (homeRoom.memory && homeRoom.memory.overseer) {
         if (homeRoom.memory.overseer.lanes) laneStores.push(homeRoom.memory.overseer.lanes);
         if (homeRoom.memory.overseer.remoteLanes) laneStores.push(homeRoom.memory.overseer.remoteLanes);
@@ -143,8 +146,17 @@ if (existingSites && existingSites.length >= MAX_REMOTE_CONSTRUCTION_SITES) {
         const x = Number(pt.x);
         const y = Number(pt.y);
         if (!roomName || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+        if (x < 0 || x > 49 || y < 0 || y > 49) return null;
         return { roomName, x, y };
     };
+
+    function getHeapLaneStore() {
+        const root = heap.getStore('remoteHaul', { ttl: null });
+        if (!root || !root.rooms || !homeRoom) return null;
+        const roomStore = root.rooms[homeRoom.name];
+        if (!roomStore || !roomStore.lanes || typeof roomStore.lanes !== 'object') return null;
+        return roomStore.lanes;
+    }
 
     const getBestLanePoints = (pickupId) => {
         const prefix = lanePrefixFor(pickupId);
@@ -216,55 +228,6 @@ if (existingSites && existingSites.length >= MAX_REMOTE_CONSTRUCTION_SITES) {
         return placed;
     };
 
-    // ---- Fallback PathFinder (remote-room-only) ----
-    const fallbackPlan = (source) => {
-        const exitPos = source.pos.findClosestByRange(FIND_EXIT);
-        if (!exitPos) return 0;
-
-        const res = PathFinder.search(
-            exitPos,
-            { pos: source.pos, range: 1 },
-            {
-                plainCost: 2,
-                swampCost: 5,
-                maxRooms: 1,
-                roomCallback: (roomName) => {
-                    if (roomName !== remoteRoom.name) return false;
-                    const cm = new PathFinder.CostMatrix();
-                    const roads = remoteRoom.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_ROAD });
-                    for (const r of roads) cm.set(r.pos.x, r.pos.y, 1);
-                    const blocks = remoteRoom.find(FIND_STRUCTURES, { filter: s =>
-                        s.structureType !== STRUCTURE_ROAD &&
-                        s.structureType !== STRUCTURE_CONTAINER &&
-                        s.structureType !== STRUCTURE_RAMPART
-                    });
-                    for (const b of blocks) cm.set(b.pos.x, b.pos.y, 255);
-                    return cm;
-                }
-            }
-        );
-
-        if (!res || !res.path || res.path.length === 0) return 0;
-
-        let placed = 0;
-        for (let i = 0; i < res.path.length; i++) {
-            if (placed >= MAX_NEW_ROADS_PER_SCAN) break;
-
-            // Space road sites out to reduce total site count (every 2 tiles).
-            if ((i & 1) === 1) continue;
-
-            const p = res.path[i];
-            if (!p) continue;
-            if (Math.abs(p.x - source.pos.x) <= 1 && Math.abs(p.y - source.pos.y) <= 1) continue;
-            if (hasBlocking(p)) continue;
-
-            const code = remoteRoom.createConstructionSite(p.x, p.y, STRUCTURE_ROAD);
-            if (code === OK) placed++;
-            else if (code === ERR_FULL) return placed;
-        }
-        return placed;
-    };
-
     // ---- Main loop: for each source, prefer lane-based road laying ----
     let totalPlaced = 0;
 
@@ -282,13 +245,8 @@ if (existingSites && existingSites.length >= MAX_REMOTE_CONSTRUCTION_SITES) {
         // Try cached lane points first
         const lanePoints = getBestLanePoints(pickupId);
 
-        let placedNow = 0;
-        if (lanePoints && lanePoints.length) {
-            placedNow = layRoadsFromPoints(lanePoints, source.pos);
-        } else {
-            // Fallback: only if no lane points exist yet
-            placedNow = fallbackPlan(source);
-        }
+        if (!lanePoints || !lanePoints.length) continue;
+        const placedNow = layRoadsFromPoints(lanePoints, source.pos);
 
         totalPlaced += placedNow;
     }

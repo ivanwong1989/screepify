@@ -294,27 +294,14 @@ var managerSpawner = {
 
         let body = [WORK, CARRY, MOVE, MOVE];
         let cost = 250;
-        let workCount = 1; // FIX: base has 1 WORK, not 2
+        let workCount = 1;
         const MAX_WORK = 7;
 
-        // Segment: WORK, WORK, MOVE (250)
-        while (cost + 250 <= budget && body.length + 3 <= 50 && workCount + 2 <= MAX_WORK) {
-            body.push(WORK, WORK, MOVE);
-            cost += 250;
-            workCount += 2;
-        }
-
-        // Try to add one more WORK with a MOVE if possible (keeps travel speed reasonable)
-        if (workCount < MAX_WORK) {
-            if (cost + 150 <= budget && body.length + 2 <= 50) {
-                body.push(WORK, MOVE);   // 150
-                cost += 150;
-                workCount += 1;
-            } else if (cost + 100 <= budget && body.length + 1 <= 50) {
-                body.push(WORK);         // 100
-                cost += 100;
-                workCount += 1;
-            }
+        // Add WORK in lockstep with MOVE so travel speed scales with body size.
+        while (cost + 150 <= budget && body.length + 2 <= 50 && workCount < MAX_WORK) {
+            body.push(WORK, MOVE);
+            cost += 150;
+            workCount += 1;
         }
 
         return this.sortBody(body);
@@ -425,14 +412,14 @@ var managerSpawner = {
         let body = [];
         let cost = 0;
         
-        while (cost + 400 <= budget && body.length + 7 <= 50) {
+        while (cost + 400 <= budget && body.length + 6 <= 50) {
             body.push(WORK);
             body.push(WORK);
             body.push(CARRY);
             body.push(MOVE);
             body.push(MOVE);
             body.push(MOVE);
-            cost += 300;
+            cost += 400;
         }
         
         if (body.length === 0) return [WORK, CARRY, MOVE];

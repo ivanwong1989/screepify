@@ -104,9 +104,15 @@ module.exports = function execRemoteHaulTask(ctx) {
         return { type: 'withdraw', targetId: pickup.id, resourceType: resourceType };
     }
 
+    const inPickupArea = (pos) => {
+        if (!pos) return false;
+        if (!pickupPos) return true;
+        return pos.inRangeTo(pickupPos, pickupRange);
+    };
+
     const cache = global.getRoomCache(creep.room);
     const tombstone = creep.pos.findClosestByRange(cache.tombstones || [], {
-        filter: t => t.store && (t.store[resourceType] || 0) > 50
+        filter: t => t.store && (t.store[resourceType] || 0) > 50 && inPickupArea(t.pos)
     });
     if (tombstone) {
         logOnce(`withdraw:tomb:${tombstone.id}`, `withdraw tombstone -> ${tombstone.id} res=${resourceType}`);
@@ -116,10 +122,7 @@ module.exports = function execRemoteHaulTask(ctx) {
     const dropped = creep.pos.findClosestByRange(cache.dropped || [], {
         filter: r => {
             if (r.resourceType !== resourceType || r.amount <= 50) return false;
-            if (pickupMode === 'drop' && pickupPos) {
-                return r.pos.inRangeTo(pickupPos, pickupRange);
-            }
-            return true;
+            return inPickupArea(r.pos);
         }
     });
     if (dropped) {

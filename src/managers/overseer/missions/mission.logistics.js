@@ -213,23 +213,32 @@ module.exports = {
                         const baseName = `haul:${sourceId}:${targetId}`;
                         const routeKey = resourceType ? `${baseName}:${resourceType}` : baseName;
                         const fullMissionName = slot ? `${routeKey}:${slot}` : routeKey;
-                        // --- preserve hint from creep memory (written by transfer.js) ---
-                        const amountHint =
+                        // Preserve amount hints only for bounded terminal routes.
+                        // Generic energy hauling should not keep tiny stale hints across ticks.
+                        const shouldPreserveHint =
+                            (target && target.structureType === STRUCTURE_TERMINAL) ||
+                            (source && source.structureType === STRUCTURE_TERMINAL);
+                        const rememberedHint =
                             (c.memory && c.memory._haulHint !== undefined)
-                                ? c.memory._haulHint
+                                ? Number(c.memory._haulHint)
                                 : null;
+                        const amountHint = (shouldPreserveHint && Number.isFinite(rememberedHint))
+                            ? Math.max(0, Math.floor(rememberedHint))
+                            : null;
 
-                        // Preserve per-mission transfer hint so each slot can avoid over-pulling.
+                        const missionData = {
+                            sourceId: sourceId,
+                            resourceType: resourceType
+                        };
+                        if (amountHint !== null) missionData.amountHint = amountHint;
+
+                        // Preserve per-mission transfer hint so bounded routes avoid over-pulling.
                         const mission = {
                             name: fullMissionName,
                             type: 'transfer',
                             archetype: 'hauler',
                             targetId: targetId,
-                            data: {
-                                sourceId: sourceId,
-                                resourceType: resourceType,
-                                amountHint: amountHint
-                            },
+                            data: missionData,
                             requirements: { archetype: 'hauler', minCount: 1, maxCount: 1, spawn: false },
                             priority: this.getLogisticsPriority(type, target, isEmergency)
                         };
@@ -885,29 +894,35 @@ module.exports = {
                 break;
             }
 
+            const slotReserved = Math.max(0, Math.min(cap, remaining));
             const amountHint = hasNeed
                 ? Math.max(0, Math.min(perSlotNeed, remaining))
-                : Math.max(0, Math.min(cap, remaining));
+                : null;
 
-            if (amountHint <= 0) break;
+            if (slotReserved <= 0) break;
+
+            const missionData = {
+                sourceId: source.id,
+                resourceType: resourceType,
+                allowPartial: allowPartial
+            };
+            if (amountHint !== null) {
+                if (amountHint <= 0) break;
+                missionData.amountHint = amountHint;
+            }
 
             activeMissions.set(missionName, {
                 name: missionName,
                 type: 'transfer',
                 archetype: 'hauler',
                 targetId: target.id,
-                data: {
-                    sourceId: source.id,
-                    resourceType: resourceType,
-                    allowPartial: allowPartial,
-                    amountHint: amountHint
-                },
+                data: missionData,
                 requirements: { archetype: 'hauler', minCount: 1, maxCount: 1, spawn: false },
                 priority: this.getLogisticsPriority(type, target, isEmergency)
             });
 
             coveredRouteSlots.add(missionName);
-            remaining -= amountHint;
+            remaining -= slotReserved;
         }
     },
 
@@ -938,13 +953,13 @@ module.exports = {
     getLogisticsPriority: function(type, target, isEmergency) {
         if (type === 'outflow') {
             if (target.structureType === STRUCTURE_TOWER) return isEmergency ? 950 : 95;
-            if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) return isEmergency ? 900 : 90;
+            if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) return isEmergency ? 900 : 80;
             return 50;
         }
-        if (type === 'link_out') return 55;
+        if (type === 'link_out') return 95;
+        if (type === 'mining') return 85;
         if (type === 'scavenge') return 45;
         if (type === 'drop_mining') return 47;
-        if (type === 'mining') return 30;
         if (type === 'terminal_stock') return 20;
         return 10;
     }

@@ -440,20 +440,75 @@ module.exports = {
         }
 
         // --- Priority 4.5: Repair ---
-        // Reuse opportunistic repair heap scan instead of re-scanning all structures here.
-        if (intel.energyAvailable > intel.energyCapacityAvailable * 0.5) {
+        // Reuse opportunistic repair scan and apply tower-specific targeting policy:
+        // - walls/ramparts only during active defense (following fortify targets)
+        // - other structures only when critically low (<= 5% hits)
+        {
+            const CRITICAL_TOWER_REPAIR_RATIO = 0.05;
+            const inDefense = intel.hostiles && intel.hostiles.length > 0;
+            const economyState = (context && context.economyState)
+                ? context.economyState
+                : ((intel && intel.economyState) ? intel.economyState : 'STOCKPILING');
+            const hasStorage = !!room.storage;
+            const storageEnergy = (intel && Number.isFinite(intel.storageEnergy)) ? intel.storageEnergy : 0;
+            const noStorageEnergyGate = intel.energyAvailable > (intel.energyCapacityAvailable * 0.8);
+            const storageEnergyGate = storageEnergy >= 10000;
+            const allowRepairEconomy = inDefense || (hasStorage
+                ? (economyState === 'UPGRADING' && storageEnergyGate)
+                : noStorageEnergyGate);
+            if (!allowRepairEconomy) {
+                towerDebug(() =>
+                    `[Tower] ${room.name} skip-repair economy=${economyState} ` +
+                    `storage=${storageEnergy} inDefense=${inDefense ? 1 : 0}`
+                );
+                return;
+            }
+
             const repairScan = overseerOpportunisticRepair.getRoomScan(room.name);
-            const targetIds = (repairScan && repairScan.repairIds && repairScan.repairIds.length > 0)
-                ? repairScan.repairIds
-                : null;
-            if (targetIds) {
+            const repairIds = (repairScan && Array.isArray(repairScan.repairIds)) ? repairScan.repairIds : [];
+            const fortifyIds = (repairScan && Array.isArray(repairScan.fortifyIds)) ? repairScan.fortifyIds : [];
+
+            const targetSet = new Set();
+            let criticalNonFortCount = 0;
+            let defenseFortifyCount = 0;
+
+            // Non-fortify repairs: only emergency catch-up repairs for towers.
+            for (const id of repairIds) {
+                const st = Game.getObjectById(id);
+                if (!st || !st.hitsMax) continue;
+                const isFort = st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART;
+                if (isFort) {
+                    if (inDefense) targetSet.add(id);
+                    continue;
+                }
+                if (st.hits <= (st.hitsMax * CRITICAL_TOWER_REPAIR_RATIO)) {
+                    targetSet.add(id);
+                    criticalNonFortCount++;
+                }
+            }
+
+            // During defense, let towers follow fortify queue as usual.
+            if (inDefense) {
+                for (const id of fortifyIds) {
+                    const st = Game.getObjectById(id);
+                    if (!st) continue;
+                    targetSet.add(id);
+                }
+                defenseFortifyCount = targetSet.size - criticalNonFortCount;
+            }
+
+            if (targetSet.size > 0) {
+                const targetIds = Array.from(targetSet);
                 missions.push({
                     name: 'tower:repair',
                     type: 'tower_repair',
                     targetIds,
                     priority: 40
                 });
-                towerDebug(() => `[Tower] ${room.name} repair targets=${targetIds.length}`);
+                towerDebug(() =>
+                    `[Tower] ${room.name} repair targets=${targetIds.length} ` +
+                    `critical=${criticalNonFortCount} defenseFortify=${defenseFortifyCount} inDefense=${inDefense ? 1 : 0}`
+                );
             }
         }
     }

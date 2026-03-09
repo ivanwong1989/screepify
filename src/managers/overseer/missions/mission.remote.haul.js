@@ -8,7 +8,7 @@
 
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
 const remoteHaulPathing = require('managers_overseer_utils_overseer.remoteHaulPathing');
-const REMOTE_HAUL_LANE_LAYOUT_VERSION = 3;
+const REMOTE_HAUL_LANE_LAYOUT_VERSION = 4;
 
 const toRoomPosition = (pos) => {
     if (!pos || !pos.roomName) return null;
@@ -16,6 +16,31 @@ const toRoomPosition = (pos) => {
     const y = Number(pos.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return new RoomPosition(x, y, pos.roomName);
+};
+
+const buildOtherSourceRings = (sources, currentSourceId, roomName) => {
+    const blockedTiles = [];
+    if (!Array.isArray(sources) || !currentSourceId || !roomName) return blockedTiles;
+
+    for (let i = 0; i < sources.length; i++) {
+        const src = sources[i];
+        if (!src || !src.id || src.id === currentSourceId) continue;
+
+        const sx = Number(src.x);
+        const sy = Number(src.y);
+        if (!Number.isFinite(sx) || !Number.isFinite(sy)) continue;
+
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                const x = sx + dx;
+                const y = sy + dy;
+                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+                blockedTiles.push({ roomName, x, y });
+            }
+        }
+    }
+
+    return blockedTiles;
 };
 
 module.exports = {
@@ -100,7 +125,15 @@ module.exports = {
                 let pathLen = laneManager.getKnownPathLen(pickupId) || 1;
 
                 // If lanes are missing/expired, try to rebuild (rate-limited).
-                const rebuilt = laneManager.ensureLanes(pickupId, dropoffPos, pickupPos, laneKeyToPickup, laneKeyToDropoff);
+                const blockedTiles = buildOtherSourceRings(sources, source.id, name);
+                const rebuilt = laneManager.ensureLanes(
+                    pickupId,
+                    dropoffPos,
+                    pickupPos,
+                    laneKeyToPickup,
+                    laneKeyToDropoff,
+                    { blockedTiles }
+                );
                 pathLen = rebuilt.pathLen || pathLen;
 
                 const roundTrip = (pathLen * 2) + TRANSFER_BUFFER_TICKS;

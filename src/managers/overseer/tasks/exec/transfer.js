@@ -55,6 +55,80 @@ module.exports = function execTransferTask(ctx) {
         return Math.max(0, Math.min(rem, capacity));
     };
 
+    const getOpportunisticLocalTopUp = () => {
+        if (resourceType !== RESOURCE_ENERGY || !allowPartial) return null;
+        if (!mission || !mission.data || !mission.data.sourceId) return null;
+
+        const carried = creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0;
+        const free = creep.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+        if (carried <= 0 || free <= 0) return null;
+
+        const anchor = helpers.getCachedObject(creep.room, mission.data.sourceId);
+        if (!anchor || !anchor.pos) return null;
+        if (!creep.pos.inRangeTo(anchor.pos, 1)) return null; // no extra walking
+
+        const hint = getAmountHint();
+        const remainingByHint = capByHintRemaining(hint, carried, free);
+        if (remainingByHint === 0) return null;
+
+        const maxTake = (available) => {
+            const avail = Math.max(0, available || 0);
+            if (remainingByHint === null) return Math.min(avail, free);
+            return Math.min(avail, remainingByHint);
+        };
+
+        const tryBuildTask = (target) => {
+            if (!target || !target.id) return null;
+            if (target instanceof Resource) {
+                if (target.resourceType !== RESOURCE_ENERGY || target.amount <= 0) return null;
+                if (!target.pos || !target.pos.inRangeTo(anchor.pos, 1) || !creep.pos.inRangeTo(target.pos, 1)) return null;
+
+                // pickup() cannot be amount-capped; skip when hint would be exceeded.
+                const take = maxTake(target.amount);
+                if (take <= 0) return null;
+                if (remainingByHint !== null && target.amount > take) return null;
+                return { type: 'pickup', targetId: target.id };
+            }
+
+            if (!target.store || !target.pos) return null;
+            const available = target.store[RESOURCE_ENERGY] || 0;
+            if (available <= 0) return null;
+            if (!target.pos.inRangeTo(anchor.pos, 1) || !creep.pos.inRangeTo(target.pos, 1)) return null;
+
+            const take = maxTake(available);
+            if (take <= 0) return null;
+            return { type: 'withdraw', targetId: target.id, resourceType: RESOURCE_ENERGY, amount: take };
+        };
+
+        // Prefer the anchored source first, then any adjacent no-walk energy blob/container.
+        const anchorTask = tryBuildTask(anchor);
+        if (anchorTask) return anchorTask;
+
+        const dropped = creep.pos.findInRange(FIND_DROPPED_RESOURCES, 1, {
+            filter: r => r && r.id !== mission.data.sourceId && r.resourceType === RESOURCE_ENERGY && r.amount > 0 &&
+                r.pos && r.pos.inRangeTo(anchor.pos, 1)
+        });
+        let bestDrop = null;
+        for (let i = 0; i < dropped.length; i++) {
+            const d = dropped[i];
+            if (!bestDrop || d.amount > bestDrop.amount) bestDrop = d;
+        }
+        const dropTask = tryBuildTask(bestDrop);
+        if (dropTask) return dropTask;
+
+        const structures = creep.pos.findInRange(FIND_STRUCTURES, 1, {
+            filter: s => s && s.id !== mission.data.sourceId && s.store && (s.store[RESOURCE_ENERGY] || 0) > 0 &&
+                s.pos && s.pos.inRangeTo(anchor.pos, 1)
+        });
+        let bestStruct = null;
+        for (let i = 0; i < structures.length; i++) {
+            const s = structures[i];
+            const amt = s.store[RESOURCE_ENERGY] || 0;
+            if (!bestStruct || amt > (bestStruct.store[RESOURCE_ENERGY] || 0)) bestStruct = s;
+        }
+        return tryBuildTask(bestStruct);
+    };
+
 
 const findOtherDumpTarget = (type) => {
         // For "dump-other", prefer stable sinks to avoid oscillation loops (e.g., dumping into containers then re-withdrawing).
@@ -321,6 +395,13 @@ const findOtherDumpTarget = (type) => {
 
     // Energy missions may use the generic gather selector.
     if (resourceType === RESOURCE_ENERGY) {
+        const topUpTask = getOpportunisticLocalTopUp();
+        if (topUpTask) {
+            if (creep.memory._emptySourceTicks) delete creep.memory._emptySourceTicks;
+            log(`local top-up ${fmtTask(topUpTask)}`);
+            return topUpTask;
+        }
+
         // Supply missions: if storage exists, ONLY pull from storage (stable source, prevents mining-container yo-yo)
         if (isSupply && room.storage && (room.storage.store[RESOURCE_ENERGY] || 0) > 0) {
             task = execGatherTask({

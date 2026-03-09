@@ -116,16 +116,44 @@ const reserveLanePoints = (reservations, points, sharedPrefixSteps) => {
     }
 };
 
-const makeReservedRoomCallback = (reservations, tilePenalty, neighborPenalty) => {
+const buildHardBlocksByRoom = (blockedTiles) => {
+    const byRoom = Object.create(null);
+    if (!Array.isArray(blockedTiles) || blockedTiles.length === 0) return byRoom;
+
+    for (let i = 0; i < blockedTiles.length; i++) {
+        const p = blockedTiles[i];
+        if (!p || !p.roomName) continue;
+        if (p.x < 0 || p.x > 49 || p.y < 0 || p.y > 49) continue;
+
+        let roomMap = byRoom[p.roomName];
+        if (!roomMap) {
+            roomMap = Object.create(null);
+            byRoom[p.roomName] = roomMap;
+        }
+        roomMap[xyToIndex(p.x, p.y)] = 1;
+    }
+
+    return byRoom;
+};
+
+const makeReservedRoomCallback = (reservations, tilePenalty, neighborPenalty, blockedTiles) => {
+    const hardBlocksByRoom = buildHardBlocksByRoom(blockedTiles);
     const compiled = Object.create(null);
 
     const getCompiled = (roomName) => {
         let c = compiled[roomName];
         if (c) return c;
 
+        const hardMap = hardBlocksByRoom[roomName];
+        const hardKeys = hardMap ? Object.keys(hardMap) : [];
+        const hard = new Array(hardKeys.length);
+        for (let i = 0; i < hardKeys.length; i++) {
+            hard[i] = Number(hardKeys[i]);
+        }
+
         const roomRes = reservations[roomName];
         if (!roomRes) {
-            c = { core: null, near: null };
+            c = { core: null, near: null, hard };
             compiled[roomName] = c;
             return c;
         }
@@ -145,7 +173,7 @@ const makeReservedRoomCallback = (reservations, tilePenalty, neighborPenalty) =>
             near[i] = { idx, count: roomRes.near[idx] || 0 };
         }
 
-        c = { core, near };
+        c = { core, near, hard };
         compiled[roomName] = c;
         return c;
     };
@@ -153,9 +181,17 @@ const makeReservedRoomCallback = (reservations, tilePenalty, neighborPenalty) =>
     return (roomName) => {
         const base = getPathingCostMatrix(roomName);
         const c = getCompiled(roomName);
-        if (!c.core && !c.near) return base || undefined;
+        const hasHardBlocks = Array.isArray(c.hard) && c.hard.length > 0;
+        if (!c.core && !c.near && !hasHardBlocks) return base || undefined;
 
         const cm = base ? base.clone() : new PathFinder.CostMatrix();
+
+        const hard = c.hard || [];
+        for (let i = 0; i < hard.length; i++) {
+            const idx = hard[i];
+            const { x, y } = indexToXY(idx);
+            cm.set(x, y, 255);
+        }
 
         const core = c.core || [];
         for (let i = 0; i < core.length; i++) {
@@ -426,7 +462,6 @@ const createLaneManager = (homeRoom, targetSignature, opts = {}) => {
         h.meta = Object.create(null);
     }
 
-    const pathMemo = new Map();
     const reservations = Object.create(null);
 
     const getLane = (laneKey) => {
@@ -483,7 +518,7 @@ const createLaneManager = (homeRoom, targetSignature, opts = {}) => {
 
     seedReservationsFromFreshLanes();
 
-    const ensureLanes = (pickupId, dropoffPos, pickupPos, laneKeyToPickup, laneKeyToDropoff) => {
+    const ensureLanes = (pickupId, dropoffPos, pickupPos, laneKeyToPickup, laneKeyToDropoff, laneOpts = {}) => {
         const lf = getLane(laneKeyToPickup);
         const lr = getLane(laneKeyToDropoff);
         if (lf && lr) return { pathLen: lf.len || 1, built: false };
@@ -495,7 +530,28 @@ const createLaneManager = (homeRoom, targetSignature, opts = {}) => {
 
         h.budgetUsed++;
 
-        const reservedRoomCallback = makeReservedRoomCallback(reservations, reservedTilePenalty, reservedNeighborPenalty);
+        const blockedTiles = Array.isArray(laneOpts.blockedTiles) ? laneOpts.blockedTiles : null;
+        const reservedRoomCallback = makeReservedRoomCallback(
+            reservations,
+            reservedTilePenalty,
+            reservedNeighborPenalty,
+            blockedTiles
+        );
+        const hardBlockOnlyRoomCallback = (roomName) => {
+            const base = getPathingCostMatrix(roomName);
+            const cm = base ? base.clone() : new PathFinder.CostMatrix();
+            let applied = false;
+            if (blockedTiles && blockedTiles.length > 0) {
+                for (let i = 0; i < blockedTiles.length; i++) {
+                    const p = blockedTiles[i];
+                    if (!p || p.roomName !== roomName) continue;
+                    if (p.x < 0 || p.x > 49 || p.y < 0 || p.y > 49) continue;
+                    cm.set(p.x, p.y, 255);
+                    applied = true;
+                }
+            }
+            return applied ? cm : (base || undefined);
+        };
 
         // Fast path: build forward lane first. Reverse search only when needed.
         let f = computePathData(dropoffPos, pickupPos, null, reservedRoomCallback);
@@ -509,9 +565,9 @@ const createLaneManager = (homeRoom, targetSignature, opts = {}) => {
         const noForwardPoints = !Array.isArray(f.points) || f.points.length < 1;
         const reverseIncomplete = !r || r.incomplete;
         if (f.incomplete && noForwardPoints && reverseIncomplete) {
-            f = computePathData(dropoffPos, pickupPos, pathMemo);
+            f = computePathData(dropoffPos, pickupPos, null, hardBlockOnlyRoomCallback);
             if (!Array.isArray(f.points) || f.points.length < 1) {
-                r = computePathData(pickupPos, dropoffPos, pathMemo);
+                r = computePathData(pickupPos, dropoffPos, null, hardBlockOnlyRoomCallback);
             }
         }
 
