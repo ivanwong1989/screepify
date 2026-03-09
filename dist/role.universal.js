@@ -245,6 +245,7 @@ function getOpportunisticDesiredHits(room, st) {
 
     // For walls/ramparts, cap at mission policy target hits (NOT hitsMax)
     if (st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART) {
+        if (!allowOpportunisticFortify(room)) return 0;
         const policy = room && room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy;
         const target = policy && Number.isFinite(policy.target) ? policy.target : 0;
 
@@ -256,6 +257,33 @@ function getOpportunisticDesiredHits(room, st) {
 
     // Normal structures: desired is full hitsMax
     return st.hitsMax;
+}
+
+function isDireFortifyContext(room) {
+    if (!room) return false;
+    const combatState = room.memory && room.memory.admiral && room.memory.admiral.state;
+    if (combatState === 'DEFEND' || combatState === 'SIEGE') return true;
+
+    if (room._oppFortifyHostilesTick !== Game.time) {
+        let hostiles = [];
+        if (global.getRoomCache) {
+            const cache = global.getRoomCache(room);
+            hostiles = (cache && cache.hostiles) ? cache.hostiles : [];
+        } else {
+            hostiles = room.find(FIND_HOSTILE_CREEPS);
+        }
+        room._oppFortifyHostilesPresent = !!(hostiles && hostiles.length > 0);
+        room._oppFortifyHostilesTick = Game.time;
+    }
+
+    return !!room._oppFortifyHostilesPresent;
+}
+
+function allowOpportunisticFortify(room) {
+    if (!room) return false;
+    if (isDireFortifyContext(room)) return true;
+    const economyState = room.memory && room.memory.overseer && room.memory.overseer.economyState;
+    return economyState === 'UPGRADING';
 }
 
 function getOpportunisticRoomTargets(roomName) {
@@ -329,6 +357,8 @@ function tryOpportunisticRepair(creep, currentTask) {
 
         const st = Game.getObjectById(t.id);
         if (!st || !st.hitsMax) continue;
+        const wallOrRampart = st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART;
+        if (wallOrRampart && !allowOpportunisticFortify(room)) continue;
 
         const desired = Number.isFinite(t.desiredHits) ? t.desiredHits : getOpportunisticDesiredHits(room, st);
         if (desired <= 0 || st.hits >= desired || st.hits >= (desired * 0.95)) continue;

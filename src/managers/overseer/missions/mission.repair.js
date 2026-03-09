@@ -199,14 +199,6 @@ module.exports = {
         }
 
         if (fortifyTargets.length > 0) {
-            // Fortify stays capped in *targets* (prevents jumping around),
-            // but scales in *workers per target* based on long-term net income (EMA) + storage buffers.
-            //
-            // Goals:
-            //  - Never grind storage to 0
-            //  - Fortify more when we have sustained positive income
-            //  - Prefer fortify during UPGRADING (spend mode), be conservative during STOCKPILING (save mode)
-
             const FORTIFY_TARGET_CAP = 3;
 
             // Hard caps (safety)
@@ -221,67 +213,34 @@ module.exports = {
             const economyState = (intel && intel.economyState)
                 ? intel.economyState
                 : (overseerMem.economyState || 'STOCKPILING'); // 'STOCKPILING' | 'UPGRADING'
-            const econFlow = (intel && intel.economyFlow)
-                ? intel.economyFlow
-                : (overseerMem.economyFlow || {});
-            const flowLong = (typeof econFlow.longAvg === 'number')
-                ? econFlow.longAvg
-                : (typeof econFlow.avg === 'number' ? econFlow.avg : 0); // fallback
-
-            // Storage guardrails (RCL-scaled floor with hysteresis)
-            const storageEnergy = intel.storageEnergy || 0;
-            const RCL_FLOOR = {
-                1: 0,
-                2: 0,
-                3: 5000,
-                4: 15000,
-                5: 30000,
-                6: 50000,
-                7: 100000,
-                8: 150000
-            };
-            const floor = RCL_FLOOR[rcl] || 30000;
-            const ceiling = floor * 2;
 
             // Threat / urgency
             const direFortify = siegeMode || hostilesPresent;
-
-            // Budget shaping:
-            // - In STOCKPILING: keep most income as net positive accumulation
-            // - In UPGRADING: allow a bit more spending, but still keep accumulation unless dire
-            const keepFrac = (economyState === 'UPGRADING') ? 0.55 : 0.75; // keep this fraction of net income
-            const bufferRatio = (ceiling <= floor)
-                ? 0
-                : Math.max(0, Math.min(1, (storageEnergy - floor) / (ceiling - floor)));
-
-            // If long-term net is negative, don't spawn fortifiers (unless dire AND above ceiling).
-            const income = Math.max(0, flowLong);
-            const spendableIncome = income * (1 - keepFrac);
-
-            // Convert income to a conservative "work target" (rough proxy). Buffer ratio gates aggressiveness.
-            const fortifyWorkTarget = Math.min(
-                MAX_FORTIFY_WORK_TARGET,
-                Math.floor(spendableIncome * (economyState === 'UPGRADING' ? 1.2 : 0.8) * (direFortify ? 1.2 : 1.0) * bufferRatio)
-            );
+            const normalFortifyAllowed = economyState === 'UPGRADING';
+            // Under normal conditions, fortify is controlled only by economy state.
+            // In threat/siege, allow fortify regardless of economy state.
+            if (!direFortify && !normalFortifyAllowed) {
+                debug(
+                    'mission.repair',
+                    `[Fortify] ${room.name} skipped state=${economyState} dire=${direFortify} repairBacklog=${repairTargets.length}`
+                );
+                return;
+            }
 
             // We can still publish fortify work for existing creeps (spawn=false).
             const stats = managerSpawner.checkBody('worker', budget);
             const fortifyWorkPerCreep = stats.work || 1;
-
-            // Total fortify workers we *want* (across selected targets)
-            const desiredFortifyWorkers = Math.max(0, Math.ceil(fortifyWorkTarget / fortifyWorkPerCreep));
+            const scaledFortifyWorkTarget = direFortify
+                ? MAX_FORTIFY_WORK_TARGET
+                : Math.floor(MAX_FORTIFY_WORK_TARGET * 0.6);
+            const desiredFortifyWorkers = Math.max(1, Math.ceil(scaledFortifyWorkTarget / fortifyWorkPerCreep));
 
             // Spawn rules:
-            // - Always block spawn if repair backlog is big
-            // - Otherwise:
-            //    - If dire: allow spawn if we're not below floor (and preferably above ceiling)
-            //    - If not dire: allow spawn only in UPGRADING, with positive long income, and storage above ceiling
+            // - Always block spawn if repair backlog is big.
+            // - Otherwise allow if we're in threat/siege OR economy is in UPGRADING.
             const allowFortifySpawn = (
                 (repairTargets.length <= REPAIR_BACKLOG_BLOCK_SPAWN) &&
-                (
-                    (direFortify && storageEnergy >= floor && (storageEnergy >= ceiling || income > 0)) ||
-                    (!direFortify && economyState === 'UPGRADING' && income > 0 && storageEnergy >= ceiling)
-                ) &&
+                (direFortify || normalFortifyAllowed) &&
                 desiredFortifyWorkers > 0
             );
 
@@ -323,8 +282,7 @@ module.exports = {
 
             debug(
                 'mission.repair',
-                `[Fortify] ${room.name} state=${economyState} flowLong=${flowLong.toFixed(2)} ` +
-                `storage=${storageEnergy} floor=${floor} ceiling=${ceiling} buffer=${bufferRatio.toFixed(2)} ` +
+                `[Fortify] ${room.name} state=${economyState} ` +
                 `targets=${selectedForts.length}/${fortifyTargets.length} countPerTarget=${fortifyCountPerTarget} ` +
                 `spawn=${allowFortifySpawn} dire=${direFortify} repairBacklog=${repairTargets.length}`
             );

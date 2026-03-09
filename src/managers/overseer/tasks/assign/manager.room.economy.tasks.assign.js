@@ -214,40 +214,69 @@ var managerTasks = {
             }
         });
 
+        const hasHigherPriorityUnderfilledMission = (priorityFloor, excludeNames) => {
+            for (const name in missionStatus) {
+                if (excludeNames && excludeNames.has(name)) continue;
+                const st = missionStatus[name];
+                const m = st.mission;
+                const pr = m.priority || 0;
+                if (pr <= priorityFloor) continue;
+
+                const req = m.requirements || {};
+                if (req.count && st.assignedCount < req.count) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        const clearMissionAssignment = (creep) => {
+            delete creep.memory.missionName;
+            delete creep.memory.taskState;
+            delete creep.memory.task;
+            delete creep.memory.scout;
+        };
+
         // --- Preempt idle:upgrade when real work is underfilled ---
         const idleUpName = 'idle:upgrade';
         const idleUp = missionStatus[idleUpName] ? missionStatus[idleUpName].mission : null;
         const idlePriority = idleUp ? (idleUp.priority || 0) : -99999;
 
-        if (idleUp) {
-            // Quick scan: is there any "real" mission that is underfilled?
-            // (We only consider missions with higher priority than idle upgrade.)
-            let hasUnderfilledRealMission = false;
+        if (idleUp && hasHigherPriorityUnderfilledMission(idlePriority, new Set([idleUpName]))) {
+            // Unassign idle upgraders so they can be reassigned this tick
+            creeps.forEach(creep => {
+                if (creep.spawning) return;
+                if (creep.memory.missionName !== idleUpName) return;
+                clearMissionAssignment(creep);
+            });
+        }
 
-            for (const name in missionStatus) {
-                if (name === idleUpName) continue;
-                const st = missionStatus[name];
-                const m = st.mission;
-                const pr = m.priority || 0;
-                if (pr <= idlePriority) continue;
+        // --- Preempt regular upgrade missions when higher-priority work is underfilled ---
+        const preemptibleUpgradeMissionNames = new Set(
+            Object.keys(missionStatus).filter(name => {
+                if (name === idleUpName) return false;
+                const m = missionStatus[name].mission;
+                return m && m.type === 'upgrade';
+            })
+        );
 
-                const req = m.requirements || {};
-                if (req.count && st.assignedCount < req.count) {
-                    hasUnderfilledRealMission = true;
+        if (preemptibleUpgradeMissionNames.size > 0) {
+            let shouldPreemptUpgrades = false;
+            for (const name of preemptibleUpgradeMissionNames) {
+                const mission = missionStatus[name].mission;
+                const priority = mission ? (mission.priority || 0) : 0;
+                if (hasHigherPriorityUnderfilledMission(priority, preemptibleUpgradeMissionNames)) {
+                    shouldPreemptUpgrades = true;
                     break;
                 }
             }
 
-            if (hasUnderfilledRealMission) {
-                // Unassign idle upgraders so they can be reassigned this tick
+            if (shouldPreemptUpgrades) {
                 creeps.forEach(creep => {
                     if (creep.spawning) return;
-                    if (creep.memory.missionName !== idleUpName) return;
-
-                    delete creep.memory.missionName;
-                    delete creep.memory.taskState;
-                    delete creep.memory.task;
-                    delete creep.memory.scout;
+                    const missionName = creep.memory.missionName;
+                    if (!missionName || !preemptibleUpgradeMissionNames.has(missionName)) return;
+                    clearMissionAssignment(creep);
                 });
             }
         }
