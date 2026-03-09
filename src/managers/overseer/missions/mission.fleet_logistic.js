@@ -1,4 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const heap = require('utils_heap');
 
 module.exports = {
@@ -28,8 +27,7 @@ module.exports = {
         const spawns = intel.structures[STRUCTURE_SPAWN] || [];
         const storage = room.storage;
 
-        const haulerStats = managerSpawner.checkBody('hauler', budget);
-        const uncappedCarryParts = haulerStats.carry || 1;
+        const uncappedCarryParts = Math.max(1, Math.floor((budget || 0) / 100));
         const carryParts = Math.min(uncappedCarryParts, MAX_HAULER_CARRY_PARTS);
 
         const haulTargets = storage ? [storage] : spawns;
@@ -215,7 +213,9 @@ module.exports = {
             roleCensus: 'hauler',
             requirements: {
                 archetype: 'hauler',
-                count: desiredHaulers,
+                requiredCarry: scaledRequiredCarryParts,
+                minCount: minHaulers,
+                maxCount: desiredHaulers,
                 spawnFromFleet: true,
                 maxCarryParts: MAX_HAULER_CARRY_PARTS
             },

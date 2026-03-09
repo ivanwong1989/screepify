@@ -18,7 +18,12 @@ var managerSpawner = {
         const addedTicketIds = new Set();
 
         // 1. Build contracts + fulfillment using tickets
-        const contractEntries = spawnContracts.buildContracts(room, missions);
+        const contractEntries = spawnContracts.buildContracts(room, missions, {
+            getBodyStats: (mission, budget) => {
+                const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
+                return this.checkBody(archetype, budget, mission);
+            }
+        });
         debug('spawner', `[Spawner] ${room.name} contracts=${contractEntries.length}`);
         if (contractEntries.length === 0) return;
 
@@ -115,6 +120,10 @@ var managerSpawner = {
     checkBody: function(type, budget, opts) {
         const archetype = type;
 
+        if (!global._checkBodyCache || global._checkBodyCache.time !== Game.time) {
+            global._checkBodyCache = { time: Game.time, byKey: Object.create(null) };
+        }
+
         // Allow callers to influence body generation (e.g. miner mode=mobile)
         // opts can be:
         //  - undefined
@@ -128,6 +137,20 @@ var managerSpawner = {
             if (opts && typeof opts === 'object') mission.data = opts;
         }
 
+        const req = mission && mission.requirements ? mission.requirements : null;
+        const data = mission && mission.data ? mission.data : null;
+        const cacheKey = [
+            archetype || '',
+            Number.isFinite(budget) ? budget : 0,
+            data && data.mode ? data.mode : '',
+            req && Number.isFinite(req.maxCarryParts) ? req.maxCarryParts : '',
+            req && Array.isArray(req.body) ? req.body.join('.') : '',
+            req && req.bodyMode ? req.bodyMode : ''
+        ].join('|');
+
+        const cached = global._checkBodyCache.byKey[cacheKey];
+        if (cached) return cached;
+
         const body = this.generateBody(mission, budget);
 
         // Single-pass stats (avoid filter() allocations and extra iterations).
@@ -135,6 +158,7 @@ var managerSpawner = {
         let work = 0;
         let carry = 0;
         let move = 0;
+        let claim = 0;
 
         for (let i = 0; i < body.length; i++) {
             const part = body[i];
@@ -142,9 +166,12 @@ var managerSpawner = {
             if (part === WORK) work++;
             else if (part === CARRY) carry++;
             else if (part === MOVE) move++;
+            else if (part === CLAIM) claim++;
         }
 
-        return { body, cost, work, carry, move };
+        const stats = { body, cost, work, carry, move, claim };
+        global._checkBodyCache.byKey[cacheKey] = stats;
+        return stats;
     },
 
     generateBody: function(mission, budget) {

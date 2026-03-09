@@ -1,5 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
-
 const missionModules = {
     tower: require('managers_overseer_missions_mission.tower'),
     scout: require('managers_overseer_missions_mission.scout'),
@@ -49,11 +47,15 @@ const overseerMissions = {
 
         // Pre-calculate efficiency for harvest/logistics
         const efficientSources = new Set();
-        const potentialHarvester = managerSpawner.checkBody('miner', budget);
+        const estimateMinerWork = (energyBudget) => {
+            const safeBudget = Math.max(200, energyBudget || 0);
+            return Math.max(1, Math.min(7, 1 + Math.floor((safeBudget - 200) / 100)));
+        };
+        const potentialMinerWork = estimateMinerWork(budget);
 
         // baseline rule (your existing intent, but keep as-is)
         intel.sources.forEach(s => {
-            const needed = Math.ceil(5 / (potentialHarvester.work || 1));
+            const needed = Math.ceil(5 / potentialMinerWork);
             const viable = needed <= s.availableSpaces;
 
             const isEfficient =
@@ -71,7 +73,7 @@ const overseerMissions = {
             let bestSpaces = -1;
 
             intel.sources.forEach(s => {
-                const needed = Math.ceil(5 / (potentialHarvester.work || 1));
+                const needed = Math.ceil(5 / potentialMinerWork);
                 const viable = needed <= s.availableSpaces;
                 if (!viable) return;
 

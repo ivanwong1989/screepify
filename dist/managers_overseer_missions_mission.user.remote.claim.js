@@ -109,7 +109,8 @@ module.exports = {
                 archetype: 'claimer',
                 requirements: {
                     archetype: 'claimer',
-                    count: 1,
+                    minCount: 1,
+                    maxCount: 1,
                     spawn: spawnAllowed
                 },
                 targetPos: targetPos,

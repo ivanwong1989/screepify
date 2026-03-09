@@ -12,6 +12,57 @@ try {
 }
 
 const overseerUtils = {
+    getRequiredHeadcount: function(mission) {
+        if (!mission || !mission.requirements) return 0;
+        const req = mission.requirements;
+        if (Number.isFinite(req.maxCount)) return req.maxCount;
+        if (Number.isFinite(req.minCount)) return req.minCount;
+
+        const census = mission.census || {};
+        const count = Math.max(1, census.count || 0);
+        const avgWork = Math.max(1, Math.ceil((census.workParts || 0) / count));
+        const avgCarry = Math.max(1, Math.ceil((census.carryParts || 0) / count));
+        const avgClaim = 1;
+
+        const byWork = Number.isFinite(req.requiredWork) ? Math.ceil(req.requiredWork / avgWork) : 0;
+        const byCarry = Number.isFinite(req.requiredCarry) ? Math.ceil(req.requiredCarry / avgCarry) : 0;
+        const byClaim = Number.isFinite(req.requiredClaim) ? Math.ceil(req.requiredClaim / avgClaim) : 0;
+        return Math.max(byWork, byCarry, byClaim, 0);
+    },
+
+    getMissionProgress: function(mission) {
+        const census = mission && mission.census ? mission.census : {};
+        const req = mission && mission.requirements ? mission.requirements : {};
+
+        const requiredWork = Number.isFinite(req.requiredWork) ? Math.max(0, req.requiredWork) : 0;
+        const requiredCarry = Number.isFinite(req.requiredCarry) ? Math.max(0, req.requiredCarry) : 0;
+        const requiredClaim = Number.isFinite(req.requiredClaim) ? Math.max(0, req.requiredClaim) : 0;
+
+        const haveWork = Math.max(0, census.workParts || 0);
+        const haveCarry = Math.max(0, census.carryParts || 0);
+        const haveClaim = Math.max(0, census.claimParts || 0);
+
+        const hasPartDemand = requiredWork > 0 || requiredCarry > 0 || requiredClaim > 0;
+        if (hasPartDemand) {
+            const workOk = requiredWork <= 0 || haveWork >= requiredWork;
+            const carryOk = requiredCarry <= 0 || haveCarry >= requiredCarry;
+            const claimOk = requiredClaim <= 0 || haveClaim >= requiredClaim;
+            return {
+                filled: workOk && carryOk && claimOk,
+                summary: `W ${haveWork}/${requiredWork} C ${haveCarry}/${requiredCarry} Q ${haveClaim}/${requiredClaim}`,
+                short: `${haveWork}/${requiredWork}W ${haveCarry}/${requiredCarry}C ${haveClaim}/${requiredClaim}Q`
+            };
+        }
+
+        const requiredCount = this.getRequiredHeadcount(mission);
+        const assigned = Math.max(0, census.count || 0);
+        return {
+            filled: assigned >= requiredCount,
+            summary: `N ${assigned}/${requiredCount}`,
+            short: `${assigned}/${requiredCount}`
+        };
+    },
+
     analyzeCensus: function(missions, creeps) {
         // Informational only: used for UI/debug and mission logic that depends on "currently assigned".
         // Spawn planning must rely on contract/ticket census, not mission.census.
@@ -23,10 +74,11 @@ const overseerUtils = {
                 m.census = {
                     count: m.census.count || 0,
                     workParts: m.census.workParts || 0,
-                    carryParts: m.census.carryParts || 0
+                    carryParts: m.census.carryParts || 0,
+                    claimParts: m.census.claimParts || 0
                 };
             } else {
-                m.census = { count: 0, workParts: 0, carryParts: 0 };
+                m.census = { count: 0, workParts: 0, carryParts: 0, claimParts: 0 };
             }
             missionMap[m.name] = m;
             if (m.roleCensus) {
@@ -39,6 +91,7 @@ const overseerUtils = {
             const memory = c.memory || {};
             const workParts = c.getActiveBodyparts(WORK);
             const carryParts = c.getActiveBodyparts(CARRY);
+            const claimParts = c.getActiveBodyparts(CLAIM);
 
             if (memory.missionName && missionMap[memory.missionName]) {
                 const m = missionMap[memory.missionName];
@@ -47,6 +100,7 @@ const overseerUtils = {
                     m.census.count++;
                     m.census.workParts += workParts;
                     m.census.carryParts += carryParts;
+                    m.census.claimParts += claimParts;
                 }
             }
             if (memory.role && roleMissions[memory.role]) {
@@ -55,6 +109,7 @@ const overseerUtils = {
                     m.census.count++;
                     m.census.workParts += workParts;
                     m.census.carryParts += carryParts;
+                    m.census.claimParts += claimParts;
                 });
             }
         });
@@ -105,7 +160,7 @@ const overseerUtils = {
                     const sortedBuilds = [...buildMissions].sort((a, b) => (b.priority || 0) - (a.priority || 0));
                     for (const buildMission of sortedBuilds) {
                         if (available <= 0) break;
-                        const required = buildMission.requirements ? buildMission.requirements.count : 0;
+                        const required = this.getRequiredHeadcount(buildMission);
                         const assigned = buildMission.census ? buildMission.census.count : 0;
                         const deficit = Math.max(0, required - assigned);
                         if (deficit <= 0) continue;
@@ -131,8 +186,10 @@ const overseerUtils = {
                  const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
                  for (const mission of sortedMissions) {
                      if (parkedTotal === 0) break;
-                     if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'remote_hauler_fleet' || mission.type === 'worker_fleet' || mission.type === 'remote_worker_fleet' || !mission.requirements || !mission.requirements.count) continue;
-                     const deficit = mission.requirements.count - (mission.census ? mission.census.count : 0);
+                     if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'remote_hauler_fleet' || mission.type === 'worker_fleet' || mission.type === 'remote_worker_fleet' || !mission.requirements) continue;
+                     const required = this.getRequiredHeadcount(mission);
+                     if (required <= 0) continue;
+                     const deficit = required - (mission.census ? mission.census.count : 0);
                      if (deficit > 0) {
                          const role = mission.requirements.archetype;
                          const candidates = parkedByRole[role];
@@ -295,9 +352,9 @@ const overseerUtils = {
         const getFleetCounts = (type) => {
             const m = missions.find(m => m.type === type);
             if (!m) return null;
+            const progress = this.getMissionProgress(m);
             return {
-                have: m.census ? m.census.count : 0,
-                need: m.requirements ? m.requirements.count : 0
+                summary: progress.summary
             };
         };
         const workerFleet = getFleetCounts('worker_fleet');
@@ -305,10 +362,10 @@ const overseerUtils = {
         const haulerFleet = getFleetCounts('hauler_fleet');
         const remoteHaulerFleet = getFleetCounts('remote_hauler_fleet');
         const fleetParts = [];
-        if (workerFleet) fleetParts.push(`worker ${workerFleet.have}/${workerFleet.need}`);
-        if (remoteWorkerFleet) fleetParts.push(`remote_worker ${remoteWorkerFleet.have}/${remoteWorkerFleet.need}`);
-        if (haulerFleet) fleetParts.push(`hauler ${haulerFleet.have}/${haulerFleet.need}`);
-        if (remoteHaulerFleet) fleetParts.push(`remote_hauler ${remoteHaulerFleet.have}/${remoteHaulerFleet.need}`);
+        if (workerFleet) fleetParts.push(`worker ${workerFleet.summary}`);
+        if (remoteWorkerFleet) fleetParts.push(`remote_worker ${remoteWorkerFleet.summary}`);
+        if (haulerFleet) fleetParts.push(`hauler ${haulerFleet.summary}`);
+        if (remoteHaulerFleet) fleetParts.push(`remote_hauler ${remoteHaulerFleet.summary}`);
         if (fleetParts.length > 0) {
             room.visual.text(
                 `Fleet: ${fleetParts.join(' | ')}`,
@@ -320,11 +377,10 @@ const overseerUtils = {
         }
         const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
         sortedMissions.forEach(m => {
-            const assigned = m.census ? m.census.count : 0;
-            const required = m.requirements ? m.requirements.count : 0;
-            const filled = assigned >= required;
+            const progress = this.getMissionProgress(m);
+            const filled = progress.filled;
             const color = filled ? '#aaffaa' : '#ffaaaa';
-            room.visual.text(`[${m.priority}] ${m.name} (${assigned}/${required})`, 1, y, {align: 'left', font: 0.7, color: color});
+            room.visual.text(`[${m.priority}] ${m.name} (${progress.summary})`, 1, y, {align: 'left', font: 0.7, color: color});
             y += 1.0;
 
             if (m.pos) {
@@ -332,7 +388,7 @@ const overseerUtils = {
                 if (m.type === 'mineral' && m.data && m.data.resourceType) {
                     label += ` (${m.data.resourceType})`;
                 }
-                label += `\n${assigned}/${required}`;
+                label += `\n${progress.short}`;
                 room.visual.text(label, m.pos.x, m.pos.y - 0.5, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15, align: 'center' });
                 if (m.type === 'harvest' || m.type === 'mineral') {
                     room.visual.circle(m.pos, {fill: 'transparent', radius: 0.7, stroke: color, strokeWidth: 0.1, lineStyle: 'dashed'});
@@ -341,7 +397,7 @@ const overseerUtils = {
                 const targetIds = m.targetId ? [m.targetId] : (m.targetIds || []);
                 targetIds.forEach(id => {
                     const target = Game.getObjectById(id);
-                    if (target) room.visual.text(`🔨 ${assigned}/${required}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
+                    if (target) room.visual.text(`🔨 ${progress.short}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
                 });
             } else if (m.type === 'decongest') {
                 if (m.targetIds) {
@@ -362,3 +418,4 @@ const overseerUtils = {
 };
 
 module.exports = overseerUtils;
+

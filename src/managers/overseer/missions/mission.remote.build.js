@@ -1,4 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
 
 
@@ -341,8 +340,7 @@ module.exports = {
         const MAX_REMOTE_SITES = 3;
         const REMOTE_SCAN_INTERVAL = 25;
         const STALE_SITE_TICKS = 2000;
-        const buildStats = managerSpawner.checkBody('remote_worker', context.budget);
-        const workPerCreep = buildStats.work || 1;
+        const remoteBuildWorkTarget = 4;
 
         entries.forEach(({ name, entry, room: remoteRoom, enabled }) => {
             const isMy = remoteRoom && remoteRoom.controller && remoteRoom.controller.my;
@@ -399,7 +397,7 @@ module.exports = {
             const prioritizeWithdraw = !!(entry && entry.prioritizeWithdraw);
 
             debug('mission.remote.build', `[RemoteBuild] ${room.name} -> ${name} targets=${selected.length}/${sites.length} ` +
-                `workPerCreep=${workPerCreep}`);
+                `requiredWork=${remoteBuildWorkTarget}`);
 
             selected.forEach(site => {
                 const pos = site.pos || { x: site.x, y: site.y, roomName: site.roomName };
@@ -419,7 +417,9 @@ module.exports = {
                     },
                     requirements: {
                         archetype: 'remote_worker',
-                        count: 2,
+                        requiredWork: remoteBuildWorkTarget,
+                        minCount: 1,
+                        maxCount: 2,
                         spawnFromFleet: true
                     },
                     priority: 55

@@ -6,7 +6,6 @@
 
 'use strict';
 
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
 const heap = require('utils_heap');
 
@@ -112,7 +111,6 @@ module.exports = {
         });
 
         const { budget, getMissionCensus } = context;
-        const haulerStats = managerSpawner.checkBody('remote_hauler', budget);
 
         // ============================================================
         // SIZING: keep it simple (hardcode targetWork, derived energyPerTick)
@@ -126,7 +124,7 @@ module.exports = {
         const DISTANCE_SCALE_PER_TILE = 0.002;
 
         const MAX_REMOTE_HAULER_CARRY_PARTS = 25;
-        const carryParts = Math.min(haulerStats.carry || 1, MAX_REMOTE_HAULER_CARRY_PARTS);
+        const carryParts = Math.min(Math.max(1, Math.floor((budget || 0) / 100)), MAX_REMOTE_HAULER_CARRY_PARTS);
 
         // ============================================================
         // Signature invalidation (dropoff changes).
@@ -264,7 +262,9 @@ module.exports = {
                     archetype: 'remote_hauler',
                     requirements: {
                         archetype: 'remote_hauler',
-                        count: reqCount,
+                        requiredCarry: requiredCarryParts,
+                        minCount: 1,
+                        maxCount: reqCount,
                         maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS,
                         spawnFromFleet: true,
                     },

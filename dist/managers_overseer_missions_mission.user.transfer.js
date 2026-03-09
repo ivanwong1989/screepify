@@ -128,7 +128,7 @@ function buildTransferMissionCache() {
             priority: getMissionPriority(mission),
             persist: mission.persist === true,
             remoteRoom,
-            count: Number(mission.count) || 1
+            maxCount: Number(mission.count) || 1
         });
     }
 
@@ -152,7 +152,8 @@ module.exports = {
                 archetype: 'user_hauler',
                 requirements: {
                     archetype: 'user_hauler',
-                    count: entry.count,
+                    minCount: 1,
+                    maxCount: entry.maxCount,
                     spawn: true
                 },
                 targetId: entry.targetId,

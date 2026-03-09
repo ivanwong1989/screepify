@@ -226,7 +226,8 @@ module.exports = {
                 priority: 90,
                 requirements: {
                     archetype: 'assault',
-                    count: 1,
+                    minCount: 1,
+                    maxCount: 1,
                     body: bodyConfig.body,
                     bodyMode: bodyConfig.mode,
                     spawn: spawnAllowed

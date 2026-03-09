@@ -80,7 +80,8 @@ module.exports = {
 
             requirements: {
                 archetype: 'defender',
-                count: desired,
+                minCount: desired,
+                maxCount: desired,
                 body,
                 bodyMode: 'fixed',
                 spawn: spawnAllowed

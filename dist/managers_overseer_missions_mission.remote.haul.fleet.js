@@ -11,7 +11,11 @@ module.exports = {
 
         if (haulMissions.length === 0) return;
 
-        const remoteDemand = haulMissions.reduce((sum, m) => sum + (m.requirements.count || 0), 0);
+        const remoteDemand = haulMissions.reduce((sum, m) => {
+            const req = m.requirements || {};
+            if (Number.isFinite(req.requiredCarry)) return sum + req.requiredCarry;
+            return sum;
+        }, 0);
         if (remoteDemand <= 0) return;
 
         const remotePriority = haulMissions.reduce((max, m) => Math.max(max, m.priority || 0), 0);
@@ -25,7 +29,8 @@ module.exports = {
             roleCensus: 'remote_hauler',
             requirements: {
                 archetype: 'remote_hauler',
-                count: remoteDemand,
+                requiredCarry: remoteDemand,
+                minCount: 1,
                 maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS,
                 spawn: false
             },

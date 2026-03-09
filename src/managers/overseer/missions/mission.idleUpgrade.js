@@ -19,7 +19,8 @@ module.exports = {
             // Never spawn for idle upgrade.
             requirements: {
                 archetype: 'worker',
-                count: maxSpaces,      // "cap" for tasker; it won’t assign beyond this
+                minCount: 0,
+                maxCount: maxSpaces,
                 spawn: false,
                 spawnFromFleet: false
             },

@@ -1,5 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
-
 module.exports = {
     generate: function(room, intel, context, missions) {
         const { opState, economyState, budget, getMissionCensus, economyFlow } = context;
@@ -31,33 +29,21 @@ module.exports = {
 
         const upName = 'upgrade:controller';
         const upCensus = getMissionCensus(upName);
-        const upStats = managerSpawner.checkBody('worker', budget);
-        const workPerCreep = upStats.work || 1;
-        const desiredCount = Math.min(Math.ceil(desiredWork / workPerCreep), intel.availableControllerSpaces);
-
-        let upCount = 0;
-        if (upCensus.workParts >= desiredWork) {
-            upCount = Math.max(1, desiredCount);
-        } else {
-            const upDeficit = Math.max(0, desiredWork - upCensus.workParts);
-            const upNeeded = Math.ceil(upDeficit / workPerCreep);
-            upCount = Math.min(upCensus.count + upNeeded, intel.availableControllerSpaces);
-            if (!(economyState === 'STOCKPILING' && !isCritical) && desiredWork > 0 && upCount < 1) upCount = 1;
-        }
-
-        if (intel.constructionSites.length > 0) {
-            upCount = Math.max(1, desiredCount);
-        }
+        let requiredWork = desiredWork;
+        let minCount = (desiredWork > 0) ? 1 : 0;
+        let maxCount = intel.availableControllerSpaces;
 
         // Persist existing upgraders until creep death (do not de-assign by collapsing the requirement).
         // While stockpiling, we normally stop spawning new upgraders unless the stockpile window is open.
         if (economyState === 'STOCKPILING' && !isCritical) {
             // Keep existing upgraders only. Do not spawn new ones.
-            upCount = Math.min(upCensus.count, intel.availableControllerSpaces);
+            requiredWork = 0;
+            minCount = Math.min(upCensus.count, intel.availableControllerSpaces);
+            maxCount = minCount;
         }
 
         debug('mission.upgrade', `[Upgrade] ${room.name} count=${upCensus.count} workParts=${upCensus.workParts}/${desiredWork} ` +
-            `workPerCreep=${workPerCreep} desired=${desiredCount} req=${upCount} ` +
+            `requiredWork=${requiredWork} min=${minCount} max=${maxCount} ` +
             `spaces=${intel.availableControllerSpaces} state=${economyState}`);
 
         missions.push({
@@ -67,7 +53,14 @@ module.exports = {
             targetId: intel.controller.id,
             data: { sourceIds: intel.allEnergySources.map(s => s.id) },
             pos: intel.controller.pos,
-            requirements: { archetype: 'worker', count: upCount, spawn: spawnAllowed, spawnFromFleet: true },
+            requirements: {
+                archetype: 'worker',
+                requiredWork: requiredWork,
+                minCount: minCount,
+                maxCount: maxCount,
+                spawn: spawnAllowed,
+                spawnFromFleet: true
+            },
             priority: upgradePriority
         });
     }

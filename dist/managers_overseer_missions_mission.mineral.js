@@ -21,7 +21,8 @@ module.exports = {
                 pos: mineral.pos,
                 requirements: {
                     archetype: 'mineral_miner',
-                    count: 1
+                    minCount: 1,
+                    maxCount: 1
                 },
                 spawnSlots: [
                     `mineral:${room.name}:${mineral.id}:0`

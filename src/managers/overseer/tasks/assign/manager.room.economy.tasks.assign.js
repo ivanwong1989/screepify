@@ -140,7 +140,8 @@ var managerTasks = {
                 mission: m,
                 assignedCount: 0,
                 assignedWorkParts: 0,
-                assignedCarryParts: 0
+                assignedCarryParts: 0,
+                assignedClaimParts: 0
             };
         });
 
@@ -202,6 +203,7 @@ var managerTasks = {
                     const p = this.getCreepActiveParts(creep);
                     missionStatus[missionName].assignedWorkParts += p.work;
                     missionStatus[missionName].assignedCarryParts += p.carry;
+                    missionStatus[missionName].assignedClaimParts += p.claim;
                 } else {
                     // Mission was removed by Overseer (completed or strategy changed)
                     // Release the creep
@@ -222,8 +224,7 @@ var managerTasks = {
                 const pr = m.priority || 0;
                 if (pr <= priorityFloor) continue;
 
-                const req = m.requirements || {};
-                if (req.count && st.assignedCount < req.count) {
+                if (this.isMissionUnderfilled(st)) {
                     return true;
                 }
             }
@@ -311,6 +312,7 @@ var managerTasks = {
                 const p = this.getCreepActiveParts(creep);
                 missionStatus[bestMission.name].assignedWorkParts += p.work;
                 missionStatus[bestMission.name].assignedCarryParts += p.carry;
+                missionStatus[bestMission.name].assignedClaimParts += p.claim;
                 
                 if (creep.memory.ticketId) this.updateReservation(creep, 'ACTIVE');
 
@@ -501,11 +503,7 @@ var managerTasks = {
 
             // Check archetype match if specified
             if (req.archetype && req.archetype !== creep.memory.role) continue;
-
-            // Check if requirements are met (Saturation check)
-            if (req.count && status.assignedCount >= req.count) continue;
-
-            // ✅ cache once per creep per tick
+            // Cache once per creep per tick
             const parts = this.getCreepActiveParts(creep);
 
             // Check if creep is capable for this mission type
@@ -514,6 +512,13 @@ var managerTasks = {
             if (needs.work && parts.work === 0) continue;
             if (needs.carry && parts.carry === 0) continue;
             if (needs.claim && parts.claim === 0) continue;
+
+            // Hard cap if mission requested max population.
+            const maxCount = Number.isFinite(req.maxCount) ? req.maxCount : null;
+            if (maxCount !== null && status.assignedCount >= maxCount) continue;
+
+            // Skip already-satisfied missions.
+            if (!this.isMissionUnderfilled(status)) continue;
 
             // Mission is valid
             if (bestPriority === null) {
@@ -545,6 +550,23 @@ var managerTasks = {
             return candidates[0];
         }
         return null;
+    },
+
+    isMissionUnderfilled: function(status) {
+        if (!status || !status.mission) return false;
+        const req = status.mission.requirements || {};
+        const minCount = Number.isFinite(req.minCount) ? req.minCount : 0;
+        const requiredWork = Number.isFinite(req.requiredWork) ? req.requiredWork : 0;
+        const requiredCarry = Number.isFinite(req.requiredCarry) ? req.requiredCarry : 0;
+        const requiredClaim = Number.isFinite(req.requiredClaim) ? req.requiredClaim : 0;
+        const maxCount = Number.isFinite(req.maxCount) ? req.maxCount : null;
+
+        if (maxCount !== null && status.assignedCount >= maxCount) return false;
+        if (status.assignedCount < minCount) return true;
+        if (status.assignedWorkParts < requiredWork) return true;
+        if (status.assignedCarryParts < requiredCarry) return true;
+        if (status.assignedClaimParts < requiredClaim) return true;
+        return false;
     },
 
     findBestTowerMission: function(tower, missionsSorted) {
@@ -1018,3 +1040,4 @@ var managerTasks = {
 };
 
 module.exports = managerTasks;
+

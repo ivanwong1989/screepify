@@ -1,5 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
-
 const getBuildQueue = function(room, sites) {
     if (!room.memory.overseer) room.memory.overseer = {};
     const mem = room.memory.overseer;
@@ -41,14 +39,11 @@ const getBuildQueue = function(room, sites) {
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { opState, budget } = context;
+        const { opState } = context;
         if (intel.constructionSites.length === 0 || opState === 'EMERGENCY') return;
 
-        const buildStats = managerSpawner.checkBody('worker', budget);
         const rcl = (room.controller && room.controller.level) || 1;
         const buildTarget = 5 + Math.max(0, rcl - 3) * 2;
-        const workPerCreep = buildStats.work || 1;
-        const desiredCount = Math.max(1, Math.ceil(buildTarget / workPerCreep));
 
         const queue = getBuildQueue(room, intel.constructionSites);
         if (!queue || queue.length === 0) return;
@@ -59,7 +54,7 @@ module.exports = {
         if (!site) return;
 
         debug('mission.build', `[Build] ${room.name} target=1/${intel.constructionSites.length} ` +
-            `queue=${queue.length} workPerCreep=${workPerCreep} desired=${desiredCount}`);
+            `queue=${queue.length} requiredWork=${buildTarget}`);
 
         missions.push({
             name: `build:${site.id}`,
@@ -69,7 +64,9 @@ module.exports = {
             data: { sourceIds: intel.allEnergySources.map(s => s.id) },
             requirements: {
                 archetype: 'worker',
-                count: desiredCount,
+                requiredWork: buildTarget,
+                minCount: 1,
+                maxCount: 5,
                 spawnFromFleet: true
             },
             priority: 60

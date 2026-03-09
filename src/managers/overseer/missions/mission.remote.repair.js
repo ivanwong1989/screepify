@@ -1,4 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
 
 module.exports = {
@@ -16,8 +15,7 @@ module.exports = {
         const MAX_REMOTE_TARGETS = 3;
         const REMOTE_SCAN_INTERVAL = 25;
         const STALE_TARGET_TICKS = 2000;
-        const repairStats = managerSpawner.checkBody('remote_worker', context.budget);
-        const workPerCreep = repairStats.work || 1;
+        const remoteRepairWorkTarget = 2;
 
         entries.forEach(({ name, entry, room: remoteRoom, enabled }) => {
             if (!enabled || !entry) return;
@@ -68,7 +66,7 @@ module.exports = {
                 : [];
 
             debug('mission.remote.repair', `[RemoteRepair] ${room.name} -> ${name} targets=${selected.length}/${targets.length} ` +
-                `workPerCreep=${workPerCreep}`);
+                `requiredWork=${remoteRepairWorkTarget}`);
 
             selected.forEach(target => {
                 const pos = target.pos || { x: target.x, y: target.y, roomName: target.roomName };
@@ -87,7 +85,9 @@ module.exports = {
                     },
                     requirements: {
                         archetype: 'remote_worker',
-                        count: 1,
+                        requiredWork: remoteRepairWorkTarget,
+                        minCount: 1,
+                        maxCount: 1,
                         spawnFromFleet: true
                     },
                     priority: 45

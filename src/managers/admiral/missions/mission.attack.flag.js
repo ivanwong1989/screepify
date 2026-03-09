@@ -288,7 +288,8 @@ module.exports = {
                     priority: 90,
                     requirements: {
                         archetype: 'assault',
-                        count: 1,
+                        minCount: 1,
+                        maxCount: 1,
                         body: bodyConfig.leader,
                         bodyMode: bodyConfig.modes.leader,
                         spawn: leaderSpawn
@@ -304,7 +305,8 @@ module.exports = {
                     priority: 90,
                     requirements: {
                         archetype: 'assault',
-                        count: 1,
+                        minCount: 1,
+                        maxCount: 1,
                         body: bodyConfig.support,
                         bodyMode: bodyConfig.modes.support,
                         spawn: supportSpawn
@@ -336,7 +338,8 @@ module.exports = {
                     priority: 90,
                     requirements: {
                         archetype: 'assault',
-                        count: 1,
+                        minCount: 1,
+                        maxCount: 1,
                         body: bodyConfig.solo,
                         bodyMode: bodyConfig.modes.solo,
                         spawn: spawnAllowed

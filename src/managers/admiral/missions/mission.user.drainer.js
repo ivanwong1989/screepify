@@ -132,7 +132,8 @@ module.exports = {
                 archetype: 'drainer',
                 requirements: {
                     archetype: 'drainer',
-                    count: 1,
+                    minCount: 1,
+                    maxCount: 1,
                     body: bodyPattern,
                     spawn: spawnAllowed
                 },

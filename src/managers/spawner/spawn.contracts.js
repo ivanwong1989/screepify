@@ -1,10 +1,11 @@
 const assaultMemory = require('managers_admiral_tactics_assault_common_memory');
 
 const spawnContracts = {
-    buildContracts: function(room, missions) {
+    buildContracts: function(room, missions, options) {
         const entries = [];
         const byId = Object.create(null);
         const homeRoom = room.name;
+        const getBodyStats = options && options.getBodyStats;
         debug('spawner', `[SpawnContracts] ${homeRoom} missions=${(missions || []).length}`);
 
         (missions || []).forEach(mission => {
@@ -40,7 +41,7 @@ const spawnContracts = {
             const role = mission.archetype || req.archetype;
             if (!role) return;
 
-            const desiredRaw = Math.max(1, req.count || 1);
+            const desiredRaw = this.getDesiredCount(mission, room, getBodyStats);
             const desired = (desiredOverride !== null) ? desiredOverride : desiredRaw;
             const priority = mission.priority || 0;
             const bodySpec = this.getBodySpec(mission);
@@ -171,6 +172,36 @@ const spawnContracts = {
         return { budget: 0 };
     },
 
+    getDesiredCount: function(mission, room, getBodyStats) {
+        const req = mission && mission.requirements ? mission.requirements : {};
+        const minCount = Number.isFinite(req.minCount) ? Math.max(0, req.minCount) : 1;
+        const maxCount = Number.isFinite(req.maxCount) ? Math.max(0, req.maxCount) : Infinity;
+        const requiredWork = Number.isFinite(req.requiredWork) ? Math.max(0, req.requiredWork) : 0;
+        const requiredCarry = Number.isFinite(req.requiredCarry) ? Math.max(0, req.requiredCarry) : 0;
+        const requiredClaim = Number.isFinite(req.requiredClaim) ? Math.max(0, req.requiredClaim) : 0;
+
+        let desired = minCount;
+        const hasDemand = requiredWork > 0 || requiredCarry > 0 || requiredClaim > 0;
+        if (hasDemand && typeof getBodyStats === 'function') {
+            const budget = room && Number.isFinite(room.energyCapacityAvailable) ? room.energyCapacityAvailable : 0;
+            const stats = getBodyStats(mission, budget) || {};
+            const workPer = Math.max(1, stats.work || 0);
+            const carryPer = Math.max(1, stats.carry || 0);
+            const claimPer = Math.max(1, stats.claim || 0);
+
+            const byWork = requiredWork > 0 ? Math.ceil(requiredWork / workPer) : 0;
+            const byCarry = requiredCarry > 0 ? Math.ceil(requiredCarry / carryPer) : 0;
+            const byClaim = requiredClaim > 0 ? Math.ceil(requiredClaim / claimPer) : 0;
+
+            desired = Math.max(minCount, byWork, byCarry, byClaim);
+        }
+
+        if (Number.isFinite(maxCount)) {
+            desired = Math.min(desired, maxCount);
+        }
+        return Math.max(0, desired);
+    },
+
     getContractMetadata: function(mission) {
         const data = mission && mission.data;
         if (!data) return null;
@@ -200,7 +231,8 @@ const spawnContracts = {
 
     getTargetKeys: function(mission, roomName, desired) {
         if (mission.spawnSlots && mission.spawnSlots.length > 0) {
-            return mission.spawnSlots.slice();
+            const wanted = Math.max(0, desired || 0);
+            return mission.spawnSlots.slice(0, wanted);
         }
         const baseKey = this.getAssignmentKeyBase(mission, roomName);
         if (!baseKey) return [];

@@ -1,9 +1,8 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
 
 module.exports = {
     generate: function(room, intel, context, missions) {
-        const { opState, budget, getMissionCensus } = context;
+        const { opState, getMissionCensus } = context;
         if (opState === 'EMERGENCY') return;
 
         const CRITICAL_WALL_HITS = 5000;
@@ -104,11 +103,8 @@ module.exports = {
 
         if (repairTargets.length === 0 && fortifyTargets.length === 0) return;
 
-        let workPerCreep = 1;
         let desiredCount = 0;
         if (repairTargets.length > 0) {
-            const repairStats = managerSpawner.checkBody('worker', budget);
-
             // Baseline (existing behavior): small steady repair throughput by RCL
             const baseWork = 5 + Math.max(0, rcl - 3) * 2;
 
@@ -129,8 +125,8 @@ module.exports = {
                 baseWork + backlogWork + criticalBoost + siegeBoost
             );
 
-            workPerCreep = repairStats.work || 1;
-            desiredCount = Math.ceil(repairWorkTarget / workPerCreep);
+            const ESTIMATED_WORK_PER_WORKER = 4;
+            desiredCount = Math.ceil(repairWorkTarget / ESTIMATED_WORK_PER_WORKER);
         }
 
         const getRepairGroup = (s) => {
@@ -176,7 +172,7 @@ module.exports = {
 
         if (selectedTargets.length > 0) {
             debug('mission.repair', `[Repair] ${room.name} targets=${targetCount}/${repairTargets.length} ` +
-                `workPerCreep=${workPerCreep} desired=${desiredCount} critical=${criticalFound}`);
+                `desiredWorkers=${desiredCount} critical=${criticalFound}`);
         }
 
         if (selectedTargets.length > 0) {
@@ -189,7 +185,9 @@ module.exports = {
                     data: { sourceIds: intel.allEnergySources.map(s => s.id), allowPartial: true },
                     requirements: {
                         archetype: 'worker',
-                        count: 1,
+                        requiredWork: 1,
+                        minCount: 1,
+                        maxCount: 1,
                         spawn: true,
                         spawnFromFleet: true
                     },
@@ -228,12 +226,11 @@ module.exports = {
             }
 
             // We can still publish fortify work for existing creeps (spawn=false).
-            const stats = managerSpawner.checkBody('worker', budget);
-            const fortifyWorkPerCreep = stats.work || 1;
             const scaledFortifyWorkTarget = direFortify
                 ? MAX_FORTIFY_WORK_TARGET
                 : Math.floor(MAX_FORTIFY_WORK_TARGET * 0.6);
-            const desiredFortifyWorkers = Math.max(1, Math.ceil(scaledFortifyWorkTarget / fortifyWorkPerCreep));
+            const ESTIMATED_WORK_PER_WORKER = 4;
+            const desiredFortifyWorkers = Math.max(1, Math.ceil(scaledFortifyWorkTarget / ESTIMATED_WORK_PER_WORKER));
 
             // Spawn rules:
             // - Always block spawn if repair backlog is big.
@@ -296,7 +293,9 @@ module.exports = {
                     data: { sourceIds: intel.allEnergySources.map(s => s.id), fortify: true, allowPartial: true },
                     requirements: {
                         archetype: 'worker',
-                        count: fortifyCountPerTarget,
+                        requiredWork: fortifyCountPerTarget,
+                        minCount: 1,
+                        maxCount: fortifyCountPerTarget,
                         spawnFromFleet: true,
                         spawn: allowFortifySpawn
                     },

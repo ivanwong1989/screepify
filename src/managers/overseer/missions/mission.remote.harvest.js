@@ -1,4 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
 
 module.exports = {
@@ -10,9 +9,7 @@ module.exports = {
             maxScoutAge: 4000
         });
 
-        const { budget, getMissionCensus } = context;
-        const minerStats = managerSpawner.checkBody('remote_miner', budget);
-        const workPerCreep = minerStats.work || 1;
+        const { getMissionCensus } = context;
 
         entries.forEach(({ name, entry, enabled }) => {
             if (!enabled || !entry || !Array.isArray(entry.sourcesInfo)) return;
@@ -26,21 +23,10 @@ module.exports = {
 
                 const targetWork = 5;
                 const availableSpaces = source.availableSpaces || 1;
-                const desiredCount = Math.min(Math.ceil(targetWork / workPerCreep), availableSpaces);
-
-                let reqCount = 0;
-                if (census.workParts >= targetWork) {
-                    reqCount = Math.max(1, desiredCount);
-                } else {
-                    const deficit = Math.max(0, targetWork - census.workParts);
-                    const neededNew = Math.ceil(deficit / workPerCreep);
-                    reqCount = Math.min(census.count + neededNew, availableSpaces);
-                    if (reqCount === 0 && targetWork > 0) reqCount = 1;
-                }
 
                 debug('mission.remote.harvest', `[RemoteHarvest] ${room.name} -> ${name} ${source.id} ` +
                     `count=${census.count} workParts=${census.workParts}/${targetWork} ` +
-                    `workPerCreep=${workPerCreep} req=${reqCount}`);
+                    `maxCount=${availableSpaces}`);
 
                 missions.push({
                     name: missionName,
@@ -50,7 +36,9 @@ module.exports = {
                     pos: new RoomPosition(source.x, source.y, name),
                     requirements: {
                         archetype: 'remote_miner',
-                        count: reqCount
+                        requiredWork: targetWork,
+                        minCount: 1,
+                        maxCount: availableSpaces
                     },
                     data: {
                         remoteRoom: name,

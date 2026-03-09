@@ -1,4 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const heap = require('utils_heap');
 
 const HARVEST_TRAVEL_CACHE_TTL = 200;
@@ -57,6 +56,22 @@ function estimateTravelTicks(pathLen, bodyLen, moveParts) {
     return pathLen * ticksPerStep;
 }
 
+function estimateMinerStatsForPlanning(budget, mode) {
+    if (mode === 'mobile') {
+        const segments = Math.max(1, Math.floor((budget || 0) / 250));
+        const work = Math.min(5, segments);
+        const move = Math.max(2, segments * 2);
+        const carry = Math.max(1, segments);
+        return { work, move, carry, bodyLen: work + move + carry };
+    }
+
+    const safeBudget = Math.max(200, budget || 0);
+    const work = Math.max(1, Math.min(7, 1 + Math.floor((safeBudget - 200) / 100)));
+    const carry = 1;
+    const move = 1;
+    return { work, move, carry, bodyLen: work + carry + move };
+}
+
 function getHarvestTravelEstimate(room, spawns, source, archStats) {
     if (!room || !source || !source.id || !spawns || spawns.length === 0) {
         return {
@@ -108,7 +123,9 @@ function getHarvestTravelEstimate(room, spawns, source, archStats) {
         store[cacheKey] = cached;
     }
 
-    const bodyLen = archStats && archStats.body ? archStats.body.length : 0;
+    const bodyLen = archStats && Number.isFinite(archStats.bodyLen)
+        ? archStats.bodyLen
+        : (archStats && archStats.body ? archStats.body.length : 0);
     const moveParts = archStats && archStats.move ? archStats.move : 0;
     const travelTicks = estimateTravelTicks(cached.sourceDistance, bodyLen, moveParts);
 
@@ -171,32 +188,20 @@ module.exports = {
 
             const missionName = `harvest:${source.id}`;
             const census = getMissionCensus(missionName);
-            const archStats = managerSpawner.checkBody('miner', budget, { mode });
+            const archStats = estimateMinerStatsForPlanning(budget, mode);
             const travel = getHarvestTravelEstimate(room, spawns, source, archStats);
             const targetWork = 7;
-            const workPerCreep = archStats.work || 1;
-            const desiredCount = Math.min(Math.ceil(targetWork / workPerCreep), source.availableSpaces);
-
-            let reqCount = 0;
-            if (census.workParts >= targetWork) {
-                reqCount = Math.max(1, desiredCount);
-            } else {
-                const deficit = Math.max(0, targetWork - census.workParts);
-                const neededNew = Math.ceil(deficit / workPerCreep);
-                reqCount = Math.min(census.count + neededNew, source.availableSpaces);
-                if (reqCount === 0 && targetWork > 0) reqCount = 1;
-            }
+            const maxCount = Math.max(1, source.availableSpaces || 1);
 
             const staticRolesBySlot = {};
-            if (mode === 'static' && reqCount > 1) {
+            if (mode === 'static' && maxCount > 1) {
                 staticRolesBySlot['0'] = 'container';
-                for (let i = 1; i < reqCount; i++) staticRolesBySlot[String(i)] = 'overflow';
+                for (let i = 1; i < maxCount; i++) staticRolesBySlot[String(i)] = 'overflow';
             }
 
             debug('mission.harvest', `[Harvest] ${room.name} ${source.id} mode=${mode} ` +
                 `count=${census.count} workParts=${census.workParts}/${targetWork} ` +
-                `workPerCreep=${workPerCreep} desired=${desiredCount} req=${reqCount} ` +
-                `spaces=${source.availableSpaces} dist=${travel.sourceDistance} travel=${travel.travelTicks}`);
+                `maxCount=${maxCount} dist=${travel.sourceDistance} travel=${travel.travelTicks}`);
 
             const hasValidSource = !!source.id;
             const hasValidMode = (mode === 'static' || mode === 'static_drop' || mode === 'mobile');
@@ -217,11 +222,13 @@ module.exports = {
                 pos: source.pos,
                 requirements: {
                     archetype: 'miner',
-                    count: reqCount
+                    requiredWork: targetWork,
+                    minCount: 1,
+                    maxCount: maxCount
                 },
                 spawnSlots: (() => {
                     const slots = [];
-                    const count = Math.max(0, reqCount || 0);
+                    const count = Math.max(0, maxCount || 0);
                     for (let i = 0; i < count; i++) {
                         slots.push(`harvest:${room.name}:${source.id}:${i}`);
                     }

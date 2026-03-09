@@ -1,4 +1,3 @@
-const managerSpawner = require('managers_spawner_manager.room.economy.spawner');
 const managerTerminal = require('managers_structures_manager.terminal');
 const heap = require('utils_heap');
 
@@ -54,8 +53,8 @@ module.exports = {
         // Soft cap keeps hauler sizing in a practical range even if budget allows larger bodies.
         const MAX_HAULER_CARRY_PARTS = 25;
 
-        const haulerStats = managerSpawner.checkBody('hauler', budget);
-        const uncappedCarryParts = haulerStats.carry || 1;
+        const estimatedCarryParts = Math.max(1, Math.floor((budget || 0) / 100));
+        const uncappedCarryParts = estimatedCarryParts;
         const carryParts = Math.min(uncappedCarryParts, MAX_HAULER_CARRY_PARTS);
 
         const haulTargets = storage ? [storage] : spawns;
@@ -231,7 +230,7 @@ module.exports = {
                                 resourceType: resourceType,
                                 amountHint: amountHint
                             },
-                            requirements: { archetype: 'hauler', count: 1, spawn: false },
+                            requirements: { archetype: 'hauler', minCount: 1, maxCount: 1, spawn: false },
                             priority: this.getLogisticsPriority(type, target, isEmergency)
                         };
                         activeMissions.set(fullMissionName, mission);
@@ -903,7 +902,7 @@ module.exports = {
                     allowPartial: allowPartial,
                     amountHint: amountHint
                 },
-                requirements: { archetype: 'hauler', count: 1, spawn: false },
+                requirements: { archetype: 'hauler', minCount: 1, maxCount: 1, spawn: false },
                 priority: this.getLogisticsPriority(type, target, isEmergency)
             });
 
@@ -925,7 +924,7 @@ module.exports = {
             archetype: 'hauler',
             targetId: target.id,
             data: { resourceType: RESOURCE_ENERGY, mode: 'supply' },
-            requirements: { archetype: 'hauler', count: 1, spawn: false },
+            requirements: { archetype: 'hauler', minCount: 1, maxCount: 1, spawn: false },
             priority: this.getLogisticsPriority('outflow', target, isEmergency)
         });
     },

@@ -62,6 +62,14 @@ function isDuoMission(mission) {
     return mission && mission.type === 'assault' && mission.data && mission.data.mode === 'DUO';
 }
 
+function getMissionNeededCount(mission) {
+    if (!mission || !mission.requirements) return 0;
+    const req = mission.requirements;
+    if (Number.isFinite(req.maxCount)) return Math.max(0, req.maxCount);
+    if (Number.isFinite(req.minCount)) return Math.max(0, req.minCount);
+    return 0;
+}
+
 // add helper near other helpers
 function inferRoleFromMissionName(creep) {
     if (!creep || !creep.memory) return null;
@@ -161,7 +169,7 @@ function allocateCreeps(room, missions) {
 
     const sortedMissions = missions.slice().sort(sortMissions);
     for (const mission of sortedMissions) {
-        const needed = Math.max(0, (mission.requirements && mission.requirements.count) || 0);
+        const needed = getMissionNeededCount(mission);
         if (!assignments[mission.name]) assignments[mission.name] = [];
 
         let preassigned = ownedCreeps.filter(c =>

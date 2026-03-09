@@ -129,7 +129,8 @@ module.exports = {
             archetype: 'scout',
             requirements: {
                 archetype: 'scout',
-                count: 1
+                minCount: 1,
+                maxCount: 1
             },
             data: {
                 sponsorRoom: room.name,

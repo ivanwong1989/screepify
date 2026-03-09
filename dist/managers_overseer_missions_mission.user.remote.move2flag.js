@@ -159,7 +159,8 @@ module.exports = {
                 priority: Number.isFinite(mission.priority) ? mission.priority : PRIORITY,
                 requirements: {
                     archetype: 'move2flag',
-                    count: 1,
+                    minCount: 1,
+                    maxCount: 1,
                     body: BODY,
                     bodyMode: BODY_MODE,
                     spawn: spawnAllowed
