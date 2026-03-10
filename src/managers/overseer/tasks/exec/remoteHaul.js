@@ -39,6 +39,65 @@ module.exports = function execRemoteHaulTask(ctx) {
         st._lastLogSig = sig;
         log(msg);
     };
+    const tryOpportunisticPickup = () => {
+        if (creep.store.getFreeCapacity(resourceType) <= 0) return null;
+
+        const dropped = creep.room.lookForAt(LOOK_RESOURCES, creep.pos.x, creep.pos.y);
+        if (dropped && dropped.length > 0) {
+            let target = null;
+            let best = 0;
+            for (let i = 0; i < dropped.length; i++) {
+                const r = dropped[i];
+                if (!r || r.resourceType !== resourceType || (r.amount || 0) <= 0) continue;
+                if (r.amount > best) {
+                    best = r.amount;
+                    target = r;
+                }
+            }
+            if (target) {
+                logOnce(`pickup:lane:${target.id}`, `pickup lane -> ${target.id} res=${resourceType}`);
+                return { type: 'pickup', targetId: target.id };
+            }
+        }
+
+        const tombstones = creep.room.lookForAt(LOOK_TOMBSTONES, creep.pos.x, creep.pos.y);
+        if (tombstones && tombstones.length > 0) {
+            let target = null;
+            let best = 0;
+            for (let i = 0; i < tombstones.length; i++) {
+                const t = tombstones[i];
+                const amt = (t && t.store && t.store[resourceType]) || 0;
+                if (amt > best) {
+                    best = amt;
+                    target = t;
+                }
+            }
+            if (target) {
+                logOnce(`withdraw:tomb:lane:${target.id}`, `withdraw lane tombstone -> ${target.id} res=${resourceType}`);
+                return { type: 'withdraw', targetId: target.id, resourceType: resourceType };
+            }
+        }
+
+        const ruins = creep.room.lookForAt(LOOK_RUINS, creep.pos.x, creep.pos.y);
+        if (ruins && ruins.length > 0) {
+            let target = null;
+            let best = 0;
+            for (let i = 0; i < ruins.length; i++) {
+                const r = ruins[i];
+                const amt = (r && r.store && r.store[resourceType]) || 0;
+                if (amt > best) {
+                    best = amt;
+                    target = r;
+                }
+            }
+            if (target) {
+                logOnce(`withdraw:ruin:lane:${target.id}`, `withdraw lane ruin -> ${target.id} res=${resourceType}`);
+                return { type: 'withdraw', targetId: target.id, resourceType: resourceType };
+            }
+        }
+
+        return null;
+    };
 
     helpers.updateState(creep, resourceType, { requireFull: true });
 
@@ -48,6 +107,9 @@ module.exports = function execRemoteHaulTask(ctx) {
     }
 
     if (creep.memory.taskState === 'working') {
+        const opportunistic = tryOpportunisticPickup();
+        if (opportunistic) return opportunistic;
+
         const dropoffMoveRange = 1;
         if (dropoffPos && !creep.pos.inRangeTo(dropoffPos, dropoffMoveRange)) {
             logOnce(
@@ -84,6 +146,9 @@ module.exports = function execRemoteHaulTask(ctx) {
         logOnce('no-dropoff', 'no dropoff target');
         return null;
     }
+
+    const opportunistic = tryOpportunisticPickup();
+    if (opportunistic) return opportunistic;
 
     if (pickupPos && !creep.pos.inRangeTo(pickupPos, pickupRange)) {
         logOnce(

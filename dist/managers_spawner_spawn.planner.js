@@ -69,7 +69,49 @@ const spawnPlanner = {
         const calculateBodyCost = options && options.calculateBodyCost;
         if (!buildBody || !calculateBodyCost) return null;
 
-        const body = buildBody(mission, budget);
+        let missionForBody = mission;
+        let includeRepairWorkPart = false;
+        let repairLaneKey = null;
+
+        const isAlternateRemoteHauler = !!(
+            mission &&
+            mission.archetype === 'remote_hauler' &&
+            mission.requirements &&
+            mission.requirements.alternateRepairWork
+        );
+
+        if (isAlternateRemoteHauler) {
+            if (!room.memory.spawner) room.memory.spawner = {};
+
+            if (typeof ticket.includeRepairWorkPart === 'boolean') {
+                includeRepairWorkPart = ticket.includeRepairWorkPart;
+                if (ticket.repairLaneKey) repairLaneKey = ticket.repairLaneKey;
+            } else {
+                repairLaneKey = mission && mission.name
+                    ? mission.name
+                    : (contract && contract.bindId ? String(contract.bindId) : contract.contractId);
+
+                if (!room.memory.spawner.remoteHaulerSpawnSeqByLane) {
+                    room.memory.spawner.remoteHaulerSpawnSeqByLane = {};
+                }
+                const seqByLane = room.memory.spawner.remoteHaulerSpawnSeqByLane;
+                const seq = Number.isFinite(seqByLane[repairLaneKey]) ? seqByLane[repairLaneKey] : 0;
+                includeRepairWorkPart = (seq % 2) === 1;
+                seqByLane[repairLaneKey] = seq + 1;
+                ticket.includeRepairWorkPart = includeRepairWorkPart;
+                ticket.repairLaneKey = repairLaneKey;
+            }
+
+            if (includeRepairWorkPart) {
+                missionForBody = Object.assign({}, mission, {
+                    requirements: Object.assign({}, mission.requirements, {
+                        includeRepairWorkPart: true
+                    })
+                });
+            }
+        }
+
+        const body = buildBody(missionForBody, budget);
         const cost = calculateBodyCost(body);
         debug('spawner', `[SpawnPlanner] ${room.name} body parts=${body.length} cost=${cost} budget=${budget}`);
 
@@ -82,6 +124,10 @@ const spawnPlanner = {
             bindMode: contract.bindMode,
             bindId: contract.bindId
         };
+        if (isAlternateRemoteHauler) {
+            memory.includeRepairWorkPart = includeRepairWorkPart;
+            if (repairLaneKey) memory.repairLaneKey = repairLaneKey;
+        }
 
         if (contract.bindMode !== 'pool' && mission && mission.name) {
             memory.missionName = mission.name;

@@ -158,7 +158,7 @@ if (existingSites && existingSites.length >= MAX_REMOTE_CONSTRUCTION_SITES) {
         return roomStore.lanes;
     }
 
-    const getBestLanePoints = (pickupId) => {
+    const getForwardLanePoints = (pickupId) => {
         const prefix = lanePrefixFor(pickupId);
         let best = null;
 
@@ -167,23 +167,22 @@ if (existingSites && existingSites.length >= MAX_REMOTE_CONSTRUCTION_SITES) {
             for (const k in store) {
                 if (!k || k.indexOf(prefix) !== 0) continue;
 
-                // Prefer forward (dropoff->pickup) lanes when available.
+                // Use TO path lane only (dropoff -> pickup).
                 const isForward = k.endsWith(':F');
+                if (!isForward) continue;
                 const lane = store[k];
                 if (!lane || !lane.p || !lane.p.length) continue;
 
                 const t = lane.t || 0;
 
                 if (!best) {
-                    best = { isForward, t, points: lane.p };
+                    best = { t, points: lane.p };
                     continue;
                 }
 
-                // Selection: forward beats reverse; within same direction pick freshest.
-                if (best.isForward !== isForward) {
-                    if (isForward) best = { isForward, t, points: lane.p };
-                } else if (t > best.t) {
-                    best = { isForward, t, points: lane.p };
+                // Pick the freshest forward lane.
+                if (t > best.t) {
+                    best = { t, points: lane.p };
                 }
             }
         }
@@ -198,9 +197,6 @@ if (existingSites && existingSites.length >= MAX_REMOTE_CONSTRUCTION_SITES) {
 
         for (let i = 0; i < rawPoints.length; i++) {
             if (placed >= MAX_NEW_ROADS_PER_SCAN) break;
-
-            // Space road sites out to reduce total site count (every 2 tiles).
-            if ((i & 1) === 1) continue;
 
             const pt = normalizeLanePoint(rawPoints[i]);
             if (!pt) continue;
@@ -243,7 +239,7 @@ if (existingSites && existingSites.length >= MAX_REMOTE_CONSTRUCTION_SITES) {
         const pickupId = hasContainer ? si.containerId : source.id;
 
         // Try cached lane points first
-        const lanePoints = getBestLanePoints(pickupId);
+        const lanePoints = getForwardLanePoints(pickupId);
 
         if (!lanePoints || !lanePoints.length) continue;
         const placedNow = layRoadsFromPoints(lanePoints, source.pos);

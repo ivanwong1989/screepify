@@ -72,10 +72,12 @@ module.exports = {
 
         const TRANSFER_BUFFER_TICKS = 2;
 
-        const DISTANCE_SOFT_CAP = 25;
-        const DISTANCE_SCALE_PER_TILE = 0.001;
+        // Keep short/medium lanes strictly linear, but damp very long lanes so they do not
+        // over-inflate required hauler count from pure path length growth.
+        const LONG_LANE_DAMP_START = 20;
+        const LONG_LANE_DAMP_FACTOR = 0.65;
 
-        const MAX_REMOTE_HAULER_CARRY_PARTS = 25;
+        const MAX_REMOTE_HAULER_CARRY_PARTS = 16;
         const carryParts = Math.min(Math.max(1, Math.floor((budget || 0) / 100)), MAX_REMOTE_HAULER_CARRY_PARTS);
 
         // ============================================================
@@ -136,15 +138,17 @@ module.exports = {
                 );
                 pathLen = rebuilt.pathLen || pathLen;
 
-                const roundTrip = (pathLen * 2) + TRANSFER_BUFFER_TICKS;
-                const distanceScale = 1 + Math.max(0, pathLen - DISTANCE_SOFT_CAP) * DISTANCE_SCALE_PER_TILE;
+                const effectivePathLen = pathLen > LONG_LANE_DAMP_START
+                    ? Math.floor(LONG_LANE_DAMP_START + ((pathLen - LONG_LANE_DAMP_START) * LONG_LANE_DAMP_FACTOR))
+                    : pathLen;
+                const roundTrip = (effectivePathLen * 2) + TRANSFER_BUFFER_TICKS;
 
-                const requiredCarryParts = Math.ceil((ENERGY_PER_TICK * roundTrip * distanceScale) / 50);
+                const requiredCarryParts = Math.ceil((ENERGY_PER_TICK * roundTrip) / 50);
                 const reqCount = Math.max(1, Math.ceil(requiredCarryParts / carryParts));
 
                 debug('mission.remote.haul',
                     `[RemoteHaul] ${room.name} -> ${name} mode=${hasContainer ? 'container' : 'drop'} ` +
-                    `pickup=${pickupId} path=${pathLen} carryParts=${carryParts} req=${reqCount} lane=${laneKeyBase}` +
+                    `pickup=${pickupId} path=${pathLen} effPath=${effectivePathLen} carryParts=${carryParts} req=${reqCount} lane=${laneKeyBase}` +
                     `${rebuilt.built ? ' (rebuilt)' : ''}`);
 
                 missions.push({
@@ -157,7 +161,8 @@ module.exports = {
                         minCount: 1,
                         maxCount: reqCount,
                         maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS,
-                        spawnFromFleet: true,
+                        alternateRepairWork: true,
+                        spawnFromFleet: false,
                     },
                     data: {
                         // Explicit owner so role.universal can read lanes from the right room

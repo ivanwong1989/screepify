@@ -2,6 +2,7 @@ const overseerIntel = require('managers_overseer_intel_overseer.intel');
 const overseerResourceLedger = require('managers_overseer_intel_overseer.resourceLedger');
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
 const overseerMissions = require('managers_overseer_missions_overseer.missions');
+const remoteUtils = require('managers_overseer_utils_overseer.remote');
 const overseerUtils = require('managers_overseer_utils_overseer.utils');
 
 const getRemoteCreepsByHomeRoom = function() {
@@ -26,6 +27,15 @@ const getRemoteCreepsByHomeRoom = function() {
 
     global._remoteCreepsByHomeRoom = { time: Game.time, byRoom };
     return byRoom;
+};
+
+const getMyUsername = function(room) {
+    if (room && room.controller && room.controller.my && room.controller.owner) {
+        return room.controller.owner.username;
+    }
+    const spawns = room ? room.find(FIND_MY_SPAWNS) : [];
+    if (spawns && spawns.length > 0 && spawns[0].owner) return spawns[0].owner.username;
+    return null;
 };
 
 /**
@@ -91,6 +101,29 @@ var managerOverseer = {
         // 3. Determine Room State
         const opState = overseerIntel.determineOpState(room, intel);
         const economyState = overseerIntel.determineEconomyState(room, intel);
+        const myUser = getMyUsername(room);
+
+        // Keep opportunistic road repair targets warm for reserved, visible remotes.
+        // This enables micro-repair in remote harvest rooms without full remote repair missions.
+        if (myUser) {
+            const remoteEntries = remoteUtils.getRemoteEconomicContext(room, {
+                opState,
+                maxScoutAge: 4000
+            });
+            for (let i = 0; i < remoteEntries.length; i++) {
+                const remote = remoteEntries[i];
+                if (!remote || !remote.enabled || !remote.room) continue;
+                const remoteRoom = remote.room;
+                const controller = remoteRoom.controller;
+                const reservation = controller && controller.reservation;
+                const reservedByMe = reservation && reservation.username === myUser;
+                if (reservedByMe) {
+                    overseerOpportunisticRepair.scanRoads(remoteRoom, { scanInterval: 11 });
+                } else {
+                    overseerOpportunisticRepair.clearRoom(remoteRoom.name);
+                }
+            }
+        }
 
         // 4. Build Census (include remote creeps assigned to this home room)
         const remoteByHome = getRemoteCreepsByHomeRoom();

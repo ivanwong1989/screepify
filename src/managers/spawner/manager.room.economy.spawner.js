@@ -217,7 +217,12 @@ var managerSpawner = {
             return this.generateClaimerBody(budget);
         } else if (mission.archetype === 'hauler' || mission.archetype === 'remote_hauler' || mission.archetype === 'user_hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
-            return this.generateHaulerBody(budget, maxCarryParts);
+            const includeRepairWorkPart = !!(
+                mission.archetype === 'remote_hauler' &&
+                mission.requirements &&
+                mission.requirements.includeRepairWorkPart
+            );
+            return this.generateHaulerBody(budget, maxCarryParts, { includeRepairWorkPart });
         } else if (mission.archetype == 'remote_worker') {
             return this.generateRemoteWorkerBody(budget);
         } else {
@@ -372,18 +377,32 @@ var managerSpawner = {
         return [CLAIM, MOVE];
     },
 
-    generateHaulerBody: function(budget, maxCarryParts) {
+    generateHaulerBody: function(budget, maxCarryParts, options) {
+        const includeRepairWorkPart = !!(options && options.includeRepairWorkPart);
+        const canAddRepairSegment = includeRepairWorkPart && budget >= 250;
+        const reservedParts = canAddRepairSegment ? 2 : 0;
+        const reservedCost = canAddRepairSegment ? 150 : 0;
+
         // CARRY, MOVE (100)
         let body = [];
         let cost = 0;
         let carryCount = 0;
         const carryCap = Number.isFinite(maxCarryParts) && maxCarryParts > 0 ? maxCarryParts : Infinity;
 
-        while (cost + 100 <= budget && body.length + 2 <= 50 && carryCount < carryCap) {
+        while (
+            cost + 100 <= (budget - reservedCost) &&
+            body.length + 2 <= (50 - reservedParts) &&
+            carryCount < carryCap
+        ) {
             body.push(CARRY);
             body.push(MOVE);
             cost += 100;
             carryCount++;
+        }
+
+        if (canAddRepairSegment && body.length > 0 && body.length + 2 <= 50 && cost + 150 <= budget) {
+            body.push(WORK);
+            body.push(MOVE);
         }
 
         if (body.length === 0) return [CARRY, MOVE];

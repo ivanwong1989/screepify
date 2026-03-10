@@ -66,8 +66,8 @@ function getCreepHashSeed(creep) {
 }
 
 function shouldTryOpportunisticRepairThisTick(creep) {
-    const seed = getCreepHashSeed(creep) % 10;
-    return ((Game.time + seed) % 10) < 3;
+    const seed = getCreepHashSeed(creep) % 2;
+    return ((Game.time + seed) % 2) === 0;
 }
 
 function tryOpportunisticRepair(creep, currentTask) {

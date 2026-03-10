@@ -1,7 +1,11 @@
 const userMissions = require('userMissions');
+const heap = require('utils_heap');
 
 const RESERVER_SEGMENT_COST = 650; // CLAIM + MOVE
-const RESERVE_TICKS_PER_CLAIM = 1000;
+const RESERVER_EFFECTIVE_LIFETIME = 650;
+const RESERVE_TRAVEL_CACHE_TTL = 500;
+const RESERVE_SPAWN_QUEUE_BUFFER = 15;
+const RESERVE_SAFETY_BUFFER = 25;
 
 function getMyUsername(room) {
     if (room && room.controller && room.controller.my && room.controller.owner) {
@@ -19,9 +23,74 @@ function getReserveTimerStore(room) {
     return room.memory.overseer.reserve.timers;
 }
 
-function getClaimThresholdTicks(room) {
-    const segments = Math.max(1, Math.min(2, Math.floor(room.energyCapacityAvailable / RESERVER_SEGMENT_COST)));
-    return segments * RESERVE_TICKS_PER_CLAIM;
+function getReserverSegments(room) {
+    return Math.max(1, Math.min(2, Math.floor(room.energyCapacityAvailable / RESERVER_SEGMENT_COST)));
+}
+
+function estimateTravelTicks(pathLen, bodyLen, moveParts) {
+    if (!pathLen || pathLen <= 0) return 0;
+    if (!bodyLen || bodyLen <= 0) return pathLen;
+    if (!moveParts || moveParts <= 0) return pathLen * bodyLen;
+    const ticksPerStep = Math.max(1, Math.ceil(bodyLen / (2 * moveParts)));
+    return pathLen * ticksPerStep;
+}
+
+function getReserveTravelEstimate(room, targetPos) {
+    if (!room || !targetPos || !targetPos.roomName) {
+        return { distance: 0, travelTicks: 0, fromSpawnId: null };
+    }
+
+    const store = heap.getStore('reserveTravel', { ttl: RESERVE_TRAVEL_CACHE_TTL });
+    const cacheKey = `${room.name}:${targetPos.roomName}:${targetPos.x},${targetPos.y}`;
+    const cached = store[cacheKey];
+    if (cached) {
+        const segments = getReserverSegments(room);
+        const bodyLen = segments * 2;
+        const moveParts = segments;
+        const travelTicks = estimateTravelTicks(cached.distance || 0, bodyLen, moveParts);
+        return { distance: cached.distance || 0, travelTicks, fromSpawnId: cached.fromSpawnId || null };
+    }
+
+    const roomCache = global.getRoomCache(room);
+    const spawns = (roomCache && roomCache.myStructuresByType && roomCache.myStructuresByType[STRUCTURE_SPAWN]) || [];
+
+    let bestDistance = Infinity;
+    let bestSpawnId = null;
+    const target = new RoomPosition(targetPos.x, targetPos.y, targetPos.roomName);
+    for (let i = 0; i < spawns.length; i++) {
+        const spawn = spawns[i];
+        if (!spawn || !spawn.pos) continue;
+        const path = spawn.pos.findPathTo(target, {
+            range: 1,
+            ignoreCreeps: true,
+            maxOps: 2000
+        });
+        const pathLen = path ? path.length : 0;
+        if (pathLen > 0 && pathLen < bestDistance) {
+            bestDistance = pathLen;
+            bestSpawnId = spawn.id;
+        }
+    }
+
+    const distance = Number.isFinite(bestDistance) && bestDistance !== Infinity ? bestDistance : 0;
+    const distanceOnly = { distance, fromSpawnId: bestSpawnId };
+    store[cacheKey] = distanceOnly;
+
+    const segments = getReserverSegments(room);
+    const bodyLen = segments * 2;
+    const moveParts = segments;
+    const travelTicks = estimateTravelTicks(distance, bodyLen, moveParts);
+    return { distance, travelTicks, fromSpawnId: bestSpawnId };
+}
+
+function getReserveSpawnThresholdTicks(room, travelTicks) {
+    const segments = getReserverSegments(room);
+    const bodyLen = segments * 2;
+    const spawnTime = bodyLen * CREEP_SPAWN_TIME;
+    const effectiveTravel = Math.max(0, Math.floor(travelTicks || 0));
+    const sustainInterval = segments * Math.max(0, RESERVER_EFFECTIVE_LIFETIME - effectiveTravel);
+    const spawnLead = spawnTime + effectiveTravel + RESERVE_SPAWN_QUEUE_BUFFER + RESERVE_SAFETY_BUFFER;
+    return Math.max(spawnLead, sustainInterval);
 }
 
 function getOwnedSpawnRoomsCached() {
@@ -124,7 +193,6 @@ module.exports = {
         const { getMissionCensus } = context;
         const timerStore = getReserveTimerStore(room);
         const myUser = getMyUsername(room);
-        const claimThreshold = getClaimThresholdTicks(room);
         const activeIds = new Set(missionEntries.map(entry => entry.id));
 
         for (const id of Object.keys(timerStore)) {
@@ -149,6 +217,8 @@ module.exports = {
             if (!targetPos) targetPos = { x: 25, y: 25, roomName: targetRoom };
             const timer = timerStore[missionId] || {};
             let reservationTicks = null;
+            const travel = getReserveTravelEstimate(room, targetPos);
+            const claimThreshold = getReserveSpawnThresholdTicks(room, travel.travelTicks);
 
             if (myUser) {
                 const visible = Game.rooms[targetRoom];
@@ -189,7 +259,11 @@ module.exports = {
                     userMissionId: missionId,
                     targetRoom: targetRoom,
                     targetPos: targetPos,
-                    persist: entry.persist === true
+                    persist: entry.persist === true,
+                    sourceDistance: travel.distance,
+                    travelTicks: travel.travelTicks,
+                    preSpawnLeadTicks: claimThreshold,
+                    travelFromSpawnId: travel.fromSpawnId
                 },
                 priority: entry.priority,
                 census: census

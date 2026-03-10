@@ -2,6 +2,7 @@ const heap = require('utils_heap');
 
 const STORE_NAME = 'overseerOpportunisticRepair';
 const DEFAULT_SCAN_INTERVAL = 7;
+const DEFAULT_REMOTE_ROAD_SCAN_INTERVAL = 11;
 const MIN_DAMAGE_RATIO = 0.95;
 const MAX_TARGETS = 120;
 const REPAIR_MIN_RATIO = 0.9;
@@ -93,6 +94,16 @@ function needsRepair(st) {
     return st.hits < (st.hitsMax * REPAIR_MIN_RATIO);
 }
 
+function clearRoomStore(roomStore) {
+    if (!roomStore) return;
+    roomStore.targets = [];
+    roomStore.repairIds = [];
+    roomStore.fortifyIds = [];
+    roomStore.targetIds = [];
+    roomStore.critical = false;
+    roomStore.lastScan = 0;
+}
+
 module.exports = {
     scan: function(room, intel, opts) {
         if (!room) return null;
@@ -178,6 +189,67 @@ module.exports = {
         // Critical means at least one urgent repair-class target exists.
         roomStore.critical = criticalFound;
         roomStore.lastScan = Game.time;
+        return roomStore;
+    },
+
+    scanRoads: function(room, opts) {
+        if (!room) return null;
+        const roomStore = getStoreRoom(room.name);
+        const scanInterval = (opts && Number.isFinite(opts.scanInterval))
+            ? Math.max(1, Math.floor(opts.scanInterval))
+            : DEFAULT_REMOTE_ROAD_SCAN_INTERVAL;
+        roomStore.scanInterval = scanInterval;
+
+        const forceScan = !!(opts && opts.forceScan);
+        const shouldScan = forceScan || !roomStore.lastScan || (Game.time - roomStore.lastScan) >= scanInterval;
+        if (!shouldScan) return roomStore;
+
+        const roads = room.find(FIND_STRUCTURES, {
+            filter: s => s && s.structureType === STRUCTURE_ROAD
+        });
+
+        const targets = [];
+        const repairEntries = [];
+        let criticalFound = false;
+
+        for (let i = 0; i < roads.length; i++) {
+            const st = roads[i];
+            if (!st || !st.id || !st.pos || !st.hitsMax) continue;
+            if (shouldTrack(room, st)) {
+                const ratio = st.hitsMax > 0 ? (st.hits / st.hitsMax) : 1;
+                targets.push({
+                    id: st.id,
+                    roomName: st.pos.roomName,
+                    x: st.pos.x,
+                    y: st.pos.y,
+                    desiredHits: st.hitsMax,
+                    ratio: ratio
+                });
+            }
+
+            if (needsRepair(st)) {
+                const ratio = st.hitsMax > 0 ? (st.hits / st.hitsMax) : 1;
+                if (isCritical(st)) criticalFound = true;
+                repairEntries.push({ id: st.id, ratio, group: 0 });
+            }
+        }
+
+        targets.sort((a, b) => a.ratio - b.ratio);
+        repairEntries.sort((a, b) => a.ratio - b.ratio);
+
+        roomStore.targets = targets.slice(0, MAX_TARGETS);
+        roomStore.repairIds = repairEntries.map(e => e.id);
+        roomStore.fortifyIds = [];
+        roomStore.targetIds = roomStore.repairIds;
+        roomStore.critical = criticalFound;
+        roomStore.lastScan = Game.time;
+        return roomStore;
+    },
+
+    clearRoom: function(roomName) {
+        if (!roomName) return null;
+        const roomStore = getStoreRoom(roomName);
+        clearRoomStore(roomStore);
         return roomStore;
     },
 
