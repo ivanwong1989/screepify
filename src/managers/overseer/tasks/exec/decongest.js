@@ -3,6 +3,44 @@ const helpers = require('managers_overseer_tasks_exec__helpers');
 module.exports = function execDecongestTask(ctx) {
     const { creep, mission, room } = ctx;
     const roomName = (room && room.name) ? room.name : creep.room.name;
+    const hasCargo = (typeof creep.store.getUsedCapacity === 'function')
+        ? (creep.store.getUsedCapacity() || 0) > 0
+        : Object.keys(creep.store || {}).some(k => (creep.store[k] || 0) > 0);
+
+    const findDumpTarget = (resourceType) => {
+        if (!resourceType) return null;
+
+        if (
+            creep.room.storage &&
+            creep.room.storage.store &&
+            typeof creep.room.storage.store.getFreeCapacity === 'function' &&
+            creep.room.storage.store.getFreeCapacity(resourceType) > 0
+        ) {
+            return creep.room.storage;
+        }
+
+        const cache = global.getRoomCache ? global.getRoomCache(creep.room) : null;
+        const containers = cache && cache.structuresByType
+            ? (cache.structuresByType[STRUCTURE_CONTAINER] || [])
+            : [];
+        const candidates = containers.filter(c =>
+            c &&
+            c.store &&
+            typeof c.store.getFreeCapacity === 'function' &&
+            c.store.getFreeCapacity(resourceType) > 0
+        );
+        if (candidates.length === 0) return null;
+        return creep.pos.findClosestByRange(candidates);
+    };
+
+    if (hasCargo) {
+        for (const resourceType in creep.store) {
+            if ((creep.store[resourceType] || 0) <= 0) continue;
+            const dumpTarget = findDumpTarget(resourceType);
+            if (!dumpTarget) continue;
+            return { type: 'transfer', targetId: dumpTarget.id, resourceType: resourceType };
+        }
+    }
 
     const slots = (mission && mission.data && Array.isArray(mission.data.slotPositions))
         ? mission.data.slotPositions
