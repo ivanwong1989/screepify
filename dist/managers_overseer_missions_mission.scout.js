@@ -41,8 +41,6 @@ module.exports = {
         const skipSet = new Set(scoutMem.skipRooms || []);
         const roomsMem = scoutMem.rooms;
 
-        if (scoutMem.rotationIndex === undefined) scoutMem.rotationIndex = 0;
-
         const isOwnedRoomWithSpawn = (candidateRoom) => {
             if (!candidateRoom || !candidateRoom.controller || !candidateRoom.controller.my) return false;
             const spawns = candidateRoom.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_SPAWN });
@@ -82,26 +80,25 @@ module.exports = {
 
 
         // Target selection:
-        // 1) Prefer stale rooms (due by interval)
-        // 2) Otherwise rotate continuously between available adjacent rooms (round-robin)
+        // Only scout rooms that are due by interval (or never scouted yet).
         const due = available
             .map(name => ({ name, lastScout: (roomsMem[name] && roomsMem[name].lastScout) || 0 }))
-            .filter(e => (now - e.lastScout) >= interval);
+            .filter(e => e.lastScout <= 0 || (now - e.lastScout) >= interval);
 
-        let targetRoom = null;
-        if (due.length > 0) {
-            due.sort((a, b) => {
-                if (a.lastScout !== b.lastScout) return a.lastScout - b.lastScout;
-                // stable tie-break
-                return ('' + a.name).localeCompare('' + b.name);
-            });
-            targetRoom = due[0].name;
-        } else {
-            const idx = scoutMem.rotationIndex % available.length;
-            targetRoom = available[idx];
-
-            scoutMem.rotationIndex = (idx + 1) % available.length;
+        if (due.length === 0) {
+            debug(
+                'mission.scout',
+                `[Scout] ${room.name} rooms=${available.length} due=0 target=none interval=${interval} hold=${holdTime} scouts=0`
+            );
+            return;
         }
+
+        due.sort((a, b) => {
+            if (a.lastScout !== b.lastScout) return a.lastScout - b.lastScout;
+            // stable tie-break
+            return ('' + a.name).localeCompare('' + b.name);
+        });
+        const targetRoom = due[0].name;
 
         // Census (assigned scouts for sponsor room)
         const creepList = Object.values(Game.creeps);

@@ -295,7 +295,7 @@ module.exports = {
             }
         });
 
-        const MAX_REMOTE_SITES = 3;
+        const MAX_REMOTE_SITES = 2;
         const REMOTE_SCAN_INTERVAL = 25;
         const STALE_SITE_TICKS = 2000;
         const remoteBuildWorkTarget = 4;

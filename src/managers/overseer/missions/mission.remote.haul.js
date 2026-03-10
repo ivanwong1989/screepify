@@ -67,13 +67,13 @@ module.exports = {
         // ============================================================
         // SIZING: keep it simple (hardcode targetWork, derived energyPerTick)
         // ============================================================
-        const TARGET_WORK = 5;
+        const TARGET_WORK = 7;
         const ENERGY_PER_TICK = 2 * TARGET_WORK;
 
         const TRANSFER_BUFFER_TICKS = 2;
 
         const DISTANCE_SOFT_CAP = 25;
-        const DISTANCE_SCALE_PER_TILE = 0.002;
+        const DISTANCE_SCALE_PER_TILE = 0.001;
 
         const MAX_REMOTE_HAULER_CARRY_PARTS = 25;
         const carryParts = Math.min(Math.max(1, Math.floor((budget || 0) / 100)), MAX_REMOTE_HAULER_CARRY_PARTS);
