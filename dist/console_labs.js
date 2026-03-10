@@ -9,6 +9,7 @@ function showLabHelp() {
         'lab("set", { ... })                     - patch global lab settings',
         'lab("room", roomName, { ... })          - patch per-room lab settings',
         'lab("room", roomName, "on|off")         - enable/disable per-room lab manager',
+        'lab("roomsReset")                        - clear all per-room lab overrides (rooms follow global config)',
         'lab("clear", roomName)                  - remove lab transfer missions for a room',
         'lab("stop")                             - set mode="idle" (stop reactions)',
         'lab("idle")                             - set mode="idle" (no reactions; optional cleanupIdle can clear labs)',
@@ -115,6 +116,13 @@ module.exports = function registerLabConsole() {
                 managerLabs.applyRoomPatch(roomName, patch);
             }
             const msg = managerLabs.summarizeRoom(roomName);
+            console.log(msg);
+            return msg;
+        }
+
+        if (cmd === 'roomsreset' || cmd === 'resetrooms' || cmd === 'clearrooms') {
+            managerLabs.applyPatch({ rooms: null });
+            const msg = 'Cleared all per-room lab overrides. All rooms now follow global lab config.';
             console.log(msg);
             return msg;
         }
