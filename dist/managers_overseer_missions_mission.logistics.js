@@ -388,20 +388,65 @@ module.exports = {
             const roomOverride = (baseCfg.rooms && baseCfg.rooms[room.name]) || null;
             const roomCfg = roomOverride ? Object.assign({}, baseCfg, roomOverride) : baseCfg;
             const target = roomCfg.terminalEnergyTarget || 0;
+            const max = roomCfg.terminalEnergyMax || 0;
+            const storageFloor = roomCfg.energyReserve || 0;
 
             if (target > 0) {
                 const cur = terminal.store[RESOURCE_ENERGY] || 0;
-                if (cur < target) {
-                    const stor = storage.store[RESOURCE_ENERGY] || 0;
-                    if (stor > 0) {
-                        const need = Math.min(target - cur, stor);
-                        if (need > 0) {
-                            const missionName = `haul:${storage.id}:${terminal.id}:${RESOURCE_ENERGY}`;
-                            if (!activeMissions.has(missionName)) {
-                                this.addLogisticsMissionsForRoute(activeMissions, coveredRouteSlots, storage, terminal, isEmergency, 'terminal_stock', RESOURCE_ENERGY, carryParts, need);
-                                debug('mission.logistics', `[TerminalStock] ${room.name} refill terminal energy cur=${cur} target=${target} need=${need}`);
-                            }
-                        }
+                const stor = storage.store[RESOURCE_ENERGY] || 0;
+                const storageFree = storage.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+
+                // Apply a deadband around target to prevent cross-tick thrash.
+                const db = clamp(Math.ceil(target * 0.05), 500, 5000);
+                const lo = Math.max(0, target - db);
+                const hi = (max > 0) ? Math.min(target + db, max) : (target + db);
+
+                const fwdBase = `haul:${storage.id}:${terminal.id}:${RESOURCE_ENERGY}`;
+                const revBase = `haul:${terminal.id}:${storage.id}:${RESOURCE_ENERGY}`;
+                const hasActiveTerminalEnergyRoute = (() => {
+                    for (const name of activeMissions.keys()) {
+                        if (!name) continue;
+                        if (name === fwdBase || name.startsWith(`${fwdBase}:s`)) return true;
+                        if (name === revBase || name.startsWith(`${revBase}:s`)) return true;
+                    }
+                    return false;
+                })();
+
+                if (!hasActiveTerminalEnergyRoute && cur < lo) {
+                    // Fill terminal from storage, but never dip storage below safety reserve.
+                    const storageSpare = Math.max(0, stor - storageFloor);
+                    const need = Math.min(target - cur, storageSpare);
+                    if (need > 0) {
+                        this.addLogisticsMissionsForRoute(
+                            activeMissions,
+                            coveredRouteSlots,
+                            storage,
+                            terminal,
+                            isEmergency,
+                            'terminal_stock',
+                            RESOURCE_ENERGY,
+                            carryParts,
+                            need
+                        );
+                        debug('mission.logistics', `[TerminalStock] ${room.name} fill terminal energy cur=${cur} target=${target} db=${db} need=${need} storage=${stor} floor=${storageFloor}`);
+                    }
+                } else if (!hasActiveTerminalEnergyRoute && cur > hi && storageFree > 0) {
+                    // Flush excess terminal energy back to storage.
+                    const excessToTarget = Math.max(0, cur - target);
+                    const flush = Math.min(excessToTarget, storageFree);
+                    if (flush > 0) {
+                        this.addLogisticsMissionsForRoute(
+                            activeMissions,
+                            coveredRouteSlots,
+                            terminal,
+                            storage,
+                            isEmergency,
+                            'terminal_stock',
+                            RESOURCE_ENERGY,
+                            carryParts,
+                            flush
+                        );
+                        debug('mission.logistics', `[TerminalStock] ${room.name} flush terminal energy cur=${cur} target=${target} max=${max} db=${db} flush=${flush}`);
                     }
                 }
             }
