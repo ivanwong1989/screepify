@@ -145,7 +145,8 @@ function getReverseLogisticsMissions(room, cfg, labs) {
             },
             requirements: {
                 archetype: 'hauler',
-                count: 1,
+                minCount: 1,
+                maxCount: 1,
                 spawn: false
             },
             priority: cfg.transferPriority

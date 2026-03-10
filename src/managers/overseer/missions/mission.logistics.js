@@ -726,6 +726,10 @@ module.exports = {
     getHaulSlotsForRoute: function(source, target, resourceType, carryParts, explicitNeed, type, routeKey) {
         const cap = Math.max(50, carryParts * 50);
         let amount = 0;
+        const roomName =
+            (source && source.pos && source.pos.roomName) ||
+            (target && target.pos && target.pos.roomName) ||
+            'unknown';
 
         // terminal_stock is intentionally single-servicer to avoid contention/ping-pong.
         if (type === 'terminal_stock') {
@@ -744,6 +748,12 @@ module.exports = {
         if (amount <= 0) {
             // Clear age memory if we stop seeing resources on this route.
             if (this._getRouteAgeTicks) this._getRouteAgeTicks(routeKey, 0);
+            if (type === 'mining') {
+                debug(
+                    'mission.logistics',
+                    `[MiningSlots] ${roomName} route=${routeKey} amount=0 -> slots=0`
+                );
+            }
             return 0;
         }
 
@@ -757,7 +767,15 @@ module.exports = {
         if (!isNonEnergy && typeof this._getRoutePolicy === 'function' && typeof this._getRouteAgeTicks === 'function') {
             const policy = this._getRoutePolicy(type, resourceType, cap);
             const ageTicks = this._getRouteAgeTicks(routeKey, amount);
-            if (policy && amount < policy.minAmount && ageTicks < policy.maxAgeTicks) return 0;
+            if (policy && amount < policy.minAmount && ageTicks < policy.maxAgeTicks) {
+                if (type === 'mining') {
+                    debug(
+                        'mission.logistics',
+                        `[MiningSlots] ${roomName} route=${routeKey} gated amount=${amount} min=${policy.minAmount} age=${ageTicks}/${policy.maxAgeTicks} -> slots=0`
+                    );
+                }
+                return 0;
+            }
         }
 
         let dist = 0;
@@ -782,6 +800,8 @@ module.exports = {
         let slots = Math.ceil((demandTrips * roundTrip) / desiredClearTicks);
         slots = Math.max(slots, 1);
         slots = Math.min(Math.max(slots, 0), 3);
+        const initialSlots = slots;
+        let trimReason = 'none';
 
         // Anti-oversubscription: trim extra slots if they only cover a tiny remainder
         // and policy prefers batching over partial servicing.
@@ -793,10 +813,32 @@ module.exports = {
             if (policy && !policy.allowPartial) {
                 while (slots > 1) {
                     const tailAmount = Math.max(0, amount - (cap * (slots - 1)));
-                    if (tailAmount >= policy.minAmount || ageTicks >= policy.maxAgeTicks) break;
+                    if (tailAmount >= policy.minAmount) {
+                        trimReason = 'tail_above_min';
+                        break;
+                    }
+                    if (ageTicks >= policy.maxAgeTicks) {
+                        trimReason = 'age_override';
+                        break;
+                    }
                     slots -= 1;
+                    trimReason = `tail_below_min(${tailAmount}<${policy.minAmount})`;
                 }
             }
+        }
+
+        if (type === 'mining') {
+            const policy = (typeof this._getRoutePolicy === 'function')
+                ? this._getRoutePolicy(type, resourceType, cap)
+                : null;
+            const ageTicks = (typeof this._getRouteAgeTicks === 'function')
+                ? this._getRouteAgeTicks(routeKey, amount)
+                : 0;
+            const tailAmount = Math.max(0, amount - (cap * Math.max(0, slots - 1)));
+            debug(
+                'mission.logistics',
+                `[MiningSlots] ${roomName} route=${routeKey} amount=${amount} cap=${cap} dist=${dist} rt=${roundTrip} initial=${initialSlots} final=${slots} tail=${tailAmount} min=${policy ? policy.minAmount : 'n/a'} age=${ageTicks}${policy ? `/${policy.maxAgeTicks}` : ''} reason=${trimReason}`
+            );
         }
 
         return slots;
@@ -810,6 +852,10 @@ module.exports = {
         // If the target is full... no need to schedule this mission....
         const rt = resourceType || RESOURCE_ENERGY;
         if (target && target.store && target.store.getFreeCapacity(rt) <= 0) return;
+        const roomName =
+            (source && source.pos && source.pos.roomName) ||
+            (target && target.pos && target.pos.roomName) ||
+            'unknown';
         
         const baseName = `haul:${source.id}:${target.id}`;
         const routeKey = resourceType ? `${baseName}:${resourceType}` : baseName;
@@ -859,6 +905,13 @@ module.exports = {
             remaining = Math.max(0, remaining - reserved);
         }
 
+        if (type === 'mining') {
+            debug(
+                'mission.logistics',
+                `[MiningRoute] ${roomName} route=${routeKey} slots=${slots} visible=${visibleAmount} remainingAfterExisting=${remaining} cap=${cap}`
+            );
+        }
+
         // Preserve explicitNeed splitting behavior for callers that use it.
         const hasNeed =
             explicitNeed !== undefined &&
@@ -891,6 +944,12 @@ module.exports = {
                 remaining < policy.minAmount &&
                 ageTicks < policy.maxAgeTicks
             ) {
+                if (type === 'mining') {
+                    debug(
+                        'mission.logistics',
+                        `[MiningRoute] ${roomName} route=${routeKey} stopCreate slot=s${i} remaining=${remaining} min=${policy.minAmount} age=${ageTicks}/${policy.maxAgeTicks}`
+                    );
+                }
                 break;
             }
 
@@ -923,6 +982,12 @@ module.exports = {
 
             coveredRouteSlots.add(missionName);
             remaining -= slotReserved;
+            if (type === 'mining') {
+                debug(
+                    'mission.logistics',
+                    `[MiningRoute] ${roomName} route=${routeKey} created=${missionName} reserved=${slotReserved} remaining=${remaining}`
+                );
+            }
         }
     },
 
