@@ -357,8 +357,20 @@ const overseerIntel = {
             const threshold = rclThresholds[rcl] || rclThresholds[5];
             const UPGRADE_START = threshold.start;
             const UPGRADE_STOP = threshold.stop;
-            if (current === 'STOCKPILING' && totalStored >= UPGRADE_START) current = 'UPGRADING';
-            else if (current === 'UPGRADING' && (totalStored <= UPGRADE_STOP)) current = 'STOCKPILING';
+            const STORAGE_FILL_UPGRADE_START = 0.90;
+            const STORAGE_FILL_UPGRADE_STOP = 0.80;
+
+            const storageUsed = room.storage.store.getUsedCapacity();
+            const storageCapacity = room.storage.store.getCapacity() || 1;
+            const storageFillRatio = storageUsed / storageCapacity;
+
+            // Start upgrading if either energy stockpile is high enough OR storage is near full.
+            if (current === 'STOCKPILING' && (totalStored >= UPGRADE_START || storageFillRatio >= STORAGE_FILL_UPGRADE_START)) {
+                current = 'UPGRADING';
+            // Return to stockpiling only when both energy and storage pressure are back down.
+            } else if (current === 'UPGRADING' && totalStored <= UPGRADE_STOP && storageFillRatio <= STORAGE_FILL_UPGRADE_STOP) {
+                current = 'STOCKPILING';
+            }
         } else { // Without storage, the flow tracking is too undeterministic since there's no buffer. do not use flow EMA.
             // Also most probably without storage means low RCL. focus should be on upgrading still we have. 
             // We should always we in UPGRADING mode. 

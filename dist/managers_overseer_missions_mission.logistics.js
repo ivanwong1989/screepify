@@ -1068,9 +1068,10 @@ module.exports = {
         }
         if (type === 'link_out') return 95;
         if (type === 'mining') return 85;
-        if (type === 'scavenge') return 45;
+        if (type === 'terminal_stock') return 60;
         if (type === 'drop_mining') return 47;
-        if (type === 'terminal_stock') return 20;
+        if (type === 'scavenge') return 45;
+        
         return 10;
     }
 };

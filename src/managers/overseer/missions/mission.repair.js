@@ -85,8 +85,8 @@ module.exports = {
             3: { start: 20000, target: 150000 },
             4: { start: 150000, target: 300000 },
             5: { start: 300000, target: 500000 },
-            6: { start: 500000, target: 1300000 },
-            7: { start: 2000000, target: 3000000 },
+            6: { start: 900000, target: 1300000 },
+            7: { start: 3000000, target: 3500000 },
             8: { start: 3500000, target: 5000000 }
         };
         const settings = FORTIFY_SETTINGS[rcl] || FORTIFY_SETTINGS[0];
