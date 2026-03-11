@@ -7,6 +7,7 @@ registerGlobals();
 registerConsole();
 
 var roleUniversal = require('role.universal');
+var roleEmpireUniversal = require('role.empire.universal');
 var roleDefender = require('role.defender');
 var roleAssault = require('role.assault');
 var roleTower = require('role.tower');
@@ -14,6 +15,8 @@ var runColony = require('runColony');
 var telemetry = require('telemetry_index');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
 var safemodeManager = require('managers_safemode_safemodeManager');
+var managerZeadmin = require('managers_zeadmin_manager.global.zeadmin');
+var empireScaffold = require('managers_zeadmin_manager.global.zeadmin.empire.scaffold');
 
 
 // CONSTANTS
@@ -182,12 +185,20 @@ module.exports.loop = function() {
             }
         }
 
+        // --- ZEADMIN (empire-level read-only snapshot) ---
+        managerZeadmin.run();
+        empireScaffold.setEnabled(true);
+        const empireRuntime = empireScaffold.run();
+
         // --- GLOBAL SPAWN MANAGER ---
         // Collect tickets from all rooms
         let allSpawnTickets = [];
         for (const roomName in Game.rooms) {
             const room = Game.rooms[roomName];
             if (room._spawnTicketsToRequest) allSpawnTickets.push(...room._spawnTicketsToRequest);
+        }
+        if (empireRuntime && empireRuntime.enabled && Array.isArray(empireRuntime.tickets) && empireRuntime.tickets.length > 0) {
+            allSpawnTickets.push(...empireRuntime.tickets);
         }
         managerGlobalSpawner.run(allSpawnTickets);
 
@@ -200,6 +211,7 @@ module.exports.loop = function() {
             } else if (creep.memory.role === 'assault') {
                 roleAssault.run(creep);
             } else if ([
+                'empire_universal',
                 'universal',
                 'miner',
                 'remote_miner',
@@ -219,7 +231,11 @@ module.exports.loop = function() {
                 'claimer',
                 'move2flag'
             ].includes(creep.memory.role)) {
-                roleUniversal.run(creep);
+                if (creep.memory.role === 'empire_universal') {
+                    roleEmpireUniversal.run(creep);
+                } else {
+                    roleUniversal.run(creep);
+                }
             }
         }
 

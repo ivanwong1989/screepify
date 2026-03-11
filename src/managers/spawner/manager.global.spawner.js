@@ -124,7 +124,14 @@ module.exports = {
     },
 
     executeSpawn: function(spawn, ticket) {
-        const name = `${ticket.role}_${Game.time.toString(36)}_${Math.floor(Math.random()*100)}`;
+        const sanitizeNamePrefix = (prefix, fallbackRole) => {
+            const raw = String(prefix || `${fallbackRole || 'creep'}`);
+            const safe = raw.replace(/[^a-zA-Z0-9_\-]/g, '_');
+            if (safe.length === 0) return 'creep';
+            return safe.slice(0, 70);
+        };
+        const base = sanitizeNamePrefix(ticket.namePrefix, ticket.role);
+        const name = `${base}_${Game.time.toString(36)}_${Math.floor(Math.random()*100)}`;
         const memory = Object.assign({}, ticket.memory);
         
         // Canonicalize home vs spawn room fields for debugging and future census logic.

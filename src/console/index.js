@@ -7,5 +7,6 @@ module.exports = function registerConsole() {
     require('console_allies')();
     require('console_mission')();
     require('console_attack')();
+    require('console_zeadmin')();
     require('console_help')();
 };

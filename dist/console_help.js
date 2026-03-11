@@ -23,6 +23,7 @@ module.exports = function registerHelpConsole() {
                 'allyRemove(\"Name\") - remove an ally by player name',
                 'allyList()        - show current allies',
                 'mission()         - manage user-controlled missions',
+                'zeadmin()         - show empire/room zeadmin snapshot from heap',
                 'dismantleBody()   - set/show dismantle body for assaultMode=dismantle missions (auto/fixed)',
                 '  dismantleBody("auto: work move") - auto repeats pattern to capacity (default)',
                 '  dismantleBody("fixed: work move") - fixed exact body (no repeat)',
