@@ -1,5 +1,13 @@
 const heap = require('utils_heap');
 
+function getRoomSlot(roomName, interval) {
+    let hash = 0;
+    for (let i = 0; i < roomName.length; i++) {
+        hash = (hash + roomName.charCodeAt(i)) % interval;
+    }
+    return hash;
+}
+
 function getRoomCache(room) {
     if (!room) return {};
     if (!room._cache) room._cache = {};
@@ -22,13 +30,16 @@ function getRoomCache(room) {
     if (cache.static && heapRoom.static && cache.static.time !== heapRoom.static.time) delete cache.static;
 
     const staticInterval = 15;
+    const staticSlot = getRoomSlot(room.name, staticInterval);
 
     if (!Array.isArray(Memory.allies)) Memory.allies = [];
     const allies = Memory.allies.map(a => ('' + a).toLowerCase());
     const isAlly = (owner) => !!(owner && owner.username && allies.includes(owner.username.toLowerCase()));
 
-    // Refresh static IDs in heap if expired
-    if (!heapRoom.static || (heapRoom.static.time + staticInterval) <= now) {
+    // Refresh static IDs in heap if missing, or when expired on this room's stagger slot.
+    const staticDue = !!heapRoom.static && (heapRoom.static.time + staticInterval) <= now;
+    const staticScheduledNow = (now % staticInterval) === staticSlot;
+    if (!heapRoom.static || (staticDue && staticScheduledNow)) {
         debug('roomCache', `[RoomCache] Static refreshed ${room.name}`);
         const structures = room.find(FIND_STRUCTURES);
         const flags = room.find(FIND_FLAGS);

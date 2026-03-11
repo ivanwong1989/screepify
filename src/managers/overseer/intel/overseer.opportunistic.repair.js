@@ -21,6 +21,20 @@ const FORTIFY_SETTINGS = {
     8: { start: 3500000, target: 5000000 }
 };
 
+function getRoomSlot(roomName, interval) {
+    if (interval <= 1) return 0;
+    let hash = 0;
+    for (let i = 0; i < roomName.length; i++) {
+        hash = (hash + roomName.charCodeAt(i)) % interval;
+    }
+    return hash;
+}
+
+function shouldRunStaggered(roomName, interval) {
+    if (interval <= 1) return true;
+    return (Game.time % interval) === getRoomSlot(roomName, interval);
+}
+
 function getFortifyPolicy(room) {
     // Read policy from room memory when available (mission layer writes this),
     // otherwise fall back to RCL defaults so scanner can still run safely.
@@ -116,7 +130,8 @@ module.exports = {
 
         // One scan pass per interval (or forced) populates all downstream consumers.
         const forceScan = !!(opts && opts.forceScan);
-        const shouldScan = forceScan || !roomStore.lastScan || (Game.time - roomStore.lastScan) >= scanInterval;
+        const due = !roomStore.lastScan || (Game.time - roomStore.lastScan) >= scanInterval;
+        const shouldScan = forceScan || (due && shouldRunStaggered(room.name, scanInterval));
         if (!shouldScan) return roomStore;
 
         // Single pass over room structures:
@@ -201,7 +216,8 @@ module.exports = {
         roomStore.scanInterval = scanInterval;
 
         const forceScan = !!(opts && opts.forceScan);
-        const shouldScan = forceScan || !roomStore.lastScan || (Game.time - roomStore.lastScan) >= scanInterval;
+        const due = !roomStore.lastScan || (Game.time - roomStore.lastScan) >= scanInterval;
+        const shouldScan = forceScan || (due && shouldRunStaggered(room.name, scanInterval));
         if (!shouldScan) return roomStore;
 
         const roads = room.find(FIND_STRUCTURES, {

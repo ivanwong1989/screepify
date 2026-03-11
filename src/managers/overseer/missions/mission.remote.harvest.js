@@ -24,7 +24,7 @@ module.exports = {
                 const missionName = `remote:harvest:${name}:${source.id}`;
                 const census = getMissionCensus(missionName);
 
-                const targetWork = 5;
+                const targetWork = 7;
                 const availableSpaces = source.availableSpaces || 1;
 
                 debug('mission.remote.harvest', `[RemoteHarvest] ${room.name} -> ${name} ${source.id} ` +
