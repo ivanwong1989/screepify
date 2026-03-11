@@ -134,8 +134,7 @@ module.exports = {
         const name = `${base}_${Game.time.toString(36)}_${Math.floor(Math.random()*100)}`;
         const memory = Object.assign({}, ticket.memory);
         
-        // Canonicalize home vs spawn room fields for debugging and future census logic.
-        memory.homeRoom = ticket.homeRoom;
+        // Canonical home room field on creeps is `memory.room`.
         memory.spawnRoom = spawn.room.name;
         memory.room = ticket.homeRoom; // keep existing semantics: memory.room == home room
         memory.contractId = ticket.contractId;

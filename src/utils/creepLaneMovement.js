@@ -221,11 +221,17 @@ function tryMoveByLane(creep, lane, destPos, range) {
     };
 
     const idx = getPathIndex(path, creep.pos, runtime.indexByPos);
+    let debugStore = null;
+    if (creep && creep.name) {
+        debugStore = heap.getStore('laneDebug');
+        if (!debugStore.creeps) debugStore.creeps = Object.create(null);
+        if (!debugStore.creeps[creep.name]) debugStore.creeps[creep.name] = Object.create(null);
+    }
     if (idx === -1) {
         const nearest = getNearestLaneTile();
         if (!nearest) return false;
         const code = creep.moveTo(nearest, { range: 0, reusePath: 3, ignoreCreeps: false });
-        creep.memory._laneLastMoveByPathCode = code;
+        if (debugStore) debugStore.creeps[creep.name].lastMoveByPathCode = code;
         return code === OK || code === ERR_TIRED;
     }
 
@@ -239,7 +245,7 @@ function tryMoveByLane(creep, lane, destPos, range) {
     }
 
     const code = creep.moveByPath(path);
-    creep.memory._laneLastMoveByPathCode = code;
+    if (debugStore) debugStore.creeps[creep.name].lastMoveByPathCode = code;
     if (code === OK || code === ERR_TIRED) return true;
     // On-lane creeps should not pathfind around the train; hold lane discipline.
     return false;

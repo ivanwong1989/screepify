@@ -16,7 +16,7 @@ const getTickCache = (key) => {
 const getHomeSpawnBusyTicks = (creep) => {
     if (!creep || !creep.memory || typeof getRoomCache !== 'function') return 0;
 
-    const homeRoomName = creep.memory.room || creep.memory.homeRoom;
+    const homeRoomName = creep.memory.room;
     if (!homeRoomName) return 0;
 
     const byRoom = getTickCache('_spawnBusyTicksByRoomCache');

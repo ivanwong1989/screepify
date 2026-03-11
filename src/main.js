@@ -206,6 +206,7 @@ module.exports.loop = function() {
         // Run creep logic globally, as they may be in any room
         for (var name in Game.creeps) {
             var creep = Game.creeps[name];
+            if (creep.memory && creep.memory.homeRoom) delete creep.memory.homeRoom;
             if (creep.memory.role === 'defender' || creep.memory.role === 'brawler' || creep.memory.role === 'drainer') {
                 roleDefender.run(creep);
             } else if (creep.memory.role === 'assault') {

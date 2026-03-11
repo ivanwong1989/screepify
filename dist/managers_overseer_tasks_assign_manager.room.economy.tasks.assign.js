@@ -155,6 +155,18 @@ var managerTasks = {
             // We count spawning creeps to prevent overcrowding (double assignment)
             if (creep.spawning) return;
 
+            // spawnRoom is only needed while returning from remote spawn.
+            // Once home, clear it to keep creep memory small.
+            if (
+                creep.memory &&
+                creep.memory.spawnRoom &&
+                creep.memory.room &&
+                creep.room &&
+                creep.room.name === creep.memory.room
+            ) {
+                delete creep.memory.spawnRoom;
+            }
+
             // Check if creep has a mission
             const missionName = creep.memory.missionName;
             if (missionName) {

@@ -1,6 +1,15 @@
 const borderNav = require('utils_creepBorderNav');
 const laneMovement = require('utils_creepLaneMovement');
 const opportunisticRepair = require('utils_creepOpportunisticRepair');
+const heap = require('utils_heap');
+
+function getLaneDebugState(creep) {
+    if (!creep || !creep.name) return null;
+    const store = heap.getStore('laneDebug');
+    if (!store.creeps) store.creeps = Object.create(null);
+    if (!store.creeps[creep.name]) store.creeps[creep.name] = Object.create(null);
+    return store.creeps[creep.name];
+}
 
 var roleUniversal = {
     /**
@@ -9,6 +18,9 @@ var roleUniversal = {
      * @param {Creep} creep
      */
     run: function(creep) {
+        if (creep.memory && creep.memory._laneLogSig) delete creep.memory._laneLogSig;
+        if (creep.memory && creep.memory._laneLastMoveByPathCode !== undefined) delete creep.memory._laneLastMoveByPathCode;
+
         if (borderNav.handleBorderNudgeTick(creep)) return;
 
         // --- Global Deployment Logic ---
@@ -16,6 +28,7 @@ var roleUniversal = {
         if (creep.memory._travellingToHome) {
             if (creep.room.name === creep.memory.room) {
                 delete creep.memory._travellingToHome;
+                if (creep.memory.spawnRoom) delete creep.memory.spawnRoom;
             } else {
                 const homeSpawn = borderNav.getHomeSpawnTarget(creep);
                 if (homeSpawn) {
@@ -74,13 +87,14 @@ var roleUniversal = {
                         if (wantLane) {
                             const lane = laneMovement.getOwnedLane(meta.laneKey, meta.homeRoom);
                             const moved = laneMovement.tryMoveByLane(creep, lane, targetPos, task.range);
+                            const laneDebug = getLaneDebugState(creep);
                             const laneSig = `lane:${meta.laneKey}:${targetPos.roomName}:${moved ? 'ok' : 'fallback'}`;
-                            if (creep.memory._laneLogSig !== laneSig) {
-                                creep.memory._laneLogSig = laneSig;
+                            if (!laneDebug || laneDebug.lastLogSig !== laneSig) {
+                                if (laneDebug) laneDebug.lastLogSig = laneSig;
                                 debug(
                                     'mission.remote.haul',
                                     `[Lane] ${creep.name} key=${meta.laneKey} home=${meta.homeRoom} ` +
-                                    `to=${targetPos.roomName} moved=${moved} code=${creep.memory._laneLastMoveByPathCode} lane=${lane ? 'hit' : 'miss'}`
+                                    `to=${targetPos.roomName} moved=${moved} code=${laneDebug ? laneDebug.lastMoveByPathCode : undefined} lane=${lane ? 'hit' : 'miss'}`
                                 );
                             }
                             // Only use normal target pathfinding when lane data is missing.
