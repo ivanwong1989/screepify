@@ -4,6 +4,7 @@ const empireTasker = require('managers_zeadmin_manager.global.zeadmin.empire.tas
 const empireExecutor = require('managers_zeadmin_manager.global.zeadmin.empire.executor');
 const empireSpawnerInjector = require('managers_zeadmin_manager.global.zeadmin.empire.spawner.injector');
 const empireFlagMission = require('managers_zeadmin_manager.global.zeadmin.empire.mission.flag');
+const resourceBalancing = require('managers_zeadmin_manager.global.zeadmin.resource.balancing');
 
 const STORE_KEY = 'zeadmin_empire_scaffold';
 
@@ -34,7 +35,8 @@ module.exports = {
             board: empireBoard.getStore(),
             tasker: empireTasker.getStore(),
             executor: empireExecutor.getStore(),
-            spawnerInjector: empireSpawnerInjector.getStore()
+            spawnerInjector: empireSpawnerInjector.getStore(),
+            resourceBalancing: resourceBalancing.getStore()
         };
     },
 
@@ -44,6 +46,7 @@ module.exports = {
 
         // Seed a tiny baseline mission set from flag inputs.
         const flagSync = empireFlagMission.sync();
+        const balanceStore = resourceBalancing.run();
 
         // 1) Mission board lives in heap and is managed by zeadmin logic.
         // 2) Tasker assigns creeps globally (no room anchor requirement).
@@ -59,7 +62,8 @@ module.exports = {
             ticketCount: tickets.length,
             assignedMissionCount: taskerStore ? Object.keys(taskerStore.runtimeByMissionId || {}).length : 0,
             executedCreepCount: executorStore ? Object.keys(executorStore.lastByCreep || {}).length : 0,
-            flagSync
+            flagSync,
+            resourceBalancing: balanceStore && balanceStore.lastSummary ? balanceStore.lastSummary : null
         };
 
         return {

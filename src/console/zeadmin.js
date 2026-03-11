@@ -5,7 +5,8 @@ function showHelp() {
         'zeadmin()                  - show this help',
         'zeadmin("show")            - show empire overview from heap snapshot',
         'zeadmin("rooms")           - list per-room overview',
-        'zeadmin("room", "W1N1")    - show one room snapshot'
+        'zeadmin("room", "W1N1")    - show one room snapshot',
+        'zeadmin("balance")         - show latest resource balancing summary'
     ];
     for (const line of lines) console.log(line);
     return 'Done';
@@ -24,11 +25,17 @@ function printEmpire(snapshot) {
     const telemetry = e.telemetry || {};
     const telemetryCpu = telemetry.cpu || {};
     const telemetrySpark = telemetry.spark || {};
+    const emaUsed = Number(telemetryCpu.ema || 0);
+    const emaPctOfLimit = cpu.limit > 0 ? ((emaUsed / cpu.limit) * 100) : 0;
+    const emaPctOfTickLimit = cpu.tickLimit > 0 ? ((emaUsed / cpu.tickLimit) * 100) : 0;
+    const storage = e.storage || {};
+    const terminal = e.terminal || {};
+    const balancing = e.resourceBalancing || null;
     console.log(`ZEADMIN snapshot tick=${snapshot.tick} rooms=${e.roomCount || 0}`);
     console.log(
-        `cpu: used=${Number(cpu.used || 0).toFixed(2)} ` +
+        `cpu: emaUsed=${emaUsed.toFixed(2)} ` +
         `limit=${cpu.limit || 0} tickLimit=${cpu.tickLimit || 0} bucket=${cpu.bucket || 0} ` +
-        `used/limit=${Number(cpu.usedPctOfLimit || 0).toFixed(1)}% used/tickLimit=${Number(cpu.usedPctOfTickLimit || 0).toFixed(1)}%`
+        `ema/limit=${emaPctOfLimit.toFixed(1)}% ema/tickLimit=${emaPctOfTickLimit.toFixed(1)}%`
     );
     console.log(
         `telemetry: cpu.ema=${Number(telemetryCpu.ema || 0).toFixed(2)} ` +
@@ -43,6 +50,20 @@ function printEmpire(snapshot) {
     );
     console.log(`missions=${e.missionCount || 0} pendingTickets=${e.spawnTicketCount || 0} homeOwnedCreeps=${e.ownedCreepCount || 0}`);
     console.log(`energy: available=${energy.available || 0} capacity=${energy.capacity || 0} stored=${energy.stored || 0}`);
+    console.log(
+        `storage: used=${storage.used || 0} cap=${storage.capacity || 0} ` +
+        `fill=${Number(storage.fillPct || 0).toFixed(3)} pressuredRooms=${storage.pressuredRooms || 0}`
+    );
+    console.log(
+        `terminal: used=${terminal.used || 0} cap=${terminal.capacity || 0} ` +
+        `fill=${Number(terminal.fillPct || 0).toFixed(3)} pressuredRooms=${terminal.pressuredRooms || 0}`
+    );
+    if (balancing) {
+        console.log(
+            `balance: core=${balancing.coreRoom || 'n/a'} sends=${balancing.sends || 0} ` +
+            `candidates=${balancing.candidateCount || 0} pressured=${balancing.pressuredRoomCount || 0} reason=${balancing.reason || 'n/a'}`
+        );
+    }
     console.log(`states.overall=${JSON.stringify((e.states && e.states.overall) || {})}`);
     console.log(`states.ops=${JSON.stringify((e.states && e.states.ops) || {})}`);
     console.log(`states.economy=${JSON.stringify((e.states && e.states.economy) || {})}`);
@@ -62,6 +83,8 @@ function printRooms(snapshot) {
         const room = rooms[roomName] || {};
         const states = room.states || {};
         const energy = room.energy || {};
+        const storage = room.storage || {};
+        const terminal = room.terminal || {};
         const missions = room.missions || {};
         const spawn = room.spawn || {};
         const creeps = room.creeps || {};
@@ -69,7 +92,8 @@ function printRooms(snapshot) {
             `${roomName} overall=${states.overall || 'UNKNOWN'} ` +
             `ops=${states.ops || 'UNKNOWN'} eco=${states.economy || 'UNKNOWN'} combat=${states.combat || 'UNKNOWN'} ` +
             `missions=${missions.total || 0} tickets=${spawn.pendingTickets || 0} creeps=${creeps.homeOwned || 0} ` +
-            `energy=${energy.available || 0}/${energy.capacity || 0} stored=${energy.stored || 0}`
+            `energy=${energy.available || 0}/${energy.capacity || 0} stored=${energy.stored || 0} ` +
+            `storageFill=${Number(storage.fillPct || 0).toFixed(2)} terminalFill=${Number(terminal.fillPct || 0).toFixed(2)}`
         );
     }
     return 'Done';
@@ -84,6 +108,8 @@ function printRoom(snapshot, roomName) {
 
     const states = room.states || {};
     const energy = room.energy || {};
+    const storage = room.storage || {};
+    const terminal = room.terminal || {};
     const missions = room.missions || {};
     const spawn = room.spawn || {};
     const creeps = room.creeps || {};
@@ -91,9 +117,41 @@ function printRoom(snapshot, roomName) {
     console.log(`ZEADMIN ${name} tick=${room.tick || snapshot.tick}`);
     console.log(`states: overall=${states.overall || 'UNKNOWN'} ops=${states.ops || 'UNKNOWN'} economy=${states.economy || 'UNKNOWN'} combat=${states.combat || 'UNKNOWN'}`);
     console.log(`energy: available=${energy.available || 0} capacity=${energy.capacity || 0} stored=${energy.stored || 0}`);
+    console.log(
+        `storage: used=${storage.used || 0} cap=${storage.capacity || 0} ` +
+        `free=${storage.free || 0} fill=${Number(storage.fillPct || 0).toFixed(3)}`
+    );
+    console.log(
+        `terminal: used=${terminal.used || 0} cap=${terminal.capacity || 0} ` +
+        `free=${terminal.free || 0} fill=${Number(terminal.fillPct || 0).toFixed(3)}`
+    );
     console.log(`missions: total=${missions.total || 0} byType=${JSON.stringify(missions.byType || {})}`);
     console.log(`spawn: pendingTickets=${spawn.pendingTickets || 0}`);
     console.log(`creeps: homeOwned=${creeps.homeOwned || 0}`);
+    return 'Done';
+}
+
+function printBalance() {
+    const store = heap.getStore('zeadmin_resource_balancing', { ttl: null });
+    if (!store || !store.lastSummary) return 'No resource balancing data yet.';
+    const s = store.lastSummary;
+    console.log(
+        `ZEADMIN balance tick=${store.lastTick || 0} enabled=${s.enabled ? 'yes' : 'no'} ` +
+        `core=${s.coreRoom || 'n/a'} sends=${s.sends || 0} candidates=${s.candidateCount || 0} ` +
+        `pressured=${s.pressuredRoomCount || 0} reason=${s.reason || 'n/a'}`
+    );
+    const transfers = Array.isArray(store.lastTransfers) ? store.lastTransfers : [];
+    if (transfers.length === 0) {
+        console.log('lastTransfers: (none)');
+        return 'Done';
+    }
+    console.log('lastTransfers:');
+    for (const t of transfers.slice(0, 10)) {
+        console.log(
+            `${t.tick} ${t.from} -> ${t.to} amount=${t.amount} ` +
+            `cost~${t.estimatedEnergyCost} ok=${t.ok ? 'yes' : 'no'}${t.error ? ` error=${t.error}` : ''}`
+        );
+    }
     return 'Done';
 }
 
@@ -108,6 +166,7 @@ module.exports = function registerZeadminConsole() {
         if (cmd === 'show' || cmd === 'status' || cmd === 's') return printEmpire(snapshot);
         if (cmd === 'rooms' || cmd === 'list' || cmd === 'ls') return printRooms(snapshot);
         if (cmd === 'room') return printRoom(snapshot, args[0]);
+        if (cmd === 'balance' || cmd === 'bal') return printBalance();
 
         return showHelp();
     };

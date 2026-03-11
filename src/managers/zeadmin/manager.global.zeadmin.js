@@ -39,11 +39,35 @@ function getSeriesLast(seriesStore, key) {
     return Number.isFinite(last) ? last : null;
 }
 
+function getStoreStats(structure) {
+    if (!structure || !structure.store) {
+        return {
+            exists: false,
+            used: 0,
+            capacity: 0,
+            free: 0,
+            fillPct: 0
+        };
+    }
+    const used = structure.store.getUsedCapacity();
+    const capacity = structure.store.getCapacity();
+    const free = structure.store.getFreeCapacity();
+    const fillPct = capacity > 0 ? (used / capacity) : 0;
+    return {
+        exists: true,
+        used,
+        capacity,
+        free,
+        fillPct
+    };
+}
+
 const managerZeadmin = {
     run: function() {
         const store = heap.getStore('zeadmin', { ttl: null });
         const telemetryStore = heap.getStore('telemetry', { ttl: null });
         const sparkStore = heap.getStore('sparkStats', { ttl: null });
+        const resourceBalancingStore = heap.getStore('zeadmin_resource_balancing', { ttl: null });
         const sparkSeries = sparkStore && sparkStore.series ? sparkStore.series : null;
 
         const roomsOut = {};
@@ -81,12 +105,27 @@ const managerZeadmin = {
                 capacity: 0,
                 stored: 0
             },
+            storage: {
+                used: 0,
+                capacity: 0,
+                fillPct: 0,
+                pressuredRooms: 0
+            },
+            terminal: {
+                used: 0,
+                capacity: 0,
+                fillPct: 0,
+                pressuredRooms: 0
+            },
             states: {
                 ops: {},
                 economy: {},
                 combat: {},
                 overall: {}
-            }
+            },
+            resourceBalancing: (resourceBalancingStore && resourceBalancingStore.lastSummary)
+                ? resourceBalancingStore.lastSummary
+                : null
         };
 
         for (const roomName in Game.rooms) {
@@ -112,6 +151,8 @@ const managerZeadmin = {
                 : ((room.storage && room.storage.store && room.storage.store[RESOURCE_ENERGY]) || 0) +
                   ((room.terminal && room.terminal.store && room.terminal.store[RESOURCE_ENERGY]) || 0);
             const homeCreepCount = homeCreepCounts[room.name] || 0;
+            const storageStats = getStoreStats(room.storage);
+            const terminalStats = getStoreStats(room.terminal);
 
             const roomReport = {
                 tick: Game.time,
@@ -126,6 +167,8 @@ const managerZeadmin = {
                     capacity: room.energyCapacityAvailable,
                     stored: roomStoredEnergy
                 },
+                storage: storageStats,
+                terminal: terminalStats,
                 missions: {
                     total: missions.length,
                     byType: missionByType
@@ -147,6 +190,12 @@ const managerZeadmin = {
             empire.energy.available += room.energyAvailable;
             empire.energy.capacity += room.energyCapacityAvailable;
             empire.energy.stored += roomStoredEnergy;
+            empire.storage.used += storageStats.used;
+            empire.storage.capacity += storageStats.capacity;
+            empire.terminal.used += terminalStats.used;
+            empire.terminal.capacity += terminalStats.capacity;
+            if (storageStats.exists && storageStats.fillPct >= 0.9) empire.storage.pressuredRooms += 1;
+            if (terminalStats.exists && terminalStats.fillPct >= 0.9) empire.terminal.pressuredRooms += 1;
 
             empire.states.ops[opsState] = (empire.states.ops[opsState] || 0) + 1;
             empire.states.economy[economyState] = (empire.states.economy[economyState] || 0) + 1;
@@ -161,6 +210,8 @@ const managerZeadmin = {
         empire.cpu.usedPctOfTickLimit = empire.cpu.tickLimit > 0
             ? (empire.cpu.used / empire.cpu.tickLimit) * 100
             : 0;
+        empire.storage.fillPct = empire.storage.capacity > 0 ? (empire.storage.used / empire.storage.capacity) : 0;
+        empire.terminal.fillPct = empire.terminal.capacity > 0 ? (empire.terminal.used / empire.terminal.capacity) : 0;
 
         store.version = 1;
         store.tick = Game.time;

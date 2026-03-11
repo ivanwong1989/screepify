@@ -186,9 +186,9 @@ module.exports.loop = function() {
         }
 
         // --- ZEADMIN (empire-level read-only snapshot) ---
-        managerZeadmin.run();
         empireScaffold.setEnabled(true);
         const empireRuntime = empireScaffold.run();
+        managerZeadmin.run();
 
         // --- GLOBAL SPAWN MANAGER ---
         // Collect tickets from all rooms
