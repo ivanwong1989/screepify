@@ -217,12 +217,8 @@ var managerSpawner = {
             return this.generateClaimerBody(budget);
         } else if (mission.archetype === 'hauler' || mission.archetype === 'remote_hauler' || mission.archetype === 'user_hauler') {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
-            const includeRepairWorkPart = !!(
-                mission.archetype === 'remote_hauler' &&
-                mission.requirements &&
-                mission.requirements.includeRepairWorkPart
-            );
-            return this.generateHaulerBody(budget, maxCarryParts, { includeRepairWorkPart });
+            const includeRepairWorkPart = mission.archetype === 'remote_hauler';
+            return this.generateHaulerBody(budget, maxCarryParts, includeRepairWorkPart);
         } else if (mission.archetype == 'remote_worker') {
             return this.generateRemoteWorkerBody(budget);
         } else {
@@ -377,9 +373,9 @@ var managerSpawner = {
         return [CLAIM, MOVE];
     },
 
-    generateHaulerBody: function(budget, maxCarryParts, options) {
-        const includeRepairWorkPart = !!(options && options.includeRepairWorkPart);
-        const canAddRepairSegment = includeRepairWorkPart && budget >= 250;
+    generateHaulerBody: function(budget, maxCarryParts, includeRepairWorkPart) {
+        const withRepairWorkPart = !!includeRepairWorkPart;
+        const canAddRepairSegment = withRepairWorkPart && budget >= 250;
         const reservedParts = canAddRepairSegment ? 2 : 0;
         const reservedCost = canAddRepairSegment ? 150 : 0;
 

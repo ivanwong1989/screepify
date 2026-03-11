@@ -4,6 +4,7 @@
 // Reads from: room.memory.overseer.scout (new format from overseer.scout.js)
 // Removes: old remote memory tree + "must be reserved by me" gating.
 // Enables by default for non-hostile rooms, gated by RCL2.
+const HOSTILE_GATE_TICKS = 7200; // ~6h at ~3s/tick
 
 function getSponsorScoutMemory(room) {
     if (!room) return null;
@@ -30,6 +31,16 @@ function isRoomEligibleFromScoutEntry(entry, maxScoutAge) {
 
     if (maxScoutAge && ts > 0 && (Game.time - ts) > maxScoutAge) return false;
 
+    // If threat was seen recently, keep this remote gated for a cooldown period.
+    const threat = entry.threat || {};
+    const lastThreatSeen = Number.isFinite(threat.lastThreatSeen)
+        ? threat.lastThreatSeen
+        : Math.max(
+            Number.isFinite(threat.lastHostileSeen) ? threat.lastHostileSeen : 0,
+            Number.isFinite(threat.lastAttackerSeen) ? threat.lastAttackerSeen : 0
+        );
+    if (lastThreatSeen > 0 && (Game.time - lastThreatSeen) < HOSTILE_GATE_TICKS) return false;
+
     // Non-hostile gating:
     // scout may set status='hostile' when empty+hostiles/structures were seen.
     const status = entry.status;
@@ -48,6 +59,80 @@ function isRoomEligibleFromScoutEntry(entry, maxScoutAge) {
     const sourceCount = Array.isArray(entry.sourcesInfo) ? entry.sourcesInfo.length : (entry.sources || 0);
     if (sourceCount <= 0) return false;
 
+    return true;
+}
+
+function getAllies() {
+    if (!Array.isArray(Memory.allies)) return [];
+    return Memory.allies.map(a => ('' + a).toLowerCase());
+}
+
+function isAllyName(name, allies) {
+    if (!name) return false;
+    return Array.isArray(allies) && allies.includes(('' + name).toLowerCase());
+}
+
+function getRuntimeThreatStampCache() {
+    const cache = global._remoteRuntimeThreatStamp;
+    if (cache && cache.time === Game.time) return cache;
+    const next = { time: Game.time, keys: Object.create(null) };
+    global._remoteRuntimeThreatStamp = next;
+    return next;
+}
+
+function recordRuntimeThreatIntel(sponsorRoomName, observedRoom) {
+    if (!sponsorRoomName || !observedRoom || observedRoom.name === sponsorRoomName) return false;
+
+    const sponsorRoom = Game.rooms[sponsorRoomName];
+    const sponsorMemory = sponsorRoom
+        ? sponsorRoom.memory
+        : (Memory.rooms[sponsorRoomName] = Memory.rooms[sponsorRoomName] || {});
+
+    if (!sponsorMemory.overseer) sponsorMemory.overseer = {};
+    if (!sponsorMemory.overseer.scout) sponsorMemory.overseer.scout = {};
+    const scoutMem = sponsorMemory.overseer.scout;
+    if (!scoutMem.rooms) scoutMem.rooms = {};
+
+    const stampKey = `${sponsorRoomName}:${observedRoom.name}`;
+    const stampCache = getRuntimeThreatStampCache();
+    if (stampCache.keys[stampKey]) return false;
+
+    const allies = getAllies();
+    const hostileCreeps = observedRoom.find(FIND_HOSTILE_CREEPS).filter(c =>
+        !isAllyName(c && c.owner && c.owner.username, allies)
+    );
+    const hostileAttackers = hostileCreeps.filter(c =>
+        (c.getActiveBodyparts(ATTACK) || c.getActiveBodyparts(RANGED_ATTACK))
+    );
+    const hostileStructures = observedRoom.find(FIND_HOSTILE_STRUCTURES).filter(s =>
+        !isAllyName(s && s.owner && s.owner.username, allies)
+    );
+
+    if (hostileCreeps.length <= 0 && hostileStructures.length <= 0) return false;
+
+    const now = Game.time;
+    const entry = scoutMem.rooms[observedRoom.name] || (scoutMem.rooms[observedRoom.name] = {
+        lastScout: 0,
+        lastSeen: 0
+    });
+
+    entry.lastSeen = now;
+    entry.status = 'hostile';
+    entry.hostiles = hostileCreeps.length;
+    entry.hostileAttackers = hostileAttackers.length;
+    entry.hostileStructures = hostileStructures.length;
+
+    if (!entry.threat) {
+        entry.threat = { level: 0, lastHostileSeen: 0, lastAttackerSeen: 0, lastThreatSeen: 0 };
+    }
+    if (entry.hostiles > 0) entry.threat.lastHostileSeen = now;
+    if (entry.hostileAttackers > 0) entry.threat.lastAttackerSeen = now;
+    entry.threat.lastThreatSeen = now;
+    if (entry.hostileAttackers > 0) entry.threat.level = 2;
+    else entry.threat.level = 1;
+    if (entry.hostileAttackers > 0 && entry.hostileStructures > 0) entry.threat.level = 3;
+
+    stampCache.keys[stampKey] = true;
     return true;
 }
 
@@ -103,5 +188,6 @@ function getRemoteEconomicContext(room, options = {}) {
 
 module.exports = {
     getRemoteContext,
-    getRemoteEconomicContext
+    getRemoteEconomicContext,
+    recordRuntimeThreatIntel
 };

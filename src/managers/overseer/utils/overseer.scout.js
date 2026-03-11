@@ -144,6 +144,17 @@ function computeThreat(hostiles, hostileAttackers, hostileStructures) {
     return level;
 }
 
+function getLastThreatSeen(entry) {
+    if (!entry || !entry.threat) return 0;
+    const threat = entry.threat;
+    if (Number.isFinite(threat.lastThreatSeen)) return threat.lastThreatSeen;
+
+    // Legacy fallback: older snapshots only tracked hostile/attacker timestamps.
+    const lastHostile = Number.isFinite(threat.lastHostileSeen) ? threat.lastHostileSeen : 0;
+    const lastAttacker = Number.isFinite(threat.lastAttackerSeen) ? threat.lastAttackerSeen : 0;
+    return Math.max(lastHostile, lastAttacker);
+}
+
 /**
  * Record intel snapshot for an observed (adjacent) room into the sponsor room memory.
  *
@@ -195,10 +206,12 @@ function recordScoutIntel(sponsorRoomName, observedRoom, opts) {
     entry.sources = sources.length;
     entry.sourcesInfo = sourcesInfo;
 
-    if (!entry.threat) entry.threat = { level: 0, lastHostileSeen: 0, lastAttackerSeen: 0 };
+    if (!entry.threat) entry.threat = { level: 0, lastHostileSeen: 0, lastAttackerSeen: 0, lastThreatSeen: 0 };
     entry.threat.level = computeThreat(entry.hostiles, entry.hostileAttackers, entry.hostileStructures);
     if (entry.hostiles > 0) entry.threat.lastHostileSeen = now;
     if (entry.hostileAttackers > 0) entry.threat.lastAttackerSeen = now;
+    entry.threat.lastThreatSeen = getLastThreatSeen(entry);
+    if (entry.hostiles > 0 || entry.hostileStructures > 0) entry.threat.lastThreatSeen = now;
 }
 
 module.exports = {

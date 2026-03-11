@@ -501,26 +501,6 @@ var managerTasks = {
      * Finds the most suitable mission for a creep based on priority and requirements.
      */
     findBestMission: function(creep, missionsSorted, missionStatus) {
-        const pinnedRemoteHaulMissionName = (
-            creep &&
-            creep.memory &&
-            creep.memory.role === 'remote_hauler' &&
-            creep.memory.includeRepairWorkPart &&
-            typeof creep.memory.repairLaneKey === 'string' &&
-            creep.memory.repairLaneKey.length > 0
-        ) ? creep.memory.repairLaneKey : null;
-
-        if (pinnedRemoteHaulMissionName) {
-            const pinnedStatus = missionStatus[pinnedRemoteHaulMissionName];
-            if (pinnedStatus && pinnedStatus.mission && pinnedStatus.mission.type === 'remote_haul') {
-                const req = pinnedStatus.mission.requirements || {};
-                const archetypeOk = !req.archetype || req.archetype === creep.memory.role;
-                if (archetypeOk && this.isMissionUnderfilled(pinnedStatus)) {
-                    return pinnedStatus.mission;
-                }
-            }
-        }
-
         let bestPriority = null;
         const candidates = [];
 
@@ -550,9 +530,6 @@ var managerTasks = {
             const status = missionStatus[m.name];
             if (!status) continue;
             const req = m.requirements || {};
-
-            // Keep remote haul maintenance creeps pinned to their lane mission.
-            if (pinnedRemoteHaulMissionName && m.type === 'remote_haul' && m.name !== pinnedRemoteHaulMissionName) continue;
 
             // Check archetype match if specified
             if (req.archetype && req.archetype !== creep.memory.role) continue;

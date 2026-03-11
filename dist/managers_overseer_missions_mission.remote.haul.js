@@ -161,7 +161,6 @@ module.exports = {
                         minCount: 1,
                         maxCount: reqCount,
                         maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS,
-                        alternateRepairWork: true,
                         spawnFromFleet: false,
                     },
                     data: {

@@ -1,4 +1,5 @@
 const helpers = require('managers_overseer_tasks_exec__helpers');
+const remoteUtils = require('managers_overseer_utils_overseer.remote');
 
 module.exports = function execRemoteHarvestTask(ctx) {
     const { creep, mission } = ctx;
@@ -15,6 +16,12 @@ module.exports = function execRemoteHarvestTask(ctx) {
             return { type: 'move', targetPos: { x: sourcePos.x, y: sourcePos.y, roomName: sourcePos.roomName }, range: 1 };
         }
         return { type: 'move', targetPos: { x: 25, y: 25, roomName: remoteRoom }, range: 20 };
+    }
+
+    // Runtime threat feed: when worker has vision in the remote, let it refresh hostile gate intel.
+    const homeRoom = creep.memory && creep.memory.room;
+    if (remoteRoom && homeRoom && creep.room && creep.room.name === remoteRoom) {
+        remoteUtils.recordRuntimeThreatIntel(homeRoom, creep.room);
     }
 
     const container = data.containerId ? Game.getObjectById(data.containerId) : null;

@@ -1,5 +1,6 @@
 const heap = require('utils_heap');
 const helpers = require('managers_overseer_tasks_exec__helpers');
+const remoteUtils = require('managers_overseer_utils_overseer.remote');
 
 module.exports = function execRemoteHaulTask(ctx) {
     const { creep, mission } = ctx;
@@ -9,11 +10,17 @@ module.exports = function execRemoteHaulTask(ctx) {
     const dropoffPos = helpers.toRoomPosition(data.dropoffPos);
     const pickupMode = data.pickupMode || 'container';
     const pickupRange = Number.isFinite(data.pickupRange) ? data.pickupRange : 1;
+    const remoteRoom = data.remoteRoom || (pickupPos && pickupPos.roomName);
 
     // NEW: lane metadata (consumed by role.universal later)
     const laneKeyToPickup = data.laneKeyToPickup || data.laneKey || null;
     const laneKeyToDropoff = data.laneKeyToDropoff || data.laneKey || null;
     const homeRoom = data.homeRoom || creep.memory.room || null;
+
+    // Runtime threat feed: haulers with vision in remote room can refresh hostile gate intel.
+    if (remoteRoom && homeRoom && creep.room && creep.room.name === remoteRoom) {
+        remoteUtils.recordRuntimeThreatIntel(homeRoom, creep.room);
+    }
 
     const moveMeta = (extra) => {
         const dir = extra && extra.dir;
