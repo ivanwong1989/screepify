@@ -20,8 +20,10 @@ function showMarketHelp() {
         'market("orders")                     - list tracked manual orders',
         'market("order", "cancel", orderId)   - cancel an order (and mark inactive)',
         'market("order", "untrack", orderId)  - stop tracking (does not cancel)',
+        'market("send", from, to, resource, amount, "desc"?) - terminal send between rooms',
         'example: market("set", { runEvery: 25, energyReserve: 20000 })',
         'example: market("room", "W1N1", { stockTargets: { LO: 2000 }, buy: { LO: { maxPrice: 1.5 } } })',
+        'example: market("send", "W1N1", "W2N1", RESOURCE_ENERGY, 5000, "supply")',
         ''
     ];
     for (const line of lines) console.log(line);
@@ -283,6 +285,24 @@ module.exports = function registerMarketConsole() {
 
         if (cmd === 'orders' || cmd === 'manualorders' || cmd === 'o') {
             return printManualOrders();
+        }
+
+        if (cmd === 'send' || cmd === 'xfer' || cmd === 'transfer') {
+            const fromRoomName = normalizeRoomName(args[0]);
+            const toRoomName = normalizeRoomName(args[1]);
+            const resourceType = args[2];
+            const amount = args[3];
+            const description = args[4];
+            if (!fromRoomName || !toRoomName || !resourceType || amount === undefined) {
+                return 'Usage: market("send", fromRoom, toRoom, resourceType, amount, "description"?)';
+            }
+
+            const outcome = managerMarket.sendResource(fromRoomName, toRoomName, resourceType, amount, description);
+            const msg = outcome && outcome.ok
+                ? `Sent ${outcome.amount} ${outcome.resourceType} ${outcome.fromRoomName}->${outcome.toRoomName} energyCost=${outcome.energyCost}`
+                : `Send failed: ${(outcome && outcome.error) || 'unknown'}`;
+            console.log(msg);
+            return msg;
         }
 
         if (cmd === 'order') {

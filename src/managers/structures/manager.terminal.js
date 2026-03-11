@@ -1026,6 +1026,60 @@ function summarizeConfig(cfg) {
     return lines.join('\n');
 }
 
+function normalizeRoomName(roomName) {
+    return ('' + (roomName || '')).trim().toUpperCase();
+}
+
+function sendTerminalResource(fromRoomName, toRoomName, resourceType, amount, description) {
+    const sourceName = normalizeRoomName(fromRoomName);
+    const targetName = normalizeRoomName(toRoomName);
+    const type = ('' + (resourceType || '')).trim();
+    const qty = Math.floor(Number(amount));
+    const note = description === undefined || description === null ? '' : ('' + description);
+
+    if (!sourceName) return { ok: false, error: 'missing source room' };
+    if (!targetName) return { ok: false, error: 'missing target room' };
+    if (!type) return { ok: false, error: 'missing resource type' };
+    if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: 'invalid amount' };
+
+    const sourceRoom = Game.rooms[sourceName];
+    if (!sourceRoom) return { ok: false, error: `unknown source room: ${sourceName}` };
+    if (!sourceRoom.controller || !sourceRoom.controller.my) return { ok: false, error: `source room not owned: ${sourceName}` };
+    if (!sourceRoom.terminal) return { ok: false, error: `no terminal in source room: ${sourceName}` };
+    if (sourceRoom.terminal.cooldown > 0) return { ok: false, error: `terminal cooldown=${sourceRoom.terminal.cooldown}` };
+
+    const available = sourceRoom.terminal.store[type] || 0;
+    if (available < qty) {
+        return { ok: false, error: `insufficient ${type}: have=${available} need=${qty}` };
+    }
+
+    const energyCost = Game.market ? Game.market.calcTransactionCost(qty, sourceName, targetName) : 0;
+    const terminalEnergy = sourceRoom.terminal.store[RESOURCE_ENERGY] || 0;
+    const totalEnergyNeeded = type === RESOURCE_ENERGY ? (qty + energyCost) : energyCost;
+    if (terminalEnergy < totalEnergyNeeded) {
+        return {
+            ok: false,
+            error: `insufficient energy for transfer: have=${terminalEnergy} need=${totalEnergyNeeded}`,
+            energyCost
+        };
+    }
+
+    const result = sourceRoom.terminal.send(type, qty, targetName, note);
+    if (result !== OK) {
+        return { ok: false, error: `terminal.send failed: ${result}`, result, energyCost };
+    }
+
+    return {
+        ok: true,
+        fromRoomName: sourceName,
+        toRoomName: targetName,
+        resourceType: type,
+        amount: qty,
+        energyCost,
+        description: note
+    };
+}
+
 const managerTerminal = {
     getConfig: function() {
         return ensureMarketConfig();
@@ -1098,6 +1152,10 @@ summarize: function() {
         return { ok: true, id };
     },
     // --- manual order create end
+
+    sendResource: function(fromRoomName, toRoomName, resourceType, amount, description) {
+        return sendTerminalResource(fromRoomName, toRoomName, resourceType, amount, description);
+    },
 
 
     getStockTargets: function(roomName) {
