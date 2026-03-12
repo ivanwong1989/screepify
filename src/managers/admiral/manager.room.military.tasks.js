@@ -1,5 +1,6 @@
 const defenseTactics = require('managers_admiral_tactics_admiral.tactics.defense');
 const assaultTactics = require('managers_admiral_tactics_admiral.tactics.assault');
+const claimAttackTactics = require('managers_admiral_tactics_admiral.tactics.claimAttack');
 const assaultCombatMatrix = require('managers_admiral_tactics_assault_common_combatMatrix');
 const assaultMemory = require('managers_admiral_tactics_assault_common_memory');
 const combatVis = require('managers_admiral_utils_admiral.visuals.combat');
@@ -21,7 +22,7 @@ function _milDbgLog(msg) {
 }
 
 function isMilitaryRole(role) {
-    return role === 'defender' || role === 'brawler' || role === 'assault' || role === 'drainer';
+    return role === 'defender' || role === 'brawler' || role === 'assault' || role === 'drainer' || role === 'claimer';
 }
 
 function getOwnedCreeps(roomName) {
@@ -42,6 +43,7 @@ function isEligibleForMission(creep, mission) {
     if (mission.type === 'assault') {
         const assaultMode = mission.data && mission.data.assaultMode;
         if (assaultMode === 'dismantle') return role === 'assault' || role === 'dismantler';
+        if (assaultMode === 'claimAttack') return role === 'claimer';
         return role === 'assault';
     }
     return false;
@@ -146,6 +148,7 @@ function runSoloAssaultMissions(missions, assignments, context) {
     for (const mission of missions) {
         if (!mission || mission.type !== 'assault') continue;
         if (mission.data && mission.data.mode === 'DUO') continue;
+        if (mission.data && mission.data.assaultMode === 'claimAttack') continue;
 
         handled.add(mission.name);
 
@@ -266,6 +269,13 @@ function runMission(mission, assignedCreeps, context) {
     }
 
     if (mission.type === 'assault') {
+        const assaultMode = mission.data && mission.data.assaultMode;
+        if (assaultMode === 'claimAttack') {
+            assignedCreeps.forEach(creep => {
+                if (!creep.spawning) claimAttackTactics.execute(creep, mission);
+            });
+            return;
+        }
         assignedCreeps.forEach(creep => {
             if (!creep.spawning) assaultTactics.executeAssault(creep, mission, context);
         });

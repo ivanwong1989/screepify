@@ -131,9 +131,18 @@ function buildSupportActions(creep, leader, target, suppressCombat) {
         // - structures: filter allies out too (important if your cache includes ally-owned)
         const hostiles = getHostilesInRoom(creep.room);
         const structures = filterOutAllies(creep.room.find(FIND_HOSTILE_STRUCTURES) || []);
+        const ramparts = structures.filter(s => s && s.structureType === STRUCTURE_RAMPART);
+        const nonWallStructures = structures.filter(s => s && s.structureType !== STRUCTURE_RAMPART && s.structureType !== STRUCTURE_WALL);
+        const walls = structures.filter(s => s && s.structureType === STRUCTURE_WALL);
 
-        if ((hostiles && hostiles.length > 0) || (structures && structures.length > 0)) {
-            attackTarget = creep.pos.findClosestByRange(hostiles.concat(structures));
+        if (ramparts.length > 0) {
+            attackTarget = creep.pos.findClosestByRange(ramparts);
+        } else if (hostiles && hostiles.length > 0) {
+            attackTarget = creep.pos.findClosestByRange(hostiles);
+        } else if (nonWallStructures.length > 0) {
+            attackTarget = creep.pos.findClosestByRange(nonWallStructures);
+        } else if (walls.length > 0) {
+            attackTarget = creep.pos.findClosestByRange(walls);
         }
     }
 

@@ -1096,6 +1096,17 @@ function nearEdge(pos, edge, margin) {
     return nearBorder(pos, m);
 }
 
+function adjacentExitOnIntendedEdge(room, pos, edge) {
+    if (!room || !pos || !edge) return null;
+    let cand = null;
+    if (edge === 'x0' && pos.x === 1) cand = new RoomPosition(0, pos.y, room.name);
+    else if (edge === 'x49' && pos.x === 48) cand = new RoomPosition(49, pos.y, room.name);
+    else if (edge === 'y0' && pos.y === 1) cand = new RoomPosition(pos.x, 0, room.name);
+    else if (edge === 'y49' && pos.y === 48) cand = new RoomPosition(pos.x, 49, room.name);
+    if (!cand) return null;
+    return isValidExitTile(room, cand) ? cand : null;
+}
+
 // Choose a dir that moves 1 tile inward (off the edge).
 function inwardDirs(pos) {
     const dirs = [];
@@ -1740,6 +1751,7 @@ function planV3(request) {
     // This avoids split/regroup ping-pong when one creep is fatigued.
     if (goalPos.roomName !== room.name) {
         const ignore = buildIgnoreSet(leader, support);
+        const isRetreat = runtime && runtime.phase === 'RETREAT';
 
         // Cache exit-lane choice while border-handshaking to avoid PF jitter (48,21 <-> 48,22).
         // IMPORTANT: key by *next hop* (adjacent room), not the final destination.
@@ -1766,9 +1778,50 @@ function planV3(request) {
                 room: room.name,
                 dest: nextHopRoom,
                 finalDest,
+                retreat: isRetreat ? 1 : 0,
                 leader: serializePos(leader.pos),
                 support: serializePos(support.pos)
             } : null;
+
+            // Retreat safety: if both creeps are already one step from valid exit tiles on the intended edge,
+            // step directly onto those exits this tick instead of pre-cross edge shaping.
+            if (isRetreat && intent) {
+                const fastLeaderExit = adjacentExitOnIntendedEdge(room, leader.pos, intent.edge);
+                const fastSupportExit = adjacentExitOnIntendedEdge(room, support.pos, intent.edge);
+                if (
+                    fastLeaderExit &&
+                    fastSupportExit &&
+                    !isSamePos(fastLeaderExit, fastSupportExit) &&
+                    sameEdge(fastLeaderExit, fastSupportExit)
+                ) {
+                    const fastPlan = buildMovePlan(leader, support, fastLeaderExit, fastSupportExit);
+                    const canLeader = isPassableForLeader(room, fastLeaderExit, leader, support, fastPlan);
+                    const canSupport = isPassableForSupport(room, fastSupportExit, leader, support, fastPlan);
+                    if (canLeader && canSupport) {
+                        if (borderDbg) {
+                            borderDbg.fastRetreat = {
+                                leaderExit: serializePos(fastLeaderExit),
+                                supportExit: serializePos(fastSupportExit)
+                            };
+                        }
+                        return {
+                            ok: true,
+                            reason: 'border-fast-stage-retreat',
+                            mode: 'BORDER_HANDSHAKE',
+                            cohesive: fastLeaderExit.getRangeTo(fastSupportExit) <= cohesionRange,
+                            sameRoom: true,
+                            dist,
+                            step: applyBorderHygieneToStep(
+                                buildStepResult(leader, support, fastLeaderExit, fastSupportExit),
+                                leader,
+                                support
+                            ),
+                            meta: { goalKey: buildGoalKey(goalPos, goalType, goalRange), usedPath: false, pathIndex: 0, stalledTicks: 0, goalRange, goalType },
+                            debug: debug ? { reason: 'border-fast-stage-retreat', border: borderDbg } : undefined
+                        };
+                    }
+                }
+            }
             if (bh) {
                 // Clear stale cache if room/destination/goal changed.
                 if (bh.key !== bhKey) {
@@ -2006,7 +2059,7 @@ function planV3(request) {
 
                 // Only do pre-cross staging when we are in the room BEFORE crossing (goal room differs).
                 // Once both are on the exit tiles, the existing atomic cross logic applies.
-                if (leaderPre && supportPre && goalPos && goalPos.roomName !== room.name && !isExitTile(leader.pos) && !isExitTile(support.pos)) {
+                if (!isRetreat && leaderPre && supportPre && goalPos && goalPos.roomName !== room.name && !isExitTile(leader.pos) && !isExitTile(support.pos)) {
                     const leaderOnPre = isSamePos(leader.pos, leaderPre);
                     const supportOnPre = isSamePos(support.pos, supportPre);
 

@@ -46,6 +46,14 @@ function findClosestByRangeSafe(creep, list) {
     return creep.pos.findClosestByRange(list);
 }
 
+function findWeakestByHits(list) {
+    if (!list || !list.length) return null;
+    list.sort(function (a, b) {
+        return a.hits - b.hits;
+    });
+    return list[0];
+}
+
 function selectTarget(creep, flags, ao) {
     if (!creep || !creep.room) return null;
 
@@ -105,21 +113,43 @@ function selectTarget(creep, flags, ao) {
         // ignore
     }
 
+    if (!hostileStructures || hostileStructures.length === 0) {
+        hostileStructures = filterOutAllies(creep.room.find(FIND_HOSTILE_STRUCTURES) || []);
+    }
+
     // Filter structures safely
     var filteredStructures = [];
+    var ramparts = [];
+    var walls = [];
     var s;
     for (i = 0; i < hostileStructures.length; i++) {
         s = hostileStructures[i];
         if (!s) continue;
         if (s.structureType === STRUCTURE_CONTROLLER) continue;
-        if (s.structureType === STRUCTURE_RAMPART) continue;
-        if (s.structureType === STRUCTURE_WALL) continue;
         if (!inAO(s.pos, ao)) continue;
+        if (s.structureType === STRUCTURE_RAMPART) {
+            ramparts.push(s);
+            continue;
+        }
+        if (s.structureType === STRUCTURE_WALL) {
+            walls.push(s);
+            continue;
+        }
         filteredStructures.push(s);
     }
     hostileStructures = filteredStructures;
 
-    // 3) Towers third
+    // 3) Other hostile creeps (non-dangerous) before structure bashing
+    if (hostiles.length > 0) {
+        return findClosestByRangeSafe(creep, hostiles);
+    }
+
+    // 4) Enemy ramparts next (breach priority once no hostile creeps remain)
+    if (ramparts.length > 0) {
+        return findWeakestByHits(ramparts);
+    }
+
+    // 5) Towers next
     var towers = [];
     for (i = 0; i < hostileStructures.length; i++) {
         s = hostileStructures[i];
@@ -129,29 +159,14 @@ function selectTarget(creep, flags, ao) {
         return findClosestByRangeSafe(creep, towers);
     }
 
-    // 4) Other hostile creeps
-    if (hostiles.length > 0) {
-        return findClosestByRangeSafe(creep, hostiles);
-    }
-
-    // 5) Other hostile structures
+    // 6) Other hostile structures
     if (hostileStructures.length > 0) {
         return findClosestByRangeSafe(creep, hostileStructures);
     }
 
-    // --- Fallback: attack weakest wall inside AO ---
-    var walls = creep.room.find(FIND_STRUCTURES, {
-        filter: function (st) {
-            return st.structureType === STRUCTURE_WALL &&
-                inAO(st.pos, ao);
-        }
-    });
-
+    // 7) Fallback: attack weakest wall inside AO
     if (walls && walls.length > 0) {
-        walls.sort(function (a, b) {
-            return a.hits - b.hits;
-        });
-        return walls[0];
+        return findWeakestByHits(walls);
     }
 
     // Attack flag tile preference (only if inside AO too)

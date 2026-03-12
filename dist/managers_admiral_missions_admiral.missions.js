@@ -1,6 +1,7 @@
 ﻿/**
  * Admiral Missions: generate combat missions and compositions.
  */
+const claimAttackFlagMission = require('managers_admiral_missions_mission.claim.attack.flag');
 const flagAttackMission = require('managers_admiral_missions_mission.attack.flag');
 const flagDismantleMission = require('managers_admiral_missions_mission.dismantle.flag');
 const rampartDefenseMission = require('managers_admiral_missions_mission.defense.rampart');
@@ -19,8 +20,6 @@ function getMissionCensusByName(missionName) {
 var admiralMissions = {
     generate: function(room, hostiles, threat, state, budget) {
         const missions = [];
-        const cache = global.getRoomCache(room);
-
         if (flagAttackMission && typeof flagAttackMission.generate === 'function') {
             const attackContext = {
                 budget,
@@ -29,20 +28,28 @@ var admiralMissions = {
             flagAttackMission.generate(room, null, attackContext, missions);
         }
 
-        if (rampartDefenseMission && typeof rampartDefenseMission.generate === 'function') {
-            const defendContext = {
-                budget,
-                getMissionCensus: (missionName) => getMissionCensusByName(missionName)
-            };
-            rampartDefenseMission.generate(room, hostiles, defendContext, missions);
-        }
-
         if (flagDismantleMission && typeof flagDismantleMission.generate === 'function') {
             const dismantleContext = {
                 budget,
                 getMissionCensus: (missionName) => getMissionCensusByName(missionName)
             };
             flagDismantleMission.generate(room, null, dismantleContext, missions);
+        }
+
+        if (claimAttackFlagMission && typeof claimAttackFlagMission.generate === 'function') {
+            const claimAttackContext = {
+                budget,
+                getMissionCensus: (missionName) => getMissionCensusByName(missionName)
+            };
+            claimAttackFlagMission.generate(room, null, claimAttackContext, missions);
+        }
+
+        if (rampartDefenseMission && typeof rampartDefenseMission.generate === 'function') {
+            const defendContext = {
+                budget,
+                getMissionCensus: (missionName) => getMissionCensusByName(missionName)
+            };
+            rampartDefenseMission.generate(room, hostiles, defendContext, missions);
         }
 
         return missions;

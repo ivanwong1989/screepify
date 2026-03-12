@@ -655,6 +655,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
             return {
                 // STRICT: only the selected callback is used *right now*
                 roomCallback: selectedCb,
+                phase: runtime.phase,
                 supportUnsafeHardThreshold,
 
                 // pass through both explicitly (no fallback chaining)
