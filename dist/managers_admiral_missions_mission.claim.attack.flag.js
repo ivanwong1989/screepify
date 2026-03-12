@@ -1,6 +1,7 @@
 const shared = require('console_shared');
 
 const CLAIM_FLAG = 'C';
+const CLAIM_ASSEMBLY_FLAG = 'C0';
 const DEFAULT_CLAIMER_BODY = [CLAIM, MOVE];
 
 function toPos(pos) {
@@ -15,7 +16,10 @@ function getWaypointFlagNames(prefix) {
         if (!name.startsWith(prefix)) continue;
         const suffix = name.slice(prefix.length);
         if (!/^\d+$/.test(suffix)) continue;
-        result.push({ name, order: Number(suffix) });
+        const order = Number(suffix);
+        // C0 is reserved as claim mission assembly/sponsor flag.
+        if (!Number.isFinite(order) || order <= 0) continue;
+        result.push({ name, order });
     }
     result.sort((a, b) => a.order - b.order);
     return result.map(e => e.name);
@@ -33,7 +37,11 @@ function buildClaimAttackCache() {
         return empty;
     }
 
-    const sponsorRoom = shared.resolveSponsorRoomForTargetPos(claimFlag.pos);
+    // Use C0 as explicit origin/sponsor anchor when present.
+    // Fallback to C so older setups continue to work.
+    const assemblyFlag = Game.flags[CLAIM_ASSEMBLY_FLAG] || null;
+    const sponsorAnchorPos = assemblyFlag ? assemblyFlag.pos : claimFlag.pos;
+    const sponsorRoom = shared.resolveSponsorRoomForTargetPos(sponsorAnchorPos);
     if (!sponsorRoom) {
         const empty = { time: Game.time, bySponsorRoom };
         global._claimAttackFlagMissionCache = empty;
@@ -46,6 +54,8 @@ function buildClaimAttackCache() {
     bySponsorRoom[sponsorRoom] = [{
         sponsorRoom,
         claimFlagName: claimFlag.name,
+        assemblyFlagName: assemblyFlag ? assemblyFlag.name : null,
+        assemblyPos: assemblyFlag ? toPos(assemblyFlag.pos) : null,
         claimPos,
         targetRoom: claimFlag.pos.roomName,
         waypointFlagNames
@@ -92,6 +102,8 @@ module.exports = {
                     sponsorRoom: room.name,
                     targetRoom: entry.targetRoom,
                     assaultMode: 'claimAttack',
+                    assemblyFlagName: entry.assemblyFlagName,
+                    assemblyPos: entry.assemblyPos,
                     claimFlagName: entry.claimFlagName,
                     claimPos: entry.claimPos,
                     waypointFlagNames: entry.waypointFlagNames || []

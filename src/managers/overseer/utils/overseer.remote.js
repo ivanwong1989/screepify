@@ -5,6 +5,13 @@
 // Removes: old remote memory tree + "must be reserved by me" gating.
 // Enables by default for non-hostile rooms, gated by RCL2.
 const HOSTILE_GATE_TICKS = 7200; // ~6h at ~3s/tick
+const DEFENSE_PRESENCE_ROLES = Object.freeze({
+    defender: true,
+    brawler: true,
+    assault: true,
+    drainer: true,
+    dismantler: true
+});
 
 function getSponsorScoutMemory(room) {
     if (!room) return null;
@@ -21,8 +28,34 @@ function getSponsorScoutMemory(room) {
     return scoutMem;
 }
 
-function isRoomEligibleFromScoutEntry(entry, maxScoutAge) {
+function hasOwnedDefensePresence(roomName) {
+    if (!roomName) return false;
+    const observedRoom = Game.rooms[roomName];
+    if (!observedRoom) return false;
+
+    const myCreeps = observedRoom.find(FIND_MY_CREEPS);
+    for (let i = 0; i < myCreeps.length; i++) {
+        const creep = myCreeps[i];
+        if (!creep || creep.spawning) continue;
+
+        const role = creep.memory && creep.memory.role;
+        if (role && DEFENSE_PRESENCE_ROLES[role]) return true;
+
+        if (
+            creep.getActiveBodyparts(ATTACK) > 0 ||
+            creep.getActiveBodyparts(RANGED_ATTACK) > 0 ||
+            creep.getActiveBodyparts(HEAL) > 0
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function isRoomEligibleFromScoutEntry(entry, maxScoutAge, roomName) {
     if (!entry) return false;
+    const defensePresent = hasOwnedDefensePresence(roomName);
 
     // Freshness: prefer lastSeen (always updated by scout), fallback to lastScout.
     const lastSeen = Number.isFinite(entry.lastSeen) ? entry.lastSeen : 0;
@@ -32,6 +65,7 @@ function isRoomEligibleFromScoutEntry(entry, maxScoutAge) {
     if (maxScoutAge && ts > 0 && (Game.time - ts) > maxScoutAge) return false;
 
     // If threat was seen recently, keep this remote gated for a cooldown period.
+    // Exception: if we already have a defense force in the room, don't apply hostile cooldown gate.
     const threat = entry.threat || {};
     const lastThreatSeen = Number.isFinite(threat.lastThreatSeen)
         ? threat.lastThreatSeen
@@ -39,7 +73,7 @@ function isRoomEligibleFromScoutEntry(entry, maxScoutAge) {
             Number.isFinite(threat.lastHostileSeen) ? threat.lastHostileSeen : 0,
             Number.isFinite(threat.lastAttackerSeen) ? threat.lastAttackerSeen : 0
         );
-    if (lastThreatSeen > 0 && (Game.time - lastThreatSeen) < HOSTILE_GATE_TICKS) return false;
+    if (!defensePresent && lastThreatSeen > 0 && (Game.time - lastThreatSeen) < HOSTILE_GATE_TICKS) return false;
 
     // Non-hostile gating:
     // scout may set status='hostile' when empty+hostiles/structures were seen.
@@ -48,11 +82,13 @@ function isRoomEligibleFromScoutEntry(entry, maxScoutAge) {
 
     // Reject anything that isn't "neutral enough" for v1.
     // Allowed: 'empty' (and optionally 'reserved' if you want)
-    if (status === 'owned' || status === 'occupied' || status === 'ally' || status === 'hostile') return false;
+    if (status === 'owned' || status === 'occupied' || status === 'ally') return false;
+    if (!defensePresent && status === 'hostile') return false;
 
     // Hard reject if explicit hostiles/hostile structures were seen.
-    if ((entry.hostiles || 0) > 0) return false;
-    if ((entry.hostileAttackers || 0) > 0) return false;
+    // Exception: allow hostile creeps while we have our own defense force present in-room.
+    if (!defensePresent && (entry.hostiles || 0) > 0) return false;
+    if (!defensePresent && (entry.hostileAttackers || 0) > 0) return false;
     if ((entry.hostileStructures || 0) > 0) return false;
 
     // Must have sources info
@@ -167,7 +203,7 @@ function getRemoteContext(room, options = {}) {
         if (skipRooms.has(name)) continue;
 
         const entry = roomsMem[name];
-        const eligible = isRoomEligibleFromScoutEntry(entry, maxScoutAge);
+        const eligible = isRoomEligibleFromScoutEntry(entry, maxScoutAge, name);
 
         const enabled = !!(globalEnabled && roomEnabled && stateOk && rclOk && eligible);
         entries.push({

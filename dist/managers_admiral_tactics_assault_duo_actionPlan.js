@@ -87,6 +87,42 @@ function pushHealAction(actions, healer, target) {
     else if (r <= 3) actions.push({ action: 'rangedHeal', targetId: target.id });
 }
 
+function resolveMeleeHealAttackConflict(actions, creep) {
+    if (!actions || actions.length < 2 || !creep) return;
+
+    const healIdx = actions.findIndex(a => a && a.action === 'heal');
+    const attackIdx = actions.findIndex(a => a && a.action === 'attack');
+    if (healIdx < 0 || attackIdx < 0) return;
+
+    // ATTACK and melee HEAL both consume the same action slot in this model.
+    // - Full HP: prefer damage output (attack).
+    // - Injured: keep pre-heal and drop melee attack.
+    if (creep.hits >= creep.hitsMax) actions.splice(healIdx, 1);
+    else actions.splice(attackIdx, 1);
+}
+
+function isHostileCreepTarget(target) {
+    if (!target) return false;
+    if (typeof target.getActiveBodyparts !== 'function') return false;
+    if (!target.owner || typeof target.owner.username !== 'string') return false;
+    return !target.my;
+}
+
+function pushRangedOffenseAction(actions, creep, target, range) {
+    if (!actions || !creep) return;
+    if (creep.getActiveBodyparts(RANGED_ATTACK) <= 0) return;
+
+    // Doctrine:
+    // - If target is a hostile creep, use focused rangedAttack.
+    // - Otherwise (structures / no creep target), default to rangedMassAttack.
+    if (target && isHostileCreepTarget(target)) {
+        if (range <= 3) actions.push({ action: 'rangedAttack', targetId: target.id });
+        return;
+    }
+
+    actions.push({ action: 'rangedMassAttack' });
+}
+
 
 
 
@@ -101,12 +137,12 @@ function buildLeaderActions(creep, buddy, target, suppressCombat) {
     if (suppressCombat || !target) return actions;
 
     const range = creep.pos.getRangeTo(target);
-    const hasRanged = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
     const hasMelee = creep.getActiveBodyparts(ATTACK) > 0;
 
-    // Hybrid attackers can use both ATTACK and RANGED_ATTACK in the same tick.
+    // Hybrid attackers can use both ATTACK and ranged intent in the same tick.
     if (hasMelee && range <= 1) actions.push({ action: 'attack', targetId: target.id });
-    if (hasRanged && range <= 3) actions.push({ action: 'rangedAttack', targetId: target.id });
+    pushRangedOffenseAction(actions, creep, target, range);
+    resolveMeleeHealAttackConflict(actions, creep);
 
     return actions;
 }
@@ -148,11 +184,14 @@ function buildSupportActions(creep, leader, target, suppressCombat) {
 
     if (attackTarget) {
         const range = creep.pos.getRangeTo(attackTarget);
-        const hasRanged = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
         const hasMelee = creep.getActiveBodyparts(ATTACK) > 0;
         if (hasMelee && range <= 1) actions.push({ action: 'attack', targetId: attackTarget.id });
-        if (hasRanged && range <= 3) actions.push({ action: 'rangedAttack', targetId: attackTarget.id });
+        pushRangedOffenseAction(actions, creep, attackTarget, range);
+    } else {
+        // No focused target: default to area pressure if we have ranged parts.
+        pushRangedOffenseAction(actions, creep, null, Infinity);
     }
+    resolveMeleeHealAttackConflict(actions, creep);
 
     return actions;
 }
