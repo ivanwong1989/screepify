@@ -104,8 +104,9 @@ function buildLeaderActions(creep, buddy, target, suppressCombat) {
     const hasRanged = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
     const hasMelee = creep.getActiveBodyparts(ATTACK) > 0;
 
+    // Hybrid attackers can use both ATTACK and RANGED_ATTACK in the same tick.
+    if (hasMelee && range <= 1) actions.push({ action: 'attack', targetId: target.id });
     if (hasRanged && range <= 3) actions.push({ action: 'rangedAttack', targetId: target.id });
-    else if (hasMelee && range <= 1) actions.push({ action: 'attack', targetId: target.id });
 
     return actions;
 }
@@ -140,8 +141,8 @@ function buildSupportActions(creep, leader, target, suppressCombat) {
         const range = creep.pos.getRangeTo(attackTarget);
         const hasRanged = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
         const hasMelee = creep.getActiveBodyparts(ATTACK) > 0;
+        if (hasMelee && range <= 1) actions.push({ action: 'attack', targetId: attackTarget.id });
         if (hasRanged && range <= 3) actions.push({ action: 'rangedAttack', targetId: attackTarget.id });
-        else if (hasMelee && range <= 1) actions.push({ action: 'attack', targetId: attackTarget.id });
     }
 
     return actions;

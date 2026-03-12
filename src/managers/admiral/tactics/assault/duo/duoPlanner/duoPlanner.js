@@ -249,7 +249,12 @@ function isUnsafeForSupport(room, pos, runtime, opts = {}) {
     // - >=40 is "ranged danger band"
     if (c >= 255) return true;
     // NEW: stricter support rule
-    const hard = Number.isFinite(opts.hardThreshold) ? opts.hardThreshold : 60;
+    const runtimeHard = runtime && Number.isFinite(runtime.supportUnsafeHardThreshold)
+        ? runtime.supportUnsafeHardThreshold
+        : null;
+    const hard = Number.isFinite(opts.hardThreshold)
+        ? opts.hardThreshold
+        : (Number.isFinite(runtimeHard) ? runtimeHard : 60);
     if (c >= hard) return true;
 
     return false;

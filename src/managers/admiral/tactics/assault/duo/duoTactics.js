@@ -136,6 +136,15 @@ function hasPart(creep, partType) {
     return false;
 }
 
+function countActiveParts(creep, partType) {
+    if (!creep || !creep.body) return 0;
+    let count = 0;
+    for (const p of creep.body) {
+        if (p && p.type === partType && p.hits > 0) count++;
+    }
+    return count;
+}
+
 function isMobileEnemy(target) {
     // Best-effort: only creeps can move. Structures are immobile.
     if (!target) return false;
@@ -152,14 +161,25 @@ function isMobileEnemy(target) {
 }
 
 function getRoleRanges(creep) {
-    const ranged = hasPart(creep, RANGED_ATTACK);
-    const melee = hasPart(creep, ATTACK);
+    const rangedParts = countActiveParts(creep, RANGED_ATTACK);
+    const meleeParts = countActiveParts(creep, ATTACK);
+    const ranged = rangedParts > 0;
+    const melee = meleeParts > 0;
 
     // Strict assault behavior:
     // Ranged: always strive for range 3 (no drifting into range 2).
     // Melee: always strive for range 1.
     // NOTE: allow max=4 so the anchor selector can choose a safe buffer ring when
     // simultaneous movement could otherwise drop us to range 2.
+    //
+    // Hybrid behavior:
+    // If we have both ATTACK and RANGED_ATTACK, prefer melee when melee capability
+    // is at least as strong as ranged capability. This prevents hybrids from
+    // camping at range 3 and never committing to bites.
+    if (melee && ranged) {
+        if (meleeParts >= rangedParts) return { min: 1, pref: 1, max: 1, style: 'melee' };
+        return { min: 3, pref: 3, max: 4, style: 'ranged' };
+    }
     if (ranged) return { min: 3, pref: 3, max: 4, style: 'ranged' };
     if (melee) return { min: 1, pref: 1, max: 1, style: 'melee' };
 
@@ -387,6 +407,47 @@ function chooseSupportAdjacency(leaderPos, support, costs, ao, opts) {
     return best ? new RoomPosition(best.x, best.y, room.name) : null;
 }
 
+function chooseMeleeCommitAnchor(leader, support, targetPos, costs, ao, opts, rangeRef) {
+    if (!leader || !leader.pos || !targetPos || !costs) return null;
+    if (leader.room.name !== targetPos.roomName) return null;
+
+    let best = null;
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            const x = targetPos.x + dx;
+            const y = targetPos.y + dy;
+            if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+
+            const p = new RoomPosition(x, y, leader.room.name);
+            if (!inAO(p, ao)) continue;
+            if (costs.get(x, y) === 255) continue;
+
+            const supportHintPos = chooseSupportAdjacency(p, support, costs, ao, opts);
+            if (!supportHintPos) continue;
+
+            if (!isReachableAnchor(leader.pos, p, costs, rangeRef, 1, opts)) continue;
+
+            const dLeader = leader.pos.getRangeTo(p);
+            const dSupport = (support && support.pos && support.pos.roomName === p.roomName)
+                ? support.pos.getRangeTo(supportHintPos)
+                : 10;
+            const c = costs.get(x, y);
+
+            // Commit-first ordering:
+            // 1) shortest leader approach
+            // 2) easier support dock
+            // 3) only then lower tile cost
+            const score = (dLeader * 100) + (dSupport * 10) + c;
+            if (!best || score < best.score) {
+                best = { pos: p, supportHintPos, score };
+            }
+        }
+    }
+
+    return best;
+}
+
 
 // --- Reachability guard ---
 // The tile scorer is geometry + cost based; it doesn't ensure the anchor is actually reachable without
@@ -503,6 +564,7 @@ function decideAnchor(leader, support, runtime, flags, ao, target, opts) {
     }
 
     const rr = getRoleRanges(leader);
+    const pureMeleeCommit = !!(opts && opts.meleeCommit && rr.style === 'melee');
 
     let canOutHeal = false;
     let pushAggro = false;
@@ -604,6 +666,21 @@ const disableCone = !!opts.disableCone;
 
     const rangeHasTarget = !!(targetPos && targetPos.roomName === leader.room.name);
     const rangeRef = rangeHasTarget ? targetPos : focus;
+
+    // Pure melee doctrine:
+    // Ignore threat-ring optimization and directly pick a reachable adjacent tile
+    // around the target so we continuously commit to contact.
+    if (pureMeleeCommit && rangeHasTarget) {
+        const commit = chooseMeleeCommitAnchor(leader, support, targetPos, costs, ao, opts, rangeRef);
+        if (commit && commit.pos) {
+            return {
+                anchorPos: commit.pos,
+                range: 0,
+                reason: `anchor:${focusReason}:melee-commit`,
+                supportHintPos: commit.supportHintPos || null
+            };
+        }
+    }
 
     // Range policy (simple):
     // - Prefer rr.pref (r=3 for ranged)

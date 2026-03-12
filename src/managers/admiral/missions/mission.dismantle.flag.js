@@ -11,13 +11,10 @@ const shared = require('console_shared');
  * - DH: Hard target flag (optional). If present, dismantle will ONLY target structures on this flag tile.
  *   (No AO scanning; it will not dismantle anything else.)
  *
- * NOTE (compat):
+ * NOTE:
  * - We DO NOT use an "A" flag for dismantle.
- * - However, the assault SOLO controller still expects a mission.data.flags.attack flag to exist
- *   to remain in ENGAGE phase.
- * - So we internally set flags.attack to:
- *     - D (if present), else
- *     - Z (fallback)
+ * - Dismantle engage requires an explicit D / D<number> or DH flag.
+ * - If neither D nor DH exists, mission stays in staging semantics (no attack anchor).
  *
  * Mission data (consumed by assault tactics):
  * - assaultMode: 'dismantle'
@@ -150,12 +147,12 @@ function buildFlagDismantleCache() {
 
     const waitPos = toPos(assemblyFlag.pos);
 
-    // ✅ Compat "attack" flag:
+    // Engage anchor:
     // Priority:
     // 1) DH (hard target tile)
     // 2) D / D<number> (AO)
-    // 3) Z (fallback)
-    const attackFlag = hardTargetFlag || aoFlag || assemblyFlag;
+    // No fallback to Z: without D/DH we intentionally disable engage targeting.
+    const attackFlag = hardTargetFlag || aoFlag || null;
     const attackPos = attackFlag ? toPos(attackFlag.pos) : null;
 
     // Target room:
@@ -178,8 +175,8 @@ function buildFlagDismantleCache() {
         waitFlagName: assemblyFlag.name,
         assemblyFlagName: assemblyFlag.name,
 
-        // "attack" is a compat anchor flag name (D or Z), not A.
-        attackFlagName: attackFlag.name,
+        // "attack" is dismantle engage anchor (D/DH) and may be null.
+        attackFlagName: attackFlag ? attackFlag.name : null,
 
         waitPos,
         assemblyPos: waitPos,
@@ -243,7 +240,7 @@ module.exports = {
                     flags: {
                         wait: entry.waitFlagName,          // Z
                         assembly: entry.assemblyFlagName,  // Z
-                        attack: entry.attackFlagName,      // compat anchor: D or Z
+                        attack: entry.attackFlagName,      // engage anchor: D/DH (null when absent)
                         waypoints: entry.waypointFlagNames || []
                     },
                     ao: entry.ao,

@@ -114,6 +114,12 @@ function logSolo(runtime, enabled, message) {
     }
 }
 
+function logCtx(creep, opts) {
+    const creepName = creep && creep.name ? creep.name : 'unknown';
+    const missionName = opts && opts.missionName ? opts.missionName : null;
+    return missionName ? `mission=${missionName} creep=${creepName} ` : `creep=${creepName} `;
+}
+
 // ============================================================
 // PF cache (duo-style, but stored under runtime._soloPf)
 // ============================================================
@@ -380,11 +386,12 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
     const range = Number.isFinite(opts.range) ? opts.range : (Number.isFinite(opts.desiredRange) ? opts.desiredRange : 1);
     const logEnabled = (opts.logSolo != null) ? !!opts.logSolo : !!opts.debug;
     const purpose = (opts && opts.cacheKey) ? opts.cacheKey : 'path';
+    const ctx = logCtx(creep, opts);
 
     // Cross-room: keep letting your higher-level route planner do it.
     // PF still can do multi-room, but your existing system already handles strategic routing.
     if (goalPos.roomName !== creep.room.name) {
-        logSolo(runtime, logEnabled, `planner: cross-room ${formatPos(creep.pos)} -> ${formatPos(goalPos)} range=${range}`);
+        logSolo(runtime, logEnabled, `planner: ${ctx}cross-room ${formatPos(creep.pos)} -> ${formatPos(goalPos)} range=${range}`);
         return {
             moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
             range,
@@ -394,7 +401,7 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
 
     // If we are already in range, hold.
     if (creep.pos.inRangeTo(goalPos.x, goalPos.y, range)) {
-        logSolo(runtime, logEnabled, `planner: in-range ${formatPos(creep.pos)} -> ${formatPos(goalPos)} range=${range}`);
+        logSolo(runtime, logEnabled, `planner: ${ctx}in-range ${formatPos(creep.pos)} -> ${formatPos(goalPos)} range=${range}`);
         return { moveTarget: null, range: 0, reason: 'hold:in-range' };
     }
 
@@ -411,7 +418,20 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
 
         // Capture the expected tile BEFORE tickProgress may clear it.
         const expectedKey = p && p.lastToKey ? String(p.lastToKey) : null;
-        const prog = tickProgress(p, posKey(creep.pos), stallRepathTicks);
+        const fatigued = Number.isFinite(creep.fatigue) && creep.fatigue > 0;
+        const prog = fatigued
+            ? { advanced: false, stalled: false }
+            : tickProgress(p, posKey(creep.pos), stallRepathTicks);
+
+        if (fatigued && expectedKey) {
+            logOncePerTick(
+                runtime,
+                mem,
+                logEnabled,
+                `fatigue:${creep.name}`,
+                `planner: fatigue creep=${creep.name} fatigue=${creep.fatigue} suppress-stall expected=${expectedKey}`
+            );
+        }
 
         if (prog && (prog.advanced || prog.stalled)) {
             const status = prog.advanced ? 'advanced' : 'stalled';

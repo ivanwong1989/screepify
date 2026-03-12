@@ -112,8 +112,8 @@ function selectTarget(creep, flags, ao) {
         s = hostileStructures[i];
         if (!s) continue;
         if (s.structureType === STRUCTURE_CONTROLLER) continue;
-        if (s.structureType === STRUCTURE_WALL) continue;
         if (s.structureType === STRUCTURE_RAMPART) continue;
+        if (s.structureType === STRUCTURE_WALL) continue;
         if (!inAO(s.pos, ao)) continue;
         filteredStructures.push(s);
     }

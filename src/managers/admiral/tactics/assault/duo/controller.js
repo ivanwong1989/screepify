@@ -9,8 +9,8 @@ const duoTactics = require('managers_admiral_tactics_assault_duo_duoTactics');
 const threatEval = require('managers_admiral_tactics_assault_common_threat');
 const boostGate = require('managers_admiral_tactics_boostgate_boostGate');
 
-const RETREAT_AT = 0.6;
-const REENGAGE_AT = 0.95;
+const RETREAT_AT = 0.8;
+const REENGAGE_AT = 0.99;
 const COHESION_RANGE = 1;
 
 
@@ -532,6 +532,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
                 duoKey: String(runtimeKey),
                 holdCenterRange: tunedNumber('holdCenterRange', 1, 0, 3),
                 preferRoads: true,
+                meleeCommit: !!(leader && leader.getActiveBodyparts(ATTACK) > 0 && leader.getActiveBodyparts(RANGED_ATTACK) <= 0),
                 debug: true,
                 logDuo: true
             }
@@ -577,6 +578,23 @@ function planForPair(mission, leaderInput, supportInput, context) {
 
     // Pass the chosen goal into planner
     const travelSupportMode = ((runtime.phase !== 'ENGAGE') || !engageInAORoom) ? 'trail' : 'auto';
+    const leaderMeleeParts = leader ? leader.getActiveBodyparts(ATTACK) : 0;
+    const leaderRangedParts = leader ? leader.getActiveBodyparts(RANGED_ATTACK) : 0;
+    const leaderPureMelee = leaderMeleeParts > 0 && leaderRangedParts <= 0;
+    const leaderMeleePreferred = leaderMeleeParts > 0 && leaderMeleeParts >= leaderRangedParts;
+    const supportHardThreatThreshold = leaderPureMelee
+        ? tunedNumber('supportHardThreatThresholdPureMelee', 254, 20, 254)
+        : (leaderMeleePreferred
+            ? tunedNumber('supportHardThreatThresholdMelee', 75, 20, 254)
+            : tunedNumber('supportHardThreatThreshold', 40, 20, 254));
+    const supportThreatDeltaHard = leaderPureMelee
+        ? tunedNumber('supportThreatDeltaHardPureMelee', 254, 0, 254)
+        : (leaderMeleePreferred
+            ? tunedNumber('supportThreatDeltaHardMelee', 45, 0, 254)
+            : tunedNumber('supportThreatDeltaHard', 25, 0, 254));
+    const supportUnsafeHardThreshold = leaderPureMelee
+        ? tunedNumber('supportUnsafeHardThresholdPureMelee', 254, 20, 254)
+        : tunedNumber('supportUnsafeHardThreshold', 60, 20, 254);
 
     const move = duoPlanner.plan({
         leader,
@@ -591,7 +609,11 @@ function planForPair(mission, leaderInput, supportInput, context) {
             cohesionRange,
             anchor: 'leader',
             supportOffset: 'auto',
-            travelSupportMode
+            travelSupportMode,
+            // Melee leaders need support to tolerate deeper threat tiles so the duo can
+            // maintain cohesion while closing into ATTACK range.
+            supportHardThreatThreshold,
+            supportThreatDeltaHard
         },
         movement: {
             
@@ -633,6 +655,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
             return {
                 // STRICT: only the selected callback is used *right now*
                 roomCallback: selectedCb,
+                supportUnsafeHardThreshold,
 
                 // pass through both explicitly (no fallback chaining)
                 travelRoomCallback: runtime.travelRoomCallback,
@@ -767,7 +790,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
         logDuo(
             runtime,
             mission,
-            `phase=${runtime.phase} mode=${mode} allowStep=${allowStep} assembled=${runtime.assembled.done ? 1 : 0} spawnAllow=${runtime.spawn.allow ? 1 : 0} cohesive=${cohesive} dist=${dist} regroup=${runtime.regroup ? 1 : 0} hasTargetPos=${hasTargetPos} hasRouteTarget=${hasRouteTarget} predSep=${predictedSeparation} suppress=${suppressCombat} Lfat=${lfat} Sfat=${sfat} Lnext=${formatPos(leaderNext)} Snext=${formatPos(supportNext)} spin=${spinCount} rally=${formatPos(rallyPos)} routeTarget=${formatPos(routeTarget)} goal=${goalLabel} intent=${intentLabel} tactical=${tacticalAnchor} tRange=${tacticalRange} tReason=${tacticalReason} tHint=${tacticalSupportHint} waypoint=${waypointIndex}/${waypoints.length} leader=${formatCreep(leader)} support=${formatCreep(support)} target=${targetLabel} rej=${rej} bh=${bh} reason=${reason} who=${who}`
+            `phase=${runtime.phase} mode=${mode} allowStep=${allowStep} assembled=${runtime.assembled.done ? 1 : 0} spawnAllow=${runtime.spawn.allow ? 1 : 0} cohesive=${cohesive} dist=${dist} regroup=${runtime.regroup ? 1 : 0} hasTargetPos=${hasTargetPos} hasRouteTarget=${hasRouteTarget} predSep=${predictedSeparation} suppress=${suppressCombat} Lfat=${lfat} Sfat=${sfat} Lnext=${formatPos(leaderNext)} Snext=${formatPos(supportNext)} spin=${spinCount} rally=${formatPos(rallyPos)} routeTarget=${formatPos(routeTarget)} goal=${goalLabel} intent=${intentLabel} tactical=${tacticalAnchor} tRange=${tacticalRange} tReason=${tacticalReason} tHint=${tacticalSupportHint} meleePref=${leaderMeleePreferred ? 1 : 0} pureMelee=${leaderPureMelee ? 1 : 0} sHard=${supportHardThreatThreshold} sDelta=${supportThreatDeltaHard} sUnsafe=${supportUnsafeHardThreshold} waypoint=${waypointIndex}/${waypoints.length} leader=${formatCreep(leader)} support=${formatCreep(support)} target=${targetLabel} rej=${rej} bh=${bh} reason=${reason} who=${who}`
         );
     }
 

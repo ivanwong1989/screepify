@@ -508,6 +508,19 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
     const flags = flagsResolver.resolveFlags(mission); // handles W/Y via mission.data.flags (not inferred)
     const ao = aoResolver.resolveAO(mission, flags);
+    const prevSoloCreepId = runtime && runtime.meta ? runtime.meta.lastSoloCreepId : null;
+    const creepChanged = !!(prevSoloCreepId && prevSoloCreepId !== creep.id);
+
+    if (runtime && runtime.meta) {
+        runtime.meta.lastSoloCreepId = creep.id;
+    }
+
+    // Prevent state inheritance across creep replacements:
+    // a newly spawned creep must re-assemble before it can ENGAGE.
+    if (creepChanged) {
+        logSolo(runtime, mission, `creep replaced ${prevSoloCreepId} -> ${creep.id}; resetting runtime state`);
+        resetSoloRuntimeState(runtime);
+    }
 
     // --------------------
     // 🧷 ASSEMBLE GATE
@@ -595,7 +608,10 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
         engageCtx = engage.getEngageContext(creep, flags, ao, targetDebug);
 
         if (dismantleMode) {
-            if (dismantleHardMode && flags && flags.attackPos) {
+            if (!flags || !flags.attackFlag) {
+                target = null;
+                targetDebug.reason = 'dismantle:no-attack-flag';
+            } else if (dismantleHardMode && flags.attackPos) {
                 target = pickDismantleHardTarget(creep, flags.attackPos);
                 targetDebug.reason = target ? `dismantle:DH:${target.structureType}` : 'dismantle:DH:none';
             } else {
@@ -703,8 +719,8 @@ cbDbg.lastRoomCallbackMode = active ? active.mode : 'none';
             runtime,
             moveGoal,
             enableSoloDebug
-                ? { range: moveRange, cacheKey: 'solo', forceRecalc: (runtime.phase === 'ENGAGE'), debug: true }
-                : { range: moveRange, cacheKey: 'solo', forceRecalc: (runtime.phase === 'ENGAGE') }
+                ? { range: moveRange, cacheKey: 'solo', forceRecalc: (runtime.phase === 'ENGAGE'), debug: true, missionName: mission && mission.name }
+                : { range: moveRange, cacheKey: 'solo', forceRecalc: (runtime.phase === 'ENGAGE'), missionName: mission && mission.name }
         );
 
     // Let actionPlan handle attack/heal logic.
