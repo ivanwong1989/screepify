@@ -22,7 +22,7 @@ function showMarketHelp() {
         'market("order", "untrack", orderId)  - stop tracking (does not cancel)',
         'market("send", from, to, resource, amount, "desc"?) - terminal send between rooms',
         'example: market("set", { runEvery: 25, energyReserve: 20000 })',
-        'example: market("room", "W1N1", { stockTargets: { LO: 2000 }, buy: { LO: { maxPrice: 1.5 } } })',
+        'example: market("room", "W1N1", { terminalStockTargets: { LO: 2000 }, roomStockTargets: { LO: 8000 }, buy: { LO: { maxPrice: 1.5 } } })',
         'example: market("send", "W1N1", "W2N1", RESOURCE_ENERGY, 5000, "supply")',
         ''
     ];
@@ -56,7 +56,8 @@ function marketReport(roomName) {
     const ledger = room._resourceLedger || (room.memory.overseer && room.memory.overseer.resourceLedger);
     const totals = ledger && ledger.totals ? ledger.totals : collectRoomMineralTotals(room);
     const tracked = managerMarket.getTrackedResources(roomName);
-    const stockTargets = managerMarket.getStockTargets(roomName);
+    const terminalStockTargets = managerMarket.getTerminalStockTargets(roomName);
+    const roomStockTargets = managerMarket.getRoomStockTargets(roomName);
     const lines = [];
 
     if (tracked.length > 0) {
@@ -65,8 +66,9 @@ function marketReport(roomName) {
             if (resourceType === RESOURCE_ENERGY) return;
             const total = totals[resourceType] || 0;
             const terminalAmount = room.terminal ? (room.terminal.store[resourceType] || 0) : 0;
-            const target = stockTargets[resourceType] || 0;
-            lines.push(`${resourceType}: total=${total} terminal=${terminalAmount} stockTarget=${target}`);
+            const terminalTarget = terminalStockTargets[resourceType] || 0;
+            const roomTarget = roomStockTargets[resourceType] || 0;
+            lines.push(`${resourceType}: total=${total} terminal=${terminalAmount} terminalTarget=${terminalTarget} roomTarget=${roomTarget}`);
         });
     }
 

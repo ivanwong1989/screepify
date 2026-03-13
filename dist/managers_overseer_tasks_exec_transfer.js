@@ -221,7 +221,7 @@ const findOtherDumpTarget = (type) => {
     };
 
     // If this mission has an amountHint, treat it as a *total* cap to move for this mission instance.
-    // Once we already carry >= hint, stop withdrawing more and go deliver now (prevents draining past stockTargets).
+    // Once we already carry >= hint, stop withdrawing more and go deliver now (prevents draining past terminalStockTargets).
     const hintNow = getAmountHint();
     if (hintNow !== null && !isSupply && creep.memory.taskState !== 'working') {
         const carriedNow = creep.store.getUsedCapacity(resourceType) || 0;

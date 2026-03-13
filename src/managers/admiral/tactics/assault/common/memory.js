@@ -145,6 +145,26 @@ function gcSoloRuntimesForOwner(ownerRoom, graceTicks) {
     }
 }
 
+function gcOrphanDuoPlannerRuntimes() {
+    const root = ensureRoot();
+    if (!root) return;
+
+    for (const key in root) {
+        if (typeof key !== 'string') continue;
+        if (key.slice(0, 4) !== 'duo:') continue;
+
+        const baseKey = key.slice(4);
+        if (!baseKey) {
+            delete root[key];
+            continue;
+        }
+
+        if (!root[baseKey]) {
+            delete root[key];
+        }
+    }
+}
+
 function resetRuntime(missionName) {
     const root = ensureRoot();
     if (!root || !missionName) return initLegacyRuntimeEntry();
@@ -159,6 +179,7 @@ module.exports = {
     gcSoloRuntimesForOwner,
     touchDuoRuntime,
     gcDuoRuntimesForOwner,
+    gcOrphanDuoPlannerRuntimes,
     getDuoRuntime: function(missionName) {
         const root = ensureRoot();
         if (!root || !missionName) return initDuoRuntimeEntry();

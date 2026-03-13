@@ -454,14 +454,14 @@ module.exports = {
 
         // t = mark('terminal-energy', t);
 
-        // --- Mineral logistics with terminal stockTargets (Memory.market.rooms.<room>.stockTargets) ---
+        // --- Mineral logistics with terminal stock targets (Memory.market.rooms.<room>.terminalStockTargets) ---
         const hasTerminal = !!terminal;
         const hasStorage = !!storage;
 
-        // Read room stockTargets safely (no optional chaining needed)
-        let stockTargets = null;
+        // Read room terminalStockTargets safely (no optional chaining needed)
+        let terminalStockTargets = null;
         if (Memory.market && Memory.market.rooms && Memory.market.rooms[room.name]) {
-            stockTargets = Memory.market.rooms[room.name].stockTargets || null;
+            terminalStockTargets = Memory.market.rooms[room.name].terminalStockTargets || null;
         }
 
 
@@ -486,13 +486,13 @@ module.exports = {
         const terminalPlan = {};
         if (hasTerminal) {
             const keys = new Set();
-            if (stockTargets) Object.keys(stockTargets).forEach(k => keys.add(k));
+            if (terminalStockTargets) Object.keys(terminalStockTargets).forEach(k => keys.add(k));
             Object.keys(terminal.store || {}).forEach(k => keys.add(k));
 
             keys.forEach(resourceType => {
                 if (!resourceType || resourceType === RESOURCE_ENERGY) return;
 
-                const tgt = (stockTargets && stockTargets[resourceType]) ? stockTargets[resourceType] : 0;
+                const tgt = (terminalStockTargets && terminalStockTargets[resourceType]) ? terminalStockTargets[resourceType] : 0;
                 const termAmt = terminal.store[resourceType] || 0;
 
                 if (tgt > 0) {

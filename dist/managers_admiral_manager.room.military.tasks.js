@@ -489,6 +489,9 @@ const assignments = allocateCreeps(room, missions);
 
         // GC SOLO runtime as well
         assaultMemory.gcSoloRuntimesForOwner(room.name, 1);
+
+        // GC orphaned duo planner runtime blobs (`duo:<runtimeKey>`) after base runtime GC.
+        assaultMemory.gcOrphanDuoPlannerRuntimes();
     }
 };
 

@@ -59,8 +59,17 @@ const DEFAULT_RESOURCE_CONFIG = Object.freeze(
     })
 );
 
-const DEFAULT_STOCK_TARGETS = Object.freeze(
+const DEFAULT_ROOM_STOCK_TARGETS = Object.freeze(
     Object.keys(DEFAULT_RESOURCE_CONFIG).reduce((acc, type) => {
+        const spec = DEFAULT_RESOURCE_CONFIG[type];
+        if (spec && typeof spec.target === 'number') acc[type] = spec.target;
+        return acc;
+    }, {})
+);
+
+const DEFAULT_TERMINAL_STOCK_TARGETS = Object.freeze(
+    Object.keys(DEFAULT_RESOURCE_CONFIG).reduce((acc, type) => {
+        if (type === RESOURCE_ENERGY) return acc;
         const spec = DEFAULT_RESOURCE_CONFIG[type];
         if (spec && typeof spec.target === 'number') acc[type] = spec.target;
         return acc;
@@ -74,43 +83,6 @@ function clampNumber(value, fallback, min) {
     return num;
 }
 
-function mergeLegacyStockTargets(cfg, stockTargets) {
-    if (cfg.terminalStock && typeof cfg.terminalStock === 'object') {
-        for (const resourceType of Object.keys(cfg.terminalStock)) {
-            const value = clampNumber(cfg.terminalStock[resourceType], 0, 0);
-            if (value > 0) {
-                const current = clampNumber(stockTargets[resourceType], 0, 0);
-                stockTargets[resourceType] = Math.max(current, value);
-            }
-        }
-        delete cfg.terminalStock;
-    }
-
-    if (cfg.buy && typeof cfg.buy === 'object') {
-        for (const resourceType of Object.keys(cfg.buy)) {
-            const spec = cfg.buy[resourceType];
-            if (!spec || typeof spec !== 'object' || !('target' in spec)) continue;
-            const value = clampNumber(spec.target, 0, 0);
-            if (value > 0) {
-                const current = clampNumber(stockTargets[resourceType], 0, 0);
-                stockTargets[resourceType] = Math.max(current, value);
-            }
-        }
-    }
-
-    if (cfg.sell && typeof cfg.sell === 'object') {
-        for (const resourceType of Object.keys(cfg.sell)) {
-            const spec = cfg.sell[resourceType];
-            if (!spec || typeof spec !== 'object' || !('keep' in spec)) continue;
-            const value = clampNumber(spec.keep, 0, 0);
-            if (value > 0) {
-                const current = clampNumber(stockTargets[resourceType], 0, 0);
-                stockTargets[resourceType] = Math.max(current, value);
-            }
-        }
-    }
-}
-
 function ensureMarketConfig() {
     if (!Memory.market || typeof Memory.market !== 'object') Memory.market = {};
     const cfg = Memory.market;
@@ -122,9 +94,6 @@ function ensureMarketConfig() {
     //  - defaultsPatch (optional "apply to all rooms" patch)
     //  - manualOrders (account-wide tracking)
     //
-    // Back-compat: older root-level fields are treated as "legacy defaults"
-    // and copied into room configs lazily.
-
     if (!cfg.rooms || typeof cfg.rooms !== 'object') cfg.rooms = {};
     if (!cfg.manualOrders || typeof cfg.manualOrders !== 'object') cfg.manualOrders = {};
     if (!cfg.defaultsPatch || typeof cfg.defaultsPatch !== 'object') cfg.defaultsPatch = {};
@@ -145,6 +114,14 @@ function clonePlain(obj) {
     return JSON.parse(JSON.stringify(obj));
 }
 
+function isZeadminStockTargetsAuthorityEnabled() {
+    if (!Memory.zeadmin || typeof Memory.zeadmin !== 'object') return false;
+    const rb = Memory.zeadmin.resourceBalancing;
+    if (!rb || typeof rb !== 'object') return false;
+    if (rb.enabled === false) return false;
+    return rb.stockTargetsEnabled !== false;
+}
+
 function applyRoomDefaults(roomCfg) {
     roomCfg.enabled = (typeof roomCfg.enabled === 'boolean') ? roomCfg.enabled : true;
     roomCfg.runEvery = clampNumber(roomCfg.runEvery, DEFAULTS.runEvery, 1);
@@ -159,18 +136,28 @@ function applyRoomDefaults(roomCfg) {
 
     if (!roomCfg.buy || typeof roomCfg.buy !== 'object') roomCfg.buy = {};
     if (!roomCfg.sell || typeof roomCfg.sell !== 'object') roomCfg.sell = {};
-    if (!roomCfg.stockTargets || typeof roomCfg.stockTargets !== 'object') roomCfg.stockTargets = {};
+    if (!roomCfg.terminalStockTargets || typeof roomCfg.terminalStockTargets !== 'object') roomCfg.terminalStockTargets = {};
+    if (!roomCfg.roomStockTargets || typeof roomCfg.roomStockTargets !== 'object') roomCfg.roomStockTargets = {};
+    const zeadminStockAuthority = isZeadminStockTargetsAuthorityEnabled();
 
     for (const resourceType of Object.keys(DEFAULT_RESOURCE_CONFIG)) {
         const spec = DEFAULT_RESOURCE_CONFIG[resourceType];
         if (spec.buy && !roomCfg.buy[resourceType]) roomCfg.buy[resourceType] = Object.assign({}, spec.buy);
         if (spec.sell && !roomCfg.sell[resourceType]) roomCfg.sell[resourceType] = Object.assign({}, spec.sell);
-        if (typeof spec.target === 'number' && !(resourceType in roomCfg.stockTargets)) {
-            roomCfg.stockTargets[resourceType] = spec.target;
-        }
     }
 
-    mergeLegacyStockTargets(roomCfg, roomCfg.stockTargets);
+    if (!zeadminStockAuthority) {
+        for (const resourceType of Object.keys(DEFAULT_TERMINAL_STOCK_TARGETS)) {
+            if (!(resourceType in roomCfg.terminalStockTargets)) {
+                roomCfg.terminalStockTargets[resourceType] = DEFAULT_TERMINAL_STOCK_TARGETS[resourceType];
+            }
+        }
+    }
+    for (const resourceType of Object.keys(DEFAULT_ROOM_STOCK_TARGETS)) {
+        if (!(resourceType in roomCfg.roomStockTargets)) {
+            roomCfg.roomStockTargets[resourceType] = DEFAULT_ROOM_STOCK_TARGETS[resourceType];
+        }
+    }
 }
 
 function ensureRoomConfig(roomName) {
@@ -190,9 +177,7 @@ function ensureRoomConfig(roomName) {
         applyRoomDefaults(roomCfg);
     }
 
-    // 3) Back-compat: migrate older root-level tuning into per-room config
-    // If you still have Memory.market.runEvery / buy / sell / stockTargets etc from older versions,
-    // we treat them as defaults and copy them into rooms if the room doesn't already override.
+    // 3) Migrate root-level tuning into per-room config only for market tuning keys.
     const legacy = base; // root object may still contain old keys
     const legacyKeys = [
         'runEvery','minCredits','energyReserve','terminalEnergyTarget','terminalEnergyMax',
@@ -207,11 +192,6 @@ function ensureRoomConfig(roomName) {
     if (legacy.sell && typeof legacy.sell === 'object') {
         roomCfg.sell = Object.assign({}, legacy.sell, roomCfg.sell);
     }
-    if (legacy.stockTargets && typeof legacy.stockTargets === 'object') {
-        roomCfg.stockTargets = Object.assign({}, legacy.stockTargets, roomCfg.stockTargets);
-    }
-    mergeLegacyStockTargets(roomCfg, roomCfg.stockTargets);
-
     // Normalize again after merges
     applyRoomDefaults(roomCfg);
 
@@ -383,41 +363,17 @@ function getTrackedResources(cfg) {
     const keys = new Set();
     Object.keys(cfg.buy || {}).forEach(k => keys.add(k));
     Object.keys(cfg.sell || {}).forEach(k => keys.add(k));
-    Object.keys(cfg.stockTargets || {}).forEach(k => keys.add(k));
+    Object.keys(cfg.terminalStockTargets || {}).forEach(k => keys.add(k));
+    Object.keys(cfg.roomStockTargets || {}).forEach(k => keys.add(k));
     return Array.from(keys);
 }
 
-function getStockTargetsFromConfig(cfg) {
-    const targets = normalizeStockTargets(cfg.stockTargets);
-    if (cfg.buy && typeof cfg.buy === 'object') {
-        for (const resourceType of Object.keys(cfg.buy)) {
-            const spec = cfg.buy[resourceType];
-            if (!spec || typeof spec !== 'object' || !('target' in spec)) continue;
-            const value = clampNumber(spec.target, 0, 0);
-            if (value > 0) {
-                targets[resourceType] = Math.max(targets[resourceType] || 0, value);
-            }
-        }
-    }
-    if (cfg.sell && typeof cfg.sell === 'object') {
-        for (const resourceType of Object.keys(cfg.sell)) {
-            const spec = cfg.sell[resourceType];
-            if (!spec || typeof spec !== 'object' || !('keep' in spec)) continue;
-            const value = clampNumber(spec.keep, 0, 0);
-            if (value > 0) {
-                targets[resourceType] = Math.max(targets[resourceType] || 0, value);
-            }
-        }
-    }
-    if (cfg.terminalStock && typeof cfg.terminalStock === 'object') {
-        for (const resourceType of Object.keys(cfg.terminalStock)) {
-            const value = clampNumber(cfg.terminalStock[resourceType], 0, 0);
-            if (value > 0) {
-                targets[resourceType] = Math.max(targets[resourceType] || 0, value);
-            }
-        }
-    }
-    return targets;
+function getTerminalStockTargetsFromConfig(cfg) {
+    return normalizeStockTargets(cfg.terminalStockTargets);
+}
+
+function getRoomStockTargetsFromConfig(cfg) {
+    return normalizeStockTargets(cfg.roomStockTargets);
 }
 
 function calcEffectiveBuy(order, amount, roomName, energyValue) {
@@ -464,7 +420,7 @@ function getRunStatus(room, cfg) {
     return { ok: reasons.length === 0, reasons };
 }
 
-function buildBuyExplanation(room, cfg, totals) {
+function buildBuyExplanation(room, cfg, roomTotals) {
     const lines = [];
     if (!cfg.buy || typeof cfg.buy !== 'object') {
         lines.push('Buy: no buy config');
@@ -481,16 +437,16 @@ function buildBuyExplanation(room, cfg, totals) {
         return lines;
     }
 
-    const stockTargets = getStockTargetsFromConfig(cfg);
+    const roomStockTargets = getRoomStockTargetsFromConfig(cfg);
     const creditsAvailable = Game.market.credits - cfg.minCredits;
 
     const deficits = [];
     for (const resourceType of Object.keys(cfg.buy)) {
         const spec = normalizeBuySpec(cfg.buy[resourceType] || {});
         if (!spec.enabled) continue;
-        const target = stockTargets[resourceType] || 0;
+        const target = roomStockTargets[resourceType] || 0;
         if (target <= 0) continue;
-        const total = totals[resourceType] || 0;
+        const total = roomTotals[resourceType] || 0;
         const need = target - total;
         if (need <= 0) continue;
         deficits.push({ resourceType, need, spec, target, total });
@@ -627,7 +583,7 @@ function buildBuyExplanation(room, cfg, totals) {
     return lines;
 }
 
-function buildSellExplanation(room, cfg, totals) {
+function buildSellExplanation(room, cfg, roomTotals) {
     const lines = [];
     if (!cfg.sell || typeof cfg.sell !== 'object') {
         lines.push('Sell: no sell config');
@@ -641,7 +597,7 @@ function buildSellExplanation(room, cfg, totals) {
         return lines;
     }
 
-    const stockTargets = getStockTargetsFromConfig(cfg);
+    const roomStockTargets = getRoomStockTargetsFromConfig(cfg);
     const myOrders = Game.market.orders || {};
 
     lines.push(`Sell: energyAvailable=${energyAvailable} (reserve=${cfg.energyReserve})`);
@@ -651,8 +607,8 @@ function buildSellExplanation(room, cfg, totals) {
         const spec = normalizeSellSpec(cfg.sell[resourceType] || {});
         if (!spec.enabled) continue;
 
-        const target = stockTargets[resourceType] || 0;
-        const total = totals[resourceType] || 0;
+        const target = roomStockTargets[resourceType] || 0;
+        const total = roomTotals[resourceType] || 0;
         const threshold = target * (1 + cfg.sellBufferPct);
         const surplus = total - threshold;
         if (surplus <= 0) continue;
@@ -786,7 +742,7 @@ function buildSellExplanation(room, cfg, totals) {
     return lines;
 }
 
-function tryBuy(room, cfg, totals) {
+function tryBuy(room, cfg, roomTotals) {
     if (!cfg.buy || typeof cfg.buy !== 'object') return false;
     if (Game.market.credits < cfg.minCredits) return false;
 
@@ -794,16 +750,16 @@ function tryBuy(room, cfg, totals) {
     const energyAvailable = (terminal.store[RESOURCE_ENERGY] || 0) - cfg.energyReserve;
     if (energyAvailable <= 0) return false;
 
-    const stockTargets = getStockTargetsFromConfig(cfg);
+    const roomStockTargets = getRoomStockTargetsFromConfig(cfg);
     const creditsAvailable = Game.market.credits - cfg.minCredits;
 
     const deficits = [];
     for (const resourceType of Object.keys(cfg.buy)) {
         const spec = normalizeBuySpec(cfg.buy[resourceType] || {});
         if (!spec.enabled) continue;
-        const target = stockTargets[resourceType] || 0;
+        const target = roomStockTargets[resourceType] || 0;
         if (target <= 0) continue;
-        const total = totals[resourceType] || 0;
+        const total = roomTotals[resourceType] || 0;
         const need = target - total;
         if (need <= 0) continue;
         deficits.push({ resourceType, need, spec });
@@ -871,21 +827,22 @@ function tryBuy(room, cfg, totals) {
     return false;
 }
 
-function trySell(room, cfg, totals) {
+function trySell(room, cfg) {
     if (!cfg.sell || typeof cfg.sell !== 'object') return false;
     const terminal = room.terminal;
     const energyAvailable = (terminal.store[RESOURCE_ENERGY] || 0) - cfg.energyReserve;
     if (energyAvailable <= 0) return false;
 
-    const stockTargets = getStockTargetsFromConfig(cfg);
+    const roomTotals = getRoomTotals(room);
+    const roomStockTargets = getRoomStockTargetsFromConfig(cfg);
     const myOrders = Game.market.orders || {};
 
     for (const resourceType of Object.keys(cfg.sell)) {
         const spec = normalizeSellSpec(cfg.sell[resourceType] || {});
         if (!spec.enabled) continue;
 
-        const target = stockTargets[resourceType] || 0;
-        const total = totals[resourceType] || 0;
+        const target = roomStockTargets[resourceType] || 0;
+        const total = roomTotals[resourceType] || 0;
         const threshold = target * (1 + cfg.sellBufferPct);
         const surplus = total - threshold;
         if (surplus <= 0) continue;
@@ -1011,16 +968,28 @@ function summarizeConfig(cfg) {
         lines.push('Sell specs: (none)');
     }
 
-    const stockTargets = getStockTargetsFromConfig(cfg);
-    const stockKeys = Object.keys(stockTargets || {}).sort();
-    if (stockKeys.length > 0) {
-        lines.push('Stock targets (total):');
-        for (const resourceType of stockKeys) {
-            const amount = clampNumber(stockTargets[resourceType], 0, 0);
+    const terminalStockTargets = getTerminalStockTargetsFromConfig(cfg);
+    const terminalStockKeys = Object.keys(terminalStockTargets || {}).sort();
+    if (terminalStockKeys.length > 0) {
+        lines.push('Terminal stock targets:');
+        for (const resourceType of terminalStockKeys) {
+            const amount = clampNumber(terminalStockTargets[resourceType], 0, 0);
             lines.push(`${resourceType}: ${amount}`);
         }
     } else {
-        lines.push('Stock targets (total): (none)');
+        lines.push('Terminal stock targets: (none)');
+    }
+
+    const roomStockTargets = getRoomStockTargetsFromConfig(cfg);
+    const roomStockKeys = Object.keys(roomStockTargets || {}).sort();
+    if (roomStockKeys.length > 0) {
+        lines.push('Room stock targets:');
+        for (const resourceType of roomStockKeys) {
+            const amount = clampNumber(roomStockTargets[resourceType], 0, 0);
+            lines.push(`${resourceType}: ${amount}`);
+        }
+    } else {
+        lines.push('Room stock targets: (none)');
     }
 
     return lines.join('\n');
@@ -1158,14 +1127,16 @@ summarize: function() {
     },
 
 
-    getStockTargets: function(roomName) {
+    getTerminalStockTargets: function(roomName) {
         const cfg = ensureMarketConfig();
         const merged = getRoomConfig(cfg, roomName);
-        return normalizeStockTargets(getStockTargetsFromConfig(merged));
+        return normalizeStockTargets(getTerminalStockTargetsFromConfig(merged));
     },
 
-    getTerminalStockTargets: function(roomName) {
-        return this.getStockTargets(roomName);
+    getRoomStockTargets: function(roomName) {
+        const cfg = ensureMarketConfig();
+        const merged = getRoomConfig(cfg, roomName);
+        return normalizeStockTargets(getRoomStockTargetsFromConfig(merged));
     },
 
     getTrackedResources: function(roomName) {
@@ -1203,6 +1174,7 @@ summarize: function() {
         }
 
         const totals = getTerminalTotals(room);
+        const roomTotals = getRoomTotals(room);
         lines.push(`Totals: terminal resources=${Object.keys(totals).length}`);
         lines.push(`Credits=${Game.market.credits} minCredits=${cfg.minCredits} energyValue=${cfg.energyValue}`);
         const terminalEnergy = room.terminal.store[RESOURCE_ENERGY] || 0;
@@ -1212,8 +1184,8 @@ summarize: function() {
             `spendable=${energySpendable} target=${cfg.terminalEnergyTarget} max=${cfg.terminalEnergyMax}`
         );
 
-        buildBuyExplanation(room, cfg, totals).forEach(line => lines.push(line));
-        buildSellExplanation(room, cfg, totals).forEach(line => lines.push(line));
+        buildBuyExplanation(room, cfg, roomTotals).forEach(line => lines.push(line));
+        buildSellExplanation(room, cfg, roomTotals).forEach(line => lines.push(line));
 
         return { lines, summary: `Explained market for ${room.name}` };
     },
@@ -1237,10 +1209,9 @@ summarize: function() {
 
         if (room._opState === 'EMERGENCY') return;
 
-        const totals = getTerminalTotals(room);
-
-        if (tryBuy(room, cfg, totals)) return;
-        trySell(room, cfg, totals);
+        const roomTotals = getRoomTotals(room);
+        if (tryBuy(room, cfg, roomTotals)) return;
+        trySell(room, cfg);
     }
 };
 

@@ -1,4 +1,5 @@
 const shared = require('console_shared');
+const bodyCodec = require('utils_bodyCodec');
 flagsResolver = require('managers_admiral_tactics_assault_common_flags')
 
 /**
@@ -102,6 +103,33 @@ function refreshAssaultSquadState(squadKey, liveSquad) {
     return state;
 }
 
+function gcFlagAttackSquadMemory(cache) {
+    const squads = getAssaultSquadMemory();
+    if (!squads) return;
+
+    const activeSquadKeys = new Set();
+    const bySponsorRoom = cache && cache.bySponsorRoom ? cache.bySponsorRoom : null;
+    if (bySponsorRoom) {
+        for (const roomName in bySponsorRoom) {
+            if (!Object.prototype.hasOwnProperty.call(bySponsorRoom, roomName)) continue;
+            const entries = bySponsorRoom[roomName];
+            if (!Array.isArray(entries)) continue;
+            for (const entry of entries) {
+                if (!entry || !entry.waitFlagName) continue;
+                activeSquadKeys.add(`assault:flag:${entry.waitFlagName}`);
+            }
+        }
+    }
+
+    for (const squadKey in squads) {
+        if (!Object.prototype.hasOwnProperty.call(squads, squadKey)) continue;
+        if (typeof squadKey !== 'string') continue;
+        if (squadKey.slice(0, 12) !== 'assault:flag:') continue;
+        if (activeSquadKeys.has(squadKey)) continue;
+        delete squads[squadKey];
+    }
+}
+
 function normalizeBodyPart(part) {
     if (part === undefined || part === null) return null;
     if (typeof part === 'string') {
@@ -125,14 +153,32 @@ function normalizeBodyMode(mode) {
 
 function getAttackBodyConfig() {
     const memory = Memory.military && Memory.military.attack ? Memory.military.attack : {};
-    const stored = Array.isArray(memory.body) ? memory.body : null;
-    const storedLeader = Array.isArray(memory.leaderBody) ? memory.leaderBody : null;
-    const storedSupport = Array.isArray(memory.supportBody) ? memory.supportBody : null;
+    function decodeStoredBody(raw, key) {
+        if (Array.isArray(raw)) {
+            const normalized = normalizeBodyPattern(raw);
+            if (normalized.length > 0) {
+                try {
+                    memory[key] = bodyCodec.encodeBody(normalized);
+                } catch (e) {
+                    memory[key] = normalized;
+                }
+            } else {
+                delete memory[key];
+            }
+            return normalized;
+        }
+        if (typeof raw === 'string' && raw) return normalizeBodyPattern(bodyCodec.decodeBody(raw));
+        return [];
+    }
 
-    const leader = normalizeBodyPattern(storedLeader || stored);
-    const support = normalizeBodyPattern(storedSupport);
-    const solo = normalizeBodyPattern(stored);
-    const leaderMode = normalizeBodyMode(storedLeader ? memory.leaderBodyMode : memory.bodyMode);
+    const stored = decodeStoredBody(memory.body, 'body');
+    const storedLeader = decodeStoredBody(memory.leaderBody, 'leaderBody');
+    const storedSupport = decodeStoredBody(memory.supportBody, 'supportBody');
+
+    const leader = storedLeader.length > 0 ? storedLeader : stored;
+    const support = storedSupport;
+    const solo = stored;
+    const leaderMode = normalizeBodyMode(storedLeader.length > 0 ? memory.leaderBodyMode : memory.bodyMode);
     const supportMode = normalizeBodyMode(memory.supportBodyMode);
     const soloMode = normalizeBodyMode(memory.bodyMode);
 
@@ -246,6 +292,7 @@ function buildAssaultMissionData(entry, roomName, squadKey, mode, assaultRole, l
 module.exports = {
     generate: function(room, intel, context, missions) {
         const cache = buildFlagAttackCache();
+        gcFlagAttackSquadMemory(cache);
         const entries = cache.bySponsorRoom[room.name];
         if (!entries || entries.length === 0) return;
 

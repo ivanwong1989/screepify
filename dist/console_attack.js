@@ -1,3 +1,4 @@
+const bodyCodec = require('utils_bodyCodec');
 const DEFAULT_ATTACK_BODY = [RANGED_ATTACK, MOVE, HEAL];
 const DEFAULT_SUPPORT_BODY = [HEAL, MOVE, MOVE];
 const DEFAULT_BODY_MODE = 'auto';
@@ -180,9 +181,24 @@ function getBodyCost(body) {
     return body.reduce((sum, part) => sum + (BODYPART_COST[part] || 0), 0);
 }
 
+function decodeStoredBody(value) {
+    if (Array.isArray(value)) return normalizeBodyList(value) || [];
+    if (typeof value !== 'string' || !value) return [];
+    return normalizeBodyList(bodyCodec.decodeBody(value)) || [];
+}
+
+function encodeBodyForStorage(body) {
+    if (!Array.isArray(body) || body.length === 0) return '';
+    try {
+        return bodyCodec.encodeBody(body);
+    } catch (e) {
+        return '';
+    }
+}
+
 function setAttackBodyKey(key, modeKey, parts, label, defaultBody) {
     const memory = ensureAttackMemory();
-    const current = Array.isArray(memory[key]) ? memory[key] : [];
+    const current = decodeStoredBody(memory[key]);
     const currentMode = getStoredMode(memory, modeKey);
 
     if (parts === undefined || parts === null) {
@@ -218,7 +234,8 @@ function setAttackBodyKey(key, modeKey, parts, label, defaultBody) {
     const effectiveMode = parsed.hasMode ? parsed.mode : currentMode;
 
     if (parsed.hasBody) {
-        memory[key] = parsed.body;
+        const encoded = encodeBodyForStorage(parsed.body);
+        memory[key] = encoded || parsed.body;
         const cost = getBodyCost(parsed.body);
         const msg = `${label} body set: ${formatBody(parsed.body)} (mode=${effectiveMode}, cost=${cost})`;
         console.log(msg);
@@ -239,7 +256,7 @@ function ensureDismantleMemory() {
 
 function setDismantleBodyKey(key, modeKey, parts, label, defaultBody) {
     const memory = ensureDismantleMemory();
-    const current = Array.isArray(memory[key]) ? memory[key] : [];
+    const current = decodeStoredBody(memory[key]);
     const currentMode = getStoredMode(memory, modeKey);
 
     if (parts === undefined || parts === null) {
@@ -275,7 +292,8 @@ function setDismantleBodyKey(key, modeKey, parts, label, defaultBody) {
     const effectiveMode = parsed.hasMode ? parsed.mode : currentMode;
 
     if (parsed.hasBody) {
-        memory[key] = parsed.body;
+        const encoded = encodeBodyForStorage(parsed.body);
+        memory[key] = encoded || parsed.body;
         const cost = getBodyCost(parsed.body);
         const msg = `${label} body set: ${formatBody(parsed.body)} (mode=${effectiveMode}, cost=${cost})`;
         console.log(msg);
@@ -346,8 +364,8 @@ module.exports = function registerAttackConsole() {
 
     global.attackBodySupport = function(parts) {
         const memory = ensureAttackMemory();
+        const current = decodeStoredBody(memory.supportBody);
         if (parts === undefined || parts === null) {
-            const current = Array.isArray(memory.supportBody) ? memory.supportBody : [];
             const currentMode = getStoredMode(memory, 'supportBodyMode');
             const msg = `Attack support body: ${formatBody(current)} (mode=${currentMode}, set to enable duo; default=${formatBody(DEFAULT_SUPPORT_BODY)})`;
             console.log(msg);
@@ -379,7 +397,8 @@ module.exports = function registerAttackConsole() {
         const effectiveMode = parsed.hasMode ? parsed.mode : currentMode;
 
         if (parsed.hasBody) {
-            memory.supportBody = parsed.body;
+            const encoded = encodeBodyForStorage(parsed.body);
+            memory.supportBody = encoded || parsed.body;
             const cost = getBodyCost(parsed.body);
             const msg = `Attack support body set: ${formatBody(parsed.body)} (mode=${effectiveMode}, cost=${cost})`;
             console.log(msg);

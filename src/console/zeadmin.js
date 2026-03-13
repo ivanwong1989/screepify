@@ -19,6 +19,19 @@ function getSnapshot() {
     return store;
 }
 
+function getStockTargetAuthorityStatus() {
+    const rb = Memory.zeadmin && Memory.zeadmin.resourceBalancing
+        ? Memory.zeadmin.resourceBalancing
+        : null;
+    const enabled = !!(rb && rb.enabled !== false);
+    const stockTargetsEnabled = !!(rb && rb.stockTargetsEnabled !== false);
+    return {
+        zeadminOwnsStockTargets: enabled && stockTargetsEnabled,
+        enabled,
+        stockTargetsEnabled
+    };
+}
+
 function printEmpire(snapshot) {
     const e = snapshot.empire || {};
     const energy = e.energy || {};
@@ -60,10 +73,40 @@ function printEmpire(snapshot) {
         `fill=${Number(terminal.fillPct || 0).toFixed(3)} pressuredRooms=${terminal.pressuredRooms || 0}`
     );
     if (balancing) {
+        const authority = getStockTargetAuthorityStatus();
         console.log(
             `balance: core=${balancing.coreRoom || 'n/a'} sends=${balancing.sends || 0} ` +
-            `candidates=${balancing.candidateCount || 0} pressured=${balancing.pressuredRoomCount || 0} reason=${balancing.reason || 'n/a'}`
+            `candidates=${balancing.candidateCount || 0} pressured=${balancing.pressuredRoomCount || 0} ` +
+            `stockWrites=${balancing.stockTargetWrites || 0} reason=${balancing.reason || 'n/a'}`
         );
+        console.log(
+            `terminalStockTargets.authority=${authority.zeadminOwnsStockTargets ? 'zeadmin' : 'market/default'} ` +
+            `zeadminEnabled=${authority.enabled ? 'yes' : 'no'} stockTargetsEnabled=${authority.stockTargetsEnabled ? 'yes' : 'no'}`
+        );
+        if (balancing.basicMineralCount) {
+            const basic = Array.isArray(balancing.basicMinerals) ? balancing.basicMinerals : [];
+            console.log(`balance.basicMinerals=${balancing.basicMineralCount} [${basic.join(',')}]`);
+        }
+        if (balancing.managedResourceCount) {
+            const list = Array.isArray(balancing.managedResources) ? balancing.managedResources : [];
+            console.log(
+                `balance.resources=${balancing.managedResourceCount} ` +
+                `sample=[${list.join(',')}]`
+            );
+        }
+
+        const balanceStore = heap.getStore('zeadmin_resource_balancing', { ttl: null });
+        const transfers = Array.isArray(balanceStore && balanceStore.lastTransfers) ? balanceStore.lastTransfers : [];
+        if (transfers.length > 0) {
+            console.log('balance.lastTransfers:');
+            for (const t of transfers.slice(0, 5)) {
+                console.log(
+                    `${t.tick} ${t.from}->${t.to} ${t.resourceType || 'res'} amount=${t.amount} ` +
+                    `cost~${t.estimatedEnergyCost} cpu=${t.costPerUnit == null ? 'n/a' : Number(t.costPerUnit).toFixed(3)} ` +
+                    `ok=${t.ok ? 'yes' : 'no'}${t.error ? ` error=${t.error}` : ''}`
+                );
+            }
+        }
     }
     console.log(`states.overall=${JSON.stringify((e.states && e.states.overall) || {})}`);
     console.log(`states.ops=${JSON.stringify((e.states && e.states.ops) || {})}`);
@@ -141,6 +184,10 @@ function printBalance() {
         `core=${s.coreRoom || 'n/a'} sends=${s.sends || 0} candidates=${s.candidateCount || 0} ` +
         `pressured=${s.pressuredRoomCount || 0} reason=${s.reason || 'n/a'}`
     );
+    if (s.basicMineralCount) {
+        const basic = Array.isArray(s.basicMinerals) ? s.basicMinerals : [];
+        console.log(`basicMinerals=${s.basicMineralCount} [${basic.join(',')}]`);
+    }
     const transfers = Array.isArray(store.lastTransfers) ? store.lastTransfers : [];
     if (transfers.length === 0) {
         console.log('lastTransfers: (none)');

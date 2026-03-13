@@ -1,10 +1,10 @@
 // labs.reverse.js
 //
 // Reverse lab support:
-// - Pick/identify a "compound lab" to hold the product (auto-selected if not already present)
-// - Haul product into compound lab up to productTarget
+// - Pick/identify one or more "compound labs" to hold the product (auto-selected)
+// - Haul product into each compound lab up to productTarget
 // - Clear wrong minerals from any labs (including compound lab if needed)
-// - Call reverseReaction() on other labs using the compound lab as source
+// - Call reverseReaction() on other labs using compound labs as sources
 
 function normalizeReverseSpec(cfg) {
     if (!cfg || !cfg.reverse) return null;
@@ -14,7 +14,8 @@ function normalizeReverseSpec(cfg) {
     return {
         product: ('' + r.product).trim(),
         productTarget: Number(r.productTarget) || cfg.inputTarget || 2000,
-        maxReactionsPerTick: Number(cfg.maxReactionsPerTick) || 3
+        maxReactionsPerTick: Number(cfg.maxReactionsPerTick) || 3,
+        maxSourceLabs: Number(r.maxSourceLabs) || 0
     };
 }
 
@@ -57,68 +58,51 @@ function getReagentsForProduct(product) {
     return null;
 }
 
-/**
- * Pick a compound lab deterministically.
- *
- * Priority:
- *  1) Any lab already holding the product (prefer the fullest)
- *  2) Any empty lab (prefer the emptiest store total)
- *  3) Otherwise, the lab with the smallest amount of mineral (least disruptive to clear)
- */
-function chooseCompoundLab(labs, product) {
+// Rank labs as reverse sources:
+// 1) labs already holding product (more amount first)
+// 2) empty labs (lower used store first)
+// 3) other labs (lower mineral amount first)
+function rankCompoundLabs(labs, product) {
     if (!Array.isArray(labs) || labs.length === 0) return null;
 
-    // 1) Already holding product
-    let best = null;
-    let bestAmt = -1;
-    for (const lab of labs) {
-        if (!lab || lab.structureType !== STRUCTURE_LAB) continue;
-        if (lab.mineralType !== product) continue;
-        const amt = lab.store[product] || 0;
-        if (amt > bestAmt) {
-            best = lab;
-            bestAmt = amt;
-        }
-    }
-    if (best) return best;
+    const withProduct = [];
+    const empty = [];
+    const others = [];
 
-    // 2) Empty labs
-    let emptyBest = null;
-    let emptyScore = Infinity; // lower is better
     for (const lab of labs) {
         if (!lab || lab.structureType !== STRUCTURE_LAB) continue;
-        if (lab.mineralType) continue;
-        // prefer labs that are already empty in store too
-        const used = lab.store.getUsedCapacity ? (lab.store.getUsedCapacity() || 0) : 0;
-        if (used < emptyScore) {
-            emptyScore = used;
-            emptyBest = lab;
-        }
+        if (lab.mineralType === product) withProduct.push(lab);
+        else if (!lab.mineralType) empty.push(lab);
+        else others.push(lab);
     }
-    if (emptyBest) return emptyBest;
 
-    // 3) Least disruptive to clear
-    let least = null;
-    let leastAmt2 = Infinity;
-    for (const lab of labs) {
-        if (!lab || lab.structureType !== STRUCTURE_LAB) continue;
-        const mt = lab.mineralType;
-        if (!mt) {
-            // should have been caught above, but just in case
-            return lab;
-        }
-        const amt = lab.store[mt] || 0;
-        if (amt < leastAmt2) {
-            leastAmt2 = amt;
-            least = lab;
-        }
-    }
-    return least || labs[0] || null;
+    withProduct.sort((a, b) => (b.store[product] || 0) - (a.store[product] || 0));
+    empty.sort((a, b) => {
+        const ua = a.store.getUsedCapacity ? (a.store.getUsedCapacity() || 0) : 0;
+        const ub = b.store.getUsedCapacity ? (b.store.getUsedCapacity() || 0) : 0;
+        return ua - ub;
+    });
+    others.sort((a, b) => (a.store[a.mineralType] || 0) - (b.store[b.mineralType] || 0));
+
+    return withProduct.concat(empty, others);
+}
+
+function chooseCompoundLabs(labs, product, maxSourcesHint) {
+    if (!Array.isArray(labs) || labs.length < 3) return [];
+
+    const ranked = rankCompoundLabs(labs, product);
+    if (!ranked || ranked.length === 0) return [];
+
+    const maxByLayout = Math.max(1, labs.length - 2); // always reserve 2 output labs
+    const maxByHint = (Number(maxSourcesHint) > 0) ? Number(maxSourcesHint) : maxByLayout;
+    const maxSources = Math.max(1, Math.min(maxByLayout, maxByHint));
+
+    return ranked.slice(0, maxSources);
 }
 
 /**
  * Reverse logistics missions
- * - Ensure compound lab is (eventually) holding the product up to productTarget
+ * - Ensure selected compound labs are (eventually) holding the product up to productTarget
  * - Clear wrong minerals from other labs (and from compound lab if it has the wrong mineral)
  */
 function getReverseLogisticsMissions(room, cfg, labs) {
@@ -153,8 +137,12 @@ function getReverseLogisticsMissions(room, cfg, labs) {
         });
     };
 
-    const compoundLab = chooseCompoundLab(labs, spec.product);
-    if (!compoundLab) return missions;
+    const sourcesHint = (spec.maxSourceLabs > 0)
+        ? Math.min(spec.maxSourceLabs, spec.maxReactionsPerTick)
+        : spec.maxReactionsPerTick;
+    const compoundLabs = chooseCompoundLabs(labs, spec.product, sourcesHint);
+    if (!compoundLabs || compoundLabs.length === 0) return missions;
+    const compoundLabIds = new Set(compoundLabs.map(l => l.id));
 
     const reagents = getReagentsForProduct(spec.product);
     if (!reagents) {
@@ -162,37 +150,39 @@ function getReverseLogisticsMissions(room, cfg, labs) {
         return missions;
     }
 
-    dbg(cfg, `room=${room.name} reverse product=${spec.product} target=${spec.productTarget} compoundLab=${compoundLab.id} mt=${compoundLab.mineralType || 'none'} amt=${compoundLab.mineralType ? (compoundLab.store[compoundLab.mineralType] || 0) : 0} reagents=${reagents.a}+${reagents.b}`);
+    dbg(cfg, `room=${room.name} reverse product=${spec.product} target=${spec.productTarget} sources=${compoundLabs.length} reagents=${reagents.a}+${reagents.b}`);
 
-    // If compound lab currently holds a different mineral, clear it first
-    if (compoundLab.mineralType && compoundLab.mineralType !== spec.product) {
-        const sink = chooseSink(room, compoundLab.mineralType);
-        if (sink) {
-            const label = `${missionPrefix}:reverse:clearCompound:${compoundLab.id}:${compoundLab.mineralType}`;
-            enqueue(compoundLab.id, sink.id, compoundLab.mineralType, label);
-            dbg(cfg, `room=${room.name} enqueue clearCompound lab=${compoundLab.id} mineral=${compoundLab.mineralType} -> ${sink.structureType}:${sink.id}`);
+    // Ensure each compound/source lab is either cleared (if wrong mineral) or filled with product.
+    for (const compoundLab of compoundLabs) {
+        if (!compoundLab) continue;
+
+        if (compoundLab.mineralType && compoundLab.mineralType !== spec.product) {
+            const sink = chooseSink(room, compoundLab.mineralType);
+            if (sink) {
+                const label = `${missionPrefix}:reverse:clearCompound:${compoundLab.id}:${compoundLab.mineralType}`;
+                enqueue(compoundLab.id, sink.id, compoundLab.mineralType, label);
+                dbg(cfg, `room=${room.name} enqueue clearCompound lab=${compoundLab.id} mineral=${compoundLab.mineralType} -> ${sink.structureType}:${sink.id}`);
+            }
+            continue;
         }
-        // Don't schedule fill until it's cleared.
-        return missions;
+
+        const current = compoundLab.store[spec.product] || 0;
+        if (current < spec.productTarget) {
+            const source = chooseSource(room, spec.product);
+            if (source) {
+                const label = `${missionPrefix}:reverse:fill:${compoundLab.id}:${spec.product}`;
+                enqueue(source.id, compoundLab.id, spec.product, label);
+                dbg(cfg, `room=${room.name} enqueue fill product=${spec.product} from=${source.structureType}:${source.id} -> lab=${compoundLab.id} cur=${current}/${spec.productTarget}`);
+            } else {
+                dbg(cfg, `room=${room.name} cannot fill product=${spec.product} (no source in storage/terminal)`);
+            }
+        }
     }
 
-    // Ensure compound lab filled to target
-    const current = compoundLab.store[spec.product] || 0;
-    if (current < spec.productTarget) {
-        const source = chooseSource(room, spec.product);
-        if (source) {
-            const label = `${missionPrefix}:reverse:fill:${compoundLab.id}:${spec.product}`;
-            enqueue(source.id, compoundLab.id, spec.product, label);
-            dbg(cfg, `room=${room.name} enqueue fill product=${spec.product} from=${source.structureType}:${source.id} -> lab=${compoundLab.id} cur=${current}/${spec.productTarget}`);
-        } else {
-            dbg(cfg, `room=${room.name} cannot fill product=${spec.product} (no source in storage/terminal)`);
-        }
-    }
-
-    // Clear wrong minerals from other labs (anything not reagent A/B)
+    // Clear wrong minerals from non-source labs (anything not reagent A/B).
     for (const lab of labs) {
         if (!lab) continue;
-        if (lab.id === compoundLab.id) continue;
+        if (compoundLabIds.has(lab.id)) continue;
         if (!lab.mineralType) continue;
 
         if (lab.mineralType === reagents.a) continue;
@@ -215,9 +205,7 @@ function getReverseLogisticsMissions(room, cfg, labs) {
 function runReverse(room, cfg, labs) {
     const spec = normalizeReverseSpec(cfg);
     if (!spec) return;
-
-    const compoundLab = chooseCompoundLab(labs, spec.product);
-    if (!compoundLab) return;
+    if (spec.maxReactionsPerTick <= 0) return;
 
     const reagents = getReagentsForProduct(spec.product);
     if (!reagents) {
@@ -225,28 +213,19 @@ function runReverse(room, cfg, labs) {
         return;
     }
 
-    // Only run reverse once the compound lab actually has product in it
-    if (compoundLab.mineralType !== spec.product) {
-        dbg(cfg, `room=${room.name} runReverse waiting: compoundLab mt=${compoundLab.mineralType || 'none'} (need ${spec.product})`);
+    const sourcesHint = (spec.maxSourceLabs > 0)
+        ? Math.min(spec.maxSourceLabs, spec.maxReactionsPerTick)
+        : spec.maxReactionsPerTick;
+    const compoundLabs = chooseCompoundLabs(labs, spec.product, sourcesHint);
+    if (!compoundLabs || compoundLabs.length === 0) return;
+    const sourceIds = new Set(compoundLabs.map(l => l.id));
+
+    // Output labs = labs not selected as sources.
+    const outputLabs = labs.filter(l => l && !sourceIds.has(l.id));
+    if (outputLabs.length < 2) {
+        dbg(cfg, `room=${room.name} runReverse waiting: need at least 2 output labs (have ${outputLabs.length})`);
         return;
     }
-    if ((compoundLab.store[spec.product] || 0) <= 0) {
-        dbg(cfg, `room=${room.name} runReverse waiting: compoundLab has 0 ${spec.product}`);
-        return;
-    }
-
-    dbg(cfg, `room=${room.name} runReverse compoundLab=${compoundLab.id} amt=${compoundLab.store[spec.product] || 0} maxPerTick=${spec.maxReactionsPerTick} reagents=${reagents.a}+${reagents.b}`);
-
-    // reverseReaction is executed by the *source* lab (compoundLab) and requires
-    // TWO target labs (lab1, lab2) to receive the reagents.
-    // If the source lab is on cooldown, nothing can happen this tick.
-    if (compoundLab.cooldown && compoundLab.cooldown > 0) {
-        dbg(cfg, `room=${room.name} skip: compoundLab cooldown=${compoundLab.cooldown}`);
-        return;
-    }
-
-    // Output labs = labs not holding compound
-    const outputLabs = labs.filter(l => l && l.id !== compoundLab.id);
 
     // Helper: whether a lab can accept a given reagent
     const canAccept = (lab, reagent) => {
@@ -277,35 +256,33 @@ function runReverse(room, cfg, labs) {
         return best;
     };
 
-    let fired = 0;
+    // Prioritize source labs that are already loaded with product.
+    const sources = compoundLabs
+        .filter(l => l && l.mineralType === spec.product && (l.store[spec.product] || 0) > 0)
+        .sort((a, b) => (b.store[spec.product] || 0) - (a.store[spec.product] || 0));
 
-    // reverseReaction consumes 1 action of the source lab per tick.
-    // We still keep maxReactionsPerTick for future extension (multiple compound labs),
-    // but for a single compoundLab, we will stop once it becomes tired.
-    while (fired < spec.maxReactionsPerTick) {
+    dbg(cfg, `room=${room.name} runReverse sources=${sources.length}/${compoundLabs.length} outputs=${outputLabs.length} maxPerTick=${spec.maxReactionsPerTick} reagents=${reagents.a}+${reagents.b}`);
+
+    let fired = 0;
+    for (const sourceLab of sources) {
+        if (fired >= spec.maxReactionsPerTick) break;
+        if (sourceLab.cooldown && sourceLab.cooldown > 0) continue;
+
         const labA = pickBest(outputLabs, reagents.a, null);
         const labB = pickBest(outputLabs, reagents.b, labA ? labA.id : null);
+        if (!labA || !labB) break;
 
-        if (!labA || !labB) {
-            dbg(cfg, `room=${room.name} runReverse no valid pair: need ${reagents.a}+${reagents.b} (check output labs minerals/cooldowns/capacity)`);
-            break;
-        }
-
-        const res = compoundLab.reverseReaction(labA, labB);
+        const res = sourceLab.reverseReaction(labA, labB);
         if (res === OK) {
             fired += 1;
-            dbg(cfg, `OK reverseReaction source=${compoundLab.id} -> lab1=${labA.id}(${reagents.a}) lab2=${labB.id}(${reagents.b})`);
+            dbg(cfg, `OK reverseReaction source=${sourceLab.id} -> lab1=${labA.id}(${reagents.a}) lab2=${labB.id}(${reagents.b})`);
         } else {
-            dbg(cfg, `ERR reverseReaction source=${compoundLab.id} -> lab1=${labA.id} lab2=${labB.id} code=${res}`);
-            // Most errors won't resolve by retrying in the same tick.
-            break;
+            dbg(cfg, `ERR reverseReaction source=${sourceLab.id} -> lab1=${labA.id} lab2=${labB.id} code=${res}`);
         }
-
-        if (compoundLab.cooldown && compoundLab.cooldown > 0) break;
     }
 
     if (fired === 0) {
-        dbg(cfg, `room=${room.name} runReverse fired=0 (most likely: no valid output pair, labs not in range, or reverseReaction returned ERR_*)`);
+        dbg(cfg, `room=${room.name} runReverse fired=0 (most likely: source labs not ready/cooldown, no valid output pair, labs not in range, or reverseReaction returned ERR_*)`);
     }
 }
 

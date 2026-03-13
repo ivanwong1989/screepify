@@ -1,4 +1,5 @@
 const shared = require('console_shared');
+const bodyCodec = require('utils_bodyCodec');
 
 /**
  * Assault Dismantle Flag Mission (Z + D AO)
@@ -57,8 +58,23 @@ function normalizeBodyMode(mode) {
 
 function getDismantleBodyConfig() {
     const memory = Memory.military && Memory.military.dismantle ? Memory.military.dismantle : {};
-    const stored = Array.isArray(memory.body) ? memory.body : null;
-    const pattern = normalizeBodyPattern(stored || DEFAULT_DISMANTLE_BODY);
+    let stored = [];
+    if (Array.isArray(memory.body)) {
+        stored = normalizeBodyPattern(memory.body);
+        if (stored.length > 0) {
+            try {
+                memory.body = bodyCodec.encodeBody(stored);
+            } catch (e) {
+                memory.body = stored;
+            }
+        } else {
+            delete memory.body;
+        }
+    } else if (typeof memory.body === 'string' && memory.body) {
+        stored = normalizeBodyPattern(bodyCodec.decodeBody(memory.body));
+    }
+
+    const pattern = normalizeBodyPattern(stored.length > 0 ? stored : DEFAULT_DISMANTLE_BODY);
     const mode = normalizeBodyMode(memory.bodyMode);
     return {
         body: pattern.length > 0 ? pattern : DEFAULT_DISMANTLE_BODY,
