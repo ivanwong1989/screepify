@@ -1,5 +1,26 @@
 const { getHostilesInRoom, filterOutAllies } = require('managers_admiral_tactics_assault_common_threat');
 
+const WHITELISTED_STRUCTURE_TARGETS = {};
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_TOWER] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_SPAWN] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_EXTENSION] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_STORAGE] = false;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_TERMINAL] = false;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_FACTORY] = false;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_LAB] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_NUKER] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_POWER_SPAWN] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_LINK] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_OBSERVER] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_EXTRACTOR] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_CONTAINER] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_ROAD] = false;
+
+function isWhitelistedStructureTarget(structure) {
+    if (!structure || !structure.structureType) return false;
+    return !!WHITELISTED_STRUCTURE_TARGETS[structure.structureType];
+}
+
 
 function getActiveHealParts(c) {
     return c ? c.getActiveBodyparts(HEAL) : 0;
@@ -168,7 +189,12 @@ function buildSupportActions(creep, leader, target, suppressCombat) {
         const hostiles = getHostilesInRoom(creep.room);
         const structures = filterOutAllies(creep.room.find(FIND_HOSTILE_STRUCTURES) || []);
         const ramparts = structures.filter(s => s && s.structureType === STRUCTURE_RAMPART);
-        const nonWallStructures = structures.filter(s => s && s.structureType !== STRUCTURE_RAMPART && s.structureType !== STRUCTURE_WALL);
+        const nonWallStructures = structures.filter(s =>
+            s &&
+            s.structureType !== STRUCTURE_RAMPART &&
+            s.structureType !== STRUCTURE_WALL &&
+            isWhitelistedStructureTarget(s)
+        );
         const walls = structures.filter(s => s && s.structureType === STRUCTURE_WALL);
 
         if (ramparts.length > 0) {

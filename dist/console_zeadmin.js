@@ -6,7 +6,8 @@ function showHelp() {
         'zeadmin("show")            - show empire overview from heap snapshot',
         'zeadmin("rooms")           - list per-room overview',
         'zeadmin("room", "W1N1")    - show one room snapshot',
-        'zeadmin("balance")         - show latest resource balancing summary'
+        'zeadmin("balance")         - show latest resource balancing summary',
+        'zeadmin("assault")         - show assault lifecycle/watchdog status'
     ];
     for (const line of lines) console.log(line);
     return 'Done';
@@ -155,6 +156,53 @@ function printBalance() {
     return 'Done';
 }
 
+function printAssault(snapshot) {
+    const assault = snapshot.assault || {};
+    const cfg = assault.config || {};
+    const active = Array.isArray(assault.active) ? assault.active : [];
+    const events = Array.isArray(assault.recentEvents) ? assault.recentEvents : [];
+
+    console.log(
+        `ZEADMIN assault tick=${snapshot.tick} active=${active.length} ` +
+        `enabled=${cfg.enabled ? 'yes' : 'no'} abortOnEarlyWipe=${cfg.abortOnEarlyWipe ? 'yes' : 'no'} ` +
+        `earlyWipeTicks=${cfg.earlyWipeTicks || 0}`
+    );
+
+    if (active.length === 0) {
+        console.log('active: (none)');
+    } else {
+        console.log('active:');
+        for (const entry of active) {
+            const missions = Array.isArray(entry.missionNames) ? entry.missionNames.join(',') : '';
+            const flags = Array.isArray(entry.flagNames) ? entry.flagNames.join(',') : '';
+            console.log(
+                `${entry.id} room=${entry.roomName} live=${entry.liveCount || 0} ` +
+                `assembledAt=${entry.assembledAt || 'n/a'} assembledTrusted=${entry.assembledTrusted ? 'yes' : 'no'} age=${entry.age == null ? 'n/a' : entry.age} ` +
+                `lastWipedAt=${entry.lastWipedAt || 'n/a'} wipeAge=${entry.lastWipeAge == null ? 'n/a' : entry.lastWipeAge} ` +
+                `abortedAt=${entry.abortIssuedAt || 'n/a'} mode=${entry.mode || 'n/a'} assaultMode=${entry.assaultMode || 'n/a'} ` +
+                `target=${entry.targetRoom || 'n/a'} missions=[${missions}] flags=[${flags}]`
+            );
+        }
+    }
+
+    if (events.length === 0) {
+        console.log('recentEvents: (none)');
+    } else {
+        console.log('recentEvents:');
+        for (const event of events.slice(-20)) {
+            console.log(
+                `${event.tick} type=${event.type} id=${event.id} room=${event.roomName || 'n/a'} ` +
+                `target=${event.targetRoom || 'n/a'} age=${event.age == null ? 'n/a' : event.age} ` +
+                `${event.reason ? `reason=${event.reason} ` : ''}` +
+                `${event.removedFlags ? `removed=[${event.removedFlags.join(',')}] ` : ''}` +
+                `${event.missingFlags ? `missing=[${event.missingFlags.join(',')}]` : ''}`.trim()
+            );
+        }
+    }
+
+    return 'Done';
+}
+
 module.exports = function registerZeadminConsole() {
     global.zeadmin = function(action, ...args) {
         const cmd = action ? ('' + action).trim().toLowerCase() : 'help';
@@ -167,6 +215,7 @@ module.exports = function registerZeadminConsole() {
         if (cmd === 'rooms' || cmd === 'list' || cmd === 'ls') return printRooms(snapshot);
         if (cmd === 'room') return printRoom(snapshot, args[0]);
         if (cmd === 'balance' || cmd === 'bal') return printBalance();
+        if (cmd === 'assault' || cmd === 'ass' || cmd === 'war') return printAssault(snapshot);
 
         return showHelp();
     };

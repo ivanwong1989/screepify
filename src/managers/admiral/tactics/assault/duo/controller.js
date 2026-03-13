@@ -309,6 +309,42 @@ function decideCombatIntent(runtime, leader, support, target, ao) {
     };
 }
 
+function isSourceKeeperOwned(o) {
+    const owner = o && o.owner;
+    const u = owner && owner.username;
+    return (typeof u === 'string') && (u.toLowerCase() === 'source keeper');
+}
+
+function getBodyPartsCount(creep, type) {
+    if (!creep || !creep.body) return 0;
+    let count = 0;
+    for (let i = 0; i < creep.body.length; i++) {
+        const part = creep.body[i];
+        if (part.type === type && part.hits > 0) count += 1;
+    }
+    return count;
+}
+
+function selectRetreatDefenseTarget(leader, support) {
+    const anchor = leader || support;
+    if (!anchor || !anchor.room) return null;
+
+    const hostilesRaw = threatEval.getHostilesInRoom(anchor.room) || [];
+    const hostiles = hostilesRaw.filter(h => h && !isSourceKeeperOwned(h));
+    if (!hostiles.length) return null;
+
+    const armed = hostiles.filter(h =>
+        getBodyPartsCount(h, ATTACK) > 0 ||
+        getBodyPartsCount(h, RANGED_ATTACK) > 0
+    );
+    if (armed.length > 0) return anchor.pos.findClosestByRange(armed);
+
+    const healers = hostiles.filter(h => getBodyPartsCount(h, HEAL) > 0);
+    if (healers.length > 0) return anchor.pos.findClosestByRange(healers);
+
+    return anchor.pos.findClosestByRange(hostiles);
+}
+
 
 
 
@@ -487,10 +523,13 @@ function planForPair(mission, leaderInput, supportInput, context) {
     const engageActor = leader || support;
 
     // AO-aware target selection (engage.js now filters by AO)
+    const retreatDefenseTarget = runtime.phase === 'RETREAT'
+        ? selectRetreatDefenseTarget(leader, support)
+        : null;
     const target =
         runtime.phase === 'ENGAGE' && engageActor && hasAttackDirective
             ? engage.selectTarget(engageActor, flags, ao)
-            : null;
+            : retreatDefenseTarget;
 
     // If leader is in immediate melee contact, this is handled by tactics/anchor.
 
@@ -580,21 +619,21 @@ function planForPair(mission, leaderInput, supportInput, context) {
     const travelSupportMode = ((runtime.phase !== 'ENGAGE') || !engageInAORoom) ? 'trail' : 'auto';
     const leaderMeleeParts = leader ? leader.getActiveBodyparts(ATTACK) : 0;
     const leaderRangedParts = leader ? leader.getActiveBodyparts(RANGED_ATTACK) : 0;
-    const leaderPureMelee = leaderMeleeParts > 0 && leaderRangedParts <= 0;
-    const leaderMeleePreferred = leaderMeleeParts > 0 && leaderMeleeParts >= leaderRangedParts;
-    const supportHardThreatThreshold = leaderPureMelee
-        ? tunedNumber('supportHardThreatThresholdPureMelee', 254, 20, 254)
-        : (leaderMeleePreferred
-            ? tunedNumber('supportHardThreatThresholdMelee', 75, 20, 254)
-            : tunedNumber('supportHardThreatThreshold', 40, 20, 254));
-    const supportThreatDeltaHard = leaderPureMelee
-        ? tunedNumber('supportThreatDeltaHardPureMelee', 254, 0, 254)
-        : (leaderMeleePreferred
-            ? tunedNumber('supportThreatDeltaHardMelee', 45, 0, 254)
-            : tunedNumber('supportThreatDeltaHard', 25, 0, 254));
-    const supportUnsafeHardThreshold = leaderPureMelee
-        ? tunedNumber('supportUnsafeHardThresholdPureMelee', 254, 20, 254)
+    const leaderHasMelee = leaderMeleeParts > 0;
+    const leaderPureMelee = leaderHasMelee && leaderRangedParts <= 0;
+    const leaderMeleePreferred = leaderHasMelee && leaderMeleeParts >= leaderRangedParts;
+    // For melee-led dives, force support cohesion over threat-avoidance to prevent split/hesitation.
+    const supportHardThreatThreshold = leaderHasMelee
+        ? 254
+        : tunedNumber('supportHardThreatThreshold', 40, 20, 254);
+    const supportThreatDeltaHard = leaderHasMelee
+        ? 254
+        : tunedNumber('supportThreatDeltaHard', 25, 0, 254);
+    const supportUnsafeHardThreshold = leaderHasMelee
+        ? 254
         : tunedNumber('supportUnsafeHardThreshold', 60, 20, 254);
+    const supportThreatWeight = leaderHasMelee ? 0 : undefined;
+    const supportThreatGradientWeight = leaderHasMelee ? 0 : undefined;
 
     const move = duoPlanner.plan({
         leader,
@@ -613,7 +652,9 @@ function planForPair(mission, leaderInput, supportInput, context) {
             // Melee leaders need support to tolerate deeper threat tiles so the duo can
             // maintain cohesion while closing into ATTACK range.
             supportHardThreatThreshold,
-            supportThreatDeltaHard
+            supportThreatDeltaHard,
+            supportThreatWeight,
+            supportThreatGradientWeight
         },
         movement: {
             
@@ -690,7 +731,7 @@ function planForPair(mission, leaderInput, supportInput, context) {
     } else {
         const avoidMelee = !!(target && leader && leader.pos.getRangeTo(target) <= 1);
         runtime.regroup = hasPair ? (move.mode === 'REGROUP' || !move.cohesive) : baseRegroup;
-        const suppressCombat = runtime.phase === 'RETREAT';
+        const suppressCombat = runtime.phase === 'RETREAT' && !retreatDefenseTarget;
         if (leader) {
             leaderTask = actionPlan.planLeader(leader, runtime, target, routeTarget, {
                 suppressCombat

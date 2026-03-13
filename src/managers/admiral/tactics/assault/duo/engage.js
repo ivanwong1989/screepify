@@ -5,6 +5,27 @@ const getHostilesInRoom = threat.getHostilesInRoom;
 const filterOutAllies = threat.filterOutAllies;
 const isAllyOwner = threat.isAllyOwner;
 
+var WHITELISTED_STRUCTURE_TARGETS = {};
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_TOWER] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_SPAWN] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_EXTENSION] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_STORAGE] = false;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_TERMINAL] = false;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_FACTORY] = false;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_LAB] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_NUKER] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_POWER_SPAWN] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_LINK] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_OBSERVER] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_EXTRACTOR] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_CONTAINER] = true;
+WHITELISTED_STRUCTURE_TARGETS[STRUCTURE_ROAD] = false;
+
+function isWhitelistedStructureTarget(structure) {
+    if (!structure || !structure.structureType) return false;
+    return !!WHITELISTED_STRUCTURE_TARGETS[structure.structureType];
+}
+
 function toRoomPos(p) {
     if (!p) return null;
     if (p instanceof RoomPosition) return p;
@@ -135,6 +156,7 @@ function selectTarget(creep, flags, ao) {
             walls.push(s);
             continue;
         }
+        if (!isWhitelistedStructureTarget(s)) continue;
         filteredStructures.push(s);
     }
     hostileStructures = filteredStructures;
