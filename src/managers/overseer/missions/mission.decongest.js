@@ -1,59 +1,56 @@
-function isPassableParkingTile(room, x, y) {
+function tileIndex(x, y) {
+    return (y * 50) + x;
+}
+
+function isPassableParkingTile(terrain, blockedTiles, x, y) {
     if (x < 1 || x > 48 || y < 1 || y > 48) return false;
 
-    const terrain = room.getTerrain().get(x, y);
-    if (terrain === TERRAIN_MASK_WALL) return false;
-
-    const structures = room.lookForAt(LOOK_STRUCTURES, x, y);
-    for (const s of structures) {
-        if (!OBSTACLE_OBJECT_TYPES.includes(s.structureType)) continue;
-        if (s.structureType === STRUCTURE_RAMPART && (s.my || s.isPublic)) continue;
-        return false;
-    }
-
-    const sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y);
-    for (const site of sites) {
-        if (!OBSTACLE_OBJECT_TYPES.includes(site.structureType)) continue;
-        if (site.structureType === STRUCTURE_RAMPART) continue;
-        return false;
-    }
+    if (terrain.get(x, y) === TERRAIN_MASK_WALL) return false;
+    if (blockedTiles.has(tileIndex(x, y))) return false;
 
     return true;
 }
 
-function pushRingSlots(room, center, radius, slots) {
+function pushRingSlots(center, radius, slotMap, terrain, blockedTiles) {
     for (let dx = -radius; dx <= radius; dx++) {
         for (let dy = -radius; dy <= radius; dy++) {
             if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
             const x = center.x + dx;
             const y = center.y + dy;
-            if (!isPassableParkingTile(room, x, y)) continue;
-            slots.push({ x, y, roomName: center.roomName });
+            if (!isPassableParkingTile(terrain, blockedTiles, x, y)) continue;
+            const idx = tileIndex(x, y);
+            if (slotMap.has(idx)) continue;
+            slotMap.set(idx, { x, y, roomName: center.roomName });
         }
     }
 }
 
 function buildParkingSlots(room, flags) {
-    const slots = [];
-    const used = new Set();
+    const terrain = room.getTerrain();
+    const blockedTiles = new Set();
+    const slotMap = new Map();
+
+    const structures = room.find(FIND_STRUCTURES);
+    for (const s of structures) {
+        if (!OBSTACLE_OBJECT_TYPES.includes(s.structureType)) continue;
+        if (s.structureType === STRUCTURE_RAMPART && (s.my || s.isPublic)) continue;
+        blockedTiles.add(tileIndex(s.pos.x, s.pos.y));
+    }
+
+    const sites = room.find(FIND_CONSTRUCTION_SITES);
+    for (const site of sites) {
+        if (!OBSTACLE_OBJECT_TYPES.includes(site.structureType)) continue;
+        if (site.structureType === STRUCTURE_RAMPART) continue;
+        blockedTiles.add(tileIndex(site.pos.x, site.pos.y));
+    }
 
     for (const flag of flags) {
         for (let radius = 1; radius <= 3; radius++) {
-            const before = slots.length;
-            pushRingSlots(room, flag.pos, radius, slots);
-            for (let i = before; i < slots.length; i++) {
-                const p = slots[i];
-                const key = `${p.roomName}:${p.x}:${p.y}`;
-                if (used.has(key)) {
-                    slots[i] = null;
-                    continue;
-                }
-                used.add(key);
-            }
+            pushRingSlots(flag.pos, radius, slotMap, terrain, blockedTiles);
         }
     }
 
-    return slots.filter(Boolean);
+    return Array.from(slotMap.values());
 }
 
 module.exports = {

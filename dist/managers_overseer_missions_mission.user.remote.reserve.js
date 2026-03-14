@@ -3,7 +3,7 @@ const heap = require('utils_heap');
 
 const RESERVER_SEGMENT_COST = 650; // CLAIM + MOVE
 const RESERVER_EFFECTIVE_LIFETIME = 650;
-const RESERVE_TRAVEL_CACHE_TTL = 500;
+const RESERVE_TRAVEL_CACHE_TTL = 10000;
 const RESERVE_SPAWN_QUEUE_BUFFER = 15;
 const RESERVE_SAFETY_BUFFER = 25;
 
@@ -73,8 +73,9 @@ function getReserveTravelEstimate(room, targetPos) {
     }
 
     const distance = Number.isFinite(bestDistance) && bestDistance !== Infinity ? bestDistance : 0;
-    const distanceOnly = { distance, fromSpawnId: bestSpawnId };
-    store[cacheKey] = distanceOnly;
+    if (distance > 0) {
+        store[cacheKey] = { distance, fromSpawnId: bestSpawnId };
+    }
 
     const segments = getReserverSegments(room);
     const bodyLen = segments * 2;
