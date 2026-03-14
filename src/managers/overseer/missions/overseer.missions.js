@@ -17,7 +17,6 @@ const missionModules = {
     build: require('managers_overseer_missions_mission.build'),
     repair: require('managers_overseer_missions_mission.repair'),
     decongest: require('managers_overseer_missions_mission.decongest'),
-    userDismantle: require('managers_overseer_missions_mission.user.dismantle'),
     userTransfer: require('managers_overseer_missions_mission.user.transfer'),
     idleUpgrade: require('managers_overseer_missions_mission.idleUpgrade')
 };
@@ -109,7 +108,6 @@ const overseerMissions = {
         missionModules.upgrade.generate(room, intel, context, missions);
         missionModules.build.generate(room, intel, context, missions);
         missionModules.decongest.generate(room, intel, context, missions);
-        missionModules.userDismantle.generate(room, intel, context, missions);
         missionModules.userTransfer.generate(room, intel, context, missions);
         missionModules.idleUpgrade.generate(room, intel, context, missions);
 
