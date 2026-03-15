@@ -1,5 +1,19 @@
 const bodyCodec = require('utils_bodyCodec');
 
+function getTicketSpawnTier(ticket) {
+    const role = ticket && ticket.role ? String(ticket.role) : '';
+    const targetRoom = ticket && ticket.targetRoom ? ticket.targetRoom : null;
+    const homeRoom = ticket && ticket.homeRoom ? ticket.homeRoom : null;
+
+    if (role === 'miner' || role === 'hauler') return 0; // local economy core
+
+    const remoteByRole = role.indexOf('remote_') === 0;
+    const remoteByTarget = !!(targetRoom && homeRoom && targetRoom !== homeRoom);
+    if (remoteByRole || remoteByTarget) return 2; // remote tickets always last
+
+    return 1; // local non-core
+}
+
 module.exports = {
     run: function(allTickets) {
         if (!allTickets || allTickets.length === 0) return;
@@ -8,8 +22,20 @@ module.exports = {
         spawnDistanceCache.enqueueMissingPairs();
         spawnDistanceCache.processQueue({ maxPairsPerTick: 2 });
 
-        // 1. Sort tickets by priority
-        allTickets.sort((a, b) => b.priority - a.priority);
+        // 1. Sort tickets by local-first tier, then priority.
+        allTickets.sort((a, b) => {
+            const tierA = getTicketSpawnTier(a);
+            const tierB = getTicketSpawnTier(b);
+            if (tierA !== tierB) return tierA - tierB;
+
+            const prioA = Number.isFinite(a && a.priority) ? a.priority : 0;
+            const prioB = Number.isFinite(b && b.priority) ? b.priority : 0;
+            if (prioA !== prioB) return prioB - prioA;
+
+            const idA = a && a.ticketId ? String(a.ticketId) : '';
+            const idB = b && b.ticketId ? String(b.ticketId) : '';
+            return idA.localeCompare(idB);
+        });
         debug('spawner', `[GlobalSpawner] tickets=${allTickets.length}`);
 
         // 2. Index available spawns

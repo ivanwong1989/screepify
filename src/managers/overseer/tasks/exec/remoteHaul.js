@@ -106,6 +106,58 @@ module.exports = function execRemoteHaulTask(ctx) {
         return null;
     };
 
+    const findFallbackDropoff = () => {
+        const sinks = [];
+        if (creep.room.storage && creep.room.storage.store && creep.room.storage.store.getFreeCapacity(resourceType) > 0) {
+            sinks.push(creep.room.storage);
+        }
+        if (creep.room.terminal && creep.room.terminal.store && creep.room.terminal.store.getFreeCapacity(resourceType) > 0) {
+            sinks.push(creep.room.terminal);
+        }
+        const roomCache = global.getRoomCache(creep.room);
+        const mySpawns = roomCache.myStructuresByType[STRUCTURE_SPAWN] || [];
+        const myExts = roomCache.myStructuresByType[STRUCTURE_EXTENSION] || [];
+        const myTowers = roomCache.myStructuresByType[STRUCTURE_TOWER] || [];
+        for (let i = 0; i < mySpawns.length; i++) {
+            const s = mySpawns[i];
+            if (s && s.store && s.store.getFreeCapacity(resourceType) > 0) sinks.push(s);
+        }
+        for (let i = 0; i < myExts.length; i++) {
+            const s = myExts[i];
+            if (s && s.store && s.store.getFreeCapacity(resourceType) > 0) sinks.push(s);
+        }
+        for (let i = 0; i < myTowers.length; i++) {
+            const s = myTowers[i];
+            if (s && s.store && s.store.getFreeCapacity(resourceType) > 0) sinks.push(s);
+        }
+
+        const containers = creep.room.find(FIND_STRUCTURES, {
+            filter: s => s && s.structureType === STRUCTURE_CONTAINER && s.store && s.store.getFreeCapacity(resourceType) > 0
+        });
+        for (let i = 0; i < containers.length; i++) sinks.push(containers[i]);
+        if (sinks.length <= 0) return null;
+        return creep.pos.findClosestByRange(sinks);
+    };
+
+    const findPickupByPosition = () => {
+        if (!pickupPos || creep.room.name !== pickupPos.roomName) return null;
+        const structs = creep.room.lookForAtArea(
+            LOOK_STRUCTURES,
+            Math.max(0, pickupPos.y - 1),
+            Math.max(0, pickupPos.x - 1),
+            Math.min(49, pickupPos.y + 1),
+            Math.min(49, pickupPos.x + 1),
+            true
+        );
+        for (let i = 0; i < structs.length; i++) {
+            const s = structs[i] && structs[i].structure;
+            if (!s || !s.store) continue;
+            if ((s.store[resourceType] || 0) <= 0) continue;
+            return s;
+        }
+        return null;
+    };
+
     helpers.updateState(creep, resourceType, { requireFull: true });
 
     if (st._lastTaskState !== creep.memory.taskState) {
@@ -144,11 +196,23 @@ module.exports = function execRemoteHaulTask(ctx) {
 
         if (target) {
             if (target.store && target.store.getFreeCapacity(resourceType) === 0) {
+                const fallback = findFallbackDropoff();
+                if (fallback) {
+                    logOnce(`dropoff-fallback:${fallback.id}`, `dropoff fallback -> ${fallback.id} res=${resourceType}`);
+                    return { type: 'transfer', targetId: fallback.id, resourceType: resourceType };
+                }
                 logOnce(`dropoff-full:${target.id}`, `dropoff full target=${target.id}`);
                 return { type: 'move', targetId: target.id, range: 1, meta: moveMeta({ dir: 'toDropoff' }) };
             }
             logOnce(`transfer:${target.id}`, `transfer -> ${target.id} res=${resourceType}`);
             return { type: 'transfer', targetId: target.id, resourceType: resourceType };
+        }
+        {
+            const fallback = findFallbackDropoff();
+            if (fallback) {
+                logOnce(`dropoff-fallback:${fallback.id}`, `dropoff fallback -> ${fallback.id} res=${resourceType}`);
+                return { type: 'transfer', targetId: fallback.id, resourceType: resourceType };
+            }
         }
         logOnce('no-dropoff', 'no dropoff target');
         return null;
@@ -175,6 +239,11 @@ module.exports = function execRemoteHaulTask(ctx) {
         logOnce(`withdraw:${pickup.id}`, `withdraw -> ${pickup.id} res=${resourceType}`);
         return { type: 'withdraw', targetId: pickup.id, resourceType: resourceType };
     }
+    const pickupFallback = findPickupByPosition();
+    if (pickupFallback) {
+        logOnce(`withdraw:fallback:${pickupFallback.id}`, `withdraw fallback -> ${pickupFallback.id} res=${resourceType}`);
+        return { type: 'withdraw', targetId: pickupFallback.id, resourceType: resourceType };
+    }
 
     const inPickupArea = (pos) => {
         if (!pos) return false;
@@ -184,7 +253,7 @@ module.exports = function execRemoteHaulTask(ctx) {
 
     const cache = global.getRoomCache(creep.room);
     const tombstone = creep.pos.findClosestByRange(cache.tombstones || [], {
-        filter: t => t.store && (t.store[resourceType] || 0) > 50 && inPickupArea(t.pos)
+        filter: t => t.store && (t.store[resourceType] || 0) > 0 && inPickupArea(t.pos)
     });
     if (tombstone) {
         logOnce(`withdraw:tomb:${tombstone.id}`, `withdraw tombstone -> ${tombstone.id} res=${resourceType}`);
@@ -193,7 +262,7 @@ module.exports = function execRemoteHaulTask(ctx) {
 
     const dropped = creep.pos.findClosestByRange(cache.dropped || [], {
         filter: r => {
-            if (r.resourceType !== resourceType || r.amount <= 50) return false;
+            if (r.resourceType !== resourceType || r.amount <= 0) return false;
             return inPickupArea(r.pos);
         }
     });

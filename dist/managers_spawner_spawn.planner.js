@@ -2,6 +2,28 @@ const bodyCodec = require('utils_bodyCodec');
 
 const DEFAULT_REQUEST_TTL = 10;
 
+function isRemoteContract(entry) {
+    const contract = entry && entry.contract ? entry.contract : null;
+    const mission = entry && entry.mission ? entry.mission : null;
+    const role = contract && contract.role ? String(contract.role) : '';
+    const missionType = mission && mission.type ? String(mission.type).toLowerCase() : '';
+    const targetRoom = mission && mission.data && mission.data.targetRoom ? mission.data.targetRoom : null;
+    const homeRoom = contract && contract.homeRoom ? contract.homeRoom : null;
+
+    if (role.indexOf('remote_') === 0) return true;
+    if (missionType.indexOf('remote') !== -1) return true;
+    if (targetRoom && homeRoom && targetRoom !== homeRoom) return true;
+    return false;
+}
+
+function getContractSpawnTier(entry) {
+    const contract = entry && entry.contract ? entry.contract : null;
+    const role = contract && contract.role ? String(contract.role) : '';
+    if (role === 'miner' || role === 'hauler') return 0; // local economy core
+    if (isRemoteContract(entry)) return 2; // remote always after local needs
+    return 1; // local non-core (workers, builders, upgraders, etc.)
+}
+
 const spawnPlanner = {
     plan: function(room, contractEntries, fulfillment, options) {
         if (!contractEntries || contractEntries.length === 0) return null;
@@ -10,7 +32,17 @@ const spawnPlanner = {
             return count < entry.contract.desired;
         });
 
-        unmet.sort((a, b) => (b.contract.priority || 0) - (a.contract.priority || 0));
+        unmet.sort((a, b) => {
+            const tierA = getContractSpawnTier(a);
+            const tierB = getContractSpawnTier(b);
+            if (tierA !== tierB) return tierA - tierB;
+            const prioA = a && a.contract && Number.isFinite(a.contract.priority) ? a.contract.priority : 0;
+            const prioB = b && b.contract && Number.isFinite(b.contract.priority) ? b.contract.priority : 0;
+            if (prioA !== prioB) return prioB - prioA;
+            const idA = a && a.contract && a.contract.contractId ? String(a.contract.contractId) : '';
+            const idB = b && b.contract && b.contract.contractId ? String(b.contract.contractId) : '';
+            return idA.localeCompare(idB);
+        });
 
         if (unmet.length > 0) {
             debug('spawner', `[Spawner] Contracts unmet: ${unmet.map(e => e.contract.contractId).join(', ')}`);

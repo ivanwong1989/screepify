@@ -46,6 +46,19 @@ const execScoutTask = profRequire('managers_overseer_tasks_exec_scout', 'tasks.e
  * @property {Object=} meta
  */
 var managerTasks = {
+    shouldDebugLogisticsSupply: function() {
+        return !!(Memory && Memory.debugLogisticsSupply === true);
+    },
+
+    isSupplyExtensionOrSpawnMission: function(mission) {
+        if (!mission || mission.type !== 'transfer') return false;
+        if (!mission.data || mission.data.mode !== 'supply') return false;
+        if (!mission.targetId) return false;
+        const target = Game.getObjectById(mission.targetId);
+        if (!target) return false;
+        return target.structureType === STRUCTURE_EXTENSION || target.structureType === STRUCTURE_SPAWN;
+    },
+
     getMissionNeeds: function(mission) {
         // Cache on the mission object for this tick only.
         if (mission && mission._needsTick === Game.time && mission._needs) return mission._needs;
@@ -334,6 +347,16 @@ var managerTasks = {
             if (bestMission) {
                 creep.memory.missionName = bestMission.name;
                 creep.memory.taskState = 'init'; // Initialize state
+                if (this.shouldDebugLogisticsSupply() && creep.memory.role === 'hauler' && this.isSupplyExtensionOrSpawnMission(bestMission)) {
+                    const target = bestMission.targetId ? Game.getObjectById(bestMission.targetId) : null;
+                    const free = target && target.store && typeof target.store.getFreeCapacity === 'function'
+                        ? target.store.getFreeCapacity(RESOURCE_ENERGY)
+                        : null;
+                    console.log(
+                        `[LogisticsSupply][Assign] tick=${Game.time} creep=${creep.name} mission=${bestMission.name}` +
+                        ` target=${bestMission.targetId} type=${target && target.structureType ? target.structureType : '-'} free=${free !== null ? free : '-'}`
+                    );
+                }
                 if (bestMission.type === 'remote_haul' && creep.memory.role === 'remote_hauler') {
                     const missionContractId = this.getMissionContractId(
                         creep.memory.room,
@@ -359,6 +382,10 @@ var managerTasks = {
 
                 //creep.say(bestMission.type);
                 if (creep.memory.idleTicks) delete creep.memory.idleTicks;
+            } else if (this.shouldDebugLogisticsSupply() && creep.memory.role === 'hauler') {
+                console.log(
+                    `[LogisticsSupply][Assign] tick=${Game.time} creep=${creep.name} no_mission energy=${creep.store[RESOURCE_ENERGY] || 0} room=${creep.room && creep.room.name ? creep.room.name : '-'}`
+                );
             }
         });
 

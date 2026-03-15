@@ -45,27 +45,15 @@ profiler.registerObject(require('managers_overseer_intel_overseer.resourceLedger
 profiler.registerObject(require('managers_overseer_missions_overseer.missions'), 'overseer.missions');
 profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'overseer.utils');
 
-profiler.registerObject(require('managers_overseer_missions_mission.tower'), 'mission.tower');
-profiler.registerObject(require('managers_overseer_missions_mission.scout'), 'mission.scout');
-profiler.registerObject(require('managers_overseer_missions_mission.remote.build'), 'mission.remote.build');
-profiler.registerObject(require('managers_overseer_missions_mission.remote.repair'), 'mission.remote.repair');
-profiler.registerObject(require('managers_overseer_missions_mission.remote.harvest'), 'mission.remote.harvest');
-profiler.registerObject(require('managers_overseer_missions_mission.remote.haul'), 'mission.remote.haul');
-profiler.registerObject(require('managers_overseer_missions_mission.user.remote.reserve'), 'mission.user.remote.reserve');
-profiler.registerObject(require('managers_overseer_missions_mission.user.remote.claim'), 'mission.user.remote.claim');
-profiler.registerObject(require('managers_overseer_missions_mission.user.remote.move2flag'), 'mission.user.remote.move2flag');
-profiler.registerObject(require('managers_overseer_missions_mission.harvest'), 'mission.harvest');
-profiler.registerObject(require('managers_overseer_missions_mission.mineral'), 'mission.mineral');
-profiler.registerObject(require('managers_overseer_missions_mission.fleet_logistic'), 'mission.fleetLogistic');
-profiler.registerObject(require('managers_overseer_missions_mission.logistics'), 'mission.logistics');
-profiler.registerObject(require('managers_overseer_missions_mission.labs'), 'mission.labs');
-profiler.registerObject(require('managers_overseer_missions_mission.upgrade'), 'mission.upgrade');
-profiler.registerObject(require('managers_overseer_missions_mission.build'), 'mission.build');
-profiler.registerObject(require('managers_overseer_missions_mission.repair'), 'mission.repair');
-profiler.registerObject(require('managers_overseer_missions_mission.decongest'), 'mission.decongest');
-profiler.registerObject(require('managers_overseer_missions_mission.user.dismantle'), 'mission.user.dismantle');
-profiler.registerObject(require('managers_overseer_missions_mission.user.transfer'), 'mission.user.transfer');
-profiler.registerObject(require('managers_overseer_missions_mission.idleUpgrade'), 'mission.idleUpgrade');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.tower'), 'mission.tower');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.remote.build'), 'mission.remote.build');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.remote.repair'), 'mission.remote.repair');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.remote.reserve'), 'mission.user.remote.reserve');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.remote.claim'), 'mission.user.remote.claim');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.remote.move2flag'), 'mission.user.remote.move2flag');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.labs'), 'mission.labs');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.dismantle'), 'mission.user.dismantle');
+profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.transfer'), 'mission.user.transfer');
 */
 
 

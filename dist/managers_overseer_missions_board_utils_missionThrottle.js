@@ -1,0 +1,95 @@
+const missionStates = require('managers_overseer_missions_board_missionStates');
+
+function hashString(str) {
+    const text = String(str || '');
+    let h = 0;
+    for (let i = 0; i < text.length; i++) {
+        h = ((h << 5) - h) + text.charCodeAt(i);
+        h |= 0;
+    }
+    return Math.abs(h);
+}
+
+function shouldRunEvery(interval, offset, tick) {
+    const runInterval = Math.max(1, Number(interval) || 1);
+    const t = Number.isFinite(tick) ? tick : Game.time;
+    return (t + (offset || 0)) % runInterval === 0;
+}
+
+function getDetectorInterval(type) {
+    switch (type) {
+        case 'harvest': return 61;
+        case 'build': return 17;
+        case 'repair': return 17;
+        case 'pickup': return 11;
+        case 'logistics': return 9;
+        case 'logisticsFleet': return 13;
+        case 'remoteHarvest': return 47;
+        case 'remoteHaul': return 37;
+        case 'scout': return 41;
+        case 'mineral': return 61;
+        case 'decongest': return 29;
+        case 'tower': return 1;
+        case 'towerPassive': return 7;
+        case 'remoteBuild': return 17;
+        case 'remoteRepair': return 23;
+        case 'userRemoteReserve': return 7;
+        case 'userRemoteClaim': return 11;
+        case 'userRemoteMove2Flag': return 7;
+        case 'labs': return 5;
+        case 'userDismantle': return 7;
+        case 'userTransfer': return 5;
+        case 'reserve': return 73;
+        case 'upgrade': return 13;
+        default: return 31;
+    }
+}
+
+function shouldRunDetector(type, roomName, tick) {
+    const interval = getDetectorInterval(type);
+    const offset = hashString(`${type}:${roomName}`) % interval;
+    return shouldRunEvery(interval, offset, tick);
+}
+
+function getMissionUpdateInterval(mission) {
+    if (!mission) return 11;
+    if ((mission.priority || 0) >= 150) return 1;
+    if (mission.class === 'service') {
+        if (mission.type === 'harvest') return 21;
+        if (mission.type === 'reserve') return 47;
+        if (mission.type === 'upgrade') return 11;
+        if (mission.type === 'towerManaged') return 3;
+        if (mission.type === 'logisticsLane') return 9;
+        if (mission.type === 'logisticsFleet') return 13;
+        if (mission.type === 'remoteHarvest') return 53;
+        if (mission.type === 'remoteHaul') return 31;
+        if (mission.type === 'scout') return 37;
+        if (mission.type === 'mineral') return 61;
+        if (mission.type === 'decongest') return 29;
+        return 31;
+    }
+    if (mission.class === 'finite') {
+        if (mission.type === 'logisticsJob') return 5;
+        return 9;
+    }
+    return 15;
+}
+
+function shouldCheckMission(mission, tick) {
+    if (!mission || missionStates.TERMINAL_STATES.has(mission.state)) return false;
+    // Finite missions represent short-lived contracts and should reconcile every tick
+    // so completion/cancellation is reflected immediately.
+    if (mission.class === 'finite') return true;
+    const now = Number.isFinite(tick) ? tick : Game.time;
+    const interval = getMissionUpdateInterval(mission);
+    if (!Number.isFinite(mission.lastCheckedTick) || mission.lastCheckedTick <= 0) return true;
+    return (now - mission.lastCheckedTick) >= interval;
+}
+
+module.exports = {
+    shouldRunEvery,
+    getMissionUpdateInterval,
+    shouldCheckMission,
+    shouldRunDetector
+};
+

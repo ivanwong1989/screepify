@@ -3,7 +3,7 @@
 // Scout-backed remote context.
 // Reads from: room.memory.overseer.scout (new format from overseer.scout.js)
 // Removes: old remote memory tree + "must be reserved by me" gating.
-// Enables by default for non-hostile rooms, gated by RCL2.
+// Enables by default for non-hostile rooms, with RCL3+ room-count gating.
 const HOSTILE_GATE_TICKS = 7200; // ~6h at ~3s/tick
 const DEFENSE_PRESENCE_ROLES = Object.freeze({
     defender: true,
@@ -192,24 +192,77 @@ function getRemoteContext(room, options = {}) {
     const roomEnabled = scoutMem.enabled !== false;
     const stateOk = opState !== 'EMERGENCY';
 
-    // RCL2 gate (your rule: start remote drop mining as soon as RCL2)
+    // RCL-gated remote room cap:
+    // RCL < 3: disabled
+    // RCL 3: 1 room
+    // RCL 4: 2 rooms
+    // RCL 5: 3 rooms
+    // RCL >= 6: 4 rooms (hard cap)
     const rcl = room.controller ? room.controller.level : 0;
-    const rclOk = rcl >= 2;
+    //const maxRemoteRooms = (rcl < 3) ? 0 : Math.min(4, rcl - 2);
+    const maxRemoteRooms = 1;
+    const rclOk = maxRemoteRooms > 0;
 
     const skipRooms = new Set(scoutMem.skipRooms || []);
     const roomsMem = scoutMem.rooms || {};
+    const baseEnabled = !!(globalEnabled && roomEnabled && stateOk && rclOk);
+    const candidates = [];
 
     for (const name of Object.keys(roomsMem)) {
         if (skipRooms.has(name)) continue;
 
         const entry = roomsMem[name];
         const eligible = isRoomEligibleFromScoutEntry(entry, maxScoutAge, name);
-
-        const enabled = !!(globalEnabled && roomEnabled && stateOk && rclOk && eligible);
-        entries.push({
+        candidates.push({
             name,
             entry,
-            room: Game.rooms[name] || null, // may be null if not visible
+            room: Game.rooms[name] || null,
+            eligible
+        });
+    }
+
+    let enabledNames = null;
+    if (baseEnabled) {
+        const rankedEligible = candidates.filter(c => c.eligible);
+        rankedEligible.sort((a, b) => {
+            const distA = Game.map.getRoomLinearDistance(room.name, a.name);
+            const distB = Game.map.getRoomLinearDistance(room.name, b.name);
+            if (distA !== distB) return distA - distB;
+            return a.name.localeCompare(b.name);
+        });
+
+        // Keep previously enabled rooms sticky when still eligible to avoid flip-flopping
+        // between equal-distance candidates at the same RCL cap.
+        const prevEntries = room._remoteContext && Array.isArray(room._remoteContext.entries)
+            ? room._remoteContext.entries
+            : [];
+        const prevEnabled = new Set(
+            prevEntries
+                .filter(e => e && e.enabled && e.name)
+                .map(e => e.name)
+        );
+
+        const chosen = [];
+        for (let i = 0; i < rankedEligible.length && chosen.length < maxRemoteRooms; i++) {
+            const c = rankedEligible[i];
+            if (!prevEnabled.has(c.name)) continue;
+            chosen.push(c.name);
+        }
+        for (let i = 0; i < rankedEligible.length && chosen.length < maxRemoteRooms; i++) {
+            const c = rankedEligible[i];
+            if (chosen.indexOf(c.name) !== -1) continue;
+            chosen.push(c.name);
+        }
+        enabledNames = new Set(chosen);
+    }
+
+    for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i];
+        const enabled = !!(baseEnabled && candidate.eligible && enabledNames && enabledNames.has(candidate.name));
+        entries.push({
+            name: candidate.name,
+            entry: candidate.entry,
+            room: candidate.room, // may be null if not visible
             enabled
         });
     }

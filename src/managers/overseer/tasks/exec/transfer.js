@@ -8,11 +8,28 @@ module.exports = function execTransferTask(ctx) {
     const allowPartial = !!(mission.data && mission.data.allowPartial);
     const EMPTY_SOURCE_TIMEOUT = 20;
     const previousState = creep.memory.taskState;
-    const debug = !!(mission.data && mission.data.debug) || (Memory.debugTransfer === true);
+    const targetForDebug = mission && mission.targetId ? Game.getObjectById(mission.targetId) : null;
+    const isExtensionOrSpawnSupply = !!(
+        isSupply &&
+        targetForDebug &&
+        (targetForDebug.structureType === STRUCTURE_EXTENSION || targetForDebug.structureType === STRUCTURE_SPAWN)
+    );
+    const debug = !!(mission.data && mission.data.debug) || (Memory.debugTransfer === true) ||
+        ((Memory && Memory.debugLogisticsSupply === true) && creep.memory && creep.memory.role === 'hauler' && isExtensionOrSpawnSupply);
     const log = (msg) => {
         if (!debug) return;
         console.log(`[Transfer:${creep.name}] ${msg}`);
     };
+    if (debug) {
+        const free = targetForDebug && targetForDebug.store && typeof targetForDebug.store.getFreeCapacity === 'function'
+            ? targetForDebug.store.getFreeCapacity(resourceType)
+            : null;
+        log(
+            `tick=${Game.time} mission=${mission && mission.name ? mission.name : '-'} mode=${isSupply ? 'supply' : 'haul'} state=${creep.memory.taskState || '-'} ` +
+            `carry=${creep.store.getUsedCapacity(resourceType) || 0} freeCarry=${creep.store.getFreeCapacity(resourceType) || 0} ` +
+            `target=${mission.targetId || '-'} targetFree=${free !== null ? free : '-'}`
+        );
+    }
 
     const fmtN = (v) => (v === undefined || v === null) ? '-' : String(v);
     const fmtTask = (t) => {
@@ -263,6 +280,7 @@ const findOtherDumpTarget = (type) => {
                 log(`abort target full ${resourceType} ${target.id}`);
                 delete creep.memory.missionName;
                 delete creep.memory.taskState;
+                delete creep.memory.task;
                 return null;
             }
             const hint = getAmountHint();
@@ -286,12 +304,14 @@ const findOtherDumpTarget = (type) => {
             log(`abort no target for non-energy ${resourceType}`);
             delete creep.memory.missionName;
             delete creep.memory.taskState;
+            delete creep.memory.task;
             return null;
         }
 
         log(`abort no target (energy)`);
         delete creep.memory.missionName;
         delete creep.memory.taskState;
+        delete creep.memory.task;
         return null;
     }
 
@@ -320,6 +340,7 @@ const findOtherDumpTarget = (type) => {
                 log(`abort withdraw amountHint=0 for ${resourceType}`);
                 delete creep.memory.missionName;
                 delete creep.memory.taskState;
+                delete creep.memory.task;
                 return null;
             }
             return (amt !== null)
@@ -334,6 +355,7 @@ const findOtherDumpTarget = (type) => {
         log(`abort source empty ${resourceType} sourceId=${mission.data && mission.data.sourceId}`);
         delete creep.memory.missionName;
         delete creep.memory.taskState;
+        delete creep.memory.task;
         return null;
     }
 
@@ -378,6 +400,7 @@ const findOtherDumpTarget = (type) => {
                     log(`abort withdraw amountHint=0 for ${resourceType}`);
                     delete creep.memory.missionName;
                     delete creep.memory.taskState;
+                    delete creep.memory.task;
                     return null;
                 }
 
@@ -390,6 +413,7 @@ const findOtherDumpTarget = (type) => {
         log(`abort no source for non-energy ${resourceType}`);
         delete creep.memory.missionName;
         delete creep.memory.taskState;
+        delete creep.memory.task;
         return null;
     }
 
@@ -498,5 +522,6 @@ if (task) {
     log(`abort no task`);
     delete creep.memory.missionName;
     delete creep.memory.taskState;
+    delete creep.memory.task;
     return null;
 };

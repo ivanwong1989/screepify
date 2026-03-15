@@ -1,30 +1,7 @@
-const missionModules = {
-    tower: require('managers_overseer_missions_mission.tower'),
-    scout: require('managers_overseer_missions_mission.scout'),
-    remoteBuild: require('managers_overseer_missions_mission.remote.build'),
-    remoteRepair: require('managers_overseer_missions_mission.remote.repair'),
-    remoteHarvest: require('managers_overseer_missions_mission.remote.harvest'),
-    remoteHaul: require('managers_overseer_missions_mission.remote.haul'),
-    userRemoteReserve: require('managers_overseer_missions_mission.user.remote.reserve'),
-    userRemoteClaim: require('managers_overseer_missions_mission.user.remote.claim'),
-    userRemoteMove2Flag: require('managers_overseer_missions_mission.user.remote.move2flag'),
-    harvest: require('managers_overseer_missions_mission.harvest'),
-    mineral: require('managers_overseer_missions_mission.mineral'),
-    fleetLogistic: require('managers_overseer_missions_mission.fleet_logistic'),
-    logistics: require('managers_overseer_missions_mission.logistics'),
-    labs: require('managers_overseer_missions_mission.labs'),
-    upgrade: require('managers_overseer_missions_mission.upgrade'),
-    build: require('managers_overseer_missions_mission.build'),
-    repair: require('managers_overseer_missions_mission.repair'),
-    decongest: require('managers_overseer_missions_mission.decongest'),
-    userDismantle: require('managers_overseer_missions_mission.user.dismantle'),
-    userTransfer: require('managers_overseer_missions_mission.user.transfer'),
-    idleUpgrade: require('managers_overseer_missions_mission.idleUpgrade')
-};
+const missionBoard = require('managers_overseer_missions_board_missionBoard');
 
 const overseerMissions = {
     generate: function(room, intel, opState, economyState, censusCreeps) {
-        const missions = [];
         let budget = intel.energyCapacityAvailable;
         if (opState === 'EMERGENCY') budget = Math.max(intel.energyAvailable, 300);
 
@@ -90,31 +67,55 @@ const overseerMissions = {
         const economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || null;
         const context = { opState, economyState, budget, getMissionCensus, efficientSources, economyFlow };
 
-        // Run all mission generators
-        missionModules.tower.generate(room, intel, context, missions);
-        missionModules.scout.generate(room, intel, context, missions);
-        missionModules.remoteBuild.generate(room, intel, context, missions);
-        //missionModules.remoteRepair.generate(room, intel, context, missions);
-        missionModules.remoteHarvest.generate(room, intel, context, missions);
-        missionModules.remoteHaul.generate(room, intel, context, missions);
-        missionModules.userRemoteReserve.generate(room, intel, context, missions);
-        missionModules.userRemoteClaim.generate(room, intel, context, missions);
-        missionModules.userRemoteMove2Flag.generate(room, intel, context, missions);
-        missionModules.harvest.generate(room, intel, context, missions);
-        missionModules.mineral.generate(room, intel, context, missions);
-        missionModules.fleetLogistic.generate(room, intel, context, missions);
-        missionModules.logistics.generate(room, intel, context, missions);
-        missionModules.labs.generate(room, intel, context, missions);
-        missionModules.repair.generate(room, intel, context, missions);
-        missionModules.upgrade.generate(room, intel, context, missions);
-        missionModules.build.generate(room, intel, context, missions);
-        missionModules.decongest.generate(room, intel, context, missions);
-        missionModules.userDismantle.generate(room, intel, context, missions);
-        missionModules.userTransfer.generate(room, intel, context, missions);
-        missionModules.idleUpgrade.generate(room, intel, context, missions);
+        // Run persistent mission board updates/detectors first.
+        missionBoard.runRoom(room, { intel, context });
 
-        return missions;
+        // Bridge board missions into mission contracts consumed by task assignment.
+        const boardHarvestMissions = missionBoard.getMissionContractsForRoom(room.name, 'harvest');
+        const boardBuildMissions = missionBoard.getMissionContractsForRoom(room.name, 'build');
+        const boardRepairMissions = missionBoard.getMissionContractsForRoom(room.name, 'repair');
+        const boardUpgradeMissions = missionBoard.getMissionContractsForRoom(room.name, 'upgrade');
+        const boardLogisticsLane = missionBoard.getMissionContractsForRoom(room.name, 'logisticsLane');
+        const boardLogisticsJob = missionBoard.getMissionContractsForRoom(room.name, 'logisticsJob');
+        const boardLogisticsFleet = missionBoard.getMissionContractsForRoom(room.name, 'logisticsFleet');
+        const boardRemoteHarvest = missionBoard.getMissionContractsForRoom(room.name, 'remoteHarvest');
+        const boardRemoteHaul = missionBoard.getMissionContractsForRoom(room.name, 'remoteHaul');
+        const boardScout = missionBoard.getMissionContractsForRoom(room.name, 'scout');
+        const boardMineral = missionBoard.getMissionContractsForRoom(room.name, 'mineral');
+        const boardDecongest = missionBoard.getMissionContractsForRoom(room.name, 'decongest');
+        const boardContractMissions = missionBoard.getMissionContractsForRoom(room.name, 'contract');
+        const boardTowerManaged = missionBoard.getMissionContractsForRoom(room.name, 'towerManaged');
+        const boardLabsManaged = missionBoard.getMissionContractsForRoom(room.name, 'labsManaged');
+        const boardRemoteBuildManaged = missionBoard.getMissionContractsForRoom(room.name, 'remoteBuildManaged');
+        const boardUserTransfer = missionBoard.getMissionContractsForRoom(room.name, 'userTransfer');
+        const boardUserMove2Flag = missionBoard.getMissionContractsForRoom(room.name, 'userRemoteMove2Flag');
+        const boardUserReserve = missionBoard.getMissionContractsForRoom(room.name, 'userRemoteReserve');
+        const boardUserClaim = missionBoard.getMissionContractsForRoom(room.name, 'userRemoteClaim');
+        const boardUserDismantle = missionBoard.getMissionContractsForRoom(room.name, 'userDismantle');
+
+        return (boardContractMissions || [])
+            .concat(boardTowerManaged || [])
+            .concat(boardLabsManaged || [])
+            .concat(boardRemoteBuildManaged || [])
+            .concat(boardHarvestMissions || [])
+            .concat(boardBuildMissions || [])
+            .concat(boardRepairMissions || [])
+            .concat(boardUpgradeMissions || [])
+            .concat(boardLogisticsLane || [])
+            .concat(boardLogisticsJob || [])
+            .concat(boardLogisticsFleet || [])
+            .concat(boardRemoteHarvest || [])
+            .concat(boardRemoteHaul || [])
+            .concat(boardScout || [])
+            .concat(boardMineral || [])
+            .concat(boardDecongest || [])
+            .concat(boardUserTransfer || [])
+            .concat(boardUserMove2Flag || [])
+            .concat(boardUserReserve || [])
+            .concat(boardUserClaim || [])
+            .concat(boardUserDismantle || []);
     }
 };
 
 module.exports = overseerMissions;
+

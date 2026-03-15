@@ -1,0 +1,55 @@
+const missionRegistry = require('managers_overseer_missions_board_missionRegistry');
+const missionHarvest = require('managers_overseer_missions_board_types_mission.harvest');
+const missionBuild = require('managers_overseer_missions_board_types_mission.build');
+const missionRepair = require('managers_overseer_missions_board_types_mission.repair');
+const missionUpgrade = require('managers_overseer_missions_board_types_mission.upgrade');
+const missionLogisticsLane = require('managers_overseer_missions_board_types_mission.logisticsLane');
+const missionLogisticsJob = require('managers_overseer_missions_board_types_mission.logisticsJob');
+const missionLogisticsFleet = require('managers_overseer_missions_board_types_mission.logisticsFleet');
+const missionRemoteHarvest = require('managers_overseer_missions_board_types_mission.remoteHarvest');
+const missionRemoteHaul = require('managers_overseer_missions_board_types_mission.remoteHaul');
+const missionScout = require('managers_overseer_missions_board_types_mission.scout');
+const missionMineral = require('managers_overseer_missions_board_types_mission.mineral');
+const missionDecongest = require('managers_overseer_missions_board_types_mission.decongest');
+const missionContract = require('managers_overseer_missions_board_types_mission.contract');
+const missionUserTransfer = require('managers_overseer_missions_board_types_mission.userTransfer');
+const missionUserRemoteMove2Flag = require('managers_overseer_missions_board_types_mission.userRemoteMove2Flag');
+const missionUserRemoteReserve = require('managers_overseer_missions_board_types_mission.userRemoteReserve');
+const missionUserRemoteClaim = require('managers_overseer_missions_board_types_mission.userRemoteClaim');
+const missionUserDismantle = require('managers_overseer_missions_board_types_mission.userDismantle');
+const missionTowerManaged = require('managers_overseer_missions_board_types_mission.towerManaged');
+const missionLabsManaged = require('managers_overseer_missions_board_types_mission.labsManaged');
+const missionRemoteBuildManaged = require('managers_overseer_missions_board_types_mission.remoteBuildManaged');
+
+let registeredTick = -1;
+
+function ensureRegistered() {
+    if (registeredTick === Game.time) return;
+    missionRegistry.register('harvest', missionHarvest);
+    missionRegistry.register('build', missionBuild);
+    missionRegistry.register('repair', missionRepair);
+    missionRegistry.register('upgrade', missionUpgrade);
+    missionRegistry.register('logisticsLane', missionLogisticsLane);
+    missionRegistry.register('logisticsJob', missionLogisticsJob);
+    missionRegistry.register('logisticsFleet', missionLogisticsFleet);
+    missionRegistry.register('remoteHarvest', missionRemoteHarvest);
+    missionRegistry.register('remoteHaul', missionRemoteHaul);
+    missionRegistry.register('scout', missionScout);
+    missionRegistry.register('mineral', missionMineral);
+    missionRegistry.register('decongest', missionDecongest);
+    missionRegistry.register('contract', missionContract);
+    missionRegistry.register('userTransfer', missionUserTransfer);
+    missionRegistry.register('userRemoteMove2Flag', missionUserRemoteMove2Flag);
+    missionRegistry.register('userRemoteReserve', missionUserRemoteReserve);
+    missionRegistry.register('userRemoteClaim', missionUserRemoteClaim);
+    missionRegistry.register('userDismantle', missionUserDismantle);
+    missionRegistry.register('towerManaged', missionTowerManaged);
+    missionRegistry.register('labsManaged', missionLabsManaged);
+    missionRegistry.register('remoteBuildManaged', missionRemoteBuildManaged);
+    registeredTick = Game.time;
+}
+
+module.exports = {
+    ensureRegistered
+};
+

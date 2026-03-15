@@ -2,6 +2,7 @@ const overseerIntel = require('managers_overseer_intel_overseer.intel');
 const overseerResourceLedger = require('managers_overseer_intel_overseer.resourceLedger');
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
 const overseerMissions = require('managers_overseer_missions_overseer.missions');
+const missionBoard = require('managers_overseer_missions_board_missionBoard');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
 const overseerUtils = require('managers_overseer_utils_overseer.utils');
 
@@ -159,6 +160,29 @@ var managerOverseer = {
         }
         room.memory.overseer.opState = opState;
         room.memory.overseer.economyState = economyState;
+
+        // Mission board debug summary (cheap aggregate, no deep payload).
+        if (Memory.debugMissionBoard || Memory.debugMissions) {
+            const summary = missionBoard.getSummaryForRoom(room.name);
+            room.memory.overseer.missionBoardSummary = summary;
+            const state = summary.byState || {};
+            const runtime = summary.runtime || {};
+            const updates = runtime.updates || {};
+            const create = runtime.create || {};
+            const detectors = runtime.detectors || {};
+            debug(
+                'missions.board',
+                `[MissionBoard] ${room.name} total=${summary.total} live=${summary.live} terminal=${summary.terminal} ` +
+                `active=${state.active || 0} blocked=${state.blocked || 0} done=${state.done || 0} ` +
+                `cancelled=${state.cancelled || 0} expired=${state.expired || 0} demand=${summary.demandCount} ` +
+                `upd(live=${updates.live || 0} sel=${updates.selected || 0} checked=${updates.checked || 0} throttled=${updates.throttleFiltered || 0} ` +
+                `legacySkip=${updates.legacySkipped || 0} invalid=${updates.invalid || 0} done=${updates.completed || 0}) ` +
+                `create(att=${create.attempted || 0} new=${create.created || 0} exist=${create.existing || 0} cap=${create.capped || 0}) ` +
+                `det(total=${detectors.total || 0} ran=${detectors.ran || 0} filtered=${detectors.filtered || 0} err=${detectors.errors || 0})`
+            );
+        } else if (room.memory.overseer.missionBoardSummary) {
+            delete room.memory.overseer.missionBoardSummary;
+        }
     }
 };
 
