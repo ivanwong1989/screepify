@@ -38,18 +38,18 @@ var managerAdmiral = {
 
         
         _milDbgLog(`[MIL][admiral] ${room.name} t=${Game.time} hostiles=${hostiles.length} threat=${threat || '-'} state=${state} cap=${budget}`);
-// 3. Generate Missions
+        // 3. Generate Missions
         const missions = admiralMissions.generate(room, hostiles, threat, state, budget);
 
         
         _milDbgLog(`[MIL][admiral] ${room.name} missionsGenerated=${(missions && missions.length) || 0}`);
-// 4. Publish to shared mission pool
+        // 4. Publish to shared mission pool
         if (!room._missions) room._missions = [];
         const _pre = room._missions.length;
         room._missions = room._missions.concat(missions);
         const _post = room._missions.length;
         _milDbgLog(`[MIL][admiral] ${room.name} publish pre=${_pre} add=${(missions && missions.length) || 0} post=${_post}`);
-room._combatState = state;
+        room._combatState = state;
         room.memory.admiral.state = state;
 
         if (state !== 'PEACE' && missions.length > 0) {
