@@ -11,6 +11,8 @@ var roleEmpireUniversal = require('role.empire.universal');
 var roleDefender = require('role.defender');
 var roleAssault = require('role.assault');
 var roleTower = require('role.tower');
+var roleCoreLaneHauler = require('role.coreLaneHauler');
+var roleMiningLaneHauler = require('role.miningLaneHauler');
 var runColony = require('runColony');
 var telemetry = require('telemetry_index');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
@@ -166,6 +168,8 @@ module.exports.loop = function() {
             } else if ([
                 'empire_universal',
                 'universal',
+                'coreLaneHauler',
+                'miningLaneHauler',
                 'miner',
                 'remote_miner',
                 'mineral_miner',
@@ -186,6 +190,10 @@ module.exports.loop = function() {
             ].includes(creep.memory.role)) {
                 if (creep.memory.role === 'empire_universal') {
                     roleEmpireUniversal.run(creep);
+                } else if (creep.memory.role === 'coreLaneHauler') {
+                    roleCoreLaneHauler.run(creep);
+                } else if (creep.memory.role === 'miningLaneHauler') {
+                    roleMiningLaneHauler.run(creep);
                 } else {
                     roleUniversal.run(creep);
                 }

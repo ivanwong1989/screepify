@@ -111,7 +111,7 @@ var managerSpawner = {
         if (archetype === 'worker') {
             budget = Math.min(budget, 3000);
         }
-        if (archetype === 'hauler' || archetype == 'user_hauler') {
+        if (archetype === 'hauler' || archetype == 'user_hauler' || archetype === 'coreLaneHauler' || archetype === 'miningLaneHauler') {
             budget = Math.min(budget, 4000);
         } 
         // --- BODY BUDGET END ---       
@@ -140,7 +140,13 @@ var managerSpawner = {
             return this.generateReserverBody(budget);
         } else if (mission.archetype === 'claimer') {
             return this.generateClaimerBody(budget);
-        } else if (mission.archetype === 'hauler' || mission.archetype === 'remote_hauler' || mission.archetype === 'user_hauler') {
+        } else if (
+            mission.archetype === 'hauler' ||
+            mission.archetype === 'remote_hauler' ||
+            mission.archetype === 'user_hauler' ||
+            mission.archetype === 'coreLaneHauler' ||
+            mission.archetype === 'miningLaneHauler'
+        ) {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             const includeRepairWorkPart = mission.archetype === 'remote_hauler';
             return this.generateHaulerBody(budget, maxCarryParts, includeRepairWorkPart);

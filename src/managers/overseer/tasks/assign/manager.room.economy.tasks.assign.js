@@ -16,6 +16,7 @@ const execDismantleTask = profRequire('managers_overseer_tasks_exec_dismantle', 
 const execReserveTask = profRequire('managers_overseer_tasks_exec_reserve', 'tasks.exec.reserve');
 const execClaimTask = profRequire('managers_overseer_tasks_exec_claim', 'tasks.exec.claim');
 const execScoutTask = profRequire('managers_overseer_tasks_exec_scout', 'tasks.exec.scout');
+const missionBoard = profRequire('managers_overseer_missions_board_missionBoard', 'missions.board');
 
 
 
@@ -124,6 +125,132 @@ var managerTasks = {
         return `home=${homeRoom}|role=${role}|bind=mission:${missionName}`;
     },
 
+    isCoreLaneAssigned: function(creep) {
+        if (!creep || !creep.memory) return false;
+        return creep.memory.missionType === 'logisticsCoreV2' || !!creep.memory.coreLaneMissionId;
+    },
+
+    isMiningLaneAssigned: function(creep) {
+        if (!creep || !creep.memory) return false;
+        if (creep.memory.role === 'miningLaneHauler') return true;
+        return creep.memory.missionType === 'logisticsMiningV2' || !!creep.memory.miningLaneMissionId;
+    },
+
+    clearCoreLaneAssignment: function(creep) {
+        if (!creep || !creep.memory) return;
+        if (creep.memory.coreLanePrevRole) {
+            creep.memory.role = creep.memory.coreLanePrevRole;
+        }
+        delete creep.memory.coreLaneMissionId;
+        delete creep.memory.missionType;
+        delete creep.memory.missionId;
+        delete creep.memory.coreLaneState;
+        delete creep.memory.coreLanePrevRole;
+        delete creep.memory.coreLaneJobId;
+        delete creep.memory.coreLaneMode;
+        delete creep.memory.coreLaneResourceType;
+    },
+
+    bindCoreLaneMission: function(creep, mission) {
+        if (!creep || !mission || !creep.memory) return;
+        if (!creep.memory.coreLanePrevRole) {
+            creep.memory.coreLanePrevRole = creep.memory.role || 'hauler';
+        }
+        creep.memory.coreLaneMissionId = mission.id;
+        creep.memory.missionType = 'logisticsCoreV2';
+        creep.memory.missionId = mission.id;
+        creep.memory.role = 'coreLaneHauler';
+        creep.memory.coreLaneState = creep.memory.coreLaneState || 'LOAD';
+        delete creep.memory.missionName;
+        delete creep.memory.task;
+        delete creep.memory.taskState;
+        delete creep.memory.scout;
+    },
+
+    findCoreLaneCandidate: function(room, creeps) {
+        // Legacy hook kept for compatibility; core lane no longer steals generic creeps.
+        return null;
+    },
+
+    assignCoreLaneMission: function(room, allOwnedCreeps) {
+        if (!room || !Array.isArray(allOwnedCreeps)) return;
+        const coreMissions = missionBoard.listLiveByRoom(room.name).filter(m => m && m.type === 'logisticsCoreV2');
+        if (coreMissions.length <= 0) {
+            for (let i = 0; i < allOwnedCreeps.length; i++) {
+                const creep = allOwnedCreeps[i];
+                if (!creep || !creep.memory) continue;
+                if (!this.isCoreLaneAssigned(creep) && creep.memory.role !== 'coreLaneHauler') continue;
+                this.clearCoreLaneAssignment(creep);
+                delete creep.memory.missionName;
+            }
+            return;
+        }
+
+        const mission = coreMissions[0];
+        const desiredCount = Math.max(
+            1,
+            Math.floor(
+                (mission.meta && Number.isFinite(mission.meta.desiredCount))
+                    ? mission.meta.desiredCount
+                    : 1
+            )
+        );
+        const assigned = allOwnedCreeps.filter(c =>
+            c && c.my && c.memory &&
+            c.memory.missionType === 'logisticsCoreV2' &&
+            (c.memory.coreLaneMissionId === mission.id || c.memory.missionId === mission.id)
+        );
+        const contractName = mission.meta && mission.meta.missionName ? mission.meta.missionName : null;
+        const awaitingBind = allOwnedCreeps.filter(c =>
+            c && c.my && c.memory &&
+            c.memory.role === 'coreLaneHauler' &&
+            !this.isCoreLaneAssigned(c) &&
+            contractName &&
+            c.memory.missionName === contractName
+        );
+        const stuckInParking = allOwnedCreeps.filter(c =>
+            c && c.my && c.memory &&
+            c.memory.role === 'coreLaneHauler' &&
+            !this.isCoreLaneAssigned(c) &&
+            c.memory.missionName === 'decongest:parking'
+        );
+
+        if (assigned.length > desiredCount) {
+            for (let i = desiredCount; i < assigned.length; i++) this.clearCoreLaneAssignment(assigned[i]);
+        }
+
+        let bound = assigned.length;
+        for (let i = 0; i < awaitingBind.length && bound < desiredCount; i++) {
+            this.bindCoreLaneMission(awaitingBind[i], mission);
+            bound++;
+        }
+
+        // Reclaim core-lane haulers that drifted into parking decongest.
+        for (let i = 0; i < stuckInParking.length && bound < desiredCount; i++) {
+            delete stuckInParking[i].memory.missionName;
+            delete stuckInParking[i].memory.task;
+            delete stuckInParking[i].memory.taskState;
+            this.bindCoreLaneMission(stuckInParking[i], mission);
+            bound++;
+        }
+
+        // Core lane is now first-class spawn-managed; avoid stealing unrelated creeps.
+        if (bound >= desiredCount) return;
+
+        // Optional fallback: bind idle coreLaneHauler that lost missionName but is still local.
+        const looseCoreLane = allOwnedCreeps.filter(c =>
+            c && c.my && c.memory &&
+            c.memory.role === 'coreLaneHauler' &&
+            !this.isCoreLaneAssigned(c) &&
+            !c.memory.missionName &&
+            c.room && c.room.name === room.name
+        );
+        for (let i = 0; i < looseCoreLane.length && bound < desiredCount; i++) {
+            this.bindCoreLaneMission(looseCoreLane[i], mission);
+            bound++;
+        }
+    },
+
     run: function(room) {
 
         // 1. Read the Contract (Missions)
@@ -147,7 +274,13 @@ var managerTasks = {
         // so their missions continue to update (e.g., dismantle in adjacent rooms).
         const remoteByHome = this.getRemoteCreepsByHomeRoom();
         const remote = remoteByHome[room.name] || { assigned: [], idle: [] };
-        const creeps = localCreeps.concat(remote.assigned);
+        const allOwnedCreeps = localCreeps.concat(remote.assigned || [], remote.idle || []);
+        this.assignCoreLaneMission(room, allOwnedCreeps);
+
+        const managedLocalCreeps = localCreeps.filter(c => !this.isCoreLaneAssigned(c) && !this.isMiningLaneAssigned(c));
+        const managedRemoteAssigned = (remote.assigned || []).filter(c => !this.isCoreLaneAssigned(c) && !this.isMiningLaneAssigned(c));
+        const managedRemoteIdle = (remote.idle || []).filter(c => !this.isCoreLaneAssigned(c) && !this.isMiningLaneAssigned(c));
+        const creeps = managedLocalCreeps.concat(managedRemoteAssigned);
 
         // 2. Track Mission Assignments
         // We need to know how many resources (creeps/parts) are currently assigned to each mission
@@ -318,8 +451,8 @@ var managerTasks = {
         }
 
         // 4. Assign Idle Creeps
-        const localIdle = localCreeps.filter(c => !c.spawning && !c.memory.missionName);
-        const remoteIdle = (remote.idle || []).filter(c => !c.spawning && !c.memory.missionName);
+        const localIdle = managedLocalCreeps.filter(c => !c.spawning && !c.memory.missionName);
+        const remoteIdle = managedRemoteIdle.filter(c => !c.spawning && !c.memory.missionName);
         const idleCreeps = localIdle.concat(remoteIdle);
 
         // Clear any stale tasks on unassigned creeps so they don't keep acting without a mission
@@ -530,6 +663,9 @@ var managerTasks = {
 
             // Exclude combatants from economy missions
             if (['defender', 'brawler', 'drainer', 'assault'].includes(creep.memory.role)) continue;
+
+            // Keep logistics core v2 haulers out of parking decongest.
+            if (m.name === 'decongest:parking' && creep.memory.role === 'coreLaneHauler') continue;
 
             const home = creep.memory.room;
             const awayFromHome = home && creep.room && creep.room.name !== home;

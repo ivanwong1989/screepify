@@ -197,36 +197,38 @@ function shouldScheduleRoute(roomName, routeKey, amount, policy) {
     return age >= policy.maxAgeTicks;
 }
 
-function addPersistentLanes(room, intel, context, missionBoard, carryParts, isEmergency) {
+function addPersistentLanes(room, intel, context, missionBoard, carryParts, isEmergency, skipMiningLanes) {
     const storage = room.storage;
     if (!storage || !storage.store || storage.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) return;
     const efficientSources = context && context.efficientSources ? context.efficientSources : null;
     if (!efficientSources || efficientSources.size <= 0) return;
 
-    for (let i = 0; i < intel.sources.length; i++) {
-        const srcInfo = intel.sources[i];
-        if (!srcInfo || !srcInfo.id || !efficientSources.has(srcInfo.id) || !srcInfo.containerId) continue;
-        const source = Game.getObjectById(srcInfo.containerId);
-        if (!source || !source.pos) continue;
-        const laneType = 'mining';
-        const routeKey = `${laneType}:${source.id}:${storage.id}:${RESOURCE_ENERGY}`;
-        const amount = getAvailableAmount(source, RESOURCE_ENERGY);
-        const policy = getRoutePolicy(laneType, carryParts, source, RESOURCE_ENERGY);
-        if (!shouldScheduleRoute(room.name, routeKey, amount, policy)) continue;
-        const slots = getSlots(source, storage, carryParts, RESOURCE_ENERGY, amount);
-        for (let slot = 0; slot < slots; slot++) {
-            missionBoard.createMission('logisticsLane', {
-                sponsorRoom: room.name,
-                targetRoom: room.name,
-                sourceId: source.id,
-                targetId: storage.id,
-                resourceType: RESOURCE_ENERGY,
-                slot,
-                laneType,
-                priority: getLogisticsPriority('mining', storage, isEmergency),
-                allowPartial: false,
-                minAmount: policy.minAmount
-            }, { room, intel, context });
+    if (!skipMiningLanes) {
+        for (let i = 0; i < intel.sources.length; i++) {
+            const srcInfo = intel.sources[i];
+            if (!srcInfo || !srcInfo.id || !efficientSources.has(srcInfo.id) || !srcInfo.containerId) continue;
+            const source = Game.getObjectById(srcInfo.containerId);
+            if (!source || !source.pos) continue;
+            const laneType = 'mining';
+            const routeKey = `${laneType}:${source.id}:${storage.id}:${RESOURCE_ENERGY}`;
+            const amount = getAvailableAmount(source, RESOURCE_ENERGY);
+            const policy = getRoutePolicy(laneType, carryParts, source, RESOURCE_ENERGY);
+            if (!shouldScheduleRoute(room.name, routeKey, amount, policy)) continue;
+            const slots = getSlots(source, storage, carryParts, RESOURCE_ENERGY, amount);
+            for (let slot = 0; slot < slots; slot++) {
+                missionBoard.createMission('logisticsLane', {
+                    sponsorRoom: room.name,
+                    targetRoom: room.name,
+                    sourceId: source.id,
+                    targetId: storage.id,
+                    resourceType: RESOURCE_ENERGY,
+                    slot,
+                    laneType,
+                    priority: getLogisticsPriority('mining', storage, isEmergency),
+                    allowPartial: false,
+                    minAmount: policy.minAmount
+                }, { room, intel, context });
+            }
         }
     }
 
@@ -491,6 +493,27 @@ function reconcileRoom({ room, intel, context, missionBoard }) {
     const isEmergency = (context && context.opState === 'EMERGENCY');
     const hasCriticalEnergyGap = room.energyAvailable < room.energyCapacityAvailable;
     const live = missionBoard.listLiveByRoom(room.name);
+    const hasCoreLogisticsV2 = live.some(m => m && m.type === 'logisticsCoreV2');
+    const hasMiningLogisticsV2 = live.some(m => m && m.type === 'logisticsMiningV2');
+
+    if (hasCoreLogisticsV2) {
+        // Core refill ownership moved to logisticsCoreV2; keep mining haul lanes intact.
+        for (let i = 0; i < live.length; i++) {
+            const mission = live[i];
+            if (!mission || mission.type !== 'logisticsJob') continue;
+            if (!mission.meta || mission.meta.kind !== 'supply') continue;
+            missionBoard.markCancelled(mission.id, 'core_v2_supply_disabled');
+        }
+    }
+    if (hasMiningLogisticsV2) {
+        for (let i = 0; i < live.length; i++) {
+            const mission = live[i];
+            if (!mission || mission.type !== 'logisticsLane') continue;
+            if (!mission.meta || mission.meta.laneType !== 'mining') continue;
+            missionBoard.markCancelled(mission.id, 'mining_v2_lane_disabled');
+        }
+    }
+
     const existingLanes = live.filter(m => m.type === 'logisticsLane').length;
     let existingSupplyJobs = 0;
     let existingCriticalSupplyJobs = 0;
@@ -535,14 +558,14 @@ function reconcileRoom({ room, intel, context, missionBoard }) {
     const forceStockScan = existingStockJobs === 0;
 
     const criticalSupplyInterval = isEmergency ? 1 : SUPPLY_CRITICAL_SCAN_INTERVAL;
-    if (shouldRunComponent(room.name, 'supplyCritical', criticalSupplyInterval, forceCriticalSupplyScan)) {
+    if (!hasCoreLogisticsV2 && shouldRunComponent(room.name, 'supplyCritical', criticalSupplyInterval, forceCriticalSupplyScan)) {
         addSupplyJobs(room, intel, context, missionBoard, isEmergency, 'critical');
     }
-    if (!isEmergency && labNeedsEnergy && shouldRunComponent(room.name, 'supplyAux', SUPPLY_AUX_SCAN_INTERVAL, forceAuxSupplyScan)) {
+    if (!hasCoreLogisticsV2 && !isEmergency && labNeedsEnergy && shouldRunComponent(room.name, 'supplyAux', SUPPLY_AUX_SCAN_INTERVAL, forceAuxSupplyScan)) {
         addSupplyJobs(room, intel, context, missionBoard, isEmergency, 'aux');
     }
     if (efficientSources.size > 0 && shouldRunComponent(room.name, 'lanes', LANE_SCAN_INTERVAL, forceLaneScan)) {
-        addPersistentLanes(room, intel, context, missionBoard, carryParts, isEmergency);
+        addPersistentLanes(room, intel, context, missionBoard, carryParts, isEmergency, hasMiningLogisticsV2);
     }
     if (!isEmergency && potentialPickupCount > 0 && shouldRunComponent(room.name, 'pickup', PICKUP_SCAN_INTERVAL, forcePickupScan)) {
         addPickupJobs(room, intel, context, missionBoard, isEmergency);

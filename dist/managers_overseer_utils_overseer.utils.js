@@ -11,7 +11,76 @@ try {
     heap = null; // allow running even if heap module isn't present in this shard/file context
 }
 
+let missionBoard = null;
+try {
+    missionBoard = require('managers_overseer_missions_board_missionBoard');
+} catch (e) {
+    missionBoard = null;
+}
+
+let missionRuntime = null;
+try {
+    missionRuntime = require('managers_overseer_missions_board_missionRuntime');
+} catch (e) {
+    missionRuntime = null;
+}
+
 const overseerUtils = {
+    drawCoreLaneV2Visuals: function(room) {
+        if (!room || !Memory || Memory.debugVisual !== true) return;
+        if (!missionBoard || typeof missionBoard.listLiveByRoom !== 'function') return;
+        if (!missionRuntime || typeof missionRuntime.getMissionRuntime !== 'function') return;
+
+        const live = missionBoard.listLiveByRoom(room.name) || [];
+        const missions = live.filter(m => m && m.type === 'logisticsCoreV2');
+        if (missions.length <= 0) return;
+
+        for (let mi = 0; mi < missions.length; mi++) {
+            const mission = missions[mi];
+            const runtime = missionRuntime.getMissionRuntime(mission);
+            if (!runtime || !runtime.paths) continue;
+
+            const core = runtime.paths.core;
+            const labs = runtime.paths.labs;
+
+            if (core && Array.isArray(core.path) && core.path.length > 0) {
+                for (let i = 1; i < core.path.length; i++) {
+                    const a = core.path[i - 1];
+                    const b = core.path[i];
+                    if (!a || !b || a.roomName !== room.name || b.roomName !== room.name) continue;
+                    room.visual.line(a, b, { color: '#33cc66', width: 0.12, opacity: 0.8 });
+                }
+                if (core.headPos && core.headPos.roomName === room.name) {
+                    room.visual.circle(core.headPos, { radius: 0.3, fill: '#00cc66', stroke: '#003300' });
+                }
+                if (core.endPos && core.endPos.roomName === room.name) {
+                    room.visual.circle(core.endPos, { radius: 0.3, fill: '#ff6666', stroke: '#660000' });
+                }
+                for (let i = 0; i < core.path.length; i += 5) {
+                    const p = core.path[i];
+                    if (!p || p.roomName !== room.name) continue;
+                    room.visual.text(String(i), p.x, p.y - 0.25, { font: 0.4, color: '#ffffff' });
+                    const stopCount = core.stopsByIndex && core.stopsByIndex[i] ? core.stopsByIndex[i].length : 0;
+                    if (stopCount > 0) {
+                        room.visual.text(String(stopCount), p.x, p.y + 0.35, { font: 0.35, color: '#ffee66' });
+                    }
+                }
+            }
+
+            if (labs && Array.isArray(labs.path) && labs.path.length > 0) {
+                for (let i = 1; i < labs.path.length; i++) {
+                    const a = labs.path[i - 1];
+                    const b = labs.path[i];
+                    if (!a || !b || a.roomName !== room.name || b.roomName !== room.name) continue;
+                    room.visual.line(a, b, { color: '#4488ff', width: 0.1, opacity: 0.65 });
+                }
+                if (labs.endPos && labs.endPos.roomName === room.name) {
+                    room.visual.circle(labs.endPos, { radius: 0.25, fill: '#66aaff', stroke: '#0d2f66' });
+                }
+            }
+        }
+    },
+
     getRequiredHeadcount: function(mission) {
         if (!mission || !mission.requirements) return 0;
         const req = mission.requirements;
@@ -223,6 +292,49 @@ const overseerUtils = {
         }
     },
 
+    getLiveBoardVisualMissions: function(room, contractMissions) {
+        if (!room || !missionBoard || typeof missionBoard.listLiveByRoom !== 'function') return [];
+        const contracts = Array.isArray(contractMissions) ? contractMissions : [];
+        const existingNames = new Set(contracts.map(m => m && m.name).filter(Boolean));
+
+        const live = missionBoard.listLiveByRoom(room.name) || [];
+        const boardVisuals = [];
+
+        for (let i = 0; i < live.length; i++) {
+            const m = live[i];
+            if (!m) continue;
+            if (m.class === 'finite') continue;
+
+            const missionName =
+                (m.meta && m.meta.missionName) ||
+                m.name ||
+                m.id ||
+                `${m.type}:${room.name}`;
+
+            if (existingNames.has(missionName)) continue;
+
+            const assigned = m.assigned && Array.isArray(m.assigned.primary)
+                ? m.assigned.primary.length
+                : 0;
+            const desired = Number.isFinite(m.meta && m.meta.desiredCount)
+                ? Math.max(0, m.meta.desiredCount)
+                : Number.isFinite(m.demand && m.demand.count)
+                    ? Math.max(assigned, m.demand.count + assigned)
+                    : Math.max(1, assigned);
+
+            boardVisuals.push({
+                name: missionName,
+                type: m.type,
+                priority: Number.isFinite(m.priority) ? m.priority : 0,
+                requirements: { minCount: desired, maxCount: desired },
+                census: { count: assigned, workParts: 0, carryParts: 0, claimParts: 0 },
+                __fromBoard: true
+            });
+        }
+
+        return boardVisuals;
+    },
+
     visualize: function(room, missions, roomState) {
         const opsState = roomState && roomState.ops ? roomState.ops : 'UNKNOWN';
         const economyState = roomState && roomState.economy ? roomState.economy : 'UNKNOWN';
@@ -241,6 +353,7 @@ const overseerUtils = {
             1,
             { align: 'left', color: color, font: 0.7 }
         );
+        this.drawCoreLaneV2Visuals(room);
         // ------------------------------------------------------------
         // Debug Visual: Remote Haul cached lanes (heap) with colors + legend
         // ------------------------------------------------------------
@@ -375,12 +488,15 @@ const overseerUtils = {
             );
             y += 1.0;
         }
-        const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
+        const boardLiveVisuals = this.getLiveBoardVisualMissions(room, missions);
+        const visualMissions = (Array.isArray(missions) ? missions : []).concat(boardLiveVisuals);
+        const sortedMissions = [...visualMissions].sort((a, b) => b.priority - a.priority);
         sortedMissions.forEach(m => {
             const progress = this.getMissionProgress(m);
             const filled = progress.filled;
             const color = filled ? '#aaffaa' : '#ffaaaa';
-            room.visual.text(`[${m.priority}] ${m.name} (${progress.summary})`, 1, y, {align: 'left', font: 0.7, color: color});
+            const prefix = m.__fromBoard ? '[B]' : '';
+            room.visual.text(`${prefix}[${m.priority}] ${m.name} (${progress.summary})`, 1, y, {align: 'left', font: 0.7, color: color});
             y += 1.0;
 
             if (m.pos) {

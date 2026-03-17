@@ -15,7 +15,7 @@ function isRemoteContract(entry) {
 function getContractSpawnTier(entry) {
     const contract = entry && entry.contract ? entry.contract : null;
     const role = contract && contract.role ? String(contract.role) : '';
-    if (role === 'miner' || role === 'hauler') return 0;
+    if (role === 'miner' || role === 'hauler' || role === 'coreLaneHauler' || role === 'miningLaneHauler') return 0;
     if (isRemoteContract(entry)) return 2;
     return 1;
 }
@@ -134,7 +134,9 @@ const spawnPlanner = {
         const myCreeps = cache.myCreeps || [];
 
         const hasMiners = myCreeps.some(c => c.memory.role === 'miner' && !c.spawning);
-        const hasHaulers = myCreeps.some(c => c.memory.role === 'hauler' && !c.spawning);
+        const hasHaulers = myCreeps.some(c =>
+            (c.memory.role === 'hauler' || c.memory.role === 'coreLaneHauler' || c.memory.role === 'miningLaneHauler') && !c.spawning
+        );
 
         if (!hasMiners || !hasHaulers) {
             budget = Math.max(room.energyAvailable, 200);
