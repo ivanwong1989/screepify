@@ -16,7 +16,7 @@ function shouldRunEvery(interval, offset, tick) {
     return (t + (offset || 0)) % runInterval === 0;
 }
 
-function getDetectorInterval(type) {
+function getReconcileInterval(type) {
     switch (type) {
         case 'harvest': return 61;
         case 'build': return 17;
@@ -45,10 +45,14 @@ function getDetectorInterval(type) {
     }
 }
 
-function shouldRunDetector(type, roomName, tick) {
-    const interval = getDetectorInterval(type);
+function shouldRunReconcile(type, roomName, tick) {
+    const interval = getReconcileInterval(type);
     const offset = hashString(`${type}:${roomName}`) % interval;
     return shouldRunEvery(interval, offset, tick);
+}
+
+function shouldRunDetector(type, roomName, tick) {
+    return shouldRunReconcile(type, roomName, tick);
 }
 
 function getMissionUpdateInterval(mission) {
@@ -58,7 +62,7 @@ function getMissionUpdateInterval(mission) {
         if (mission.type === 'harvest') return 21;
         if (mission.type === 'reserve') return 47;
         if (mission.type === 'upgrade') return 11;
-        if (mission.type === 'towerManaged') return 3;
+        if (mission.type === 'tower') return 3;
         if (mission.type === 'logisticsLane') return 9;
         if (mission.type === 'logisticsFleet') return 13;
         if (mission.type === 'remoteHarvest') return 53;
@@ -90,6 +94,8 @@ module.exports = {
     shouldRunEvery,
     getMissionUpdateInterval,
     shouldCheckMission,
-    shouldRunDetector
+    getReconcileInterval,
+    shouldRunReconcile,
+    shouldRunDetector,
 };
 

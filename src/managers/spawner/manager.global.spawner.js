@@ -1,109 +1,95 @@
-const bodyCodec = require('utils_bodyCodec');
+function getCandidateSpawnTier(candidate) {
+    const role = candidate && candidate.role ? String(candidate.role) : '';
+    const targetRoom = candidate && candidate.targetRoom ? candidate.targetRoom : null;
+    const homeRoom = candidate && candidate.homeRoom ? candidate.homeRoom : null;
 
-function getTicketSpawnTier(ticket) {
-    const role = ticket && ticket.role ? String(ticket.role) : '';
-    const targetRoom = ticket && ticket.targetRoom ? ticket.targetRoom : null;
-    const homeRoom = ticket && ticket.homeRoom ? ticket.homeRoom : null;
-
-    if (role === 'miner' || role === 'hauler') return 0; // local economy core
+    if (role === 'miner' || role === 'hauler') return 0;
 
     const remoteByRole = role.indexOf('remote_') === 0;
     const remoteByTarget = !!(targetRoom && homeRoom && targetRoom !== homeRoom);
-    if (remoteByRole || remoteByTarget) return 2; // remote tickets always last
+    if (remoteByRole || remoteByTarget) return 2;
 
-    return 1; // local non-core
+    return 1;
 }
 
 module.exports = {
-    run: function(allTickets) {
-        if (!allTickets || allTickets.length === 0) return;
+    run: function(allCandidates) {
+        if (!allCandidates || allCandidates.length === 0) return;
+
         const spawnDistanceCache = require('managers_spawner_spawnDistanceCache');
         spawnDistanceCache.syncSpawnRegistry();
         spawnDistanceCache.enqueueMissingPairs();
         spawnDistanceCache.processQueue({ maxPairsPerTick: 2 });
 
-        // 1. Sort tickets by local-first tier, then priority.
-        allTickets.sort((a, b) => {
-            const tierA = getTicketSpawnTier(a);
-            const tierB = getTicketSpawnTier(b);
+        allCandidates.sort((a, b) => {
+            const tierA = getCandidateSpawnTier(a);
+            const tierB = getCandidateSpawnTier(b);
             if (tierA !== tierB) return tierA - tierB;
 
             const prioA = Number.isFinite(a && a.priority) ? a.priority : 0;
             const prioB = Number.isFinite(b && b.priority) ? b.priority : 0;
             if (prioA !== prioB) return prioB - prioA;
 
-            const idA = a && a.ticketId ? String(a.ticketId) : '';
-            const idB = b && b.ticketId ? String(b.ticketId) : '';
+            const deficitA = Number.isFinite(a && a.deficit) ? a.deficit : 0;
+            const deficitB = Number.isFinite(b && b.deficit) ? b.deficit : 0;
+            if (deficitA !== deficitB) return deficitB - deficitA;
+
+            const idA = a && a.contractId ? String(a.contractId) : '';
+            const idB = b && b.contractId ? String(b.contractId) : '';
             return idA.localeCompare(idB);
         });
-        debug('spawner', `[GlobalSpawner] tickets=${allTickets.length}`);
 
-        // 2. Index available spawns
         const availableSpawns = [];
         for (const roomName in Game.rooms) {
             const room = Game.rooms[roomName];
             if (!room.controller || !room.controller.my) continue;
-            
+
             const spawns = room.find(FIND_MY_SPAWNS);
             for (const spawn of spawns) {
-                if (!spawn.spawning) {
-                    availableSpawns.push(spawn);
-                }
+                if (!spawn.spawning) availableSpawns.push(spawn);
             }
         }
 
-        // 3. Match Tickets to Spawns
-        for (const ticket of allTickets) {
+        for (const candidate of allCandidates) {
             if (availableSpawns.length === 0) break;
 
-            const spawn = this.findBestSpawn(ticket, availableSpawns);
-            
-            if (spawn) {
-                debug('spawner', `[GlobalSpawner] assign ticket=${ticket.ticketId} contract=${ticket.contractId} to spawn=${spawn.name} room=${spawn.room.name}`);
-                this.executeSpawn(spawn, ticket);
-                // Remove used spawn from available list
-                const index = availableSpawns.indexOf(spawn);
-                if (index > -1) availableSpawns.splice(index, 1);
-            }
+            const spawn = this.findBestSpawn(candidate, availableSpawns);
+            if (!spawn) continue;
+
+            debug('spawner', `[GlobalSpawner] assign contract=${candidate.contractId} role=${candidate.role} to spawn=${spawn.name} room=${spawn.room.name}`);
+            this.executeSpawn(spawn, candidate);
+
+            const index = availableSpawns.indexOf(spawn);
+            if (index > -1) availableSpawns.splice(index, 1);
         }
     },
 
-    findBestSpawn: function(ticket, availableSpawns) {
+    findBestSpawn: function(candidate, availableSpawns) {
         const spawnDistanceCache = require('managers_spawner_spawnDistanceCache');
-        
-        // Filter 1: Capable of spawning (Energy Capacity)
-        // We check capacity, not current available, because if it's local we might be waiting for refill (Grace Period handled in local manager, but we double check here)
-        let candidates = availableSpawns.filter(s => s.room.energyCapacityAvailable >= ticket.cost);
 
-        // Filter 2: Local Spawns (Priority)
-        const localSpawns = candidates.filter(s => s.room.name === ticket.homeRoom);
-        
-        // Strategy: Try local first. If local exists, pick the one with enough energy NOW.
-        const readyLocal = localSpawns.find(s => s.room.energyAvailable >= ticket.cost);
+        let candidates = availableSpawns.filter(s => s.room.energyCapacityAvailable >= candidate.cost);
+        const localSpawns = candidates.filter(s => s.room.name === candidate.homeRoom);
+
+        const readyLocal = localSpawns.find(s => s.room.energyAvailable >= candidate.cost);
         if (readyLocal) return readyLocal;
 
-        // Filter 3: Remote Spawns
-        // We only consider remote spawns if they are ready to spawn NOW.
-        // We don't want to wait on a remote room's energy regeneration.
-        const homeRoom = Game.rooms[ticket.homeRoom];
+        const homeRoom = Game.rooms[candidate.homeRoom];
         const homeSpawns = homeRoom ? homeRoom.find(FIND_MY_SPAWNS) : [];
         const remoteCandidates = candidates.filter(s => {
-            if (s.room.name === ticket.homeRoom) return false;
-            // ✅ QUICK FIX: miners are static (low MOVE) → never remote-spawn
-            if (ticket.role === 'miner') return false;
-            if (s.room.energyAvailable < ticket.cost) return false;
+            if (s.room.name === candidate.homeRoom) return false;
+            if (candidate.role === 'miner') return false;
+            if (s.room.energyAvailable < candidate.cost) return false;
             if (s.room._opState === 'EMERGENCY') return false;
 
             if (homeSpawns.length === 0) {
-                const distFallback = Game.map.getRoomLinearDistance(ticket.homeRoom, s.room.name);
+                const distFallback = Game.map.getRoomLinearDistance(candidate.homeRoom, s.room.name);
                 return distFallback <= 2;
             }
 
             let best = null;
             for (const homeSpawn of homeSpawns) {
                 const dist = spawnDistanceCache.getDistance(homeSpawn.id, s.id);
-                if (dist === undefined) continue;
-                if (dist === null) continue;
+                if (dist === undefined || dist === null) continue;
                 if (!best || dist.rooms < best.rooms || (dist.rooms === best.rooms && dist.stepsApprox < best.stepsApprox)) {
                     best = dist;
                 }
@@ -114,10 +100,10 @@ module.exports = {
         });
 
         if (remoteCandidates.length > 0) {
-            // Sort by distance, then by energy available
             remoteCandidates.sort((a, b) => {
-                const distA = this.getBestSpawnDistance(ticket, a, homeSpawns, spawnDistanceCache);
-                const distB = this.getBestSpawnDistance(ticket, b, homeSpawns, spawnDistanceCache);
+                const distA = this.getBestSpawnDistance(candidate, a, homeSpawns, spawnDistanceCache);
+                const distB = this.getBestSpawnDistance(candidate, b, homeSpawns, spawnDistanceCache);
+
                 if (distA && distB) {
                     if (distA.rooms !== distB.rooms) return distA.rooms - distB.rooms;
                     if (distA.stepsApprox !== distB.stepsApprox) return distA.stepsApprox - distB.stepsApprox;
@@ -126,18 +112,18 @@ module.exports = {
                 } else if (!distA && distB) {
                     return 1;
                 }
+
                 return b.room.energyAvailable - a.room.energyAvailable;
             });
             return remoteCandidates[0];
         }
 
         return null;
-
-        //return availableSpawns.find(s => s.room.name === ticket.homeRoom && s.room.energyAvailable >= ticket.cost);
     },
 
-    getBestSpawnDistance: function(ticket, candidateSpawn, homeSpawns, spawnDistanceCache) {
+    getBestSpawnDistance: function(candidate, candidateSpawn, homeSpawns, spawnDistanceCache) {
         if (!homeSpawns || homeSpawns.length === 0) return null;
+
         let best = null;
         for (const homeSpawn of homeSpawns) {
             const dist = spawnDistanceCache.getDistance(homeSpawn.id, candidateSpawn.id);
@@ -149,60 +135,37 @@ module.exports = {
         return best;
     },
 
-    executeSpawn: function(spawn, ticket) {
+    executeSpawn: function(spawn, candidate) {
         const sanitizeNamePrefix = (prefix, fallbackRole) => {
             const raw = String(prefix || `${fallbackRole || 'creep'}`);
             const safe = raw.replace(/[^a-zA-Z0-9_\-]/g, '_');
             if (safe.length === 0) return 'creep';
             return safe.slice(0, 70);
         };
-        const base = sanitizeNamePrefix(ticket.namePrefix, ticket.role);
-        const name = `${base}_${Game.time.toString(36)}_${Math.floor(Math.random()*100)}`;
-        const memory = Object.assign({}, ticket.memory);
-        
-        // Canonical home room field on creeps is `memory.room`.
-        memory.spawnRoom = spawn.room.name;
-        memory.room = ticket.homeRoom; // keep existing semantics: memory.room == home room
-        memory.contractId = ticket.contractId;
-        memory.ticketId = ticket.ticketId;
 
-        // If remote, add travel intent based on bind mode.
-        if (spawn.room.name !== ticket.homeRoom) {
-            if (ticket.bindMode === 'pool') {
+        const base = sanitizeNamePrefix(candidate.namePrefix, candidate.role);
+        const name = `${base}_${Game.time.toString(36)}_${Math.floor(Math.random() * 100)}`;
+        const memory = Object.assign({}, candidate.memory || {});
+
+        memory.spawnRoom = spawn.room.name;
+        memory.room = candidate.homeRoom || memory.room;
+        memory.contractId = candidate.contractId;
+
+        if (spawn.room.name !== candidate.homeRoom) {
+            if (candidate.bindMode === 'pool') {
                 memory._travellingToHome = true;
-            } else if (ticket.travelTargetRoom) {
-                memory.travelTargetRoom = ticket.travelTargetRoom;
-            } else if (ticket.targetRoom) {
-                memory.travelTargetRoom = ticket.targetRoom;
+            } else if (candidate.travelTargetRoom) {
+                memory.travelTargetRoom = candidate.travelTargetRoom;
+            } else if (candidate.targetRoom) {
+                memory.travelTargetRoom = candidate.targetRoom;
             }
         }
 
-        const body = bodyCodec.decodeBody(ticket.body);
-        const result = spawn.spawnCreep(body, name, { memory: memory });
-        
+        const result = spawn.spawnCreep(candidate.body, name, { memory });
         if (result === OK) {
-            debug('spawner', `[GlobalSpawner] Spawning ${name} in ${spawn.room.name} for ${ticket.homeRoom} (Ticket: ${ticket.ticketId})`);
-
-            if (Memory.spawnTickets && Memory.spawnTickets[ticket.ticketId]) {
-                const stored = Memory.spawnTickets[ticket.ticketId];
-                stored.state = 'SPAWNING';
-                stored.creepName = name;
-                stored.spawnRoom = spawn.room.name;
-                stored.expiresAt = Game.time + (ticket.body.length * 3) + 10;
-            }
-            
-            // Update Home Room History
-            const homeRoom = Game.rooms[ticket.homeRoom];
-            if (homeRoom && homeRoom.memory) {
-                if (!homeRoom.memory.spawnHistory) homeRoom.memory.spawnHistory = [];
-                homeRoom.memory.spawnHistory.push(ticket.role);
-                if (homeRoom.memory.spawnHistory.length > 5) homeRoom.memory.spawnHistory.shift();
-                
-                // Reset wait ticks
-                if (homeRoom.memory.spawner) homeRoom.memory.spawner.waitTicks = 0;
-            }
+            debug('spawner', `[GlobalSpawner] spawning ${name} in ${spawn.room.name} for ${candidate.homeRoom} contract=${candidate.contractId}`);
         } else {
-            debug('spawner', `[GlobalSpawner] spawn failed ${spawn.name} result=${result} ticket=${ticket.ticketId} contract=${ticket.contractId}`);
+            debug('spawner', `[GlobalSpawner] spawn failed ${spawn.name} result=${result} contract=${candidate.contractId}`);
         }
     }
 };

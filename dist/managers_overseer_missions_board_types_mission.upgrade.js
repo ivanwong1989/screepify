@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const CRITICAL_DOWNGRADE_TICKS = 5000;
 
@@ -20,6 +21,31 @@ module.exports = {
         const roomName = context.targetRoom || context.sponsorRoom;
         const variant = context.idle ? 'idle' : 'primary';
         return missionKeys.makeUpgradeKey(roomName, variant);
+    },
+
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !missionBoard) return;
+        if (!intel || !intel.controller || !intel.controller.my) return;
+        if (context && context.opState === 'EMERGENCY') return;
+        if (missionThrottle.shouldRunReconcile('upgrade', room.name, Game.time)) {
+            missionBoard.createMission('upgrade', {
+                sponsorRoom: room.name,
+                targetRoom: room.name,
+                controllerId: intel.controller.id,
+                idle: false,
+                priority: 50
+            }, { room, intel, context });
+        }
+
+        if (missionThrottle.shouldRunReconcile('upgrade', `${room.name}:idle`, Game.time)) {
+            missionBoard.createMission('upgrade', {
+                sponsorRoom: room.name,
+                targetRoom: room.name,
+                controllerId: intel.controller.id,
+                idle: true,
+                priority: -100
+            }, { room, intel, context });
+        }
     },
 
     create(context) {
@@ -44,7 +70,7 @@ module.exports = {
             progress: { stage: 'upgrading', lastProgress: 0 },
             meta: {
                 idle,
-                legacyName: idle ? 'idle:upgrade' : 'upgrade:controller',
+                missionName: idle ? 'idle:upgrade' : 'upgrade:controller',
                 spawnAllowed: !idle
             },
             statusReason: null
@@ -148,11 +174,11 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const idle = !!(mission.meta && mission.meta.idle);
         const req = mission.requirements || {};
         return {
-            name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : (idle ? 'idle:upgrade' : 'upgrade:controller'),
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : (idle ? 'idle:upgrade' : 'upgrade:controller'),
             type: 'upgrade',
             archetype: 'worker',
             targetId: mission.targetId,
@@ -177,3 +203,5 @@ module.exports = {
         };
     }
 };
+
+

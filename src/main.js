@@ -24,6 +24,7 @@ const SAFE_MODE_ROOMS = new Set([
     'W44S28'
 ]);
 
+
 /*
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
@@ -45,16 +46,31 @@ profiler.registerObject(require('managers_overseer_intel_overseer.resourceLedger
 profiler.registerObject(require('managers_overseer_missions_overseer.missions'), 'overseer.missions');
 profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'overseer.utils');
 
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.tower'), 'mission.tower');
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.remote.build'), 'mission.remote.build');
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.remote.repair'), 'mission.remote.repair');
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.remote.reserve'), 'mission.user.remote.reserve');
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.remote.claim'), 'mission.user.remote.claim');
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.remote.move2flag'), 'mission.user.remote.move2flag');
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.labs'), 'mission.labs');
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.dismantle'), 'mission.user.dismantle');
-profiler.registerObject(require('managers_overseer_missions_board_types_mission.user.transfer'), 'mission.user.transfer');
+[
+    ['managers_overseer_missions_board_types_mission.harvest', 'mission.harvest'],
+    ['managers_overseer_missions_board_types_mission.build', 'mission.build'],
+    ['managers_overseer_missions_board_types_mission.repair', 'mission.repair'],
+    ['managers_overseer_missions_board_types_mission.upgrade', 'mission.upgrade'],
+    ['managers_overseer_missions_board_types_mission.logisticsLane', 'mission.logisticsLane'],
+    ['managers_overseer_missions_board_types_mission.logisticsJob', 'mission.logisticsJob'],
+    ['managers_overseer_missions_board_types_mission.logisticsFleet', 'mission.logisticsFleet'],
+    ['managers_overseer_missions_board_types_mission.remoteHarvest', 'mission.remoteHarvest'],
+    ['managers_overseer_missions_board_types_mission.remoteHaul', 'mission.remoteHaul'],
+    ['managers_overseer_missions_board_types_mission.scout', 'mission.scout'],
+    ['managers_overseer_missions_board_types_mission.mineral', 'mission.mineral'],
+    ['managers_overseer_missions_board_types_mission.decongest', 'mission.decongest'],
+    ['managers_overseer_missions_board_types_mission.contract', 'mission.contract'],
+    ['managers_overseer_missions_board_types_mission.userTransfer', 'mission.userTransfer'],
+    ['managers_overseer_missions_board_types_mission.userRemoteMove2Flag', 'mission.userRemoteMove2Flag'],
+    ['managers_overseer_missions_board_types_mission.userRemoteReserve', 'mission.userRemoteReserve'],
+    ['managers_overseer_missions_board_types_mission.userRemoteClaim', 'mission.userRemoteClaim'],
+    ['managers_overseer_missions_board_types_mission.userDismantle', 'mission.userDismantle'],
+    ['managers_overseer_missions_board_types_mission.towerService', 'mission.tower'],
+    ['managers_overseer_missions_board_types_mission.labs', 'mission.labs'],
+    ['managers_overseer_missions_board_types_mission.remoteBuild', 'mission.remoteBuild']
+].forEach(([moduleId, label]) => profiler.registerObject(require(moduleId), label));
 */
+
 
 
 // This line monkey patches the global prototypes.
@@ -77,58 +93,6 @@ module.exports.loop = function() {
 
         // --- Initialize Remote Memory ---
         if (!Memory.remoteRooms) Memory.remoteRooms = {};
-        if (!Memory.spawnTickets) Memory.spawnTickets = {};
-        if (!global._spawningNamesCache || global._spawningNamesCache.time !== Game.time) {
-            const spawningNames = new Set();
-            for (const rn in Game.rooms) {
-                const r = Game.rooms[rn];
-                if (!r.controller || !r.controller.my) continue;
-                const spawns = r.find(FIND_MY_SPAWNS);
-                for (const s of spawns) {
-                    if (s.spawning) spawningNames.add(s.spawning.name);
-                }
-            }
-            global._spawningNamesCache = { time: Game.time, names: spawningNames };
-        }
-
-        // --- Spawn Ticket GC (prevents unbounded growth) ---
-        (function cleanupSpawnTickets() {
-            const tickets = Memory.spawnTickets;
-            const spawningNames = global._spawningNamesCache && global._spawningNamesCache.time === Game.time
-                ? global._spawningNamesCache.names
-                : null;
-
-            for (const id in tickets) {
-                const t = tickets[id];
-                if (!t) {
-                    delete tickets[id];
-                    continue;
-                }
-
-                const expired = t.expiresAt && t.expiresAt <= Game.time;
-                const creepAlive = t.creepName && Game.creeps[t.creepName];
-                const creepSpawning = t.creepName && spawningNames && spawningNames.has(t.creepName);
-
-                if (expired && !creepAlive && !creepSpawning) {
-                    delete tickets[id];
-                    const home = t.homeRoom;
-                    const contractId = t.contractId;
-                    if (home && contractId && Memory.rooms && Memory.rooms[home] && Memory.rooms[home].spawnTicketsByKey) {
-                        const index = Memory.rooms[home].spawnTicketsByKey;
-                        const list = index[contractId];
-                        if (list && list.length > 0) {
-                            index[contractId] = list.filter(tid => tid !== id);
-                        }
-                    }
-                    continue;
-                }
-
-                // If expired but creep exists, keep ticket and let tasker refresh.
-                if (expired && creepAlive) {
-                    t.expiresAt = Game.time + 10;
-                }
-            }
-        })();
 
         // --- Memory name garbage clearing ---
         for (var name in Memory.creeps) {
@@ -179,16 +143,16 @@ module.exports.loop = function() {
         managerZeadmin.run();
 
         // --- GLOBAL SPAWN MANAGER ---
-        // Collect tickets from all rooms
-        let allSpawnTickets = [];
+        // Collect per-tick spawn candidates from all rooms
+        let allSpawnCandidates = [];
         for (const roomName in Game.rooms) {
             const room = Game.rooms[roomName];
-            if (room._spawnTicketsToRequest) allSpawnTickets.push(...room._spawnTicketsToRequest);
+            if (room._spawnCandidates) allSpawnCandidates.push(...room._spawnCandidates);
         }
-        if (empireRuntime && empireRuntime.enabled && Array.isArray(empireRuntime.tickets) && empireRuntime.tickets.length > 0) {
-            allSpawnTickets.push(...empireRuntime.tickets);
+        if (empireRuntime && empireRuntime.enabled && Array.isArray(empireRuntime.candidates) && empireRuntime.candidates.length > 0) {
+            allSpawnCandidates.push(...empireRuntime.candidates);
         }
-        managerGlobalSpawner.run(allSpawnTickets);
+        managerGlobalSpawner.run(allSpawnCandidates);
 
         // --- CREEP RUN LOGIC ---
         // Run creep logic globally, as they may be in any room

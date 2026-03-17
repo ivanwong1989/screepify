@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const DEFAULT_SCOUT_INTERVAL = 500;
 const MIN_SCOUT_INTERVAL = 25;
@@ -27,6 +28,19 @@ module.exports = {
         return missionKeys.makeScoutKey(context.sponsorRoom);
     },
 
+    reconcileRoom({ room, context, missionBoard }) {
+        if (!room || !missionBoard) return;
+        if (context && context.opState === 'EMERGENCY') return;
+        if (!room.controller || !room.controller.my || room.controller.level < 3) return;
+        if (Memory.remoteMissionsEnabled === false) return;
+        if (!missionThrottle.shouldRunReconcile('scout', room.name, Game.time)) return;
+
+        missionBoard.createMission('scout', {
+            sponsorRoom: room.name,
+            priority: 20
+        }, { room, intel: null, context });
+    },
+
     create(context) {
         const now = Game.time;
         return {
@@ -47,7 +61,7 @@ module.exports = {
             demand: { role: 'scout', count: 0, bodyProfile: 'scout' },
             progress: { stage: 'scouting' },
             meta: {
-                legacyName: `scout:${context.sponsorRoom}`
+                missionName: `scout:${context.sponsorRoom}`
             },
             statusReason: null
         };
@@ -112,7 +126,7 @@ module.exports = {
         const targetRoom = due.length > 0 ? due[0].name : null;
 
         mission.meta = mission.meta || {};
-        mission.meta.legacyName = mission.meta.legacyName || `scout:${room.name}`;
+        mission.meta.missionName = mission.meta.missionName || `scout:${room.name}`;
         mission.meta.interval = interval;
         mission.meta.holdTime = holdTime;
         mission.meta.rooms = available;
@@ -146,10 +160,10 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const req = mission.requirements || {};
         return {
-            name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : `scout:${mission.sponsorRoom}`,
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `scout:${mission.sponsorRoom}`,
             type: 'scout',
             archetype: 'scout',
             requirements: {
@@ -171,3 +185,5 @@ module.exports = {
         };
     }
 };
+
+

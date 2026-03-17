@@ -1,7 +1,3 @@
-const bodyCodec = require('utils_bodyCodec');
-
-const DEFAULT_REQUEST_TTL = 10;
-
 function isRemoteContract(entry) {
     const contract = entry && entry.contract ? entry.contract : null;
     const mission = entry && entry.mission ? entry.mission : null;
@@ -19,141 +15,118 @@ function isRemoteContract(entry) {
 function getContractSpawnTier(entry) {
     const contract = entry && entry.contract ? entry.contract : null;
     const role = contract && contract.role ? String(contract.role) : '';
-    if (role === 'miner' || role === 'hauler') return 0; // local economy core
-    if (isRemoteContract(entry)) return 2; // remote always after local needs
-    return 1; // local non-core (workers, builders, upgraders, etc.)
+    if (role === 'miner' || role === 'hauler') return 0;
+    if (isRemoteContract(entry)) return 2;
+    return 1;
 }
 
 const spawnPlanner = {
     plan: function(room, contractEntries, fulfillment, options) {
         if (!contractEntries || contractEntries.length === 0) return null;
-        const unmet = contractEntries.filter(entry => {
-            const count = fulfillment[entry.contract.contractId] || 0;
-            return count < entry.contract.desired;
-        });
 
-        unmet.sort((a, b) => {
-            const tierA = getContractSpawnTier(a);
-            const tierB = getContractSpawnTier(b);
-            if (tierA !== tierB) return tierA - tierB;
-            const prioA = a && a.contract && Number.isFinite(a.contract.priority) ? a.contract.priority : 0;
-            const prioB = b && b.contract && Number.isFinite(b.contract.priority) ? b.contract.priority : 0;
-            if (prioA !== prioB) return prioB - prioA;
-            const idA = a && a.contract && a.contract.contractId ? String(a.contract.contractId) : '';
-            const idB = b && b.contract && b.contract.contractId ? String(b.contract.contractId) : '';
-            return idA.localeCompare(idB);
-        });
+        const unmet = [];
+        for (const entry of contractEntries) {
+            const contract = entry && entry.contract;
+            if (!contract || !contract.contractId) continue;
 
-        if (unmet.length > 0) {
-            debug('spawner', `[Spawner] Contracts unmet: ${unmet.map(e => e.contract.contractId).join(', ')}`);
-        } else {
-            debug('spawner', `[Spawner] No unmet contracts for ${room.name}`);
+            const status = fulfillment && fulfillment[contract.contractId]
+                ? fulfillment[contract.contractId]
+                : { live: 0, inflight: 0, effective: 0 };
+            const desired = Number.isFinite(contract.desired) ? contract.desired : 0;
+            const effective = Number.isFinite(status.effective) ? status.effective : 0;
+            const deficit = Math.max(0, desired - effective);
+            if (deficit <= 0) continue;
+
+            unmet.push({ entry, status, desired, effective, deficit });
+        }
+
+        if (unmet.length === 0) {
+            debug('spawner', `[SpawnPlanner] ${room.name} no unmet contracts`);
             return null;
         }
 
-        unmet.forEach(entry => {
-            const desired = entry.contract.desired;
-            const fulfilled = fulfillment[entry.contract.contractId] || 0;
-            debug('spawner', `[SpawnPlanner] ${room.name} unmet ${entry.contract.contractId} role=${entry.contract.role} bind=${entry.contract.bindMode}:${entry.contract.bindId} desired=${desired} fulfilled=${fulfilled}`);
+        unmet.sort((a, b) => {
+            const tierA = getContractSpawnTier(a.entry);
+            const tierB = getContractSpawnTier(b.entry);
+            if (tierA !== tierB) return tierA - tierB;
+
+            const prioA = Number.isFinite(a.entry.contract.priority) ? a.entry.contract.priority : 0;
+            const prioB = Number.isFinite(b.entry.contract.priority) ? b.entry.contract.priority : 0;
+            if (prioA !== prioB) return prioB - prioA;
+
+            if (a.deficit !== b.deficit) return b.deficit - a.deficit;
+
+            const idA = String(a.entry.contract.contractId || '');
+            const idB = String(b.entry.contract.contractId || '');
+            return idA.localeCompare(idB);
         });
 
-        const entry = this.selectContract(room, unmet);
-        if (!entry) return null;
-        debug('spawner', `[SpawnPlanner] ${room.name} pick=${entry.contract.contractId} role=${entry.contract.role} desired=${entry.contract.desired} prio=${entry.contract.priority}`);
-
-        const ticket = this.createTicket(room, entry.contract);
-        if (!ticket) return null;
-        debug('spawner', `[SpawnPlanner] ${room.name} ticketCreated=${ticket.ticketId} contract=${ticket.contractId}`);
-
-        return this.buildSpawnTicket(entry, room, ticket, options);
-    },
-
-    selectContract: function(room, entries) {
-        const history = room.memory.spawnHistory || [];
-        const MAX_CONSECUTIVE = 5;
-
-        if (history.length >= MAX_CONSECUTIVE) {
-            const lastArchetype = history[history.length - 1];
-            let consecutive = 0;
-            
-            for (let i = history.length - 1; i >= 0; i--) {
-                if (history[i] === lastArchetype) consecutive++;
-                else break;
-            }
-
-            if (consecutive >= MAX_CONSECUTIVE) {
-                const alternative = entries.find(e => e.contract.role !== lastArchetype);
-                if (alternative) {
-                    return alternative;
-                }
-            }
+        for (const item of unmet) {
+            const candidate = this.buildSpawnCandidate(item.entry, room, options);
+            if (!candidate) continue;
+            candidate.desired = item.desired;
+            candidate.fulfilled = item.effective;
+            candidate.deficit = item.deficit;
+            return candidate;
         }
 
-        return entries[0];
+        return null;
     },
 
-    buildSpawnTicket: function(entry, room, ticket, options) {
-        const mission = entry.mission;
-        const contract = entry.contract;
-        const budget = this.computeBudget(room, mission);
+    buildSpawnCandidate: function(entry, room, options) {
+        const mission = entry && entry.mission;
+        const contract = entry && entry.contract;
+        if (!contract) return null;
 
+        const budget = this.computeBudget(room);
         const buildBody = options && options.buildBody;
         const calculateBodyCost = options && options.calculateBodyCost;
         if (!buildBody || !calculateBodyCost) return null;
 
         const body = buildBody(mission, budget);
+        if (!Array.isArray(body) || body.length === 0) return null;
         const cost = calculateBodyCost(body);
-        debug('spawner', `[SpawnPlanner] ${room.name} body parts=${body.length} cost=${cost} budget=${budget}`);
 
         const memory = {
             role: contract.role,
             room: room.name,
             taskState: 'init',
             contractId: contract.contractId,
-            ticketId: ticket.ticketId,
             bindMode: contract.bindMode,
             bindId: contract.bindId
         };
+
         if (contract.bindMode !== 'pool' && mission && mission.name) {
             memory.missionName = mission.name;
-            // --- mission-specific identity (IMPORTANT for duo roles) ---
-            if (mission && mission.data) {
-            // assault duo/solo identity
-            if (mission.data.assaultRole) memory.assaultRole = mission.data.assaultRole;     // 'leader' | 'support' | 'solo'
-            if (mission.data.squadKey)    memory.assaultSquad = mission.data.squadKey;       // shared squad key
-
-            // optional: keep handy context for debugging
-            if (mission.data.mode)        memory.assaultMode = mission.data.mode;            // 'DUO' | 'SOLO' (if present)
+            if (mission.data) {
+                if (mission.data.assaultRole) memory.assaultRole = mission.data.assaultRole;
+                if (mission.data.squadKey) memory.assaultSquad = mission.data.squadKey;
+                if (mission.data.mode) memory.assaultMode = mission.data.mode;
             }
         }
 
-        const spawnTicket = {
-            ticketId: ticket.ticketId,
-            contractId: contract.contractId,
-            homeRoom: room.name,
-            role: contract.role,
-            bindMode: contract.bindMode,
-            bindId: contract.bindId,
-            priority: contract.priority,
-            body: bodyCodec.encodeBody(body),
-            cost: cost,
-            memory: memory,
-            targetRoom: mission && mission.data ? mission.data.targetRoom : null
-        };
-
-        if (Memory.spawnTickets && Memory.spawnTickets[ticket.ticketId]) {
-            const stored = Memory.spawnTickets[ticket.ticketId];
-            stored.body = bodyCodec.encodeBody(body);
-            stored.cost = cost;
-            stored.priority = contract.priority;
-            stored.memory = memory;
-            stored.targetRoom = spawnTicket.targetRoom;
+        if (mission && mission.data && mission.data.targetRoom) {
+            memory.targetRoom = mission.data.targetRoom;
         }
 
-        return spawnTicket;
+        return {
+            contractId: contract.contractId,
+            missionName: mission && mission.name ? mission.name : null,
+            role: contract.role,
+            archetype: mission && mission.archetype ? mission.archetype : contract.role,
+            priority: Number.isFinite(contract.priority) ? contract.priority : 0,
+            bindMode: contract.bindMode,
+            bindId: contract.bindId,
+            homeRoom: contract.homeRoom || room.name,
+            targetRoom: mission && mission.data ? mission.data.targetRoom : null,
+            replaceLeadTicks: Number.isFinite(contract.replaceLeadTicks) ? contract.replaceLeadTicks : null,
+            body,
+            cost,
+            memory
+        };
     },
 
-    computeBudget: function(room, mission) {
+    computeBudget: function(room) {
         const opState = room._opState;
         let budget = room.energyCapacityAvailable;
 
@@ -163,73 +136,13 @@ const spawnPlanner = {
         const hasMiners = myCreeps.some(c => c.memory.role === 'miner' && !c.spawning);
         const hasHaulers = myCreeps.some(c => c.memory.role === 'hauler' && !c.spawning);
 
-        if (!room.memory.spawner) room.memory.spawner = {};
-
-        const missionName = mission && mission.name ? mission.name : 'unknown';
-        if (room.memory.spawner.lastMissionName !== missionName) {
-            room.memory.spawner.lastMissionName = missionName;
-            room.memory.spawner.waitTicks = 0;
-        }
-
         if (!hasMiners || !hasHaulers) {
             budget = Math.max(room.energyAvailable, 200);
-            room.memory.spawner.waitTicks = 0;
-            debug('spawner', `[SpawnPlanner] ${room.name} bootstrap budget=${budget}`);
         } else if (opState === 'EMERGENCY') {
             budget = Math.max(room.energyAvailable, 200);
-            room.memory.spawner.waitTicks = 0;
-            debug('spawner', `[SpawnPlanner] ${room.name} emergency budget=${budget}`);
-        } else if (room.energyAvailable < room.energyCapacityAvailable) {
-            const GRACE_PERIOD = 100;
-            room.memory.spawner.waitTicks++;
-            
-            if (room.memory.spawner.waitTicks > GRACE_PERIOD) {
-                budget = Math.max(room.energyAvailable, 200);
-                debug('spawner', `[Spawner] Grace period expired for ${missionName} (${room.memory.spawner.waitTicks} ticks). Downgrading budget.`);
-            } else {
-                budget = room.energyCapacityAvailable;
-                if (room.memory.spawner.waitTicks % 20 === 0) {
-                    debug('spawner', `[Spawner] Waiting for refill for ${missionName} (${room.memory.spawner.waitTicks}/${GRACE_PERIOD}).`);
-                }
-            }
-        } else {
-            room.memory.spawner.waitTicks = 0;
         }
 
         return budget;
-    },
-
-    createTicket: function(room, contract) {
-        if (!room.memory.spawner) room.memory.spawner = {};
-        if (room.memory.spawner.lastTicketTick === Game.time) return null;
-        room.memory.spawner.lastTicketTick = Game.time;
-
-        if (!Memory.spawnTickets) Memory.spawnTickets = {};
-        const ticketId = `ticket:${Game.time.toString(36)}:${Math.floor(Math.random() * 100000)}`;
-        const ticket = {
-            ticketId,
-            contractId: contract.contractId,
-            homeRoom: contract.homeRoom,
-            role: contract.role,
-            bindMode: contract.bindMode,
-            bindId: contract.bindId,
-            state: 'REQUESTED',
-            creepName: null,
-            spawnRoom: null,
-            expiresAt: Game.time + DEFAULT_REQUEST_TTL
-        };
-        Memory.spawnTickets[ticketId] = ticket;
-        debug('spawner', `[SpawnPlanner] ${room.name} store ticket=${ticketId} contract=${contract.contractId}`);
-
-        if (!Memory.rooms) Memory.rooms = {};
-        if (!Memory.rooms[contract.homeRoom]) Memory.rooms[contract.homeRoom] = {};
-        const index = Memory.rooms[contract.homeRoom].spawnTicketsByKey || {};
-        const key = contract.contractId;
-        if (!index[key]) index[key] = [];
-        index[key].push(ticketId);
-        Memory.rooms[contract.homeRoom].spawnTicketsByKey = index;
-
-        return ticket;
     }
 };
 

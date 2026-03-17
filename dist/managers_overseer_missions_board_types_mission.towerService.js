@@ -3,8 +3,14 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionTower = require('managers_overseer_missions_board_types_mission.tower');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
-const TOWER_PLAN_STORE = 'towerManagedPlanByRoom';
+const TOWER_PLAN_STORE = 'towerPlanByRoom';
+const TOWER_POLICY_NAMES = [
+    'tower:defense',
+    'tower:heal',
+    'tower:repair'
+];
 
 function cloneContract(contract) {
     if (!contract || typeof contract !== 'object') return null;
@@ -52,10 +58,32 @@ module.exports = {
         const roomName = context.sponsorRoom || context.targetRoom;
         return missionKeys.makeUserMissionKey(
             roomName,
-            'towerManaged',
+            'tower',
             getPolicyName(context),
             context.namespace || 'tower'
         );
+    },
+
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !intel || !missionBoard) return;
+        if (!missionThrottle.shouldRunReconcile('tower', room.name, Game.time)) return;
+
+        const hasHostiles = Array.isArray(intel.hostiles) && intel.hostiles.length > 0;
+        const live = missionBoard.listLiveByRoom(room.name);
+        const existingTower = live.some(m => m && m.type === 'tower');
+        if (!hasHostiles && existingTower && !missionThrottle.shouldRunReconcile('towerPassive', room.name, Game.time)) {
+            return;
+        }
+
+        for (let i = 0; i < TOWER_POLICY_NAMES.length; i++) {
+            const policyName = TOWER_POLICY_NAMES[i];
+            missionBoard.createMission('tower', {
+                sponsorRoom: room.name,
+                targetRoom: room.name,
+                namespace: 'tower',
+                policyName
+            }, { room, intel, context });
+        }
     },
 
     create(context) {
@@ -66,7 +94,7 @@ module.exports = {
         return {
             id: key,
             key,
-            type: 'towerManaged',
+            type: 'tower',
             class: missionClasses.SERVICE,
             state: missionStates.ACTIVE,
             sponsorRoom: context.sponsorRoom,
@@ -90,7 +118,7 @@ module.exports = {
                 namespace: context.namespace || 'tower',
                 policyName,
                 contractType: contract && contract.type ? contract.type : null,
-                legacyName: policyName
+                missionName: policyName
             },
             data: { contract: contract || null },
             statusReason: null
@@ -110,9 +138,9 @@ module.exports = {
         const context = runtimeCtx && runtimeCtx.context ? runtimeCtx.context : null;
 
         mission.meta = mission.meta || {};
-        const policyName = mission.meta.policyName || mission.meta.legacyName || 'tower:defense';
+        const policyName = mission.meta.policyName || mission.meta.missionName || 'tower:defense';
         mission.meta.policyName = policyName;
-        mission.meta.legacyName = policyName;
+        mission.meta.missionName = policyName;
 
         let contract = null;
         if (room && intel) {
@@ -138,9 +166,11 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const contract = getContract(mission);
         if (!contract) return null;
         return cloneContract(contract);
     }
 };
+
+

@@ -6,6 +6,7 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const REMOTE_HAUL_LANE_LAYOUT_VERSION = 4;
 const TARGET_WORK = 7;
@@ -248,6 +249,55 @@ module.exports = {
         );
     },
 
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !intel || !missionBoard) return;
+        if (context && context.opState === 'EMERGENCY') return;
+        if (!getDropoffTarget(room, intel)) return;
+        const live = missionBoard.listLiveByRoom(room.name);
+        const liveRemoteHaul = [];
+        for (let i = 0; i < live.length; i++) {
+            const mission = live[i];
+            if (mission && mission.type === 'remoteHaul') liveRemoteHaul.push(mission);
+        }
+        if (liveRemoteHaul.length > 0 && !missionThrottle.shouldRunReconcile('remoteHaul', room.name, Game.time)) {
+            return;
+        }
+
+        const entries = remoteUtils.getRemoteEconomicContext(room, {
+            opState: context && context.opState ? context.opState : null,
+            maxScoutAge: 4000
+        });
+        const enabledRooms = new Set(entries.filter(e => e && e.enabled && e.name).map(e => e.name));
+
+        for (let i = 0; i < liveRemoteHaul.length; i++) {
+            const mission = liveRemoteHaul[i];
+            if (!mission) continue;
+            const remoteRoom = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
+            if (remoteRoom && !enabledRooms.has(remoteRoom)) {
+                missionBoard.markCancelled(mission.id, 'remote_room_not_enabled');
+            }
+        }
+
+        for (let i = 0; i < entries.length; i++) {
+            const wrapped = entries[i];
+            const remoteRoom = wrapped && wrapped.name ? wrapped.name : null;
+            const entry = wrapped && wrapped.entry ? wrapped.entry : null;
+            const enabled = !!(wrapped && wrapped.enabled);
+            if (!enabled || !remoteRoom || !entry || !Array.isArray(entry.sourcesInfo)) continue;
+
+            for (let j = 0; j < entry.sourcesInfo.length; j++) {
+                const source = entry.sourcesInfo[j];
+                if (!source || !source.id) continue;
+                missionBoard.createMission('remoteHaul', {
+                    sponsorRoom: room.name,
+                    remoteRoom,
+                    sourceId: source.id,
+                    priority: 70
+                }, { room, intel, context });
+            }
+        }
+    },
+
     create(context) {
         const now = Game.time;
         return {
@@ -295,7 +345,7 @@ module.exports = {
             meta: {
                 remoteRoom: context.remoteRoom,
                 sourceId: context.sourceId,
-                legacyName: `remote:haul:${context.remoteRoom}:drop:${context.sourceId}`
+                missionName: `remote:haul:${context.remoteRoom}:drop:${context.sourceId}`
             },
             statusReason: null
         };
@@ -418,7 +468,7 @@ module.exports = {
         mission.meta.pickupMode = plan.pickupMode;
         mission.meta.planSignature = planSignature;
         if (planState !== 'cached') mission.meta.planTick = Game.time;
-        mission.meta.legacyName = plan.pickupMode === 'container'
+        mission.meta.missionName = plan.pickupMode === 'container'
             ? `remote:haul:${mission.targetRoom}:${source.containerId}`
             : `remote:haul:${mission.targetRoom}:drop:${source.id}`;
 
@@ -470,10 +520,10 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         return {
-            name: mission.meta && mission.meta.legacyName
-                ? mission.meta.legacyName
+            name: mission.meta && mission.meta.missionName
+                ? mission.meta.missionName
                 : `remote:haul:${mission.targetRoom}:drop:${mission.targetId}`,
             type: 'remote_haul',
             archetype: 'remote_hauler',
@@ -490,3 +540,5 @@ module.exports = {
         };
     }
 };
+
+

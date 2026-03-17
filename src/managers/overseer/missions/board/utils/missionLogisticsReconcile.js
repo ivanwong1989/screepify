@@ -57,6 +57,21 @@ function getSlots(source, target, carryParts, resourceType, amountOverride) {
     return slots;
 }
 
+function getEffectiveSourceCapacity(source, resourceType, fallback) {
+    if (!source || !source.store) return Math.max(50, fallback || 50);
+    const rt = resourceType || RESOURCE_ENERGY;
+    let capacity = 0;
+    if (typeof source.store.getCapacity === 'function') {
+        capacity = source.store.getCapacity(rt);
+        if (!Number.isFinite(capacity)) capacity = source.store.getCapacity();
+    }
+    if (!Number.isFinite(capacity) || capacity <= 0) {
+        if (Number.isFinite(source.storeCapacity)) capacity = source.storeCapacity;
+    }
+    if (!Number.isFinite(capacity) || capacity <= 0) capacity = fallback || 50;
+    return Math.max(50, capacity);
+}
+
 function closestByRange(pos, targets) {
     if (!pos || !Array.isArray(targets) || targets.length === 0) return null;
     let best = null;
@@ -159,10 +174,12 @@ function getRouteAgeStore(roomName) {
     return root.byRoom[roomName];
 }
 
-function getRoutePolicy(kind, carryParts) {
+function getRoutePolicy(kind, carryParts, source, resourceType) {
     const cap = Math.max(50, carryParts * 50);
-    if (kind === 'link_out') return { minAmount: 1, maxAgeTicks: 20 };
-    if (kind === 'mining') return { minAmount: clampNumber(Math.floor(cap * 0.35), 100, 50, 1200), maxAgeTicks: 450 };
+    const sourceCap = getEffectiveSourceCapacity(source, resourceType, cap);
+    const efficientLoad = Math.max(50, Math.min(cap, sourceCap));
+    if (kind === 'link_out') return { minAmount: efficientLoad, maxAgeTicks: null };
+    if (kind === 'mining') return { minAmount: efficientLoad, maxAgeTicks: null };
     return { minAmount: clampNumber(Math.floor(cap * 0.25), 50, 25, 1200), maxAgeTicks: 300 };
 }
 
@@ -175,6 +192,7 @@ function shouldScheduleRoute(roomName, routeKey, amount, policy) {
     }
     if (!Object.prototype.hasOwnProperty.call(mem, routeKey)) mem[routeKey] = Game.time;
     if (amount >= policy.minAmount) return true;
+    if (!Number.isFinite(policy.maxAgeTicks) || policy.maxAgeTicks <= 0) return false;
     const age = Math.max(0, Game.time - mem[routeKey]);
     return age >= policy.maxAgeTicks;
 }
@@ -193,7 +211,7 @@ function addPersistentLanes(room, intel, context, missionBoard, carryParts, isEm
         const laneType = 'mining';
         const routeKey = `${laneType}:${source.id}:${storage.id}:${RESOURCE_ENERGY}`;
         const amount = getAvailableAmount(source, RESOURCE_ENERGY);
-        const policy = getRoutePolicy(laneType, carryParts);
+        const policy = getRoutePolicy(laneType, carryParts, source, RESOURCE_ENERGY);
         if (!shouldScheduleRoute(room.name, routeKey, amount, policy)) continue;
         const slots = getSlots(source, storage, carryParts, RESOURCE_ENERGY, amount);
         for (let slot = 0; slot < slots; slot++) {
@@ -206,7 +224,8 @@ function addPersistentLanes(room, intel, context, missionBoard, carryParts, isEm
                 slot,
                 laneType,
                 priority: getLogisticsPriority('mining', storage, isEmergency),
-                allowPartial: false
+                allowPartial: false,
+                minAmount: policy.minAmount
             }, { room, intel, context });
         }
     }
@@ -223,7 +242,7 @@ function addPersistentLanes(room, intel, context, missionBoard, carryParts, isEm
         if (room.controller && link.pos.inRangeTo(room.controller.pos, 3)) continue;
         const laneType = 'link_out';
         const routeKey = `${laneType}:${link.id}:${storage.id}:${RESOURCE_ENERGY}`;
-        const policy = getRoutePolicy(laneType, carryParts);
+        const policy = getRoutePolicy(laneType, carryParts, link, RESOURCE_ENERGY);
         if (!shouldScheduleRoute(room.name, routeKey, amount, policy)) continue;
 
         missionBoard.createMission('logisticsLane', {
@@ -235,7 +254,8 @@ function addPersistentLanes(room, intel, context, missionBoard, carryParts, isEm
             slot: 0,
             laneType,
             priority: getLogisticsPriority('link_out', storage, isEmergency),
-            allowPartial: true
+            allowPartial: true,
+            minAmount: policy.minAmount
         }, { room, intel, context });
     }
 }
@@ -466,7 +486,7 @@ function addTerminalStockJobs(room, missionBoard, isEmergency) {
     });
 }
 
-function run({ room, intel, context, missionBoard }) {
+function reconcileRoom({ room, intel, context, missionBoard }) {
     if (!room || !missionBoard || !intel) return;
     const isEmergency = (context && context.opState === 'EMERGENCY');
     const hasCriticalEnergyGap = room.energyAvailable < room.energyCapacityAvailable;
@@ -495,7 +515,7 @@ function run({ room, intel, context, missionBoard }) {
         hasLogisticsCoverage &&
         !isEmergency &&
         !hasCriticalEnergyGap &&
-        !missionThrottle.shouldRunDetector('logistics', room.name, Game.time)
+        !missionThrottle.shouldRunReconcile('logistics', room.name, Game.time)
     ) return;
 
     const efficientSources = context && context.efficientSources ? context.efficientSources : new Set();
@@ -533,6 +553,5 @@ function run({ room, intel, context, missionBoard }) {
 }
 
 module.exports = {
-    type: 'logistics',
-    run
+    reconcileRoom
 };

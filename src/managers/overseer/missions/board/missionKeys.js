@@ -74,10 +74,6 @@ function makeContractKey(roomName, mission) {
     return `contract:${roomName}:${type}:anon`;
 }
 
-function makeLegacyKey(roomName, mission) {
-    return makeContractKey(roomName, mission);
-}
-
 function makeUserMissionKey(roomName, missionType, userMissionId, fallback) {
     const type = missionType || 'userMission';
     const id = userMissionId || fallback || 'anon';
@@ -100,7 +96,6 @@ module.exports = {
     makeMineralKey,
     makeDecongestKey,
     makeContractKey,
-    makeLegacyKey,
     makeUserMissionKey
 };
 

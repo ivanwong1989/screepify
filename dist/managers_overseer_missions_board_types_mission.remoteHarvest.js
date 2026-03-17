@@ -3,6 +3,7 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const REMOTE_HARVEST_PLAN_CACHE_TTL = 300;
 const REMOTE_HARVEST_PLAN_STORE = 'remoteHarvestPlan';
@@ -149,6 +150,60 @@ module.exports = {
         );
     },
 
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !missionBoard) return;
+        if (context && context.opState === 'EMERGENCY') return;
+        const live = missionBoard.listLiveByRoom(room.name);
+        const liveRemoteHarvest = [];
+        for (let i = 0; i < live.length; i++) {
+            const mission = live[i];
+            if (mission && mission.type === 'remoteHarvest') liveRemoteHarvest.push(mission);
+        }
+        if (liveRemoteHarvest.length > 0 && !missionThrottle.shouldRunReconcile('remoteHarvest', room.name, Game.time)) {
+            return;
+        }
+
+        const entries = remoteUtils.getRemoteEconomicContext(room, {
+            opState: context && context.opState ? context.opState : null,
+            maxScoutAge: 4000
+        });
+        const enabledRooms = new Set(entries.filter(e => e && e.enabled && e.name).map(e => e.name));
+
+        for (let i = 0; i < liveRemoteHarvest.length; i++) {
+            const mission = liveRemoteHarvest[i];
+            if (!mission) continue;
+            const remoteRoom = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
+            if (remoteRoom && !enabledRooms.has(remoteRoom)) {
+                missionBoard.markCancelled(mission.id, 'remote_room_not_enabled');
+            }
+        }
+
+        for (let i = 0; i < entries.length; i++) {
+            const wrapped = entries[i];
+            const remoteRoom = wrapped && wrapped.name ? wrapped.name : null;
+            const entry = wrapped && wrapped.entry ? wrapped.entry : null;
+            const enabled = !!(wrapped && wrapped.enabled);
+            if (!enabled || !remoteRoom || !entry || !Array.isArray(entry.sourcesInfo)) continue;
+
+            for (let j = 0; j < entry.sourcesInfo.length; j++) {
+                const source = entry.sourcesInfo[j];
+                if (!source || !source.id) continue;
+                missionBoard.createMission('remoteHarvest', {
+                    sponsorRoom: room.name,
+                    remoteRoom,
+                    sourceId: source.id,
+                    sourcePos: { x: source.x, y: source.y, roomName: remoteRoom },
+                    containerId: source.containerId || null,
+                    containerPos: source.containerPos || null,
+                    standPos: source.standPos || null,
+                    availableSpaces: source.availableSpaces || 1,
+                    hasContainer: !!(source.hasContainer || source.containerId),
+                    priority: 80
+                }, { room, intel, context });
+            }
+        }
+    },
+
     create(context) {
         const now = Game.time;
         const availableSpaces = Math.max(1, Number(context.availableSpaces) || 1);
@@ -208,7 +263,7 @@ module.exports = {
                 standPos,
                 availableSpaces,
                 targetWork,
-                legacyName: `remote:harvest:${context.remoteRoom}:${context.sourceId}`
+                missionName: `remote:harvest:${context.remoteRoom}:${context.sourceId}`
             },
             statusReason: null
         };
@@ -294,7 +349,7 @@ module.exports = {
         mission.meta.standPos = plan.standPos || null;
         mission.meta.sourcePos = plan.sourcePos || mission.meta.sourcePos || null;
         mission.meta.targetWork = Math.max(1, Number(mission.meta.targetWork) || 7);
-        mission.meta.legacyName = mission.meta.legacyName || `remote:harvest:${mission.meta.remoteRoom}:${mission.targetId}`;
+        mission.meta.missionName = mission.meta.missionName || `remote:harvest:${mission.meta.remoteRoom}:${mission.targetId}`;
         mission.meta.planSignature = planSignature;
         if (planState !== 'cached') mission.meta.planTick = Game.time;
 
@@ -327,13 +382,13 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const sourcePos = mission.meta && mission.meta.sourcePos
             ? new RoomPosition(mission.meta.sourcePos.x, mission.meta.sourcePos.y, mission.meta.sourcePos.roomName)
             : null;
         return {
-            name: mission.meta && mission.meta.legacyName
-                ? mission.meta.legacyName
+            name: mission.meta && mission.meta.missionName
+                ? mission.meta.missionName
                 : `remote:harvest:${mission.targetRoom}:${mission.targetId}`,
             type: 'remote_harvest',
             archetype: 'remote_miner',
@@ -357,3 +412,5 @@ module.exports = {
         };
     }
 };
+
+

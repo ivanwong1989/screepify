@@ -65,7 +65,7 @@ const overseerUtils = {
 
     analyzeCensus: function(missions, creeps) {
         // Informational only: used for UI/debug and mission logic that depends on "currently assigned".
-        // Spawn planning must rely on contract/ticket census, not mission.census.
+        // Spawn planning must rely on contract fulfillment census, not mission.census.
         const missionMap = {};
         const roleMissions = {};
 

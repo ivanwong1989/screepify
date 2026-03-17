@@ -1,5 +1,4 @@
 const heap = require('utils_heap');
-const bodyCodec = require('utils_bodyCodec');
 const empireBoard = require('managers_zeadmin_manager.global.zeadmin.empire.board');
 const empireTasker = require('managers_zeadmin_manager.global.zeadmin.empire.tasker');
 
@@ -9,7 +8,7 @@ function ensureStore() {
     const store = heap.getStore(INJECT_STORE_KEY, { ttl: null });
     if (!store.version) store.version = 1;
     if (!store.lastTick) store.lastTick = 0;
-    if (!store.lastTickets) store.lastTickets = [];
+    if (!store.lastCandidates) store.lastCandidates = [];
     if (!store.pendingByMissionId) store.pendingByMissionId = Object.create(null);
     return store;
 }
@@ -34,34 +33,39 @@ function sanitizeTag(raw, fallback) {
     return fallback || 'mission';
 }
 
-function buildMinimalTicket(mission, idx) {
+function buildCandidate(mission, idx) {
     const role = mission.archetype || (mission.requirements && mission.requirements.archetype) || 'worker';
     const missionId = mission.id;
     const bindId = missionId;
-    const ticketId = `empire:${missionId}:${Game.time}:${idx}`;
     const tagRaw = (mission.data && mission.data.flagName) ? `flag_${mission.data.flagName}` : missionId;
     const missionTag = sanitizeTag(tagRaw, 'mission');
-    const bodyParts = [MOVE];
+    const body = [MOVE];
     const cost = 50;
+    const sponsorRoom = mission.sponsorRoom;
 
     return {
-        ticketId,
-        contractId: `home=empire|role=${role}|bind=empire:${bindId}`,
-        homeRoom: mission.sponsorRoom,
+        contractId: `home=${sponsorRoom}|role=${role}|bind=empire:${bindId}`,
+        homeRoom: sponsorRoom,
         role,
         bindMode: 'empire',
         bindId,
         priority: Number.isFinite(mission.priority) ? mission.priority : 0,
         namePrefix: `emp-r-${role}-m-${missionTag}`,
-        body: bodyCodec.encodeBody(bodyParts),
+        body,
         cost,
         memory: {
             role,
+            room: sponsorRoom,
+            taskState: 'init',
+            contractId: `home=${sponsorRoom}|role=${role}|bind=empire:${bindId}`,
+            bindMode: 'empire',
+            bindId,
             empireMissionId: missionId,
             empireTag: missionTag
         },
         targetRoom: mission.data && mission.data.targetRoom ? mission.data.targetRoom : null,
-        _empireScaffold: true
+        _empireScaffold: true,
+        _idx: idx
     };
 }
 
@@ -70,13 +74,12 @@ module.exports = {
         return ensureStore();
     },
 
-    getTickets: function() {
+    getCandidates: function() {
         const store = ensureStore();
         const taskerStore = empireTasker.getStore();
         const missions = empireBoard.list();
         const out = [];
 
-        // Clear stale pending throttles.
         for (const missionId in store.pendingByMissionId) {
             if ((store.pendingByMissionId[missionId] || 0) <= Game.time) {
                 delete store.pendingByMissionId[missionId];
@@ -96,23 +99,13 @@ module.exports = {
             if (store.pendingByMissionId[mission.id]) continue;
 
             for (let k = 0; k < deficit; k++) {
-                out.push(buildMinimalTicket(mission, k));
+                out.push(buildCandidate(mission, k));
             }
-            // Simple scaffold guard: avoid duplicate requests while spawn is in progress.
             store.pendingByMissionId[mission.id] = Game.time + 20;
         }
 
         store.lastTick = Game.time;
-        store.lastTickets = out;
+        store.lastCandidates = out;
         return out;
-    },
-
-    // Use this helper when wiring into existing main loop:
-    // allSpawnTickets = injector.appendToGlobalTickets(allSpawnTickets)
-    appendToGlobalTickets: function(existingTickets) {
-        const base = Array.isArray(existingTickets) ? existingTickets : [];
-        const injected = this.getTickets();
-        if (!injected || injected.length === 0) return base;
-        return base.concat(injected);
     }
 };

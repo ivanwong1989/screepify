@@ -2,6 +2,7 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const HARVEST_TRAVEL_CACHE_TTL = 200;
 const HARVEST_TRAVEL_STORE = 'harvestTravel';
@@ -417,10 +418,41 @@ function refreshMissionData(mission, runtimeCtx) {
     return planState;
 }
 
+function shouldReconcile(roomName, missionBoard, room, intel) {
+    if (!room || !room.controller || !room.controller.my) return false;
+    const existing = missionBoard.listLiveByRoom(roomName).filter(m => m.type === 'harvest').length;
+    const sourceCount = intel && Array.isArray(intel.sources)
+        ? intel.sources.length
+        : room.find(FIND_SOURCES).length;
+    if (existing < sourceCount) return true;
+    return missionThrottle.shouldRunReconcile('harvest', roomName, Game.time);
+}
+
 module.exports = {
     makeKey(context) {
         const roomName = context.targetRoom || context.sponsorRoom;
         return missionKeys.makeHarvestKey(roomName, context.sourceId);
+    },
+
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !missionBoard) return;
+        if (!shouldReconcile(room.name, missionBoard, room, intel)) return;
+
+        const sources = intel && Array.isArray(intel.sources)
+            ? intel.sources
+            : room.find(FIND_SOURCES).map(s => ({ id: s.id, availableSpaces: 1 }));
+
+        for (let i = 0; i < sources.length; i++) {
+            const source = sources[i];
+            if (!source || !source.id) continue;
+            missionBoard.createMission('harvest', {
+                sponsorRoom: room.name,
+                targetRoom: room.name,
+                sourceId: source.id,
+                availableSpaces: source.availableSpaces,
+                priority: context && context.opState === 'EMERGENCY' ? 1000 : 100
+            }, { room, intel, context });
+        }
     },
 
     create(context) {
@@ -466,7 +498,7 @@ module.exports = {
                 lastPlanTick: 0
             },
             meta: {
-                legacyName: `harvest:${context.sourceId}`
+                missionName: `harvest:${context.sourceId}`
             },
             statusReason: null
         };
@@ -505,13 +537,13 @@ module.exports = {
         };
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const sourcePos = mission.meta && mission.meta.sourcePos
             ? new RoomPosition(mission.meta.sourcePos.x, mission.meta.sourcePos.y, mission.meta.sourcePos.roomName)
             : null;
         return {
-            name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : `harvest:${mission.targetId}`,
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `harvest:${mission.targetId}`,
             type: 'harvest',
             archetype: 'miner',
             sourceId: mission.targetId,
@@ -541,4 +573,6 @@ module.exports = {
         };
     }
 };
+
+
 

@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const BUILD_MAX_WORKERS = 2;
 
@@ -13,6 +14,32 @@ function cleanupAssigned(mission) {
 module.exports = {
     makeKey(context) {
         return missionKeys.makeBuildKey(context.targetRoom || context.sponsorRoom, context.siteId);
+    },
+
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !missionBoard) return;
+        if (context && context.opState === 'EMERGENCY') return;
+        if (!missionThrottle.shouldRunReconcile('build', room.name, Game.time)) return;
+
+        const sites = intel && Array.isArray(intel.constructionSites)
+            ? intel.constructionSites
+            : room.find(FIND_MY_CONSTRUCTION_SITES);
+        if (!sites || sites.length === 0) return;
+
+        const rcl = (room.controller && room.controller.level) || 1;
+        const requiredWork = 5 + Math.max(0, rcl - 3) * 2;
+
+        for (let i = 0; i < sites.length; i++) {
+            const site = sites[i];
+            if (!site || !site.id) continue;
+            missionBoard.createMission('build', {
+                sponsorRoom: room.name,
+                targetRoom: room.name,
+                siteId: site.id,
+                requiredWork,
+                priority: 60
+            }, { room, intel, context });
+        }
     },
 
     create(context) {
@@ -38,7 +65,7 @@ module.exports = {
                 lastProgress: 0
             },
             meta: {
-                legacyName: `build:${context.siteId}`,
+                missionName: `build:${context.siteId}`,
                 requiredWork: Number.isFinite(context.requiredWork) ? context.requiredWork : 5,
                 minCount: 1,
                 maxCount: BUILD_MAX_WORKERS
@@ -68,7 +95,7 @@ module.exports = {
         mission.meta.requiredWork = requiredWork;
         mission.meta.minCount = 1;
         mission.meta.maxCount = BUILD_MAX_WORKERS;
-        mission.meta.legacyName = mission.meta.legacyName || `build:${mission.targetId}`;
+        mission.meta.missionName = mission.meta.missionName || `build:${mission.targetId}`;
 
         mission.progress = mission.progress || {};
         if (site && Number.isFinite(site.progress)) {
@@ -101,9 +128,9 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         return {
-            name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : `build:${mission.targetId}`,
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `build:${mission.targetId}`,
             type: 'build',
             archetype: 'worker',
             targetId: mission.targetId,
@@ -121,3 +148,5 @@ module.exports = {
         };
     }
 };
+
+

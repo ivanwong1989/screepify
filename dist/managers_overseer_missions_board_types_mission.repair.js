@@ -1,10 +1,13 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const CRITICAL_WALL_HITS = 5000;
 const REPAIR_MIN_RATIO = 0.9;
 const DEFAULT_FORTIFY_TARGET = 500000;
+const FORTIFY_TARGET_CAP = 3;
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -32,6 +35,49 @@ module.exports = {
         );
     },
 
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !missionBoard) return;
+        if (context && context.opState === 'EMERGENCY') return;
+        if (!missionThrottle.shouldRunReconcile('repair', room.name, Game.time)) return;
+
+        const scan = overseerOpportunisticRepair.getRoomScan(room.name);
+        if (!scan) return;
+
+        const repairIds = Array.isArray(scan.repairIds) ? scan.repairIds : [];
+        for (let i = 0; i < repairIds.length; i++) {
+            const id = repairIds[i];
+            missionBoard.createMission('repair', {
+                sponsorRoom: room.name,
+                targetRoom: room.name,
+                targetId: id,
+                fortify: false,
+                priority: 65
+            }, { room, intel, context });
+        }
+
+        const fortifyPolicy = room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy
+            ? room.memory.overseer.fortifyPolicy
+            : null;
+        const targetHits = Number.isFinite(fortifyPolicy && fortifyPolicy.target) ? fortifyPolicy.target : null;
+        const economyState = context && context.economyState ? context.economyState : 'STOCKPILING';
+        const allowFortifySpawn = economyState === 'UPGRADING' || !!scan.critical;
+
+        const fortifyIds = Array.isArray(scan.fortifyIds) ? scan.fortifyIds : [];
+        const cap = Math.max(1, FORTIFY_TARGET_CAP);
+        for (let i = 0; i < Math.min(cap, fortifyIds.length); i++) {
+            const id = fortifyIds[i];
+            missionBoard.createMission('repair', {
+                sponsorRoom: room.name,
+                targetRoom: room.name,
+                targetId: id,
+                fortify: true,
+                targetHits,
+                spawnAllowed: allowFortifySpawn,
+                priority: allowFortifySpawn ? 55 : 35
+            }, { room, intel, context });
+        }
+    },
+
     create(context) {
         const now = Game.time;
         const fortify = !!context.fortify;
@@ -56,7 +102,7 @@ module.exports = {
                 lastHits: 0
             },
             meta: {
-                legacyName: `${fortify ? 'fortify' : 'repair'}:${context.targetId}`,
+                missionName: `${fortify ? 'fortify' : 'repair'}:${context.targetId}`,
                 fortify,
                 spawnAllowed: context.spawnAllowed !== false,
                 targetHits: Number.isFinite(context.targetHits) ? context.targetHits : null
@@ -83,7 +129,7 @@ module.exports = {
 
         mission.progress = mission.progress || {};
         mission.meta = mission.meta || {};
-        mission.meta.legacyName = mission.meta.legacyName || `${fortify ? 'fortify' : 'repair'}:${mission.targetId}`;
+        mission.meta.missionName = mission.meta.missionName || `${fortify ? 'fortify' : 'repair'}:${mission.targetId}`;
 
         if (structure) {
             const prev = Number.isFinite(mission.progress.lastHits) ? mission.progress.lastHits : structure.hits;
@@ -132,11 +178,11 @@ module.exports = {
         return structure.hits >= targetHits;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const fortify = !!(mission.meta && mission.meta.fortify);
         const spawnAllowed = mission.meta && mission.meta.spawnAllowed !== false;
         return {
-            name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : `${fortify ? 'fortify' : 'repair'}:${mission.targetId}`,
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `${fortify ? 'fortify' : 'repair'}:${mission.targetId}`,
             type: 'repair',
             archetype: 'worker',
             targetId: mission.targetId,
@@ -157,3 +203,5 @@ module.exports = {
         };
     }
 };
+
+

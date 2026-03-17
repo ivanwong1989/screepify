@@ -234,13 +234,6 @@ var managerTasks = {
                     // Update status
                     missionStatus[missionName].assignedCount++;
                     
-                    // Update Reservation to ACTIVE if working
-                    if (creep.memory.ticketId) {
-                        this.updateReservation(creep, 'ACTIVE');
-                    } else if (creep.ticksToLive > 1450) { // Bootstrap check for EN_ROUTE
-                         // Handled in idle loop or specific check below
-                    }
-
                     // Pre-cache creep body parts to be used later
                     const p = this.getCreepActiveParts(creep);
                     missionStatus[missionName].assignedWorkParts += p.work;
@@ -329,13 +322,6 @@ var managerTasks = {
         const remoteIdle = (remote.idle || []).filter(c => !c.spawning && !c.memory.missionName);
         const idleCreeps = localIdle.concat(remoteIdle);
 
-        // Bootstrap EN_ROUTE state for new creeps
-        idleCreeps.forEach(creep => {
-            if (creep.memory.ticketId) {
-                this.updateReservation(creep, 'EN_ROUTE');
-            }
-        });
-
         // Clear any stale tasks on unassigned creeps so they don't keep acting without a mission
         idleCreeps.forEach(creep => {
             if (creep.memory.task) delete creep.memory.task;
@@ -378,8 +364,6 @@ var managerTasks = {
                 missionStatus[bestMission.name].assignedCarryParts += p.carry;
                 missionStatus[bestMission.name].assignedClaimParts += p.claim;
                 
-                if (creep.memory.ticketId) this.updateReservation(creep, 'ACTIVE');
-
                 //creep.say(bestMission.type);
                 if (creep.memory.idleTicks) delete creep.memory.idleTicks;
             } else if (this.shouldDebugLogisticsSupply() && creep.memory.role === 'hauler') {
@@ -463,21 +447,6 @@ var managerTasks = {
                 this.assignTowerAction(tower, bestMission, room, room._towerAlloc);
             }
         });
-    },
-
-    updateReservation: function(creep, state) {
-        const ticketId = creep.memory.ticketId;
-        if (!ticketId || !Memory.spawnTickets || !Memory.spawnTickets[ticketId]) return;
-        const ticket = Memory.spawnTickets[ticketId];
-        if (state === 'EN_ROUTE' && ticket.state !== 'ACTIVE') {
-            ticket.state = 'EN_ROUTE';
-            ticket.creepName = creep.name;
-            ticket.expiresAt = Game.time + 1500;
-        } else if (state === 'ACTIVE') {
-            ticket.state = 'ACTIVE';
-            ticket.creepName = creep.name;
-            ticket.expiresAt = Game.time + 50;
-        }
     },
 
     buildIdCache: function(room, missions) {

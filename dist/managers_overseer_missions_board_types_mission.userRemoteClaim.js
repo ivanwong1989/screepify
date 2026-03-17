@@ -1,6 +1,9 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
+const missionGeneratorBridge = require('managers_overseer_missions_board_utils_missionGeneratorBridge');
+const userMissions = require('userMissions');
 
 function cloneContract(contract) {
     if (!contract || typeof contract !== 'object') return null;
@@ -24,6 +27,62 @@ function getTargetRoom(contract) {
     return null;
 }
 
+const CLAIMER_COST = 650;
+
+function missionName(mission) {
+    const suffix = mission.label ? `${mission.id}:${mission.label}` : mission.id;
+    return `claim:${suffix}`;
+}
+
+function targetRoomName(mission) {
+    return userMissions.normalizeRoomName(
+        (mission && (mission.targetRoom || (mission.targetPos && mission.targetPos.roomName))) || ''
+    );
+}
+
+function generateClaimContracts(room, missions) {
+    if (!room || !Array.isArray(missions)) return;
+    const canSpawn = room.energyCapacityAvailable >= CLAIMER_COST;
+    const userClaimMissions = userMissions.getByType('claim');
+    if (!Array.isArray(userClaimMissions) || userClaimMissions.length <= 0) return;
+
+    for (let i = 0; i < userClaimMissions.length; i++) {
+        const mission = userClaimMissions[i];
+        if (!mission || mission.enabled === false) continue;
+        if (mission.sponsorRoom !== room.name) continue;
+
+        const targetRoom = targetRoomName(mission);
+        if (!targetRoom) continue;
+
+        const visible = Game.rooms[targetRoom];
+        if (visible && visible.controller && visible.controller.my) {
+            if (mission.persist !== true) userMissions.removeMission(mission.id);
+            continue;
+        }
+
+        const targetPos = { x: 25, y: 25, roomName: targetRoom };
+        missions.push({
+            name: missionName(mission),
+            type: 'remote_claim',
+            archetype: 'claimer',
+            requirements: {
+                archetype: 'claimer',
+                minCount: 1,
+                maxCount: 1,
+                spawn: canSpawn
+            },
+            targetPos,
+            data: {
+                userMissionId: mission.id,
+                targetRoom,
+                targetPos,
+                persist: mission.persist === true
+            },
+            priority: Number.isFinite(mission.priority) ? mission.priority : 60
+        });
+    }
+}
+
 module.exports = {
     makeKey(context) {
         const roomName = context.targetRoom || context.sponsorRoom;
@@ -31,6 +90,25 @@ module.exports = {
         const userMissionId = context.userMissionId || (contract && contract.data && contract.data.userMissionId) || null;
         const fallback = contract && contract.name ? contract.name : 'claim';
         return missionKeys.makeUserMissionKey(roomName, 'userRemoteClaim', userMissionId, fallback);
+    },
+
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !intel || !missionBoard) return;
+        if (!missionThrottle.shouldRunReconcile('userRemoteClaim', room.name, Game.time)) return;
+        missionGeneratorBridge.runGeneratorAsTyped({
+            room,
+            intel,
+            context,
+            missionBoard,
+            namespace: 'userRemoteClaim',
+            type: 'userRemoteClaim',
+            generate: (scanRoom, scanIntel, scanContext, missions) => generateClaimContracts(scanRoom, missions),
+            mapContract: (contract) => ({
+                sponsorRoom: room.name,
+                targetRoom: (contract && contract.data && contract.data.targetRoom) || room.name,
+                userMissionId: contract && contract.data ? contract.data.userMissionId : null
+            })
+        });
     },
 
     create(context) {
@@ -63,7 +141,7 @@ module.exports = {
                 namespace: context.namespace || 'userRemoteClaim',
                 userMissionId: context.userMissionId || (contract.data && contract.data.userMissionId) || null,
                 persist: !!(contract.data && contract.data.persist),
-                legacyName: contract.name || null
+                missionName: contract.name || null
             },
             data: { contract },
             statusReason: null
@@ -80,7 +158,7 @@ module.exports = {
         if (!contract) return;
         mission.priority = Number.isFinite(contract.priority) ? contract.priority : (mission.priority || 60);
         mission.meta = mission.meta || {};
-        mission.meta.legacyName = contract.name || mission.meta.legacyName || null;
+        mission.meta.missionName = contract.name || mission.meta.missionName || null;
         mission.meta.persist = !!(contract.data && contract.data.persist);
         mission.demand = {
             role: 'claimer',
@@ -102,10 +180,12 @@ module.exports = {
         return !!Game.rooms[targetRoom].controller.my;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const contract = getContract(mission);
         if (!contract) return null;
         return cloneContract(contract);
     }
 };
+
+
 

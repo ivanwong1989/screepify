@@ -14,10 +14,9 @@ var managerSpawner = {
         if (!missions) return;
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
-        room._spawnTicketsToRequest = [];
-        const addedTicketIds = new Set();
+        room._spawnCandidates = [];
 
-        // 1. Build contracts + fulfillment using tickets
+        // 1. Build contracts + fulfillment from live + inflight supply
         const contractEntries = spawnContracts.buildContracts(room, missions, {
             getBodyStats: (mission, budget) => {
                 const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
@@ -27,93 +26,19 @@ var managerSpawner = {
         debug('spawner', `[Spawner] ${room.name} contracts=${contractEntries.length}`);
         if (contractEntries.length === 0) return;
 
-        spawnCensus.pruneTickets(room, contractEntries);
-        const spawningNames = global._spawningNamesCache && global._spawningNamesCache.time === Game.time
-            ? global._spawningNamesCache.names
-            : null;
-        const fulfillment = spawnCensus.getFulfillment(room, contractEntries, allCreeps || myCreeps, spawningNames);
+        const fulfillment = spawnCensus.getFulfillment(room, contractEntries, allCreeps || myCreeps);
         debug('spawner', `[Spawner] ${room.name} fulfillment keys=${Object.keys(fulfillment).length}`);
         const buildOptions = {
             buildBody: (mission, budget) => this.generateBody(mission, budget),
             calculateBodyCost: (body) => this.calculateBodyCost(body)
         };
 
-        const ticketToSpawn = spawnPlanner.plan(room, contractEntries, fulfillment, buildOptions);
-        if (ticketToSpawn) {
-            debug('spawner', `[Spawner] ${room.name} planned ticket=${ticketToSpawn.ticketId} contract=${ticketToSpawn.contractId} role=${ticketToSpawn.role} prio=${ticketToSpawn.priority} cost=${ticketToSpawn.cost}`);
-            room._spawnTicketsToRequest.push(ticketToSpawn);
-            addedTicketIds.add(ticketToSpawn.ticketId);
+        const candidateToSpawn = spawnPlanner.plan(room, contractEntries, fulfillment, buildOptions);
+        if (candidateToSpawn) {
+            debug('spawner', `[Spawner] ${room.name} planned contract=${candidateToSpawn.contractId} role=${candidateToSpawn.role} prio=${candidateToSpawn.priority} cost=${candidateToSpawn.cost} deficit=${candidateToSpawn.deficit}`);
+            room._spawnCandidates.push(candidateToSpawn);
         } else {
-            debug('spawner', `[Spawner] ${room.name} no ticket planned`);
-        }
-
-        // 2. Add pending REQUESTED tickets from Memory as durable backlog.
-        const tickets = Memory.spawnTickets;
-        if (tickets) {
-            const entriesById = Object.create(null);
-            for (const entry of contractEntries) {
-                entriesById[entry.contract.contractId] = entry;
-            }
-            const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
-                ? Memory.rooms[room.name].spawnTicketsByKey
-                : null;
-
-            let backlogAdded = 0;
-            const tryAddBacklog = (ticket, entry) => {
-                if (!ticket || ticket.state !== 'REQUESTED') return false;
-                if (ticket.expiresAt && ticket.expiresAt <= Game.time) return false;
-                if (ticket.homeRoom !== room.name) return false;
-                if (addedTicketIds.has(ticket.ticketId)) return false;
-                const spawnTicket = (ticket.body && ticket.cost && ticket.memory) ? {
-                    ticketId: ticket.ticketId,
-                    contractId: ticket.contractId,
-                    homeRoom: ticket.homeRoom,
-                    role: ticket.role || entry.contract.role,
-                    bindMode: ticket.bindMode || entry.contract.bindMode,
-                    bindId: ticket.bindId || entry.contract.bindId,
-                    priority: Number.isFinite(ticket.priority) ? ticket.priority : entry.contract.priority,
-                    body: ticket.body,
-                    cost: ticket.cost,
-                    memory: ticket.memory,
-                    targetRoom: ticket.targetRoom || (entry.mission && entry.mission.data ? entry.mission.data.targetRoom : null)
-                } : spawnPlanner.buildSpawnTicket(entry, room, ticket, buildOptions);
-
-                if (spawnTicket) {
-                    room._spawnTicketsToRequest.push(spawnTicket);
-                    addedTicketIds.add(ticket.ticketId);
-                    return true;
-                }
-                return false;
-            };
-
-            if (roomIndex) {
-                for (const contractId in entriesById) {
-                    const entry = entriesById[contractId];
-                    const list = roomIndex[contractId];
-                    if (!list || list.length === 0) continue;
-                    for (let i = list.length - 1; i >= 0; i--) {
-                        const ticketId = list[i];
-                        const ticket = tickets[ticketId];
-                        if (!ticket || ticket.contractId !== contractId) {
-                            list.splice(i, 1);
-                            continue;
-                        }
-                        if (tryAddBacklog(ticket, entry)) backlogAdded++;
-                    }
-                }
-            } else {
-                for (const id in tickets) {
-                    const ticket = tickets[id];
-                    if (!ticket) continue;
-                    const entry = entriesById[ticket.contractId];
-                    if (!entry) continue;
-                    if (tryAddBacklog(ticket, entry)) backlogAdded++;
-                }
-            }
-
-            if (backlogAdded > 0) {
-                debug('spawner', `[Spawner] ${room.name} backlog REQUESTED added=${backlogAdded}`);
-            }
+            debug('spawner', `[Spawner] ${room.name} no candidate planned`);
         }
     },
 

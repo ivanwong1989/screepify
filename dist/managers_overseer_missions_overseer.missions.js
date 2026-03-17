@@ -67,55 +67,42 @@ const overseerMissions = {
         const economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || null;
         const context = { opState, economyState, budget, getMissionCensus, efficientSources, economyFlow };
 
-        // Run persistent mission board updates/detectors first.
+        // Run persistent mission board updates/reconciliation first.
         missionBoard.runRoom(room, { intel, context });
 
         // Bridge board missions into mission contracts consumed by task assignment.
-        const boardHarvestMissions = missionBoard.getMissionContractsForRoom(room.name, 'harvest');
-        const boardBuildMissions = missionBoard.getMissionContractsForRoom(room.name, 'build');
-        const boardRepairMissions = missionBoard.getMissionContractsForRoom(room.name, 'repair');
-        const boardUpgradeMissions = missionBoard.getMissionContractsForRoom(room.name, 'upgrade');
-        const boardLogisticsLane = missionBoard.getMissionContractsForRoom(room.name, 'logisticsLane');
-        const boardLogisticsJob = missionBoard.getMissionContractsForRoom(room.name, 'logisticsJob');
-        const boardLogisticsFleet = missionBoard.getMissionContractsForRoom(room.name, 'logisticsFleet');
-        const boardRemoteHarvest = missionBoard.getMissionContractsForRoom(room.name, 'remoteHarvest');
-        const boardRemoteHaul = missionBoard.getMissionContractsForRoom(room.name, 'remoteHaul');
-        const boardScout = missionBoard.getMissionContractsForRoom(room.name, 'scout');
-        const boardMineral = missionBoard.getMissionContractsForRoom(room.name, 'mineral');
-        const boardDecongest = missionBoard.getMissionContractsForRoom(room.name, 'decongest');
-        const boardContractMissions = missionBoard.getMissionContractsForRoom(room.name, 'contract');
-        const boardTowerManaged = missionBoard.getMissionContractsForRoom(room.name, 'towerManaged');
-        const boardLabsManaged = missionBoard.getMissionContractsForRoom(room.name, 'labsManaged');
-        const boardRemoteBuildManaged = missionBoard.getMissionContractsForRoom(room.name, 'remoteBuildManaged');
-        const boardUserTransfer = missionBoard.getMissionContractsForRoom(room.name, 'userTransfer');
-        const boardUserMove2Flag = missionBoard.getMissionContractsForRoom(room.name, 'userRemoteMove2Flag');
-        const boardUserReserve = missionBoard.getMissionContractsForRoom(room.name, 'userRemoteReserve');
-        const boardUserClaim = missionBoard.getMissionContractsForRoom(room.name, 'userRemoteClaim');
-        const boardUserDismantle = missionBoard.getMissionContractsForRoom(room.name, 'userDismantle');
-
-        return (boardContractMissions || [])
-            .concat(boardTowerManaged || [])
-            .concat(boardLabsManaged || [])
-            .concat(boardRemoteBuildManaged || [])
-            .concat(boardHarvestMissions || [])
-            .concat(boardBuildMissions || [])
-            .concat(boardRepairMissions || [])
-            .concat(boardUpgradeMissions || [])
-            .concat(boardLogisticsLane || [])
-            .concat(boardLogisticsJob || [])
-            .concat(boardLogisticsFleet || [])
-            .concat(boardRemoteHarvest || [])
-            .concat(boardRemoteHaul || [])
-            .concat(boardScout || [])
-            .concat(boardMineral || [])
-            .concat(boardDecongest || [])
-            .concat(boardUserTransfer || [])
-            .concat(boardUserMove2Flag || [])
-            .concat(boardUserReserve || [])
-            .concat(boardUserClaim || [])
-            .concat(boardUserDismantle || []);
+        // Fetch through the room-scoped per-tick cache instead of rebuilding the same filtered list repeatedly.
+        const orderedTypes = [
+            'contract',
+            'tower',
+            'labs',
+            'remoteBuild',
+            'harvest',
+            'build',
+            'repair',
+            'upgrade',
+            'logisticsLane',
+            'logisticsJob',
+            'logisticsFleet',
+            'remoteHarvest',
+            'remoteHaul',
+            'scout',
+            'mineral',
+            'decongest',
+            'userTransfer',
+            'userRemoteMove2Flag',
+            'userRemoteReserve',
+            'userRemoteClaim',
+            'userDismantle'
+        ];
+        const contracts = [];
+        for (let i = 0; i < orderedTypes.length; i++) {
+            const batch = missionBoard.getMissionContractsForRoom(room.name, orderedTypes[i]);
+            if (!batch || batch.length <= 0) continue;
+            for (let j = 0; j < batch.length; j++) contracts.push(batch[j]);
+        }
+        return contracts;
     }
 };
 
 module.exports = overseerMissions;
-

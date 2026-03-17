@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -20,6 +21,28 @@ function getMineralInfo(intel, id) {
 module.exports = {
     makeKey(context) {
         return missionKeys.makeMineralKey(context.sponsorRoom, context.mineralId);
+    },
+
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !intel || !missionBoard) return;
+        if (context && context.opState === 'EMERGENCY') return;
+        if (!missionThrottle.shouldRunReconcile('mineral', room.name, Game.time)) return;
+
+        const minerals = Array.isArray(intel.minerals) ? intel.minerals : [];
+        for (let i = 0; i < minerals.length; i++) {
+            const mineral = minerals[i];
+            if (!mineral || !mineral.id) continue;
+            if (!mineral.hasExtractor) continue;
+            if (mineral.mineralAmount <= 0) continue;
+            if (mineral.ticksToRegeneration && mineral.ticksToRegeneration > 0) continue;
+            if ((mineral.availableSpaces || 0) <= 0) continue;
+
+            missionBoard.createMission('mineral', {
+                sponsorRoom: room.name,
+                mineralId: mineral.id,
+                priority: 40
+            }, { room, intel, context });
+        }
     },
 
     create(context) {
@@ -42,7 +65,7 @@ module.exports = {
             demand: { role: 'mineral_miner', count: 1, bodyProfile: 'mineral_miner' },
             progress: { stage: 'mining' },
             meta: {
-                legacyName: `mineral:${context.mineralId}`
+                missionName: `mineral:${context.mineralId}`
             },
             statusReason: null
         };
@@ -59,7 +82,7 @@ module.exports = {
         const mineral = getMineralInfo(intel, mission.targetId);
 
         mission.meta = mission.meta || {};
-        mission.meta.legacyName = mission.meta.legacyName || `mineral:${mission.targetId}`;
+        mission.meta.missionName = mission.meta.missionName || `mineral:${mission.targetId}`;
         mission.meta.depleted = !mineral || mineral.mineralAmount <= 0 || (mineral.ticksToRegeneration && mineral.ticksToRegeneration > 0);
 
         mission.mineralId = mission.targetId;
@@ -86,9 +109,9 @@ module.exports = {
         return !!(mission.meta && mission.meta.depleted);
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         return {
-            name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : `mineral:${mission.targetId}`,
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `mineral:${mission.targetId}`,
             type: 'mineral',
             archetype: 'mineral_miner',
             mineralId: mission.targetId,
@@ -103,3 +126,5 @@ module.exports = {
         };
     }
 };
+
+

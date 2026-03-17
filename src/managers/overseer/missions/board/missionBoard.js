@@ -5,10 +5,8 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionCleanup = require('managers_overseer_missions_board_utils_missionCleanup');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 const boardIndexing = require('managers_overseer_missions_board_utils_boardIndexing');
-const detectors = require('managers_overseer_missions_board_detectors_index');
 const registerDefaults = require('managers_overseer_missions_board_registerDefaults');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
-const missionKeys = require('managers_overseer_missions_board_missionKeys');
 
 const DEFAULT_LIVE_TYPE_CAPS = {
     build: 1,
@@ -16,7 +14,7 @@ const DEFAULT_LIVE_TYPE_CAPS = {
     logisticsJob: 8
 };
 const ALWAYS_CHECK_TYPES = new Set([
-    'towerManaged'
+    'tower'
 ]);
 
 function isDebugLogisticsSupplyEnabled() {
@@ -76,19 +74,18 @@ function beginRoomStats(roomName) {
             live: 0,
             selected: 0,
             checked: 0,
-            legacySkipped: 0,
             throttleFiltered: 0,
             missingHandler: 0,
             invalid: 0,
             refreshError: 0,
             completed: 0
         },
-        detectors: {
+        reconcile: {
             total: 0,
             ran: 0,
-            filtered: 0,
+            skipped: 0,
             errors: 0,
-            byName: Object.create(null)
+            byType: Object.create(null)
         }
     };
     store.byRoom[roomName] = stats;
@@ -128,21 +125,81 @@ function isLiveMission(mission) {
     return !!(mission && missionStates.LIVE_STATES.has(mission.state));
 }
 
+
+function getMissionNamespace(mission) {
+    return mission && mission.meta && mission.meta.namespace
+        ? mission.meta.namespace
+        : null;
+}
+
+function invalidateRoomCaches(board, roomNames) {
+    if (!board || !board.cache) return;
+    if (!Array.isArray(roomNames) || roomNames.length <= 0) return;
+    for (let i = 0; i < roomNames.length; i++) {
+        const roomName = roomNames[i];
+        if (!roomName) continue;
+        if (board.cache.byRoomLive) delete board.cache.byRoomLive[roomName];
+        if (board.cache.contractsByRoom) delete board.cache.contractsByRoom[roomName];
+    }
+}
+
+function invalidateMissionCaches(board, mission, previous) {
+    if (!board || !board.cache) return;
+    const roomNames = [];
+    if (mission) {
+        roomNames.push(mission.sponsorRoom || null, mission.targetRoom || null, mission.roomName || null);
+    }
+    if (previous) {
+        roomNames.push(previous.sponsorRoom || null, previous.targetRoom || null, previous.roomName || null);
+    }
+    invalidateRoomCaches(board, roomNames);
+}
+
+function updateIndexesForMissionPatch(board, mission, previous) {
+    if (!board || !mission) return;
+    const prevRoom = previous ? (previous.sponsorRoom || previous.targetRoom || previous.roomName) : null;
+    const nextRoom = mission.sponsorRoom || mission.targetRoom || mission.roomName;
+    const prevType = previous ? previous.type : null;
+    const nextType = mission.type || null;
+    const prevNamespace = previous ? previous.namespace : null;
+    const nextNamespace = getMissionNamespace(mission);
+    if (prevRoom === nextRoom && prevType === nextType && prevNamespace === nextNamespace) return;
+    if (previous) boardIndexing.removeIndexes(board, previous);
+    boardIndexing.addIndexes(board, mission);
+}
+
+function snapshotMissionIndexFields(mission) {
+    if (!mission) return null;
+    return {
+        sponsorRoom: mission.sponsorRoom || null,
+        targetRoom: mission.targetRoom || null,
+        roomName: mission.roomName || null,
+        type: mission.type || null,
+        namespace: getMissionNamespace(mission),
+        meta: mission.meta ? Object.assign({}, mission.meta) : null
+    };
+}
+
 function hasLiveMission(key) {
     const mission = getByKey(key);
     return isLiveMission(mission);
 }
 
 function patchMission(id, patch) {
-    const mission = getById(id);
+    const board = ensureMemory();
+    const mission = board.byId[id] || null;
     if (!mission || !patch) return mission;
+    const previous = snapshotMissionIndexFields(mission);
     Object.assign(mission, patch);
+    updateIndexesForMissionPatch(board, mission, previous);
+    invalidateMissionCaches(board, mission, previous);
     mission.updatedTick = Game.time;
     return mission;
 }
 
 function setState(id, state, reason) {
-    const mission = getById(id);
+    const board = ensureMemory();
+    const mission = board.byId[id] || null;
     if (!mission) return null;
     mission.state = state;
     mission.statusReason = reason || null;
@@ -151,6 +208,7 @@ function setState(id, state, reason) {
     if (missionStates.TERMINAL_STATES.has(state)) {
         mission.terminalTick = Game.time;
     }
+    invalidateMissionCaches(board, mission, null);
     debugSupplyLifecycle(`state=${state}`, mission, `reason=${reason || '-'}`);
     return mission;
 }
@@ -173,6 +231,7 @@ function removeMission(id) {
     if (!mission) return false;
     boardIndexing.removeIndexes(board, mission);
     delete board.byId[id];
+    invalidateMissionCaches(board, mission, null);
     missionRuntime.deleteMissionRuntime(id);
     return true;
 }
@@ -209,7 +268,38 @@ function listActive() {
 }
 
 function listLiveByRoom(roomName) {
-    return listByRoom(roomName).filter(isLiveMission);
+    const board = ensureMemory();
+    const cache = board.cache || null;
+    if (!cache || !roomName) return listByRoom(roomName).filter(isLiveMission);
+    const cached = cache.byRoomLive && cache.byRoomLive[roomName];
+    if (cached && cached.tick === Game.time && Array.isArray(cached.value)) {
+        return cached.value;
+    }
+
+    const value = listByRoom(roomName).filter(isLiveMission);
+    if (cache.byRoomLive) {
+        cache.byRoomLive[roomName] = {
+            tick: Game.time,
+            value
+        };
+    }
+    return value;
+}
+
+function listLiveByNamespace(roomName, namespace, type) {
+    const board = ensureMemory();
+    if (!roomName || !namespace) return [];
+    const key = boardIndexing.makeNamespaceKey(roomName, namespace, type || '*');
+    const ids = board.byNamespace && key ? board.byNamespace[key] : null;
+    if (!Array.isArray(ids) || ids.length <= 0) return [];
+
+    const result = [];
+    for (let i = 0; i < ids.length; i++) {
+        const mission = board.byId[ids[i]];
+        if (!isLiveMission(mission)) continue;
+        result.push(mission);
+    }
+    return result;
 }
 
 function getTypeLiveCap(roomName, type) {
@@ -285,6 +375,7 @@ function createMission(type, context, runtimeCtx) {
 
     board.byId[key] = mission;
     boardIndexing.addIndexes(board, mission);
+    invalidateMissionCaches(board, mission, null);
 
     if (handler.refresh) {
         try {
@@ -345,14 +436,6 @@ function getTickSlice(roomName, missions) {
 function runMissionUpdates(roomName, stats) {
     ensureMemory();
     const roomCtx = missionRuntime.getRoomContext(roomName) || {};
-    const initialLive = listLiveByRoom(roomName);
-    for (let i = 0; i < initialLive.length; i++) {
-        const mission = initialLive[i];
-        if (!mission || !mission.meta || mission.meta.source !== 'legacy') continue;
-        markCancelled(mission.id, 'legacy_migrated');
-        if (stats && stats.updates) stats.updates.legacySkipped += 1;
-    }
-
     const live = listLiveByRoom(roomName);
     const finite = [];
     const slicedCandidates = [];
@@ -440,15 +523,66 @@ function markBlocked(id, reason) {
     return setState(id, missionStates.BLOCKED, reason || 'blocked');
 }
 
-function runDetectors(roomName, stats) {
+function runMissionReconciliation(roomName, stats) {
     const roomCtx = missionRuntime.getRoomContext(roomName);
     if (!roomCtx || !roomCtx.room) return;
-    detectors.runForRoom(roomCtx, module.exports, stats || null);
+    const handlers = missionRegistry.getAll();
+    const types = Object.keys(handlers);
+    for (let i = 0; i < types.length; i++) {
+        const type = types[i];
+        const handler = handlers[type];
+        if (stats && stats.reconcile) {
+            stats.reconcile.total = (stats.reconcile.total || 0) + 1;
+            if (!stats.reconcile.byType) stats.reconcile.byType = Object.create(null);
+            if (!stats.reconcile.byType[type]) {
+                stats.reconcile.byType[type] = { runs: 0, created: 0, skipped: 0, errors: 0 };
+            }
+        }
+        if (!handler || typeof handler.reconcileRoom !== 'function') {
+            if (stats && stats.reconcile) {
+                stats.reconcile.skipped = (stats.reconcile.skipped || 0) + 1;
+                stats.reconcile.byType[type].skipped = (stats.reconcile.byType[type].skipped || 0) + 1;
+            }
+            continue;
+        }
+
+        const createdBefore = stats && stats.create ? (stats.create.created || 0) : 0;
+        try {
+            handler.reconcileRoom({
+                room: roomCtx.room,
+                intel: roomCtx.intel,
+                context: roomCtx.context,
+                missionBoard: module.exports,
+                stats: stats || null
+            });
+            if (stats && stats.reconcile) {
+                stats.reconcile.ran = (stats.reconcile.ran || 0) + 1;
+                stats.reconcile.byType[type].runs += 1;
+                const createdAfter = stats.create ? (stats.create.created || 0) : createdBefore;
+                const delta = Math.max(0, createdAfter - createdBefore);
+                stats.reconcile.byType[type].created += delta;
+                if (delta <= 0) {
+                    stats.reconcile.skipped = (stats.reconcile.skipped || 0) + 1;
+                    stats.reconcile.byType[type].skipped = (stats.reconcile.byType[type].skipped || 0) + 1;
+                }
+            }
+        } catch (err) {
+            if (stats && stats.reconcile) {
+                stats.reconcile.errors = (stats.reconcile.errors || 0) + 1;
+                stats.reconcile.byType[type].errors += 1;
+            }
+            if (typeof debug === 'function') {
+                debug('missions', `[MissionBoard] reconcile error type=${type} err=${err && err.message}`);
+            }
+        }
+    }
 }
 
 function cleanup() {
     const board = ensureMemory();
+    if (board.lastCleanupTick === Game.time) return;
     missionCleanup.cleanupBoard(board);
+    board.lastCleanupTick = Game.time;
 }
 
 function runRoom(room, data) {
@@ -460,118 +594,38 @@ function runRoom(room, data) {
     });
     const stats = beginRoomStats(room.name);
     runMissionUpdates(room.name, stats);
-    runDetectors(room.name, stats);
+    runMissionReconciliation(room.name, stats);
     cleanup();
 }
 
 function getMissionContractsForRoom(roomName, filterType) {
-    const missions = listLiveByRoom(roomName);
-    const out = [];
-    for (let i = 0; i < missions.length; i++) {
-        const mission = missions[i];
-        if (filterType && mission.type !== filterType) continue;
-        const handler = missionRegistry.get(mission.type);
-        if (!handler || typeof handler.toLegacyMission !== 'function') continue;
-        const legacy = handler.toLegacyMission(mission);
-        if (legacy) out.push(legacy);
-    }
-    return out;
-}
-
-function getLegacyMissionsForRoom(roomName, filterType) {
-    return getMissionContractsForRoom(roomName, filterType);
-}
-
-function upsertLegacyMission(roomName, legacyMission, options) {
     const board = ensureMemory();
-    const key = missionKeys.makeLegacyKey(roomName, legacyMission);
-    if (!key) return null;
-    const namespace = options && options.namespace ? String(options.namespace) : null;
-
-    let mission = board.byId[key];
-    if (!mission) {
-        mission = {
-            id: key,
-            key,
-            type: legacyMission.type || 'legacy',
-            class: missionClasses.FINITE,
-            state: missionStates.ACTIVE,
-            sponsorRoom: roomName,
-            targetRoom: roomName,
-            priority: Number.isFinite(legacyMission.priority) ? legacyMission.priority : 0,
-            createdTick: Game.time,
-            updatedTick: Game.time,
-            lastCheckedTick: Game.time,
-            lastProgressTick: Game.time,
-            targetId: legacyMission.targetId || legacyMission.sourceId || null,
-            assigned: { primary: [], support: [] },
-            demand: null,
-            progress: { stage: 'legacy' },
-            meta: {
-                source: 'legacy',
-                legacyName: legacyMission.name || null,
-                legacyNamespace: namespace
-            },
-            statusReason: null,
-            legacy: legacyMission
+    const cache = board.cache || null;
+    let roomCache = cache && cache.contractsByRoom ? cache.contractsByRoom[roomName] : null;
+    if (!roomCache || roomCache.tick !== Game.time) {
+        const grouped = Object.create(null);
+        const all = [];
+        const missions = listLiveByRoom(roomName);
+        for (let i = 0; i < missions.length; i++) {
+            const mission = missions[i];
+            const handler = missionRegistry.get(mission.type);
+            if (!handler || typeof handler.toContractMission !== 'function') continue;
+            const contract = handler.toContractMission(mission);
+            if (!contract) continue;
+            all.push(contract);
+            if (!grouped[mission.type]) grouped[mission.type] = [];
+            grouped[mission.type].push(contract);
+        }
+        roomCache = {
+            tick: Game.time,
+            all,
+            grouped
         };
-        board.byId[key] = mission;
-        boardIndexing.addIndexes(board, mission);
-        return mission;
+        if (cache && cache.contractsByRoom) cache.contractsByRoom[roomName] = roomCache;
     }
 
-    mission.type = legacyMission.type || mission.type || 'legacy';
-    mission.state = missionStates.ACTIVE;
-    mission.priority = Number.isFinite(legacyMission.priority) ? legacyMission.priority : (mission.priority || 0);
-    mission.updatedTick = Game.time;
-    mission.lastCheckedTick = Game.time;
-    mission.statusReason = null;
-    mission.legacy = legacyMission;
-    if (!mission.meta) mission.meta = {};
-    mission.meta.source = 'legacy';
-    mission.meta.legacyName = legacyMission.name || mission.meta.legacyName || null;
-    mission.meta.legacyNamespace = namespace;
-    if (mission.meta.terminalTick) delete mission.meta.terminalTick;
-    if (mission.terminalTick) delete mission.terminalTick;
-    return mission;
-}
-
-function upsertLegacyMissions(roomName, legacyMissions, options) {
-    const list = Array.isArray(legacyMissions) ? legacyMissions : [];
-    const namespace = options && options.namespace ? String(options.namespace) : null;
-    const seen = new Set();
-    for (let i = 0; i < list.length; i++) {
-        const legacyMission = list[i];
-        if (!legacyMission) continue;
-        const mission = upsertLegacyMission(roomName, legacyMission, options || null);
-        if (mission) seen.add(mission.id);
-    }
-
-    const roomMissions = listByRoom(roomName);
-    for (let i = 0; i < roomMissions.length; i++) {
-        const mission = roomMissions[i];
-        if (!mission || !mission.meta || mission.meta.source !== 'legacy') continue;
-        if (namespace && mission.meta.legacyNamespace !== namespace) continue;
-        if (missionStates.TERMINAL_STATES.has(mission.state)) continue;
-        if (seen.has(mission.id)) continue;
-        markCancelled(mission.id, 'not_detected');
-    }
-}
-
-function listLegacyContractsForRoom(roomName) {
-    const missions = listLiveByRoom(roomName);
-    const out = [];
-    for (let i = 0; i < missions.length; i++) {
-        const mission = missions[i];
-        if (!mission || !mission.meta || mission.meta.source !== 'legacy') continue;
-        if (!mission.legacy) continue;
-        out.push(mission.legacy);
-    }
-    return out;
-}
-
-function listContractMissionsForRoom(roomName) {
-    return listLegacyContractsForRoom(roomName);
+    if (!filterType) return roomCache.all || [];
+    return roomCache.grouped && roomCache.grouped[filterType] ? roomCache.grouped[filterType] : [];
 }
 
 function getSummaryForRoom(roomName) {
@@ -621,16 +675,12 @@ module.exports = {
     listByType,
     listActive,
     listLiveByRoom,
+    listLiveByNamespace,
     runMissionUpdates,
-    runDetectors,
+    runMissionReconciliation,
     cleanup,
     runRoom,
     getMissionContractsForRoom,
     getDemandForRoom,
-    getLegacyMissionsForRoom,
-    upsertLegacyMissions,
-    listLegacyContractsForRoom,
-    listContractMissionsForRoom,
     getSummaryForRoom
 };
-

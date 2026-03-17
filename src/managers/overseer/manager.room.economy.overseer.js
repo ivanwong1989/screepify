@@ -169,16 +169,16 @@ var managerOverseer = {
             const runtime = summary.runtime || {};
             const updates = runtime.updates || {};
             const create = runtime.create || {};
-            const detectors = runtime.detectors || {};
+            const reconcile = runtime.reconcile || {};
             debug(
                 'missions.board',
                 `[MissionBoard] ${room.name} total=${summary.total} live=${summary.live} terminal=${summary.terminal} ` +
                 `active=${state.active || 0} blocked=${state.blocked || 0} done=${state.done || 0} ` +
                 `cancelled=${state.cancelled || 0} expired=${state.expired || 0} demand=${summary.demandCount} ` +
                 `upd(live=${updates.live || 0} sel=${updates.selected || 0} checked=${updates.checked || 0} throttled=${updates.throttleFiltered || 0} ` +
-                `legacySkip=${updates.legacySkipped || 0} invalid=${updates.invalid || 0} done=${updates.completed || 0}) ` +
+                `invalid=${updates.invalid || 0} done=${updates.completed || 0}) ` +
                 `create(att=${create.attempted || 0} new=${create.created || 0} exist=${create.existing || 0} cap=${create.capped || 0}) ` +
-                `det(total=${detectors.total || 0} ran=${detectors.ran || 0} filtered=${detectors.filtered || 0} err=${detectors.errors || 0})`
+                `reconcile(total=${reconcile.total || 0} ran=${reconcile.ran || 0} skipped=${reconcile.skipped || 0} err=${reconcile.errors || 0})`
             );
         } else if (room.memory.overseer.missionBoardSummary) {
             delete room.memory.overseer.missionBoardSummary;

@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionLogisticsReconcile = require('managers_overseer_missions_board_utils_missionLogisticsReconcile');
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -131,6 +132,10 @@ module.exports = {
         );
     },
 
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        missionLogisticsReconcile.reconcileRoom({ room, intel, context, missionBoard });
+    },
+
     create(context) {
         const now = Game.time;
         const kind = context.kind || 'supply';
@@ -205,7 +210,7 @@ module.exports = {
                 amountHint: Number.isFinite(context.amountHint) ? Math.max(0, Math.floor(context.amountHint)) : null,
                 targetMin: Number.isFinite(context.targetMin) ? context.targetMin : null,
                 targetMax: Number.isFinite(context.targetMax) ? context.targetMax : null,
-                legacyName: kind === 'supply'
+                missionName: kind === 'supply'
                     ? `supply:${context.targetId}`
                     : `haul:${context.sourceId}:${context.targetId}:${rt}:s0`,
                 allowPartial: context.allowPartial !== false
@@ -290,12 +295,12 @@ module.exports = {
         return amount <= threshold;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const kind = mission.meta && mission.meta.kind;
         const rt = (mission.meta && mission.meta.resourceType) || RESOURCE_ENERGY;
         if (kind === 'supply') {
             return {
-                name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : `supply:${mission.targetId}`,
+                name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `supply:${mission.targetId}`,
                 type: 'transfer',
                 archetype: 'hauler',
                 targetId: mission.targetId,
@@ -306,8 +311,8 @@ module.exports = {
         }
 
         return {
-            name: mission.meta && mission.meta.legacyName
-                ? mission.meta.legacyName
+            name: mission.meta && mission.meta.missionName
+                ? mission.meta.missionName
                 : `haul:${mission.meta.sourceId}:${mission.meta.targetId}:${rt}:s0`,
             type: 'transfer',
             archetype: 'hauler',
@@ -325,3 +330,5 @@ module.exports = {
         };
     }
 };
+
+

@@ -46,7 +46,7 @@ module.exports = {
             overseerUtils.visualize(room, room._missions, room._roomState);
         }
 
-        // 3. Spawner: Generate spawn tickets
+        // 3. Spawner: Generate spawn candidates
         managerSpawner.run(room, allCreeps);
 
         // 4. Structures: Run structure logic (Links, Terminal/Market, etc.)

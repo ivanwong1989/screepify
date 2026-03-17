@@ -456,7 +456,7 @@ const managerZeadmin = {
             const missions = Array.isArray(room._missions) ? room._missions : [];
             const missionByType = countMissionsByType(missions);
             const assaultMissions = missions.filter(m => m && m.type === 'assault');
-            const spawnTickets = Array.isArray(room._spawnTicketsToRequest) ? room._spawnTicketsToRequest : [];
+            const spawnCandidates = Array.isArray(room._spawnCandidates) ? room._spawnCandidates : [];
             const ledgerEnergy = overseer.resourceLedger && overseer.resourceLedger.energy
                 ? overseer.resourceLedger.energy
                 : null;
@@ -491,7 +491,7 @@ const managerZeadmin = {
                     missionCount: assaultMissions.length
                 },
                 spawn: {
-                    pendingTickets: spawnTickets.length
+                    pendingCandidates: spawnCandidates.length
                 },
                 creeps: {
                     homeOwned: homeCreepCount
@@ -532,7 +532,7 @@ const managerZeadmin = {
 
             empire.roomCount += 1;
             empire.missionCount += missions.length;
-            empire.spawnTicketCount += spawnTickets.length;
+            empire.spawnTicketCount += spawnCandidates.length;
             empire.ownedCreepCount += homeCreepCount;
             empire.energy.available += room.energyAvailable;
             empire.energy.capacity += room.energyCapacityAvailable;

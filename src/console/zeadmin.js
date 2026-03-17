@@ -62,7 +62,7 @@ function printEmpire(snapshot) {
         `avg=${telemetrySpark.econEmpireAvg == null ? 'n/a' : Number(telemetrySpark.econEmpireAvg).toFixed(2)} ` +
         `sample=${telemetrySpark.econEmpireSample == null ? 'n/a' : Number(telemetrySpark.econEmpireSample).toFixed(2)}`
     );
-    console.log(`missions=${e.missionCount || 0} pendingTickets=${e.spawnTicketCount || 0} homeOwnedCreeps=${e.ownedCreepCount || 0}`);
+    console.log(`missions=${e.missionCount || 0} pendingCandidates=${e.spawnTicketCount || 0} homeOwnedCreeps=${e.ownedCreepCount || 0}`);
     console.log(`energy: available=${energy.available || 0} capacity=${energy.capacity || 0} stored=${energy.stored || 0}`);
     console.log(
         `storage: used=${storage.used || 0} cap=${storage.capacity || 0} ` +
@@ -135,7 +135,7 @@ function printRooms(snapshot) {
         console.log(
             `${roomName} overall=${states.overall || 'UNKNOWN'} ` +
             `ops=${states.ops || 'UNKNOWN'} eco=${states.economy || 'UNKNOWN'} combat=${states.combat || 'UNKNOWN'} ` +
-            `missions=${missions.total || 0} tickets=${spawn.pendingTickets || 0} creeps=${creeps.homeOwned || 0} ` +
+            `missions=${missions.total || 0} candidates=${spawn.pendingCandidates || 0} creeps=${creeps.homeOwned || 0} ` +
             `energy=${energy.available || 0}/${energy.capacity || 0} stored=${energy.stored || 0} ` +
             `storageFill=${Number(storage.fillPct || 0).toFixed(2)} terminalFill=${Number(terminal.fillPct || 0).toFixed(2)}`
         );
@@ -170,7 +170,7 @@ function printRoom(snapshot, roomName) {
         `free=${terminal.free || 0} fill=${Number(terminal.fillPct || 0).toFixed(3)}`
     );
     console.log(`missions: total=${missions.total || 0} byType=${JSON.stringify(missions.byType || {})}`);
-    console.log(`spawn: pendingTickets=${spawn.pendingTickets || 0}`);
+    console.log(`spawn: pendingCandidates=${spawn.pendingCandidates || 0}`);
     console.log(`creeps: homeOwned=${creeps.homeOwned || 0}`);
     return 'Done';
 }

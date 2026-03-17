@@ -13,11 +13,8 @@ const getTickCache = (key) => {
     return global[key].map;
 };
 
-const getHomeSpawnBusyTicks = (creep) => {
-    if (!creep || !creep.memory || typeof getRoomCache !== 'function') return 0;
-
-    const homeRoomName = creep.memory.room;
-    if (!homeRoomName) return 0;
+const getHomeSpawnBusyTicks = (homeRoomName) => {
+    if (!homeRoomName || typeof getRoomCache !== 'function') return 0;
 
     const byRoom = getTickCache('_spawnBusyTicksByRoomCache');
     if (byRoom[homeRoomName] !== undefined) return byRoom[homeRoomName];
@@ -37,7 +34,6 @@ const getHomeSpawnBusyTicks = (creep) => {
 
     let minRemaining = Infinity;
     let hasBusy = false;
-
     for (const spawn of spawns) {
         if (!spawn || !spawn.spawning) continue;
         const remaining = spawn.spawning.remainingTime || 0;
@@ -51,8 +47,7 @@ const getHomeSpawnBusyTicks = (creep) => {
     return value;
 };
 
-
-const shouldIgnoreForNearDeath = (creep, role, leadTicks) => {
+const shouldIgnoreForNearDeath = (creep, role, leadTicks, homeRoomName) => {
     if (!creep || !role) return false;
     if (role !== 'miner' && role !== 'hauler') return false;
     if (!Number.isFinite(creep.ticksToLive)) return false;
@@ -63,362 +58,103 @@ const shouldIgnoreForNearDeath = (creep, role, leadTicks) => {
     if (nearDeathCache[key] !== undefined) return nearDeathCache[key];
 
     const spawnTime = creep.body ? creep.body.length * 3 : 0;
-    const spawnBusyTicks = getHomeSpawnBusyTicks(creep);
+    const spawnBusyTicks = getHomeSpawnBusyTicks(homeRoomName);
     const threshold = spawnTime + lead + spawnBusyTicks;
-
-    debug(
-        'spawner',
-        `[SpawnCensus] creep=${creep.name} ttl=${creep.ticksToLive} ` +
-        `spawnTime=${spawnTime} leadTicks=${lead} spawnBusy=${spawnBusyTicks} threshold=${threshold}`
-    );
-
     const shouldIgnore = creep.ticksToLive <= threshold;
+
     nearDeathCache[key] = shouldIgnore;
     return shouldIgnore;
 };
 
-const getSpawningNamesCached = (spawningNamesFallback) => {
-    if (spawningNamesFallback) return spawningNamesFallback;
-    if (global._spawningNamesCache && global._spawningNamesCache.time === Game.time) {
-        return global._spawningNamesCache.names;
-    }
-    const names = new Set();
-    for (const rn in Game.rooms) {
-        const room = Game.rooms[rn];
-        if (!room.controller || !room.controller.my) continue;
-        let spawns = null;
-        if (typeof getRoomCache === 'function') {
-            const cache = getRoomCache(room);
-            spawns = (cache && cache.myStructuresByType && cache.myStructuresByType[STRUCTURE_SPAWN]) || null;
+const initContractContext = (contractEntries) => {
+    const context = {
+        contractIds: new Set(),
+        byId: Object.create(null),
+        poolIndex: Object.create(null),
+        fulfillment: Object.create(null)
+    };
+
+    for (const entry of contractEntries) {
+        const contract = entry && entry.contract;
+        if (!contract || !contract.contractId) continue;
+
+        const contractId = contract.contractId;
+        context.contractIds.add(contractId);
+        context.byId[contractId] = contract;
+        context.fulfillment[contractId] = { live: 0, inflight: 0, effective: 0 };
+
+        if (contract.bindMode === 'pool') {
+            const poolKey = `${contract.homeRoom || ''}|${contract.role || ''}`;
+            if (!context.poolIndex[poolKey]) context.poolIndex[poolKey] = contractId;
         }
-        if (!spawns) spawns = room.find(FIND_MY_SPAWNS);
-        for (const spawn of spawns) {
-            if (spawn && spawn.spawning) names.add(spawn.spawning.name);
-        }
     }
-    global._spawningNamesCache = { time: Game.time, names };
-    return names;
+
+    return context;
 };
 
-const isTicketCreepMissing = (ticket, spawningNames) => {
-    if (!ticket || !ticket.creepName) return false;
-    if (spawningNames && spawningNames.has(ticket.creepName)) return false;
-    return !Game.creeps[ticket.creepName];
-};
+const resolveContractId = (memory, context) => {
+    if (!memory) return null;
 
-const resetDeadTicket = (ticket) => {
-    if (!ticket) return;
-    ticket.state = 'REQUESTED';
-    ticket.creepName = null;
-    ticket.spawnRoom = null;
-    ticket.expiresAt = Game.time + 2;
+    const direct = memory.contractId;
+    if (direct && context.contractIds.has(direct)) return direct;
+
+    const poolKey = `${memory.room || ''}|${memory.role || ''}`;
+    const pooled = context.poolIndex[poolKey];
+    if (pooled && context.contractIds.has(pooled)) return pooled;
+
+    return null;
 };
 
 const spawnCensus = {
-    pruneTickets: function(room, contractEntries) {
-        if (!Memory.spawnTickets) return;
-        const tickets = Memory.spawnTickets;
-        const contractIds = new Set(contractEntries.map(e => e.contract.contractId));
-        const desiredByContract = Object.create(null);
-        const roleByContract = Object.create(null);
-        const replaceLeadByContract = Object.create(null);
-        for (const entry of contractEntries) {
-            desiredByContract[entry.contract.contractId] = entry.contract.desired || 0;
-            roleByContract[entry.contract.contractId] = entry.contract.role;
-            replaceLeadByContract[entry.contract.contractId] = Number.isFinite(entry.contract.replaceLeadTicks)
-                ? entry.contract.replaceLeadTicks
-                : null;
-        }
-        const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
-            ? Memory.rooms[room.name].spawnTicketsByKey
-            : null;
-
-        const removeTicket = (ticketId, ticket) => {
-            delete tickets[ticketId];
-            const home = ticket && ticket.homeRoom;
-            const contractId = ticket && ticket.contractId;
-            if (home && contractId && Memory.rooms && Memory.rooms[home] && Memory.rooms[home].spawnTicketsByKey) {
-                const index = Memory.rooms[home].spawnTicketsByKey;
-                const list = index[contractId];
-                if (list && list.length > 0) {
-                    for (let i = list.length - 1; i >= 0; i--) {
-                        if (list[i] === ticketId) list.splice(i, 1);
-                    }
-                    if (list.length === 0) delete index[contractId];
-                }
-            }
-        };
-
-
-        // --------------------
-        // 🧹 ORPHAN INDEX BUCKET CLEANUP
-        // If a mission/contract disappears, its index bucket might never be visited (roomIndex path).
-        // Delete those buckets and their tickets immediately.
-        // --------------------
-        if (roomIndex) {
-            for (const indexedContractId in roomIndex) {
-                if (contractIds.has(indexedContractId)) continue;
-
-                const list = roomIndex[indexedContractId];
-                if (Array.isArray(list)) {
-                    for (let i = list.length - 1; i >= 0; i--) {
-                        const ticketId = list[i];
-                        const ticket = tickets[ticketId];
-                        if (ticket) removeTicket(ticketId, ticket);
-                    }
-                }
-                delete roomIndex[indexedContractId];
-            }
-        }
-
-        const isActiveTicket = (ticket) => {
-            if (!ticket) return false;
-            if (!contractIds.has(ticket.contractId)) return false;
-            if (ticket.expiresAt && ticket.expiresAt <= Game.time) return false;
-            if (!['REQUESTED', 'SPAWNING', 'EN_ROUTE', 'ACTIVE'].includes(ticket.state)) return false;
-            return true;
-        };
-
-        const spawningNames = getSpawningNamesCached(null);
-
-        const activeCounts = Object.create(null);
-        const requestedByContract = Object.create(null);
-
-        const countTicket = (ticketId, ticket) => {
-            if (isTicketCreepMissing(ticket, spawningNames)) {
-                const oldName = ticket.creepName;
-                resetDeadTicket(ticket);
-                debug('spawner', `[SpawnCensus] ${room.name} earlyDeath reset ticket=${ticket.ticketId} contract=${ticket.contractId} oldName=${oldName}`);
-            }
-            if (!isActiveTicket(ticket)) return;
-            const contractId = ticket.contractId;
-            if (ticket.creepName) {
-                const role = roleByContract[contractId] || ticket.role;
-                const creep = Game.creeps[ticket.creepName];
-                const replaceLeadTicks = replaceLeadByContract[contractId];
-                if (shouldIgnoreForNearDeath(creep, role, replaceLeadTicks)) return;
-            }
-            activeCounts[contractId] = (activeCounts[contractId] || 0) + 1;
-            if (ticket.state === 'REQUESTED' && !ticket.creepName) {
-                if (!requestedByContract[contractId]) requestedByContract[contractId] = [];
-                requestedByContract[contractId].push(ticketId);
-            }
-        };
-
-        if (roomIndex) {
-            for (const contractId of contractIds) {
-                const list = roomIndex[contractId];
-                if (!list || list.length === 0) continue;
-                for (let i = list.length - 1; i >= 0; i--) {
-                    const ticketId = list[i];
-                    const ticket = tickets[ticketId];
-                    if (!ticket || ticket.contractId !== contractId) {
-                        list.splice(i, 1);
-                        continue;
-                    }
-                    countTicket(ticketId, ticket);
-                }
-            }
-        } else {
-            for (const id in tickets) {
-                const ticket = tickets[id];
-                countTicket(id, ticket);
-            }
-        }
-
-        let prunedTotal = 0;
-        const prunedByContract = [];
-
-        for (const contractId in activeCounts) {
-            const desired = desiredByContract[contractId] || 0;
-            const active = activeCounts[contractId];
-            if (active <= desired) continue;
-
-            let over = active - desired;
-            const requested = requestedByContract[contractId] || [];
-            // Remove excess REQUESTED tickets first (unassigned queue)
-            while (over > 0 && requested.length > 0) {
-                const ticketId = requested.pop();
-                const ticket = tickets[ticketId];
-                if (ticket) removeTicket(ticketId, ticket);
-                prunedTotal++;
-                over--;
-            }
-
-            if (active > desired && (requestedByContract[contractId] || []).length > 0) {
-                const removed = Math.min(active - desired, (requestedByContract[contractId] || []).length);
-                if (removed > 0) {
-                    prunedByContract.push(`${contractId} removed=${removed} active=${active} desired=${desired}`);
-                }
-            }
-        }
-
-        if (prunedTotal > 0) {
-            debug('spawner', `[SpawnCensus] ${room.name} prunedTickets=${prunedTotal}`);
-            if (prunedByContract.length > 0) {
-                debug('spawner', `[SpawnCensus] ${room.name} prunedByContract ${prunedByContract.join('; ')}`);
-            }
-        }
-    },
-    getFulfillment: function(room, contractEntries, creepsFallback, spawningNamesFallback) {
-        const contractIds = new Set(contractEntries.map(e => e.contract.contractId));
-        const counts = Object.create(null);
-        const countedCreepNamesByContract = Object.create(null);
-        const roleByContract = Object.create(null);
-        const replaceLeadByContract = Object.create(null);
-        debug('spawner', `[SpawnCensus] ${room.name} contracts=${contractEntries.length}`);
-
-        for (const entry of contractEntries) {
-            counts[entry.contract.contractId] = 0;
-            countedCreepNamesByContract[entry.contract.contractId] = new Set();
-            roleByContract[entry.contract.contractId] = entry.contract.role;
-            replaceLeadByContract[entry.contract.contractId] = Number.isFinite(entry.contract.replaceLeadTicks)
-                ? entry.contract.replaceLeadTicks
-                : null;
-        }
-
-        const spawningNames = getSpawningNamesCached(spawningNamesFallback);
-
-        const tickets = Memory.spawnTickets || {};
-        const roomIndex = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnTicketsByKey
-            ? Memory.rooms[room.name].spawnTicketsByKey
-            : null;
-        const poolIndex = Object.create(null);
-        for (const entry of contractEntries) {
-            const contract = entry.contract;
-            if (!contract || contract.bindMode !== 'pool') continue;
-            const key = `${contract.homeRoom}|${contract.role}`;
-            if (!poolIndex[key]) poolIndex[key] = contract.contractId;
-        }
-        const isActiveTicket = (ticket) => {
-            if (!ticket) return false;
-            if (!contractIds.has(ticket.contractId)) return false;
-            if (ticket.expiresAt && ticket.expiresAt <= Game.time) return false;
-            if (!['REQUESTED', 'SPAWNING', 'EN_ROUTE', 'ACTIVE'].includes(ticket.state)) return false;
-            return true;
-        };
-
-        const countFulfillmentTicket = (ticketId, ticket, contractId) => {
-            if (!isActiveTicket(ticket)) return;
-            if (isTicketCreepMissing(ticket, spawningNames)) {
-                const oldName = ticket.creepName;
-
-                // If contract no longer exists, delete ticket entirely
-                if (!contractIds.has(ticket.contractId)) {
-                    delete tickets[ticketId];
-                    debug('spawner', `[SpawnCensus] ${room.name} deleted orphan ticket=${ticket.ticketId} contract=${ticket.contractId}`);
-                    return;
-                }
-
-                // Otherwise reset for re-request
-                resetDeadTicket(ticket);
-                debug('spawner', `[SpawnCensus] ${room.name} earlyDeath reset ticket=${ticket.ticketId} contract=${ticket.contractId} oldName=${oldName}`);
-                return;
-            }
-            if (ticket.creepName) {
-                const role = roleByContract[contractId] || ticket.role;
-                const creep = Game.creeps[ticket.creepName];
-                const replaceLeadTicks = replaceLeadByContract[contractId];
-                if (shouldIgnoreForNearDeath(creep, role, replaceLeadTicks)) return;
-            }
-            counts[contractId] = (counts[contractId] || 0) + 1;
-            if (ticket.creepName) {
-                countedCreepNamesByContract[contractId].add(ticket.creepName);
-            }
-        };
-
-        if (roomIndex) {
-            for (const contractId of contractIds) {
-                const list = roomIndex[contractId];
-                if (!list || list.length === 0) continue;
-                for (let i = list.length - 1; i >= 0; i--) {
-                    const ticketId = list[i];
-                    const ticket = tickets[ticketId];
-                    if (!ticket || ticket.contractId !== contractId) {
-                        list.splice(i, 1);
-                        continue;
-                    }
-                    countFulfillmentTicket(ticketId, ticket, contractId);
-                }
-            }
-        } else {
-            for (const id in tickets) {
-                const ticket = tickets[id];
-                if (!ticket || !contractIds.has(ticket.contractId)) continue;
-                countFulfillmentTicket(id, ticket, ticket.contractId);
-            }
-        }
-        debug('spawner', `[SpawnCensus] ${room.name} ticketsCounted=${Object.values(counts).reduce((a,b)=>a+b,0)}`);
-
+    getFulfillment: function(room, contractEntries, creepsFallback) {
+        const context = initContractContext(contractEntries || []);
+        const fulfillment = context.fulfillment;
+        const countedLive = new Set();
         const creeps = creepsFallback || Object.values(Game.creeps);
-        let creepsCounted = 0;
+
         for (const creep of creeps) {
             if (!creep || !creep.my) continue;
-            const contractId = creep.memory && creep.memory.contractId;
-            if (contractId && contractIds.has(contractId)) {
-                const role = roleByContract[contractId] || creep.memory.role;
-                const replaceLeadTicks = replaceLeadByContract[contractId];
-                if (shouldIgnoreForNearDeath(creep, role, replaceLeadTicks)) continue;
-                const ticketId = creep.memory && creep.memory.ticketId;
-                const ticket = ticketId ? tickets[ticketId] : null;
-                if (ticket && ticket.contractId === contractId && isActiveTicket(ticket)) continue;
-                const counted = countedCreepNamesByContract[contractId];
-                if (counted && counted.has(creep.name)) continue;
-                counts[contractId] = (counts[contractId] || 0) + 1;
-                creepsCounted++;
-                continue;
-            }
 
-            const home = creep.memory && creep.memory.room;
-            const role = creep.memory && creep.memory.role;
-            if (!home || !role) continue;
-            const poolContractId = poolIndex[`${home}|${role}`];
-            if (!poolContractId || !contractIds.has(poolContractId)) continue;
-            const replaceLeadTicks = replaceLeadByContract[poolContractId];
-            if (shouldIgnoreForNearDeath(creep, role, replaceLeadTicks)) continue;
-            const counted = countedCreepNamesByContract[poolContractId];
-            if (counted && counted.has(creep.name)) continue;
-            counts[poolContractId] = (counts[poolContractId] || 0) + 1;
-            if (counted) counted.add(creep.name);
-            creepsCounted++;
+            const contractId = resolveContractId(creep.memory, context);
+            if (!contractId) continue;
+            if (countedLive.has(creep.name)) continue;
+            countedLive.add(creep.name);
+
+            const contract = context.byId[contractId] || {};
+            const role = contract.role || (creep.memory && creep.memory.role);
+            const homeRoomName = contract.homeRoom || (creep.memory && creep.memory.room);
+            const replaceLeadTicks = Number.isFinite(contract.replaceLeadTicks) ? contract.replaceLeadTicks : null;
+            const nearDeathIgnored = shouldIgnoreForNearDeath(creep, role, replaceLeadTicks, homeRoomName);
+
+            fulfillment[contractId].live += 1;
+            if (!nearDeathIgnored) fulfillment[contractId].effective += 1;
         }
-        debug('spawner', `[SpawnCensus] ${room.name} creepsCounted=${creepsCounted}`);
 
-        const refreshTicketState = (ticketId, ticket, contractId) => {
-            if (!ticket) return;
-            if (!contractIds.has(contractId)) return;
-            if (ticket.creepName && spawningNames && spawningNames.has(ticket.creepName)) {
-                if (ticket.state !== 'SPAWNING') ticket.state = 'SPAWNING';
-            } else if (ticket.creepName && Game.creeps[ticket.creepName]) {
-                if (ticket.state === 'REQUESTED' || ticket.state === 'SPAWNING') {
-                    ticket.state = 'EN_ROUTE';
-                }
-            }
-        };
+        for (const roomName in Game.rooms) {
+            const ownedRoom = Game.rooms[roomName];
+            if (!ownedRoom || !ownedRoom.controller || !ownedRoom.controller.my) continue;
 
-        if (roomIndex) {
-            for (const contractId of contractIds) {
-                const list = roomIndex[contractId];
-                if (!list || list.length === 0) continue;
-                for (let i = list.length - 1; i >= 0; i--) {
-                    const ticketId = list[i];
-                    const ticket = tickets[ticketId];
-                    if (!ticket || ticket.contractId !== contractId) {
-                        list.splice(i, 1);
-                        continue;
-                    }
-                    refreshTicketState(ticketId, ticket, contractId);
-                }
+            let spawns = null;
+            if (typeof getRoomCache === 'function') {
+                const cache = getRoomCache(ownedRoom);
+                spawns = (cache && cache.myStructuresByType && cache.myStructuresByType[STRUCTURE_SPAWN]) || null;
             }
-        } else {
-            for (const id in tickets) {
-                const ticket = tickets[id];
-                if (!ticket || !contractIds.has(ticket.contractId)) continue;
-                refreshTicketState(id, ticket, ticket.contractId);
+            if (!spawns) spawns = ownedRoom.find(FIND_MY_SPAWNS);
+
+            for (const spawn of spawns) {
+                if (!spawn || !spawn.spawning || !spawn.spawning.name) continue;
+
+                const memory = Memory.creeps && Memory.creeps[spawn.spawning.name];
+                const contractId = resolveContractId(memory, context);
+                if (!contractId) continue;
+
+                fulfillment[contractId].inflight += 1;
+                fulfillment[contractId].effective += 1;
             }
         }
 
-        return counts;
+        debug('spawner', `[SpawnCensus] ${room.name} contracts=${Object.keys(fulfillment).length}`);
+        return fulfillment;
     }
 };
 

@@ -85,9 +85,10 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const contract = getContract(mission);
         if (!contract) return null;
         return cloneContract(contract);
     }
 };
+

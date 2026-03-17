@@ -2,6 +2,7 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const MAX_HAULER_CARRY_PARTS = 25;
 const MIN_CARRY_PER_SOURCE = 5;
@@ -108,7 +109,7 @@ function shouldReplan(mission, signature) {
 
 function applyFleetPlan(mission, room, fleet) {
     mission.meta = mission.meta || {};
-    mission.meta.legacyName = mission.meta.legacyName || 'logistics:fleet';
+    mission.meta.missionName = mission.meta.missionName || 'logistics:fleet';
 
     if (!fleet) {
         mission.meta.carryParts = Math.max(1, Math.floor((room.energyCapacityAvailable || 300) / 100));
@@ -333,6 +334,22 @@ module.exports = {
         return missionKeys.makeLogisticsFleetKey(context.targetRoom || context.sponsorRoom);
     },
 
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !missionBoard || !intel) return;
+        if (context && context.opState === 'EMERGENCY') return;
+        const existing = missionBoard.listLiveByRoom(room.name).filter(m => m.type === 'logisticsFleet').length;
+        if (existing > 0 && !missionThrottle.shouldRunReconcile('logisticsFleet', room.name, Game.time)) return;
+
+        const efficientSources = context && context.efficientSources ? context.efficientSources : null;
+        if (!efficientSources || efficientSources.size <= 0) return;
+
+        missionBoard.createMission('logisticsFleet', {
+            sponsorRoom: room.name,
+            targetRoom: room.name,
+            priority: 85
+        }, { room, intel, context });
+    },
+
     create(context) {
         const now = Game.time;
         return {
@@ -374,7 +391,7 @@ module.exports = {
                 lastPlanTick: 0
             },
             meta: {
-                legacyName: 'logistics:fleet',
+                missionName: 'logistics:fleet',
                 carryParts: 5
             },
             statusReason: null
@@ -454,10 +471,10 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const req = mission.requirements || {};
         return {
-            name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : 'logistics:fleet',
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : 'logistics:fleet',
             type: 'hauler_fleet',
             archetype: 'hauler',
             roleCensus: 'hauler',
@@ -473,3 +490,5 @@ module.exports = {
         };
     }
 };
+
+

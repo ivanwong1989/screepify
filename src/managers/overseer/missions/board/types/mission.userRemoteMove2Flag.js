@@ -1,6 +1,9 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
+const missionGeneratorBridge = require('managers_overseer_missions_board_utils_missionGeneratorBridge');
+const userMissions = require('userMissions');
 
 function cloneContract(contract) {
     if (!contract || typeof contract !== 'object') return null;
@@ -17,6 +20,85 @@ function cleanupAssigned(mission) {
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
 }
 
+const MOVE2FLAG_COST = 50;
+
+function missionName(mission) {
+    const suffix = mission.label ? `${mission.id}:${mission.label}` : mission.id;
+    return `move2flag:${suffix}`;
+}
+
+function escapeRegExp(value) {
+    return ('' + value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function collectWaypoints(flagName) {
+    const root = flagName || 'M';
+    const rx = new RegExp(`^${escapeRegExp(root)}(\\d+)$`);
+    const items = [];
+    for (const key in Game.flags) {
+        const flag = Game.flags[key];
+        if (!flag || !flag.pos || !flag.name) continue;
+        const match = rx.exec(flag.name);
+        if (!match) continue;
+        const order = Number(match[1]);
+        if (!Number.isFinite(order)) continue;
+        items.push({
+            order,
+            name: flag.name,
+            pos: { x: flag.pos.x, y: flag.pos.y, roomName: flag.pos.roomName }
+        });
+    }
+    items.sort((a, b) => a.order - b.order);
+    return {
+        waypointNames: items.map(i => i.name),
+        waypoints: items.map(i => i.pos)
+    };
+}
+
+function generateMove2FlagContracts(room, missions) {
+    if (!room || !Array.isArray(missions)) return;
+    const canSpawn = room.energyCapacityAvailable >= MOVE2FLAG_COST;
+    const userRouteMissions = userMissions.getByType('move2flag');
+    if (!Array.isArray(userRouteMissions) || userRouteMissions.length <= 0) return;
+
+    for (let i = 0; i < userRouteMissions.length; i++) {
+        const mission = userRouteMissions[i];
+        if (!mission || mission.enabled === false) continue;
+        if (mission.sponsorRoom !== room.name) continue;
+
+        const flagName = (mission.flagName || 'M').trim();
+        if (!flagName) continue;
+        const flag = Game.flags[flagName];
+        if (!flag || !flag.pos) {
+            if (mission.persist !== true) userMissions.removeMission(mission.id);
+            continue;
+        }
+
+        const wp = collectWaypoints(flagName);
+        const targetPos = { x: flag.pos.x, y: flag.pos.y, roomName: flag.pos.roomName };
+        missions.push({
+            name: missionName(mission),
+            type: 'move2flag',
+            archetype: 'move2flag',
+            requirements: {
+                archetype: 'move2flag',
+                minCount: 1,
+                maxCount: 1,
+                spawn: canSpawn
+            },
+            data: {
+                userMissionId: mission.id,
+                sponsorRoom: room.name,
+                flagName,
+                targetPos,
+                waypointNames: wp.waypointNames,
+                waypoints: wp.waypoints
+            },
+            priority: Number.isFinite(mission.priority) ? mission.priority : 50
+        });
+    }
+}
+
 module.exports = {
     makeKey(context) {
         const roomName = context.targetRoom || context.sponsorRoom;
@@ -24,6 +106,25 @@ module.exports = {
         const userMissionId = context.userMissionId || (contract && contract.data && contract.data.userMissionId) || null;
         const fallback = contract && contract.name ? contract.name : 'move2flag';
         return missionKeys.makeUserMissionKey(roomName, 'userRemoteMove2Flag', userMissionId, fallback);
+    },
+
+    reconcileRoom({ room, intel, context, missionBoard }) {
+        if (!room || !intel || !missionBoard) return;
+        if (!missionThrottle.shouldRunReconcile('userRemoteMove2Flag', room.name, Game.time)) return;
+        missionGeneratorBridge.runGeneratorAsTyped({
+            room,
+            intel,
+            context,
+            missionBoard,
+            namespace: 'userRemoteMove2Flag',
+            type: 'userRemoteMove2Flag',
+            generate: (scanRoom, scanIntel, scanContext, missions) => generateMove2FlagContracts(scanRoom, missions),
+            mapContract: (contract) => ({
+                sponsorRoom: room.name,
+                targetRoom: (contract && contract.data && contract.data.targetPos && contract.data.targetPos.roomName) || room.name,
+                userMissionId: contract && contract.data ? contract.data.userMissionId : null
+            })
+        });
     },
 
     create(context) {
@@ -56,7 +157,7 @@ module.exports = {
             meta: {
                 namespace: context.namespace || 'userRemoteMove2Flag',
                 userMissionId: context.userMissionId || (contract.data && contract.data.userMissionId) || null,
-                legacyName: contract.name || null
+                missionName: contract.name || null
             },
             data: { contract },
             statusReason: null
@@ -73,7 +174,7 @@ module.exports = {
         if (!contract) return;
         mission.priority = Number.isFinite(contract.priority) ? contract.priority : (mission.priority || 50);
         mission.meta = mission.meta || {};
-        mission.meta.legacyName = contract.name || mission.meta.legacyName || null;
+        mission.meta.missionName = contract.name || mission.meta.missionName || null;
         mission.demand = {
             role: 'move2flag',
             count: Math.max(0, 1 - mission.assigned.primary.length),
@@ -89,10 +190,12 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const contract = getContract(mission);
         if (!contract) return null;
         return cloneContract(contract);
     }
 };
+
+
 

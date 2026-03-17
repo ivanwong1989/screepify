@@ -17,9 +17,9 @@ const missionUserRemoteMove2Flag = require('managers_overseer_missions_board_typ
 const missionUserRemoteReserve = require('managers_overseer_missions_board_types_mission.userRemoteReserve');
 const missionUserRemoteClaim = require('managers_overseer_missions_board_types_mission.userRemoteClaim');
 const missionUserDismantle = require('managers_overseer_missions_board_types_mission.userDismantle');
-const missionTowerManaged = require('managers_overseer_missions_board_types_mission.towerManaged');
-const missionLabsManaged = require('managers_overseer_missions_board_types_mission.labsManaged');
-const missionRemoteBuildManaged = require('managers_overseer_missions_board_types_mission.remoteBuildManaged');
+const missionTower = require('managers_overseer_missions_board_types_mission.towerService');
+const missionLabs = require('managers_overseer_missions_board_types_mission.labs');
+const missionRemoteBuild = require('managers_overseer_missions_board_types_mission.remoteBuild');
 
 let registeredTick = -1;
 
@@ -43,9 +43,9 @@ function ensureRegistered() {
     missionRegistry.register('userRemoteReserve', missionUserRemoteReserve);
     missionRegistry.register('userRemoteClaim', missionUserRemoteClaim);
     missionRegistry.register('userDismantle', missionUserDismantle);
-    missionRegistry.register('towerManaged', missionTowerManaged);
-    missionRegistry.register('labsManaged', missionLabsManaged);
-    missionRegistry.register('remoteBuildManaged', missionRemoteBuildManaged);
+    missionRegistry.register('tower', missionTower);
+    missionRegistry.register('labs', missionLabs);
+    missionRegistry.register('remoteBuild', missionRemoteBuild);
     registeredTick = Game.time;
 }
 

@@ -51,15 +51,15 @@ module.exports = {
         // 1) Mission board lives in heap and is managed by zeadmin logic.
         // 2) Tasker assigns creeps globally (no room anchor requirement).
         // 3) Executor writes minimal task intents for existing role runners.
-        // 4) Spawner injector exposes optional tickets for global spawner integration.
+        // 4) Spawner injector exposes optional spawn candidates for global spawner integration.
         const taskerStore = empireTasker.run();
         const executorStore = empireExecutor.run();
-        const tickets = empireSpawnerInjector.getTickets();
+        const candidates = empireSpawnerInjector.getCandidates();
 
         store.lastTick = Game.time;
         store.lastSummary = {
             missionCount: empireBoard.list().length,
-            ticketCount: tickets.length,
+            candidateCount: candidates.length,
             assignedMissionCount: taskerStore ? Object.keys(taskerStore.runtimeByMissionId || {}).length : 0,
             executedCreepCount: executorStore ? Object.keys(executorStore.lastByCreep || {}).length : 0,
             flagSync,
@@ -69,7 +69,7 @@ module.exports = {
         return {
             enabled: true,
             summary: store.lastSummary,
-            tickets
+            candidates
         };
     }
 };

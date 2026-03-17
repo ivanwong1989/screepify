@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 function tileIndex(x, y) {
     return (y * 50) + x;
@@ -63,6 +64,19 @@ module.exports = {
         return missionKeys.makeDecongestKey(context.sponsorRoom, 'parking');
     },
 
+    reconcileRoom({ room, missionBoard }) {
+        if (!room || !missionBoard) return;
+        if (!missionThrottle.shouldRunReconcile('decongest', room.name, Game.time)) return;
+
+        const parkingFlags = room.find(FIND_FLAGS, { filter: f => f.name && f.name.startsWith('Parking') });
+        if (parkingFlags.length === 0) return;
+
+        missionBoard.createMission('decongest', {
+            sponsorRoom: room.name,
+            priority: -200
+        }, { room, intel: null, context: null });
+    },
+
     create(context) {
         const now = Game.time;
         return {
@@ -83,7 +97,7 @@ module.exports = {
             demand: { role: 'worker', count: 0, bodyProfile: 'worker' },
             progress: { stage: 'parking' },
             meta: {
-                legacyName: 'decongest:parking'
+                missionName: 'decongest:parking'
             },
             statusReason: null
         };
@@ -105,7 +119,7 @@ module.exports = {
         const maxCount = slotPositions.length;
 
         mission.meta = mission.meta || {};
-        mission.meta.legacyName = mission.meta.legacyName || 'decongest:parking';
+        mission.meta.missionName = mission.meta.missionName || 'decongest:parking';
         mission.requirements = {
             minCount: 0,
             maxCount,
@@ -127,10 +141,10 @@ module.exports = {
         return false;
     },
 
-    toLegacyMission(mission) {
+    toContractMission(mission) {
         const req = mission.requirements || {};
         return {
-            name: mission.meta && mission.meta.legacyName ? mission.meta.legacyName : 'decongest:parking',
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : 'decongest:parking',
             type: 'decongest',
             targetNames: mission.targetNames || [],
             data: mission.data || { slotPositions: [] },
@@ -144,3 +158,5 @@ module.exports = {
         };
     }
 };
+
+
