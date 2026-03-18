@@ -2,7 +2,6 @@ const { profRequire } = require('utils_profRequire');
 
 const execUpgradeTask = profRequire('managers_overseer_tasks_exec_upgrade', 'tasks.exec.upgrade');
 const execRemoteHarvestTask = profRequire('managers_overseer_tasks_exec_remoteHarvest', 'tasks.exec.remoteHarvest');
-const execMineralTask = profRequire('managers_overseer_tasks_exec_mineral', 'tasks.exec.mineral');
 const execTransferTask = profRequire('managers_overseer_tasks_exec_transfer', 'tasks.exec.transfer');
 const execRemoteHaulTask = profRequire('managers_overseer_tasks_exec_remoteHaul', 'tasks.exec.remoteHaul');
 const execRemoteBuildTask = profRequire('managers_overseer_tasks_exec_remoteBuild', 'tasks.exec.remoteBuild');
@@ -282,7 +281,8 @@ var managerTasks = {
                 assignedCount: 0,
                 assignedWorkParts: 0,
                 assignedCarryParts: 0,
-                assignedClaimParts: 0
+                assignedClaimParts: 0,
+                assignedCreeps: []
             };
         });
 
@@ -362,6 +362,7 @@ var managerTasks = {
                     missionStatus[missionName].assignedWorkParts += p.work;
                     missionStatus[missionName].assignedCarryParts += p.carry;
                     missionStatus[missionName].assignedClaimParts += p.claim;
+                    missionStatus[missionName].assignedCreeps.push(creep);
                 } else {
                     // Mission was removed by Overseer (completed or strategy changed)
                     // Release the creep
@@ -437,6 +438,59 @@ var managerTasks = {
                     if (!missionName || !preemptibleUpgradeMissionNames.has(missionName)) return;
                     clearMissionAssignment(creep);
                 });
+            }
+        }
+
+        // --- Rebalance overfilled local harvest missions ---
+        // If a harvest source is already fully satisfied by assigned WORK, release surplus miners
+        // so they can be reassigned to other underfilled harvest missions this tick.
+        const hasUnderfilledHarvestMission = () => {
+            for (const name in missionStatus) {
+                const st = missionStatus[name];
+                if (!st || !st.mission || st.mission.type !== 'harvest') continue;
+                if (this.isMissionUnderfilled(st)) return true;
+            }
+            return false;
+        };
+
+        if (hasUnderfilledHarvestMission()) {
+            for (const name in missionStatus) {
+                const status = missionStatus[name];
+                if (!status || !status.mission || status.mission.type !== 'harvest') continue;
+                if (!Array.isArray(status.assignedCreeps) || status.assignedCreeps.length <= 1) continue;
+
+                const candidates = status.assignedCreeps
+                    .filter(c => c && !c.spawning && c.memory && c.memory.missionName === name)
+                    .sort((a, b) => {
+                        const ap = this.getCreepActiveParts(a);
+                        const bp = this.getCreepActiveParts(b);
+                        if (ap.work !== bp.work) return ap.work - bp.work;
+                        const at = Number.isFinite(a.ticksToLive) ? a.ticksToLive : 1500;
+                        const bt = Number.isFinite(b.ticksToLive) ? b.ticksToLive : 1500;
+                        return at - bt;
+                    });
+
+                for (const creep of candidates) {
+                    if (!hasUnderfilledHarvestMission()) break;
+                    if (status.assignedCount <= 1) break;
+
+                    const p = this.getCreepActiveParts(creep);
+                    status.assignedCount -= 1;
+                    status.assignedWorkParts -= p.work;
+                    status.assignedCarryParts -= p.carry;
+                    status.assignedClaimParts -= p.claim;
+
+                    // Keep this assignment if removing the creep would make the mission underfilled again.
+                    if (this.isMissionUnderfilled(status)) {
+                        status.assignedCount += 1;
+                        status.assignedWorkParts += p.work;
+                        status.assignedCarryParts += p.carry;
+                        status.assignedClaimParts += p.claim;
+                        continue;
+                    }
+
+                    clearMissionAssignment(creep);
+                }
             }
         }
 
@@ -776,7 +830,7 @@ var managerTasks = {
                 task = execRemoteHarvestTask({ creep, mission, room });
                 break;
             case 'mineral':
-                task = execMineralTask({ creep, mission, room });
+                // Mineral miners execute directly in role.mineralMiner.
                 break;
             case 'transfer':
                 task = execTransferTask({ creep, mission, room });

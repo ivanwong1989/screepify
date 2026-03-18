@@ -5,6 +5,7 @@ const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
 const DIRECT_DELIVER_LOAD_RATIO = 0.8;
 const DIRECT_NO_PICKUP_GRACE_TICKS = 20;
+const LANE_NO_PICKUP_GRACE_TICKS = 120;
 
 function posKey(pos) {
     return pos ? `${pos.roomName}:${pos.x},${pos.y}` : '';
@@ -221,29 +222,41 @@ module.exports = {
 
             const carried = creep.store[RESOURCE_ENERGY] || 0;
             if (!pickup && carried > 0) {
-                if (laneMode) {
-                    creep.memory.miningLaneState = STATE_DELIVER;
-                    debugLog(creep, mission, runtime, 'LOAD_NO_PICKUP_SWITCH_TO_DELIVER', `carried=${carried} mode=lane`);
-                    return;
-                }
-
                 const capacity = Math.max(1, creep.store.getCapacity(RESOURCE_ENERGY) || 0);
                 const loadRatio = carried / capacity;
                 creep.memory.miningLaneNoPickupTicks = (creep.memory.miningLaneNoPickupTicks || 0) + 1;
                 const waited = creep.memory.miningLaneNoPickupTicks;
-                const shouldDeliver =
-                    loadRatio >= DIRECT_DELIVER_LOAD_RATIO ||
-                    waited >= DIRECT_NO_PICKUP_GRACE_TICKS;
-                if (shouldDeliver) {
-                    creep.memory.miningLaneState = STATE_DELIVER;
-                    debugLog(
-                        creep,
-                        mission,
-                        runtime,
-                        'LOAD_NO_PICKUP_SWITCH_TO_DELIVER',
-                        `carried=${carried} ratio=${loadRatio.toFixed(2)} waited=${waited}`
-                    );
-                    return;
+
+                if (laneMode) {
+                    // Lane haulers should prefer full loads to avoid small-payload churn.
+                    if (waited >= LANE_NO_PICKUP_GRACE_TICKS) {
+                        creep.memory.miningLaneState = STATE_DELIVER;
+                        debugLog(
+                            creep,
+                            mission,
+                            runtime,
+                            'LOAD_NO_PICKUP_SWITCH_TO_DELIVER',
+                            `carried=${carried} ratio=${loadRatio.toFixed(2)} waited=${waited} mode=lane_grace`
+                        );
+                        return;
+                    }
+                }
+
+                if (!laneMode) {
+                    const shouldDeliver =
+                        loadRatio >= DIRECT_DELIVER_LOAD_RATIO ||
+                        waited >= DIRECT_NO_PICKUP_GRACE_TICKS;
+                    if (shouldDeliver) {
+                        creep.memory.miningLaneState = STATE_DELIVER;
+                        debugLog(
+                            creep,
+                            mission,
+                            runtime,
+                            'LOAD_NO_PICKUP_SWITCH_TO_DELIVER',
+                            `carried=${carried} ratio=${loadRatio.toFixed(2)} waited=${waited}`
+                        );
+                        return;
+                    }
                 }
             }
 
@@ -335,4 +348,3 @@ module.exports = {
         debugLog(creep, mission, runtime, 'ON_END_MOVE_TO_SINK', `sink=${sink.id || '-'} code=${moveCode}`);
     }
 };
-

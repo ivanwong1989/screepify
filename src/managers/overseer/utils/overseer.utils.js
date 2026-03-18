@@ -140,10 +140,23 @@ const overseerUtils = {
     },
 
     getRequiredHeadcount: function(mission) {
-        if (!mission || !mission.requirements) return 0;
-        const req = mission.requirements;
+        if (!mission) return 0;
+        const req = mission.requirements || {};
         if (Number.isFinite(req.maxCount)) return req.maxCount;
         if (Number.isFinite(req.minCount)) return req.minCount;
+
+        const assignedCount = mission && mission.assigned && Array.isArray(mission.assigned.primary)
+            ? mission.assigned.primary.length
+            : 0;
+        if (Number.isFinite(mission.meta && mission.meta.desiredCount)) {
+            return Math.max(0, mission.meta.desiredCount);
+        }
+        if (Number.isFinite(mission.demand && mission.demand.count)) {
+            // Board demand is usually "additional needed", so desired ~= assigned + demand.
+            return Math.max(assignedCount, assignedCount + mission.demand.count);
+        }
+
+        if (!mission.requirements) return assignedCount;
 
         const census = mission.census || {};
         const count = Math.max(1, census.count || 0);
@@ -158,7 +171,12 @@ const overseerUtils = {
     },
 
     getMissionProgress: function(mission) {
-        const census = mission && mission.census ? mission.census : {};
+        const assignedCount = mission && mission.assigned && Array.isArray(mission.assigned.primary)
+            ? mission.assigned.primary.length
+            : 0;
+        const census = mission && mission.census
+            ? mission.census
+            : { count: assignedCount, workParts: 0, carryParts: 0, claimParts: 0 };
         const req = mission && mission.requirements ? mission.requirements : {};
 
         const requiredWork = Number.isFinite(req.requiredWork) ? Math.max(0, req.requiredWork) : 0;
@@ -182,7 +200,7 @@ const overseerUtils = {
         }
 
         const requiredCount = this.getRequiredHeadcount(mission);
-        const assigned = Math.max(0, census.count || 0);
+        const assigned = Math.max(0, Number.isFinite(census.count) ? census.count : assignedCount);
         return {
             filled: assigned >= requiredCount,
             summary: `N ${assigned}/${requiredCount}`,
@@ -353,7 +371,12 @@ const overseerUtils = {
     getLiveBoardVisualMissions: function(room, contractMissions) {
         if (!room || !missionBoard || typeof missionBoard.listLiveByRoom !== 'function') return [];
         const contracts = Array.isArray(contractMissions) ? contractMissions : [];
-        const existingNames = new Set(contracts.map(m => m && m.name).filter(Boolean));
+        const contractsByName = Object.create(null);
+        for (let i = 0; i < contracts.length; i++) {
+            const c = contracts[i];
+            if (!c || !c.name) continue;
+            contractsByName[c.name] = c;
+        }
 
         const live = missionBoard.listLiveByRoom(room.name) || [];
         const boardVisuals = [];
@@ -361,32 +384,26 @@ const overseerUtils = {
         for (let i = 0; i < live.length; i++) {
             const m = live[i];
             if (!m) continue;
-            if (m.class === 'finite') continue;
-
             const missionName =
                 (m.meta && m.meta.missionName) ||
                 m.name ||
                 m.id ||
                 `${m.type}:${room.name}`;
-
-            if (existingNames.has(missionName)) continue;
-
-            const assigned = m.assigned && Array.isArray(m.assigned.primary)
-                ? m.assigned.primary.length
-                : 0;
-            const desired = Number.isFinite(m.meta && m.meta.desiredCount)
-                ? Math.max(0, m.meta.desiredCount)
-                : Number.isFinite(m.demand && m.demand.count)
-                    ? Math.max(assigned, m.demand.count + assigned)
-                    : Math.max(1, assigned);
-
+            const contract = contractsByName[missionName] || null;
             boardVisuals.push({
                 name: missionName,
                 type: m.type,
                 priority: Number.isFinite(m.priority) ? m.priority : 0,
-                requirements: { minCount: desired, maxCount: desired },
-                census: { count: assigned, workParts: 0, carryParts: 0, claimParts: 0 },
-                __fromBoard: true
+                requirements: m.requirements || (contract && contract.requirements) || null,
+                census: (contract && contract.census) || m.census || null,
+                assigned: m.assigned || null,
+                demand: m.demand || null,
+                meta: m.meta || null,
+                data: m.data || (contract && contract.data) || null,
+                pos: m.pos || (contract && contract.pos) || null,
+                targetId: m.targetId || (contract && contract.targetId) || null,
+                targetIds: m.targetIds || (contract && contract.targetIds) || null,
+                targetNames: m.targetNames || (contract && contract.targetNames) || null
             });
         }
 
@@ -411,12 +428,14 @@ const overseerUtils = {
             1,
             { align: 'left', color: color, font: 0.7 }
         );
+        const REMOTE_PATH_DRAW_INTERVAL = 5;
+        const drawRemotePaths = (Game.time % REMOTE_PATH_DRAW_INTERVAL) === 0;
         this.drawCoreLaneV2Visuals(room);
-        this.drawMiningLaneV2Visuals(room);
+        if (drawRemotePaths) this.drawMiningLaneV2Visuals(room);
         // ------------------------------------------------------------
         // Debug Visual: Remote Haul cached lanes (heap) with colors + legend
         // ------------------------------------------------------------
-        if (heap) {
+        if (heap && drawRemotePaths) {
             const MAX_DRAW = 20;
             const CROSS_ROOM = true;      // draw in remote rooms too
             const SHOW_ENDPOINTS = true;  // circles only (no on-tile text labels)
@@ -521,8 +540,9 @@ const overseerUtils = {
         }
 
         let y = 2.5;
+        const visualMissions = this.getLiveBoardVisualMissions(room, missions);
         const getFleetCounts = (type) => {
-            const m = missions.find(m => m.type === type);
+            const m = visualMissions.find(m => m.type === type);
             if (!m) return null;
             const progress = this.getMissionProgress(m);
             return {
@@ -547,15 +567,12 @@ const overseerUtils = {
             );
             y += 1.0;
         }
-        const boardLiveVisuals = this.getLiveBoardVisualMissions(room, missions);
-        const visualMissions = (Array.isArray(missions) ? missions : []).concat(boardLiveVisuals);
         const sortedMissions = [...visualMissions].sort((a, b) => b.priority - a.priority);
         sortedMissions.forEach(m => {
             const progress = this.getMissionProgress(m);
             const filled = progress.filled;
             const color = filled ? '#aaffaa' : '#ffaaaa';
-            const prefix = m.__fromBoard ? '[B]' : '';
-            room.visual.text(`${prefix}[${m.priority}] ${m.name} (${progress.summary})`, 1, y, {align: 'left', font: 0.7, color: color});
+            room.visual.text(`[${m.priority}] ${m.name} (${progress.summary})`, 1, y, {align: 'left', font: 0.7, color: color});
             y += 1.0;
 
             if (m.pos) {

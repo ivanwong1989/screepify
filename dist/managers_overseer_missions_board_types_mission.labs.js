@@ -17,7 +17,9 @@ function getContract(mission) {
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
     if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
+    if (!Array.isArray(mission.assigned.support)) mission.assigned.support = [];
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
+    mission.assigned.support = mission.assigned.support.filter(name => !!Game.creeps[name]);
 }
 
 function generateLabsContracts(room, missions) {
@@ -93,11 +95,11 @@ module.exports = {
         };
     },
 
-    validate(mission) {
+    validate(mission, runtimeCtx) {
         return !!getContract(mission);
     },
 
-    refresh(mission) {
+    refresh(mission, runtimeCtx) {
         cleanupAssigned(mission);
         const contract = getContract(mission);
         if (!contract) return;

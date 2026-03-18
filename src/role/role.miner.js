@@ -79,6 +79,11 @@ function tryUpgradeFallback(creep) {
     return code === OK;
 }
 
+function isFull(creep, resourceType) {
+    if (!creep || !creep.store) return false;
+    return (creep.store.getFreeCapacity(resourceType) || 0) <= 0;
+}
+
 function runStaticContainer(creep, source, container, data, resourceType) {
     if (!creep.pos.isEqualTo(container.pos)) {
         const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS).filter(c => c && c.id !== creep.id);
@@ -90,7 +95,7 @@ function runStaticContainer(creep, source, container, data, resourceType) {
         return;
     }
 
-    if ((creep.store[resourceType] || 0) > 0) {
+    if ((creep.store[resourceType] || 0) > 0 && isFull(creep, resourceType)) {
         const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType);
         if (transferTarget) {
             tryTransfer(creep, transferTarget, resourceType, Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1);
@@ -114,7 +119,7 @@ function runStaticOverflow(creep, source, container, data, resourceType) {
         return;
     }
 
-    if ((creep.store[resourceType] || 0) > 0) {
+    if ((creep.store[resourceType] || 0) > 0 && isFull(creep, resourceType)) {
         if (
             creep.pos.inRangeTo(container.pos, 1) &&
             container.store &&
@@ -147,7 +152,7 @@ function runStaticDrop(creep, source, data, resourceType) {
         return;
     }
 
-    if ((creep.store[resourceType] || 0) > 0) {
+    if ((creep.store[resourceType] || 0) > 0 && isFull(creep, resourceType)) {
         const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType);
         if (transferTarget) {
             tryTransfer(creep, transferTarget, resourceType, Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1);

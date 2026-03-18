@@ -3,6 +3,8 @@ const missionClasses = require('managers_overseer_missions_board_missionClassifi
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
+const PARKING_FLAG_PREFIX = 'Parking';
+
 function tileIndex(x, y) {
     return (y * 50) + x;
 }
@@ -59,6 +61,19 @@ function buildParkingSlots(room, flags) {
     return Array.from(slotMap.values());
 }
 
+function getParkingFlags(room) {
+    if (!room) return [];
+    return room.find(FIND_FLAGS, { filter: f => f.name && f.name.startsWith(PARKING_FLAG_PREFIX) });
+}
+
+function cleanupAssigned(mission) {
+    if (!mission.assigned) mission.assigned = { primary: [], support: [] };
+    if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
+    if (!Array.isArray(mission.assigned.support)) mission.assigned.support = [];
+    mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
+    mission.assigned.support = mission.assigned.support.filter(name => !!Game.creeps[name]);
+}
+
 module.exports = {
     makeKey(context) {
         return missionKeys.makeDecongestKey(context.sponsorRoom, 'parking');
@@ -68,7 +83,7 @@ module.exports = {
         if (!room || !missionBoard) return;
         if (!missionThrottle.shouldRunReconcile('decongest', room.name, Game.time)) return;
 
-        const parkingFlags = room.find(FIND_FLAGS, { filter: f => f.name && f.name.startsWith('Parking') });
+        const parkingFlags = getParkingFlags(room);
         if (parkingFlags.length === 0) return;
 
         missionBoard.createMission('decongest', {
@@ -95,7 +110,12 @@ module.exports = {
             targetId: null,
             assigned: { primary: [], support: [] },
             demand: { role: 'worker', count: 0, bodyProfile: 'worker' },
-            progress: { stage: 'parking' },
+            progress: {
+                stage: 'parking',
+                goalState: 'active',
+                assignedPrimary: 0,
+                slotCount: 0
+            },
             meta: {
                 missionName: 'decongest:parking'
             },
@@ -106,20 +126,23 @@ module.exports = {
     validate(mission, runtimeCtx) {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[mission.sponsorRoom];
         if (!room || !room.controller || !room.controller.my) return false;
-        const flags = room.find(FIND_FLAGS, { filter: f => f.name && f.name.startsWith('Parking') });
+        const flags = getParkingFlags(room);
         return flags.length > 0;
     },
 
     refresh(mission, runtimeCtx) {
+        cleanupAssigned(mission);
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[mission.sponsorRoom];
         if (!room) return;
 
-        const parkingFlags = room.find(FIND_FLAGS, { filter: f => f.name && f.name.startsWith('Parking') });
+        const parkingFlags = getParkingFlags(room);
         const slotPositions = buildParkingSlots(room, parkingFlags);
         const maxCount = slotPositions.length;
 
         mission.meta = mission.meta || {};
         mission.meta.missionName = mission.meta.missionName || 'decongest:parking';
+        mission.meta.slotCount = maxCount;
+        mission.meta.flagCount = parkingFlags.length;
         mission.requirements = {
             minCount: 0,
             maxCount,
@@ -135,6 +158,12 @@ module.exports = {
             count: 0,
             bodyProfile: 'worker'
         };
+        mission.progress = mission.progress || {};
+        mission.progress.stage = 'parking';
+        mission.progress.goalState = 'active';
+        mission.progress.assignedPrimary = mission.assigned.primary.length;
+        mission.progress.slotCount = maxCount;
+        if (mission.assigned.primary.length > 0) mission.lastProgressTick = Game.time;
     },
 
     isComplete() {

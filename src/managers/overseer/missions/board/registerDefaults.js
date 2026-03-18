@@ -16,7 +16,7 @@ const missionUserRemoteMove2Flag = require('managers_overseer_missions_board_typ
 const missionUserRemoteReserve = require('managers_overseer_missions_board_types_mission.userRemoteReserve');
 const missionUserRemoteClaim = require('managers_overseer_missions_board_types_mission.userRemoteClaim');
 const missionUserDismantle = require('managers_overseer_missions_board_types_mission.userDismantle');
-const missionTower = require('managers_overseer_missions_board_types_mission.towerService');
+const missionTower = require('managers_overseer_missions_board_types_mission.tower');
 const missionLabs = require('managers_overseer_missions_board_types_mission.labs');
 const missionRemoteBuild = require('managers_overseer_missions_board_types_mission.remoteBuild');
 

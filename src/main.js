@@ -16,6 +16,7 @@ var roleMiningLaneHauler = require('role_role.miningLaneHauler');
 var roleWorker = require('role_role.worker');
 var roleUpgrader = require('role_role.upgrader');
 var roleMiner = require('role_role.miner');
+var roleMineralMiner = require('role_role.mineralMiner');
 var runColony = require('runColony');
 var telemetry = require('telemetry_index');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
@@ -67,7 +68,7 @@ profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'over
     ['managers_overseer_missions_board_types_mission.userRemoteReserve', 'mission.userRemoteReserve'],
     ['managers_overseer_missions_board_types_mission.userRemoteClaim', 'mission.userRemoteClaim'],
     ['managers_overseer_missions_board_types_mission.userDismantle', 'mission.userDismantle'],
-    ['managers_overseer_missions_board_types_mission.towerService', 'mission.tower'],
+    ['managers_overseer_missions_board_types_mission.tower', 'mission.tower'],
     ['managers_overseer_missions_board_types_mission.labs', 'mission.labs'],
     ['managers_overseer_missions_board_types_mission.remoteBuild', 'mission.remoteBuild']
 ].forEach(([moduleId, label]) => profiler.registerObject(require(moduleId), label));
@@ -200,6 +201,8 @@ module.exports.loop = function() {
                     roleWorker.run(creep);
                 } else if (creep.memory.role === 'miner' || creep.memory.role === 'mobile_miner') {
                     roleMiner.run(creep);
+                } else if (creep.memory.role === 'mineral_miner') {
+                    roleMineralMiner.run(creep);
                 } else {
                     roleUniversal.run(creep);
                 }

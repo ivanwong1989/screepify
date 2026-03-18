@@ -99,7 +99,7 @@ module.exports = function execHarvestTask(ctx) {
             }
 
             helpers.updateState(creep, resourceType, { allowPartialWork: true });
-            if (creep.memory.taskState === 'working' || creep.store.getFreeCapacity(resourceType) === 0) {
+            if (creep.store.getFreeCapacity(resourceType) === 0) {
                 const transferTarget = getFirstValidDropoff(creep.room, dropoffIds, resourceType);
                 if (transferTarget) {
                     return { type: 'transfer', targetId: transferTarget.id, resourceType, range: dropoffRange };
@@ -122,7 +122,7 @@ module.exports = function execHarvestTask(ctx) {
         }
 
         helpers.updateState(creep, resourceType, { allowPartialWork: true });
-        if (creep.memory.taskState === 'working' || creep.store.getFreeCapacity(resourceType) === 0) {
+        if (creep.store.getFreeCapacity(resourceType) === 0) {
             if (creep.pos.inRangeTo(container.pos, 1) && container.store.getFreeCapacity(resourceType) > 0) {
                 return { type: 'transfer', targetId: container.id, resourceType, range: 1 };
             }
@@ -148,8 +148,8 @@ module.exports = function execHarvestTask(ctx) {
 
         helpers.updateState(creep, resourceType, { allowPartialWork: true });
 
-        // If we're in "working" state (i.e., carrying something) OR full, we drop to create a pile for haulers.
-        if (creep.memory.taskState === 'working' || creep.store.getFreeCapacity(resourceType) === 0) {
+        // Drop/transfer only when full to avoid interrupting harvest every tick.
+        if (creep.store.getFreeCapacity(resourceType) === 0) {
             // Optional: if explicit dropoffs exist (future-proof), prefer transferring instead of dropping.
             const transferTarget = getFirstValidDropoff(creep.room, dropoffIds, resourceType);
             if (transferTarget) {
