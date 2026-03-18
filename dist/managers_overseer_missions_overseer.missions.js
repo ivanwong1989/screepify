@@ -1,5 +1,4 @@
 const missionBoard = require('managers_overseer_missions_board_missionBoard');
-const DISABLED_LEGACY_LOGISTICS_TYPES = new Set(['logisticsLane', 'logisticsJob', 'logisticsFleet']);
 
 const overseerMissions = {
     generate: function(room, intel, opState, economyState, censusCreeps) {
@@ -70,14 +69,6 @@ const overseerMissions = {
 
         // Run persistent mission board updates/reconciliation first.
         missionBoard.runRoom(room, { intel, context });
-
-        // Baseline v2 logistics refactor: hard-disable legacy logistics mission types.
-        const live = missionBoard.listLiveByRoom(room.name);
-        for (let i = 0; i < live.length; i++) {
-            const mission = live[i];
-            if (!mission || !DISABLED_LEGACY_LOGISTICS_TYPES.has(mission.type)) continue;
-            missionBoard.markCancelled(mission.id, 'legacy_logistics_disabled_v2_only');
-        }
 
         // Bridge board missions into mission contracts consumed by task assignment.
         // Fetch through the room-scoped per-tick cache instead of rebuilding the same filtered list repeatedly.

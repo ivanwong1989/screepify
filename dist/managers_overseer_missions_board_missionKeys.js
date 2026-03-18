@@ -14,18 +14,6 @@ function makeRepairKey(roomName, structureType, x, y) {
     return `repair:${roomName}:${structureType}:${x}:${y}`;
 }
 
-function makeLogisticsLaneKey(roomName, fromId, toId, resourceType, slot) {
-    const rt = resourceType || RESOURCE_ENERGY;
-    const s = Number.isFinite(slot) ? `:s${slot}` : '';
-    return `logisticsLane:${roomName}:${fromId}:${toId}:${rt}${s}`;
-}
-
-function makeLogisticsJobKey(roomName, kind, targetId, sourceId, resourceType) {
-    const rt = resourceType || RESOURCE_ENERGY;
-    const sourcePart = sourceId ? `:${sourceId}` : '';
-    return `logisticsJob:${roomName}:${kind}:${targetId}${sourcePart}:${rt}`;
-}
-
 function makeRepairTargetKey(roomName, targetId, mode) {
     const kind = mode === 'fortify' ? 'fortify' : 'repair';
     return `${kind}:${roomName}:${targetId}`;
@@ -34,10 +22,6 @@ function makeRepairTargetKey(roomName, targetId, mode) {
 function makeUpgradeKey(roomName, variant) {
     const v = variant || 'primary';
     return `upgrade:${roomName}:${v}:controller`;
-}
-
-function makeLogisticsFleetKey(roomName) {
-    return `logisticsFleet:${roomName}`;
 }
 
 function makeRemoteHarvestKey(homeRoomName, remoteRoomName, sourceId) {
@@ -85,11 +69,8 @@ module.exports = {
     makeBuildKey,
     makePickupKey,
     makeRepairKey,
-    makeLogisticsLaneKey,
-    makeLogisticsJobKey,
     makeRepairTargetKey,
     makeUpgradeKey,
-    makeLogisticsFleetKey,
     makeRemoteHarvestKey,
     makeRemoteHaulKey,
     makeScoutKey,

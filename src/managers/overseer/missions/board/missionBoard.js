@@ -10,41 +10,11 @@ const missionClasses = require('managers_overseer_missions_board_missionClassifi
 
 const DEFAULT_LIVE_TYPE_CAPS = {
     build: 1,
-    repair: 2,
-    logisticsJob: 8
+    repair: 2
 };
 const ALWAYS_CHECK_TYPES = new Set([
     'tower'
 ]);
-
-function isDebugLogisticsSupplyEnabled() {
-    return !!(Memory && Memory.debugLogisticsSupply === true);
-}
-
-function isSupplyExtensionOrSpawnMission(mission) {
-    if (!mission || mission.type !== 'logisticsJob') return false;
-    const meta = mission.meta || {};
-    if (meta.kind !== 'supply') return false;
-    const targetId = meta.targetId || mission.targetId;
-    if (!targetId) return false;
-    const target = Game.getObjectById(targetId);
-    if (!target) return false;
-    return target.structureType === STRUCTURE_EXTENSION || target.structureType === STRUCTURE_SPAWN;
-}
-
-function debugSupplyLifecycle(prefix, mission, extra) {
-    if (!isDebugLogisticsSupplyEnabled()) return;
-    if (!isSupplyExtensionOrSpawnMission(mission)) return;
-    const targetId = mission && mission.meta && mission.meta.targetId ? mission.meta.targetId : mission.targetId;
-    const target = targetId ? Game.getObjectById(targetId) : null;
-    const free = target && target.store && typeof target.store.getFreeCapacity === 'function'
-        ? target.store.getFreeCapacity(RESOURCE_ENERGY)
-        : null;
-    console.log(
-        `[LogisticsSupply][Board] ${prefix} id=${mission.id} room=${mission.sponsorRoom} target=${targetId}` +
-        ` type=${target && target.structureType ? target.structureType : '-'} free=${free !== null ? free : '-'}${extra ? ` ${extra}` : ''}`
-    );
-}
 
 function ensureStatsStore() {
     if (!global.__missionBoardStats || typeof global.__missionBoardStats !== 'object') {
@@ -209,7 +179,6 @@ function setState(id, state, reason) {
         mission.terminalTick = Game.time;
     }
     invalidateMissionCaches(board, mission, null);
-    debugSupplyLifecycle(`state=${state}`, mission, `reason=${reason || '-'}`);
     return mission;
 }
 
@@ -344,21 +313,11 @@ function createMission(type, context, runtimeCtx) {
     const existing = getByKey(key);
     if (existing && isLiveMission(existing)) {
         if (roomName) bumpCreateStat(roomName, 'existing');
-        debugSupplyLifecycle('existing', existing, `createType=${type}`);
         return existing;
     }
 
     if (roomName && isTypeAtCap(roomName, type)) {
         bumpCreateStat(roomName, 'capped');
-        if (isDebugLogisticsSupplyEnabled() && type === 'logisticsJob' && context && context.kind === 'supply') {
-            const target = context.targetId ? Game.getObjectById(context.targetId) : null;
-            const isExtOrSpawn = !!(target && (target.structureType === STRUCTURE_EXTENSION || target.structureType === STRUCTURE_SPAWN));
-            if (isExtOrSpawn) {
-                console.log(
-                    `[LogisticsSupply][Board] capped room=${roomName} target=${context.targetId} type=${target.structureType}`
-                );
-            }
-        }
         return null;
     }
 
@@ -391,7 +350,6 @@ function createMission(type, context, runtimeCtx) {
     }
 
     if (roomName) bumpCreateStat(roomName, 'created');
-    debugSupplyLifecycle('created', mission, `createType=${type}`);
 
     return mission;
 }

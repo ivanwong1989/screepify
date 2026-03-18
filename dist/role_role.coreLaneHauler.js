@@ -4,6 +4,8 @@ const missionRuntime = require('managers_overseer_missions_board_missionRuntime'
 const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
 const STATE_RETURN = 'RETURN';
+const RENEW_START_TTL = 1100;
+const RENEW_STOP_TTL = 1450;
 
 function logCoreLaneDebug(creep, mission, message) {
     if (typeof debug !== 'function' || !creep || !mission) return;
@@ -563,6 +565,118 @@ function getStoreAmount(obj, resourceType) {
     return 0;
 }
 
+function countBodyParts(creep, partType) {
+    if (!creep || !Array.isArray(creep.body)) return 0;
+    let total = 0;
+    for (let i = 0; i < creep.body.length; i++) {
+        const part = creep.body[i];
+        if (part && part.type === partType) total++;
+    }
+    return total;
+}
+
+function getIntendedCarryParts(mission, creep) {
+    const fromMission = mission && mission.meta && Number.isFinite(mission.meta.intendedCarryParts)
+        ? Math.max(1, Math.floor(mission.meta.intendedCarryParts))
+        : null;
+    if (fromMission) return fromMission;
+    const cap = Math.max(300, creep && creep.room ? (creep.room.energyCapacityAvailable || 300) : 300);
+    return Math.max(2, Math.min(25, Math.floor(cap / 100)));
+}
+
+function isIntendedRenewBody(creep, mission) {
+    if (!creep) return false;
+    const intendedCarry = getIntendedCarryParts(mission, creep);
+    return countBodyParts(creep, CARRY) === intendedCarry;
+}
+
+function getAdjacentRenewSpawn(creep) {
+    if (!creep || !creep.room) return null;
+    const spawns = creep.room.find(FIND_MY_SPAWNS);
+    if (!spawns || spawns.length <= 0) return null;
+    for (let i = 0; i < spawns.length; i++) {
+        const spawn = spawns[i];
+        if (!spawn || spawn.spawning) continue;
+        if (!creep.pos.inRangeTo(spawn, 1)) continue;
+        return spawn;
+    }
+    return null;
+}
+
+function shouldRenewNow(creep) {
+    if (!creep || !Number.isFinite(creep.ticksToLive)) return false;
+    if (creep.ticksToLive >= RENEW_STOP_TTL) return false;
+    if (creep.memory.coreLaneRenewing) return true;
+    return creep.ticksToLive <= RENEW_START_TTL;
+}
+
+function canIgnoreSpawnDemandForRenew(creep, mission, coreLane, activeJob) {
+    if (!creep || !mission || !coreLane) return false;
+    if (!shouldRenewNow(creep)) return false;
+    if (!isIntendedRenewBody(creep, mission)) return false;
+    if ((creep.memory.coreLaneState || STATE_LOAD) !== STATE_LOAD) return false;
+    if (activeJob) {
+        const idleStockJob = activeJob.kind === 'stock' && creep.store.getUsedCapacity() <= 0;
+        if (!idleStockJob) return false;
+    }
+    if ((creep.store && creep.store.getUsedCapacity && creep.store.getUsedCapacity()) > 0) return false;
+    if (getCurrentIndex(creep, coreLane) !== 0) return false;
+    return !!getAdjacentRenewSpawn(creep);
+}
+
+function tryRenewIdleHeadHauler(creep, mission, coreLane, hasCoreDemand, activeJob) {
+    if (!creep || !mission || !coreLane) return false;
+    if (!shouldRenewNow(creep)) {
+        if (Number.isFinite(creep.ticksToLive) && creep.ticksToLive >= RENEW_STOP_TTL) {
+            delete creep.memory.coreLaneRenewing;
+        }
+        return false;
+    }
+    if (!isIntendedRenewBody(creep, mission)) {
+        delete creep.memory.coreLaneRenewing;
+        return false;
+    }
+    if ((creep.memory.coreLaneState || STATE_LOAD) !== STATE_LOAD) return false;
+    if (hasCoreDemand) return false;
+    if (activeJob) {
+        const idleStockJob = activeJob.kind === 'stock' && creep.store.getUsedCapacity() <= 0;
+        if (!idleStockJob) return false;
+    }
+    if ((creep.store && creep.store.getUsedCapacity && creep.store.getUsedCapacity()) > 0) return false;
+    if (getCurrentIndex(creep, coreLane) !== 0) return false;
+
+    const spawn = getAdjacentRenewSpawn(creep);
+    if (!spawn) {
+        delete creep.memory.coreLaneRenewing;
+        return false;
+    }
+
+    const renewCode = spawn.renewCreep(creep);
+    if (renewCode === OK) {
+        creep.memory.coreLaneRenewing = true;
+        logCoreLaneDebug(
+            creep,
+            mission,
+            `renew OK spawn=${spawn.id} ttl=${creep.ticksToLive} carry=${countBodyParts(creep, CARRY)}`
+        );
+        return true;
+    }
+
+    if (renewCode === ERR_FULL) {
+        delete creep.memory.coreLaneRenewing;
+        return false;
+    }
+
+    if (renewCode === ERR_NOT_ENOUGH_ENERGY || renewCode === ERR_BUSY || renewCode === ERR_NOT_IN_RANGE) {
+        delete creep.memory.coreLaneRenewing;
+    }
+
+    if (renewCode !== ERR_BUSY) {
+        logCoreLaneDebug(creep, mission, `renew skip code=${renewCode} spawn=${spawn.id}`);
+    }
+    return false;
+}
+
 function getHeadSource(creep, mission, runtime) {
     if (!creep || !mission) return null;
     const headSourceId = (runtime && runtime.headSourceId) || (mission.meta && mission.meta.headSourceId) || null;
@@ -606,34 +720,42 @@ function dumpNonJobCargo(creep, mission, runtime, keepResourceType) {
     return false;
 }
 
-function laneHasEnergyDemand(lane) {
+function laneHasEnergyDemand(lane, opts) {
     if (!lane || !lane.stopsByIndex) return false;
+    const options = opts || {};
+    const ignoreSpawn = options.ignoreSpawn === true;
     for (const idxKey in lane.stopsByIndex) {
         const stopIds = lane.stopsByIndex[idxKey];
         if (!Array.isArray(stopIds) || stopIds.length <= 0) continue;
         for (let i = 0; i < stopIds.length; i++) {
             const target = Game.getObjectById(stopIds[i]);
             if (!target || !target.store || typeof target.store.getFreeCapacity !== 'function') continue;
+            if (ignoreSpawn && target.structureType === STRUCTURE_SPAWN) continue;
             if (target.store.getFreeCapacity(RESOURCE_ENERGY) > 0) return true;
         }
     }
     return false;
 }
 
-function indexHasEnergyDemand(lane, index) {
+function indexHasEnergyDemand(lane, index, opts) {
     if (!lane || !lane.stopsByIndex || !Number.isInteger(index)) return false;
+    const options = opts || {};
+    const ignoreSpawn = options.ignoreSpawn === true;
     const stopIds = lane.stopsByIndex[index];
     if (!Array.isArray(stopIds) || stopIds.length <= 0) return false;
     for (let i = 0; i < stopIds.length; i++) {
         const target = Game.getObjectById(stopIds[i]);
         if (!target || !target.store || typeof target.store.getFreeCapacity !== 'function') continue;
+        if (ignoreSpawn && target.structureType === STRUCTURE_SPAWN) continue;
         if (target.store.getFreeCapacity(RESOURCE_ENERGY) > 0) return true;
     }
     return false;
 }
 
-function transferEnergyAtCurrentIndex(creep, lane) {
+function transferEnergyAtCurrentIndex(creep, lane, opts) {
     if (!creep || !lane || !lane.stopsByIndex) return false;
+    const options = opts || {};
+    const ignoreSpawn = options.ignoreSpawn === true;
     const idx = getCurrentIndex(creep, lane);
     if (idx < 0) return false;
     const stopIds = lane.stopsByIndex[idx];
@@ -644,6 +766,7 @@ function transferEnergyAtCurrentIndex(creep, lane) {
     for (let i = 0; i < stopIds.length; i++) {
         const target = Game.getObjectById(stopIds[i]);
         if (!target || !target.store || typeof target.store.getFreeCapacity !== 'function') continue;
+        if (ignoreSpawn && target.structureType === STRUCTURE_SPAWN) continue;
         if (!creep.pos.inRangeTo(target, 1)) continue;
         const need = target.store.getFreeCapacity(RESOURCE_ENERGY);
         if (need > bestNeed) {
@@ -767,7 +890,6 @@ module.exports = {
         }
         const coreLaneIsLoop = coreLane.isLoop === true;
 
-        const hasCoreDemand = laneHasEnergyDemand(coreLane);
         let activeJob = creep.memory.coreLaneJobId ? getLaneJobById(runtime, creep.memory.coreLaneJobId) : null;
         if (activeJob) {
             const carried = creep.store[activeJob.resourceType] || 0;
@@ -785,6 +907,10 @@ module.exports = {
             }
         }
         if (activeJob) claimJob(mission.id, activeJob.id, creep.name);
+        const ignoreSpawnDemand = canIgnoreSpawnDemandForRenew(creep, mission, coreLane, activeJob);
+        const hasCoreDemand = laneHasEnergyDemand(coreLane, { ignoreSpawn: ignoreSpawnDemand });
+
+        if (tryRenewIdleHeadHauler(creep, mission, coreLane, hasCoreDemand, activeJob)) return;
 
         if (coreLaneIsLoop) {
             const idx = getCurrentIndex(creep, coreLane);
@@ -1009,8 +1135,8 @@ module.exports = {
                     return;
                 }
 
-                if (indexHasEnergyDemand(coreLane, idx) && (creep.store[RESOURCE_ENERGY] || 0) > 0) {
-                    const didTransfer = transferEnergyAtCurrentIndex(creep, coreLane);
+                if (indexHasEnergyDemand(coreLane, idx, { ignoreSpawn: ignoreSpawnDemand }) && (creep.store[RESOURCE_ENERGY] || 0) > 0) {
+                    const didTransfer = transferEnergyAtCurrentIndex(creep, coreLane, { ignoreSpawn: ignoreSpawnDemand });
                     if (coreLaneIsLoop) {
                         logCoreLaneDebug(
                             creep,
@@ -1021,7 +1147,7 @@ module.exports = {
                     return;
                 }
 
-                if (!laneHasEnergyDemand(coreLane)) {
+                if (!laneHasEnergyDemand(coreLane, { ignoreSpawn: ignoreSpawnDemand })) {
                     creep.memory.coreLaneState = STATE_RETURN;
                     return;
                 }

@@ -23,7 +23,6 @@ function getReconcileInterval(type) {
         case 'repair': return 17;
         case 'pickup': return 11;
         case 'logistics': return 9;
-        case 'logisticsFleet': return 13;
         case 'logisticsCoreV2': return 7;
         case 'logisticsMiningV2': return 11;
         case 'remoteHarvest': return 47;
@@ -65,8 +64,6 @@ function getMissionUpdateInterval(mission) {
         if (mission.type === 'reserve') return 47;
         if (mission.type === 'upgrade') return 11;
         if (mission.type === 'tower') return 3;
-        if (mission.type === 'logisticsLane') return 9;
-        if (mission.type === 'logisticsFleet') return 13;
         if (mission.type === 'logisticsCoreV2') return 7;
         if (mission.type === 'logisticsMiningV2') return 11;
         if (mission.type === 'remoteHarvest') return 53;
@@ -77,7 +74,6 @@ function getMissionUpdateInterval(mission) {
         return 31;
     }
     if (mission.class === 'finite') {
-        if (mission.type === 'logisticsJob') return 5;
         return 9;
     }
     return 15;

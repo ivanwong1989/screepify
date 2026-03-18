@@ -1,7 +1,5 @@
 const { profRequire } = require('utils_profRequire');
 
-const execBuildTask = profRequire('managers_overseer_tasks_exec_build', 'tasks.exec.build');
-const execRepairTask = profRequire('managers_overseer_tasks_exec_repair', 'tasks.exec.repair');
 const execUpgradeTask = profRequire('managers_overseer_tasks_exec_upgrade', 'tasks.exec.upgrade');
 const execHarvestTask = profRequire('managers_overseer_tasks_exec_harvest', 'tasks.exec.harvest');
 const execRemoteHarvestTask = profRequire('managers_overseer_tasks_exec_remoteHarvest', 'tasks.exec.remoteHarvest');
@@ -656,6 +654,8 @@ var managerTasks = {
 
             // Exclude combatants from economy missions
             if (['defender', 'brawler', 'drainer', 'assault'].includes(creep.memory.role)) continue;
+            // Dedicated upgraders should only take upgrade missions.
+            if (creep.memory.role === 'upgrader' && m.type !== 'upgrade') continue;
 
             // Keep logistics core v2 haulers out of parking decongest.
             if (m.name === 'decongest:parking' && creep.memory.role === 'coreLaneHauler') continue;
@@ -789,7 +789,7 @@ var managerTasks = {
                 task = execUpgradeTask({ creep, mission, room });
                 break;
             case 'build':
-                task = execBuildTask({ creep, mission, room });
+                // Build workers execute directly in role.worker from mission contract data.
                 break;
             case 'remote_build':
                 task = execRemoteBuildTask({ creep, mission, room });
@@ -798,7 +798,7 @@ var managerTasks = {
                 task = execRemoteRepairTask({ creep, mission, room });
                 break;
             case 'repair':
-                task = execRepairTask({ creep, mission, room });
+                // Repair/fortify workers execute directly in role.worker from mission contract data.
                 break;
             case 'decongest':
                 task = execDecongestTask({ creep, mission, room });
@@ -1268,4 +1268,3 @@ var managerTasks = {
 };
 
 module.exports = managerTasks;
-

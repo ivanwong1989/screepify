@@ -8,6 +8,37 @@ const CRITICAL_WALL_HITS = 5000;
 const REPAIR_MIN_RATIO = 0.9;
 const DEFAULT_FORTIFY_TARGET = 500000;
 const FORTIFY_TARGET_CAP = 3;
+const FORTIFY_SETTINGS = {
+    0: { start: 0, target: 0 },
+    1: { start: 0, target: 0 },
+    2: { start: 10000, target: 20000 },
+    3: { start: 20000, target: 150000 },
+    4: { start: 150000, target: 300000 },
+    5: { start: 300000, target: 500000 },
+    6: { start: 900000, target: 1300000 },
+    7: { start: 3000000, target: 3500000 },
+    8: { start: 3500000, target: 5000000 }
+};
+const REPAIR_WORKER_TUNING = Object.freeze({
+    desiredWorkRepair: 1,
+    desiredWorkFortify: 1,
+    minCountRepair: 1,
+    maxCountRepair: 1,
+    minCountFortify: 1,
+    maxCountFortify: 1
+});
+
+function getDesiredRepairWork(fortify) {
+    return fortify ? REPAIR_WORKER_TUNING.desiredWorkFortify : REPAIR_WORKER_TUNING.desiredWorkRepair;
+}
+
+function getRepairMinCount(fortify) {
+    return fortify ? REPAIR_WORKER_TUNING.minCountFortify : REPAIR_WORKER_TUNING.minCountRepair;
+}
+
+function getRepairMaxCount(fortify) {
+    return fortify ? REPAIR_WORKER_TUNING.maxCountFortify : REPAIR_WORKER_TUNING.maxCountRepair;
+}
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -24,6 +55,27 @@ function getRepairThreshold(structure) {
     if (!structure || !structure.hitsMax) return 0;
     if (isFortifyTarget(structure)) return structure.hitsMax;
     return Math.floor(structure.hitsMax * REPAIR_MIN_RATIO);
+}
+
+function getFortifyPolicyTarget(room) {
+    const policyTarget = room && room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy
+        ? room.memory.overseer.fortifyPolicy.target
+        : null;
+    if (Number.isFinite(policyTarget)) return policyTarget;
+    const rcl = room && room.controller ? room.controller.level : 0;
+    const defaults = FORTIFY_SETTINGS[rcl] || FORTIFY_SETTINGS[0];
+    if (Number.isFinite(defaults && defaults.target)) return defaults.target;
+    return DEFAULT_FORTIFY_TARGET;
+}
+
+function getMissionFortifyTargetHits(room, structure, existingTarget) {
+    const base = getFortifyPolicyTarget(room);
+    const target = Number.isFinite(base) ? base : existingTarget;
+    if (!Number.isFinite(target) || target <= 0) return 0;
+    if (structure && Number.isFinite(structure.hitsMax) && structure.hitsMax > 0) {
+        return Math.min(target, structure.hitsMax);
+    }
+    return target;
 }
 
 module.exports = {
@@ -58,7 +110,9 @@ module.exports = {
         const fortifyPolicy = room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy
             ? room.memory.overseer.fortifyPolicy
             : null;
-        const targetHits = Number.isFinite(fortifyPolicy && fortifyPolicy.target) ? fortifyPolicy.target : null;
+        const targetHits = Number.isFinite(fortifyPolicy && fortifyPolicy.target)
+            ? fortifyPolicy.target
+            : getFortifyPolicyTarget(room);
         const economyState = context && context.economyState ? context.economyState : 'STOCKPILING';
         const allowFortifySpawn = economyState === 'UPGRADING' || !!scan.critical;
 
@@ -105,7 +159,10 @@ module.exports = {
                 missionName: `${fortify ? 'fortify' : 'repair'}:${context.targetId}`,
                 fortify,
                 spawnAllowed: context.spawnAllowed !== false,
-                targetHits: Number.isFinite(context.targetHits) ? context.targetHits : null
+                targetHits: Number.isFinite(context.targetHits) ? context.targetHits : null,
+                desiredWork: Number.isFinite(context.requiredWork) ? context.requiredWork : getDesiredRepairWork(fortify),
+                minCount: getRepairMinCount(fortify),
+                maxCount: getRepairMaxCount(fortify)
             },
             statusReason: null
         };
@@ -130,6 +187,9 @@ module.exports = {
         mission.progress = mission.progress || {};
         mission.meta = mission.meta || {};
         mission.meta.missionName = mission.meta.missionName || `${fortify ? 'fortify' : 'repair'}:${mission.targetId}`;
+        mission.meta.desiredWork = getDesiredRepairWork(fortify);
+        mission.meta.minCount = getRepairMinCount(fortify);
+        mission.meta.maxCount = getRepairMaxCount(fortify);
 
         if (structure) {
             const prev = Number.isFinite(mission.progress.lastHits) ? mission.progress.lastHits : structure.hits;
@@ -138,10 +198,7 @@ module.exports = {
             mission.progress.hitsMax = structure.hitsMax || 0;
             mission.meta.structureType = structure.structureType;
             if (fortify) {
-                const policyTarget = room && room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy
-                    ? room.memory.overseer.fortifyPolicy.target
-                    : null;
-                mission.meta.targetHits = Number.isFinite(policyTarget) ? policyTarget : (mission.meta.targetHits || DEFAULT_FORTIFY_TARGET);
+                mission.meta.targetHits = getMissionFortifyTargetHits(room, structure, mission.meta.targetHits || DEFAULT_FORTIFY_TARGET);
             } else {
                 mission.meta.targetHits = getRepairThreshold(structure);
             }
@@ -155,13 +212,14 @@ module.exports = {
 
         mission.demand = {
             role: 'worker',
-            count: Math.max(0, 1 - mission.assigned.primary.length),
+            count: Math.max(0, mission.meta.minCount - mission.assigned.primary.length),
             bodyProfile: 'worker'
         };
         mission.data = {
             sourceIds: intel && Array.isArray(intel.allEnergySources) ? intel.allEnergySources.map(s => s.id) : [],
             allowPartial: true,
-            fortify
+            fortify,
+            targetHits: Number.isFinite(mission.meta.targetHits) ? mission.meta.targetHits : null
         };
     },
 
@@ -172,9 +230,9 @@ module.exports = {
         if (!structure) return !!room;
 
         const fortify = !!(mission.meta && mission.meta.fortify);
-        const targetHits = Number.isFinite(mission.meta && mission.meta.targetHits)
-            ? mission.meta.targetHits
-            : (fortify ? DEFAULT_FORTIFY_TARGET : getRepairThreshold(structure));
+        const targetHits = fortify
+            ? getMissionFortifyTargetHits(room, structure, mission.meta && mission.meta.targetHits)
+            : getRepairThreshold(structure);
         return structure.hits >= targetHits;
     },
 
@@ -189,13 +247,14 @@ module.exports = {
             data: {
                 sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [],
                 fortify,
-                allowPartial: true
+                allowPartial: true,
+                targetHits: mission.data && Number.isFinite(mission.data.targetHits) ? mission.data.targetHits : null
             },
             requirements: {
                 archetype: 'worker',
-                requiredWork: 1,
-                minCount: 1,
-                maxCount: 1,
+                requiredWork: mission.meta && Number.isFinite(mission.meta.desiredWork) ? mission.meta.desiredWork : getDesiredRepairWork(fortify),
+                minCount: mission.meta && Number.isFinite(mission.meta.minCount) ? mission.meta.minCount : getRepairMinCount(fortify),
+                maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : getRepairMaxCount(fortify),
                 spawnFromFleet: true,
                 spawn: spawnAllowed
             },

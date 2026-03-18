@@ -6,13 +6,15 @@ MemoryHack.register();
 registerGlobals();
 registerConsole();
 
-var roleUniversal = require('role.universal');
-var roleEmpireUniversal = require('role.empire.universal');
-var roleDefender = require('role.defender');
-var roleAssault = require('role.assault');
-var roleTower = require('role.tower');
-var roleCoreLaneHauler = require('role.coreLaneHauler');
-var roleMiningLaneHauler = require('role.miningLaneHauler');
+var roleUniversal = require('role_role.universal');
+var roleEmpireUniversal = require('role_role.empire.universal');
+var roleDefender = require('role_role.defender');
+var roleAssault = require('role_role.assault');
+var roleTower = require('role_role.tower');
+var roleCoreLaneHauler = require('role_role.coreLaneHauler');
+var roleMiningLaneHauler = require('role_role.miningLaneHauler');
+var roleWorker = require('role_role.worker');
+var roleUpgrader = require('role_role.upgrader');
 var runColony = require('runColony');
 var telemetry = require('telemetry_index');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
@@ -41,7 +43,7 @@ profiler.registerObject(require('managers_spawner_manager.room.economy.spawner')
 profiler.registerObject(require('managers_structures_manager.structures'), 'structures');
 profiler.registerObject(require('telemetry_index'), 'telemetry');
 profiler.registerObject(require('managers_overseer_tasks_assign_manager.room.economy.tasks.assign'), 'tasks.assign');
-profiler.registerObject(require('role.universal'), 'role.universal');
+profiler.registerObject(require('role_role.universal'), 'role.universal');
 
 profiler.registerObject(require('managers_overseer_intel_overseer.intel'), 'overseer.intel');
 profiler.registerObject(require('managers_overseer_intel_overseer.resourceLedger'), 'overseer.resourceLedger');
@@ -53,9 +55,6 @@ profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'over
     ['managers_overseer_missions_board_types_mission.build', 'mission.build'],
     ['managers_overseer_missions_board_types_mission.repair', 'mission.repair'],
     ['managers_overseer_missions_board_types_mission.upgrade', 'mission.upgrade'],
-    ['managers_overseer_missions_board_types_mission.logisticsLane', 'mission.logisticsLane'],
-    ['managers_overseer_missions_board_types_mission.logisticsJob', 'mission.logisticsJob'],
-    ['managers_overseer_missions_board_types_mission.logisticsFleet', 'mission.logisticsFleet'],
     ['managers_overseer_missions_board_types_mission.remoteHarvest', 'mission.remoteHarvest'],
     ['managers_overseer_missions_board_types_mission.remoteHaul', 'mission.remoteHaul'],
     ['managers_overseer_missions_board_types_mission.scout', 'mission.scout'],
@@ -194,6 +193,10 @@ module.exports.loop = function() {
                     roleCoreLaneHauler.run(creep);
                 } else if (creep.memory.role === 'miningLaneHauler') {
                     roleMiningLaneHauler.run(creep);
+                } else if (creep.memory.role === 'upgrader') {
+                    roleUpgrader.run(creep);
+                } else if (creep.memory.role === 'worker') {
+                    roleWorker.run(creep);
                 } else {
                     roleUniversal.run(creep);
                 }

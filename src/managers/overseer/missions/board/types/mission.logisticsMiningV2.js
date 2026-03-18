@@ -4,7 +4,7 @@ const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
 
-const REBUILD_INTERVAL = 51;
+const REBUILD_INTERVAL = 100;
 const PLAIN_COST = 10;
 const SWAMP_COST = 30;
 const CORE_HEAD_AVOID_COST = 200;
@@ -195,10 +195,7 @@ function getCoreHeadAvoidTiles(roomName) {
         const mission = live[i];
         if (!mission || mission.type !== 'logisticsCoreV2') continue;
         const runtime = missionRuntime.getMissionRuntime(mission);
-        let headPos = runtime && runtime.headPos ? runtime.headPos : null;
-        if (!headPos && runtime && runtime.paths && runtime.paths.core && runtime.paths.core.headPos) {
-            headPos = runtime.paths.core.headPos;
-        }
+        const headPos = runtime && runtime.paths && runtime.paths.core ? runtime.paths.core.headPos : null;
         if (!headPos || headPos.roomName !== roomName) continue;
         avoid.push(clonePos(headPos));
     }
@@ -323,7 +320,8 @@ function buildPath(room, startPos, endPos, avoidTiles) {
         }
     );
     if (!result || !Array.isArray(result.path) || result.path.length <= 0 || result.incomplete) return null;
-    const path = [clonePos(startPos)].concat(result.path);
+    // For mining container lanes, do not reserve the container tile itself as a lane endpoint.
+    const path = result.path.slice();
     const indexByPos = Object.create(null);
     for (let i = 0; i < path.length; i++) {
         const key = posKey(path[i]);
@@ -501,16 +499,16 @@ module.exports = {
 
             const pickupKey = posKey(pickup.pickupPos);
             const sinkKey = posKey(sink.pos);
-            const shouldRebuild =
+            const buildInputsChanged =
                 runtime.useLane !== true ||
-                !runtime.path ||
-                !Array.isArray(runtime.path) ||
-                runtime.path.length <= 0 ||
                 runtime.pickupKey !== pickupKey ||
                 runtime.sinkKey !== sinkKey ||
-                runtime.avoidSignature !== avoidSignature ||
+                runtime.avoidSignature !== avoidSignature;
+            const rebuildIntervalElapsed =
                 !Number.isFinite(runtime.lastBuiltTick) ||
                 (Game.time - runtime.lastBuiltTick) >= REBUILD_INTERVAL;
+            // Retry cadence is interval-based so failed builds do not trigger pathfinding every tick.
+            const shouldRebuild = buildInputsChanged || rebuildIntervalElapsed;
 
             if (shouldRebuild) {
                 const built = buildPath(room, pickup.pickupPos, sink.pos, avoidTiles);

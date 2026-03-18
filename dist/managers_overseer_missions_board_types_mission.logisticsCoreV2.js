@@ -8,7 +8,7 @@ const managerLabs = require('managers_structures_manager.labs');
 
 const CORE_END_FLAG = 'CORE_END';
 const CORE_LABS_FLAG = 'CORE_LABS';
-const REBUILD_INTERVAL = 50;
+const REBUILD_INTERVAL = 100;
 const PLAIN_LANE_COST = 20;
 const SWAMP_LANE_COST = 45;
 const ROAD_BASE_COST = 4;
@@ -18,8 +18,6 @@ const MAX_ROUTE_EVALUATIONS = 36;
 const MAX_LOOP_WAYPOINTS = 8;
 const LOOP_HEAD_END_RANGE = 3;
 const LOOP_JOIN_MAX_SEGMENT_LENGTH = 6;
-const MIN_HAULERS = 1;
-const MAX_HAULERS = 1;
 const CORE_LANE_DIRECT_TYPES = new Set([
     STRUCTURE_SPAWN,
     STRUCTURE_EXTENSION,
@@ -1020,15 +1018,15 @@ module.exports = {
         const coreEndKey = posKey(coreEndPos);
         const labsEndKey = posKey(labsEndPos);
         if (!runtime.paths) runtime.paths = {};
-        const shouldRebuild =
-            !runtime.paths.core ||
-            !Array.isArray(runtime.paths.core.path) ||
-            runtime.paths.core.path.length <= 0 ||
+        const buildInputsChanged =
             runtime.headKey !== headKey ||
             runtime.coreEndKey !== coreEndKey ||
-            runtime.labsEndKey !== labsEndKey ||
+            runtime.labsEndKey !== labsEndKey;
+        const rebuildIntervalElapsed =
             !Number.isFinite(runtime.lastBuiltTick) ||
             (Game.time - runtime.lastBuiltTick) >= REBUILD_INTERVAL;
+        // Retry cadence is interval-based so failed builds do not trigger pathfinding every tick.
+        const shouldRebuild = buildInputsChanged || rebuildIntervalElapsed;
 
         if (shouldRebuild) {
             const builtCore = buildPath(room, headPos, coreEndPos, coreLaneTargets);
@@ -1043,15 +1041,6 @@ module.exports = {
                     endPos: clonePos(coreEndPos),
                     stopsByIndex: buildStopsByIndex(room, builtCore.path, coreLaneTargets)
                 };
-                // Backward compatibility with older readers.
-                runtime.path = builtCore.path;
-                runtime.indexByPos = builtCore.indexByPos;
-                runtime.pathLength = builtCore.pathLength;
-                runtime.stopsByIndex = runtime.paths.core.stopsByIndex;
-                runtime.headPos = clonePos(headPos);
-                runtime.endPos = clonePos(coreEndPos);
-                runtime.coveredTargetCount = runtime.paths.core.coveredTargetCount;
-                runtime.isLoop = runtime.paths.core.isLoop;
                 logLogisticsDebug(
                     `[LogisticsCoreV2] ${room.name} rebuild core loop=${runtime.paths.core.isLoop ? 1 : 0} ` +
                     `len=${runtime.paths.core.pathLength} covered=${runtime.paths.core.coveredTargetCount} ` +
@@ -1082,7 +1071,6 @@ module.exports = {
                 delete runtime.paths.labs;
             }
 
-            runtime.serializedPath = null;
             runtime.headSourceId = anchor.headSourceId || null;
             runtime.headKey = headKey;
             runtime.coreEndKey = coreEndKey;
@@ -1093,7 +1081,6 @@ module.exports = {
         // Keep lane stops current even when path does not rebuild.
         if (runtime.paths && runtime.paths.core && Array.isArray(runtime.paths.core.path)) {
             runtime.paths.core.stopsByIndex = buildStopsByIndex(room, runtime.paths.core.path, coreLaneTargets);
-            runtime.stopsByIndex = runtime.paths.core.stopsByIndex;
         }
 
         const labsPath = runtime.paths && runtime.paths.labs ? runtime.paths.labs.path : null;
@@ -1191,6 +1178,7 @@ module.exports = {
             mission.meta.missionName = `logistics:coreV2:${mission.targetRoom || mission.sponsorRoom}`;
         }
         mission.meta.desiredCount = desiredCount;
+        mission.meta.intendedCarryParts = getEstimatedCarryPartsPerHauler(room);
         mission.meta.neededCarryParts = neededCarryParts;
         mission.meta.assignedCarryParts = assignedCarryParts;
         mission.requirements = {
@@ -1223,6 +1211,7 @@ module.exports = {
         mission.progress.servicePointCount = basePlan.servicePointCount;
         mission.progress.jobsOutstanding = computeOutstandingLaneJobs(laneJobs);
         mission.progress.neededCarryParts = neededCarryParts;
+        mission.progress.intendedCarryParts = mission.meta.intendedCarryParts;
         mission.progress.assignedCarryParts = assignedCarryParts;
         mission.progress.desiredCount = desiredCount;
         mission.progress.assignedPrimary = mission.assigned.primary.length;

@@ -1,4 +1,4 @@
-const roleUniversal = require('role.universal');
+const roleUniversal = require('role_role.universal');
 
 /**
  * Empire universal executor role.

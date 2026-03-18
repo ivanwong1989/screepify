@@ -66,7 +66,7 @@ module.exports = {
             lastProgressTick: now,
             targetId: context.controllerId || null,
             assigned: { primary: [], support: [] },
-            demand: { role: 'worker', count: 0, bodyProfile: 'worker' },
+            demand: { role: 'upgrader', count: 0, bodyProfile: 'upgrader' },
             progress: { stage: 'upgrading', lastProgress: 0 },
             meta: {
                 idle,
@@ -104,13 +104,13 @@ module.exports = {
             mission.priority = -100;
             mission.meta.spawnAllowed = false;
             mission.requirements = {
-                archetype: 'worker',
+                archetype: 'upgrader',
                 minCount: 0,
                 maxCount: maxSpaces,
                 spawn: false,
                 spawnFromFleet: false
             };
-            mission.demand = { role: 'worker', count: 0, bodyProfile: 'worker' };
+            mission.demand = { role: 'upgrader', count: 0, bodyProfile: 'upgrader' };
             return;
         }
 
@@ -150,7 +150,7 @@ module.exports = {
         mission.priority = opState === 'EMERGENCY' ? Math.max(90, upgradePriority) : upgradePriority;
         mission.meta.spawnAllowed = spawnAllowed;
         mission.requirements = {
-            archetype: 'worker',
+            archetype: 'upgrader',
             requiredWork,
             minCount,
             maxCount,
@@ -158,9 +158,9 @@ module.exports = {
             spawnFromFleet: true
         };
         mission.demand = {
-            role: 'worker',
+            role: 'upgrader',
             count: Math.max(0, minCount - assignedCount),
-            bodyProfile: 'worker'
+            bodyProfile: 'upgrader'
         };
 
         if (controller && Number.isFinite(controller.progress)) {
@@ -180,19 +180,19 @@ module.exports = {
         return {
             name: mission.meta && mission.meta.missionName ? mission.meta.missionName : (idle ? 'idle:upgrade' : 'upgrade:controller'),
             type: 'upgrade',
-            archetype: 'worker',
+            archetype: 'upgrader',
             targetId: mission.targetId,
             data: {
                 sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : []
             },
             requirements: idle ? {
-                archetype: 'worker',
+                archetype: 'upgrader',
                 minCount: Number.isFinite(req.minCount) ? req.minCount : 0,
                 maxCount: Number.isFinite(req.maxCount) ? req.maxCount : 1,
                 spawn: false,
                 spawnFromFleet: false
             } : {
-                archetype: 'worker',
+                archetype: 'upgrader',
                 requiredWork: Number.isFinite(req.requiredWork) ? req.requiredWork : 1,
                 minCount: Number.isFinite(req.minCount) ? req.minCount : 1,
                 maxCount: Number.isFinite(req.maxCount) ? req.maxCount : 1,

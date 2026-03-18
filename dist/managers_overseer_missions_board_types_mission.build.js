@@ -3,7 +3,21 @@ const missionClasses = require('managers_overseer_missions_board_missionClassifi
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
-const BUILD_MAX_WORKERS = 2;
+const BUILD_WORKER_TUNING = Object.freeze({
+    desiredWorkBase: 1,
+    desiredWorkScaleStartRcl: 5,
+    desiredWorkPerRclAboveScaleStart: 1,
+    desiredWorkMax: 2,
+    minCount: 1,
+    maxCount: 1
+});
+
+function getDesiredBuildWork(rcl) {
+    const level = Number.isFinite(rcl) ? rcl : 1;
+    const above = Math.max(0, level - BUILD_WORKER_TUNING.desiredWorkScaleStartRcl);
+    const scaled = BUILD_WORKER_TUNING.desiredWorkBase + (above * BUILD_WORKER_TUNING.desiredWorkPerRclAboveScaleStart);
+    return Math.max(1, Math.min(BUILD_WORKER_TUNING.desiredWorkMax, scaled));
+}
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -27,7 +41,7 @@ module.exports = {
         if (!sites || sites.length === 0) return;
 
         const rcl = (room.controller && room.controller.level) || 1;
-        const requiredWork = 5 + Math.max(0, rcl - 3) * 2;
+        const requiredWork = getDesiredBuildWork(rcl);
 
         for (let i = 0; i < sites.length; i++) {
             const site = sites[i];
@@ -66,9 +80,9 @@ module.exports = {
             },
             meta: {
                 missionName: `build:${context.siteId}`,
-                requiredWork: Number.isFinite(context.requiredWork) ? context.requiredWork : 5,
-                minCount: 1,
-                maxCount: BUILD_MAX_WORKERS
+                requiredWork: Number.isFinite(context.requiredWork) ? context.requiredWork : getDesiredBuildWork(1),
+                minCount: BUILD_WORKER_TUNING.minCount,
+                maxCount: BUILD_WORKER_TUNING.maxCount
             },
             statusReason: null
         };
@@ -89,12 +103,12 @@ module.exports = {
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const site = Game.getObjectById(mission.targetId);
         const rcl = (room && room.controller && room.controller.level) || 1;
-        const requiredWork = 5 + Math.max(0, rcl - 3) * 2;
+        const requiredWork = getDesiredBuildWork(rcl);
 
         mission.meta = mission.meta || {};
         mission.meta.requiredWork = requiredWork;
-        mission.meta.minCount = 1;
-        mission.meta.maxCount = BUILD_MAX_WORKERS;
+        mission.meta.minCount = BUILD_WORKER_TUNING.minCount;
+        mission.meta.maxCount = BUILD_WORKER_TUNING.maxCount;
         mission.meta.missionName = mission.meta.missionName || `build:${mission.targetId}`;
 
         mission.progress = mission.progress || {};
@@ -109,7 +123,7 @@ module.exports = {
 
         mission.demand = {
             role: 'worker',
-            count: Math.max(0, 1 - mission.assigned.primary.length),
+            count: Math.max(0, mission.meta.minCount - mission.assigned.primary.length),
             bodyProfile: 'worker'
         };
 
@@ -139,9 +153,9 @@ module.exports = {
             },
             requirements: {
                 archetype: 'worker',
-                requiredWork: mission.meta && Number.isFinite(mission.meta.requiredWork) ? mission.meta.requiredWork : 5,
-                minCount: 1,
-                maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : BUILD_MAX_WORKERS,
+                requiredWork: mission.meta && Number.isFinite(mission.meta.requiredWork) ? mission.meta.requiredWork : getDesiredBuildWork(1),
+                minCount: mission.meta && Number.isFinite(mission.meta.minCount) ? mission.meta.minCount : BUILD_WORKER_TUNING.minCount,
+                maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : BUILD_WORKER_TUNING.maxCount,
                 spawnFromFleet: true
             },
             priority: mission.priority || 60
