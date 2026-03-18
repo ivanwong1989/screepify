@@ -7,6 +7,8 @@ const missionRuntime = require('managers_overseer_missions_board_missionRuntime'
 const REBUILD_INTERVAL = 51;
 const PLAIN_COST = 10;
 const SWAMP_COST = 30;
+const CORE_HEAD_AVOID_COST = 200;
+const SOURCE_RING_BLOCK_COST = 255;
 const MIN_HAULERS = 1;
 const MAX_HAULERS = 3;
 const SOURCE_ENERGY_PER_TICK = 10;
@@ -129,6 +131,18 @@ function resolvePickupAnchor(room, mission, sourceInfo) {
 
     const dropped = findDroppedAtSource(room, sourcePos);
     if (dropped && dropped.pos) {
+        const occupying = room.lookForAt(LOOK_CREEPS, dropped.pos.x, dropped.pos.y) || [];
+        const occupied = occupying.length > 0;
+        if (occupied) {
+            const alt = getSourceAnchorPos(room, sourcePos);
+            if (alt) {
+                return {
+                    pickupId: null,
+                    pickupPos: clonePos(alt),
+                    pickupType: 'drop'
+                };
+            }
+        }
         return {
             pickupId: null,
             pickupPos: clonePos(dropped.pos),
@@ -172,6 +186,62 @@ function resolveSink(room, intel, pickupPos) {
     return best;
 }
 
+function getCoreHeadAvoidTiles(roomName) {
+    const avoid = [];
+    if (!roomName) return avoid;
+    const missionBoard = require('managers_overseer_missions_board_missionBoard');
+    const live = missionBoard.listLiveByRoom(roomName) || [];
+    for (let i = 0; i < live.length; i++) {
+        const mission = live[i];
+        if (!mission || mission.type !== 'logisticsCoreV2') continue;
+        const runtime = missionRuntime.getMissionRuntime(mission);
+        let headPos = runtime && runtime.headPos ? runtime.headPos : null;
+        if (!headPos && runtime && runtime.paths && runtime.paths.core && runtime.paths.core.headPos) {
+            headPos = runtime.paths.core.headPos;
+        }
+        if (!headPos || headPos.roomName !== roomName) continue;
+        avoid.push(clonePos(headPos));
+    }
+    return avoid;
+}
+
+function buildAvoidSignature(positions) {
+    if (!Array.isArray(positions) || positions.length <= 0) return '';
+    const keys = [];
+    const seen = Object.create(null);
+    for (let i = 0; i < positions.length; i++) {
+        const key = posKey(positions[i]);
+        if (!key || seen[key]) continue;
+        seen[key] = true;
+        keys.push(key);
+    }
+    keys.sort();
+    return keys.join('|');
+}
+
+function getMinerStandAvoidTiles(room, intel) {
+    const avoid = [];
+    if (!room || !intel || !Array.isArray(intel.sources)) return avoid;
+    const terrain = room.getTerrain();
+    for (let i = 0; i < intel.sources.length; i++) {
+        const source = intel.sources[i];
+        if (!source || !source.pos || source.pos.roomName !== room.name) continue;
+        const sx = source.pos.x;
+        const sy = source.pos.y;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const x = sx + dx;
+                const y = sy + dy;
+                if (x < 1 || x > 48 || y < 1 || y > 48) continue;
+                if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+                avoid.push(new RoomPosition(x, y, room.name));
+            }
+        }
+    }
+    return avoid;
+}
+
 function buildRoomCostMatrix(room, startPos, endPos) {
     const matrix = new PathFinder.CostMatrix();
     if (!room) return matrix;
@@ -199,13 +269,46 @@ function buildRoomCostMatrix(room, startPos, endPos) {
 
     if (startPos) matrix.set(startPos.x, startPos.y, 1);
     if (endPos) matrix.set(endPos.x, endPos.y, 1);
+
     return matrix;
 }
 
-function buildPath(room, startPos, endPos) {
+function applyAvoidTiles(matrix, room, startPos, endPos, avoidTiles, avoidCost, hardBlock) {
+    if (!matrix || !room) return;
+    if (!Array.isArray(avoidTiles) || avoidTiles.length <= 0) return;
+    const penalty = Number.isFinite(avoidCost) ? avoidCost : CORE_HEAD_AVOID_COST;
+    const shouldHardBlock = hardBlock === true;
+    for (let i = 0; i < avoidTiles.length; i++) {
+        const tile = avoidTiles[i];
+        if (!tile || tile.roomName !== room.name) continue;
+        if (startPos && tile.x === startPos.x && tile.y === startPos.y) continue;
+        if (endPos && tile.x === endPos.x && tile.y === endPos.y) continue;
+        if (matrix.get(tile.x, tile.y) >= 255) continue;
+        if (shouldHardBlock) {
+            matrix.set(tile.x, tile.y, 255);
+            continue;
+        }
+        matrix.set(tile.x, tile.y, Math.max(matrix.get(tile.x, tile.y), penalty));
+    }
+}
+
+function buildPath(room, startPos, endPos, avoidTiles) {
     if (!room || !startPos || !endPos) return null;
     if (startPos.roomName !== room.name || endPos.roomName !== room.name) return null;
     const costMatrix = buildRoomCostMatrix(room, startPos, endPos);
+    const coreHeadTiles = [];
+    const minerStandTiles = [];
+    if (Array.isArray(avoidTiles) && avoidTiles.length > 0) {
+        for (let i = 0; i < avoidTiles.length; i++) {
+            const entry = avoidTiles[i];
+            if (!entry || !entry.pos) continue;
+            if (entry.kind === 'core_head') coreHeadTiles.push(entry.pos);
+            else if (entry.kind === 'miner_stand') minerStandTiles.push(entry.pos);
+        }
+    }
+    applyAvoidTiles(costMatrix, room, startPos, endPos, coreHeadTiles, CORE_HEAD_AVOID_COST, false);
+    // Source-adjacent ring is hard blocked so lane haulers never route through miner standing tiles.
+    applyAvoidTiles(costMatrix, room, startPos, endPos, minerStandTiles, SOURCE_RING_BLOCK_COST, true);
     const result = PathFinder.search(
         startPos,
         { pos: endPos, range: 1 },
@@ -379,47 +482,77 @@ module.exports = {
         if (!pickup || !pickup.pickupPos) return;
         const sink = resolveSink(room, intel, pickup.pickupPos);
         if (!sink || !sink.pos) return;
-
         const runtime = missionRuntime.getMissionRuntime(mission);
-        const pickupKey = posKey(pickup.pickupPos);
-        const sinkKey = posKey(sink.pos);
-        const shouldRebuild =
-            !runtime.path ||
-            !Array.isArray(runtime.path) ||
-            runtime.path.length <= 0 ||
-            runtime.pickupKey !== pickupKey ||
-            runtime.sinkKey !== sinkKey ||
-            !Number.isFinite(runtime.lastBuiltTick) ||
-            (Game.time - runtime.lastBuiltTick) >= REBUILD_INTERVAL;
+        const useLanePath = pickup.pickupType === 'container' && !!pickup.pickupId;
 
-        if (shouldRebuild) {
-            const built = buildPath(room, pickup.pickupPos, sink.pos);
-            if (built) {
-                runtime.path = built.path;
-                runtime.indexByPos = built.indexByPos;
-                runtime.pathLength = built.pathLength;
-                runtime.pickupPos = clonePos(pickup.pickupPos);
-                runtime.sinkPos = clonePos(sink.pos);
-                runtime.pickupId = pickup.pickupId || null;
-                runtime.pickupType = pickup.pickupType || 'drop';
-                runtime.sinkId = sink.id;
+        if (useLanePath) {
+            const coreHeadAvoidTiles = getCoreHeadAvoidTiles(room.name);
+            const minerStandAvoidTiles = getMinerStandAvoidTiles(room, intel);
+            const avoidTiles = [];
+            for (let i = 0; i < coreHeadAvoidTiles.length; i++) {
+                avoidTiles.push({ kind: 'core_head', pos: coreHeadAvoidTiles[i] });
             }
-            runtime.pickupKey = pickupKey;
-            runtime.sinkKey = sinkKey;
-            runtime.lastBuiltTick = Game.time;
+            for (let i = 0; i < minerStandAvoidTiles.length; i++) {
+                avoidTiles.push({ kind: 'miner_stand', pos: minerStandAvoidTiles[i] });
+            }
+            const avoidSignature = buildAvoidSignature(
+                avoidTiles.map(a => a.pos)
+            );
+
+            const pickupKey = posKey(pickup.pickupPos);
+            const sinkKey = posKey(sink.pos);
+            const shouldRebuild =
+                runtime.useLane !== true ||
+                !runtime.path ||
+                !Array.isArray(runtime.path) ||
+                runtime.path.length <= 0 ||
+                runtime.pickupKey !== pickupKey ||
+                runtime.sinkKey !== sinkKey ||
+                runtime.avoidSignature !== avoidSignature ||
+                !Number.isFinite(runtime.lastBuiltTick) ||
+                (Game.time - runtime.lastBuiltTick) >= REBUILD_INTERVAL;
+
+            if (shouldRebuild) {
+                const built = buildPath(room, pickup.pickupPos, sink.pos, avoidTiles);
+                if (built) {
+                    runtime.path = built.path;
+                    runtime.indexByPos = built.indexByPos;
+                    runtime.pathLength = built.pathLength;
+                } else {
+                    runtime.path = null;
+                    runtime.indexByPos = null;
+                    runtime.pathLength = 0;
+                }
+                runtime.pickupKey = pickupKey;
+                runtime.sinkKey = sinkKey;
+                runtime.avoidSignature = avoidSignature;
+                runtime.lastBuiltTick = Game.time;
+            }
+            runtime.useLane = true;
         } else {
-            runtime.pickupId = pickup.pickupId || runtime.pickupId || null;
-            runtime.pickupType = pickup.pickupType || runtime.pickupType || 'drop';
-            runtime.sinkId = sink.id;
-            runtime.pickupPos = clonePos(pickup.pickupPos);
-            runtime.sinkPos = clonePos(sink.pos);
+            runtime.useLane = false;
+            runtime.path = null;
+            runtime.indexByPos = null;
+            runtime.pathLength = 0;
+            runtime.pickupKey = null;
+            runtime.sinkKey = null;
+            runtime.avoidSignature = null;
         }
+        runtime.pickupPos = clonePos(pickup.pickupPos);
+        runtime.sinkPos = clonePos(sink.pos);
+        runtime.pickupId = pickup.pickupId || null;
+        runtime.pickupType = pickup.pickupType || 'drop';
+        runtime.sinkId = sink.id;
 
         runtime.assignedCreeps = getAssignedMiningHaulers(mission.id, room.name, mission.meta && mission.meta.missionName);
         mission.assigned.primary = runtime.assignedCreeps.slice();
         const assignedCarryParts = getAssignedCarryParts(mission.assigned.primary);
         const estimatedCarryPerHauler = getEstimatedCarryPerHauler(room);
-        const neededCarryParts = estimateRequiredCarryParts(runtime.pathLength || 0);
+        const laneReady = useLanePath && Array.isArray(runtime.path) && runtime.path.length > 0;
+        const effectivePathLength = laneReady
+            ? (runtime.pathLength || 0)
+            : Math.max(1, pickup.pickupPos.getRangeTo(sink.pos));
+        const neededCarryParts = estimateRequiredCarryParts(effectivePathLength);
         const desiredCount = Math.max(
             MIN_HAULERS,
             Math.min(MAX_HAULERS, Math.ceil(neededCarryParts / Math.max(1, estimatedCarryPerHauler)))
@@ -429,7 +562,8 @@ module.exports = {
         mission.meta.sourceId = mission.targetId;
         mission.meta.pickupId = runtime.pickupId || null;
         mission.meta.sinkId = runtime.sinkId || null;
-        mission.meta.pathLength = runtime.pathLength || 0;
+        mission.meta.pathLength = effectivePathLength;
+        mission.meta.pathMode = laneReady ? 'lane_cached' : 'direct_moveTo';
         mission.meta.pickupType = runtime.pickupType || 'drop';
         mission.meta.desiredCount = desiredCount;
         mission.meta.neededCarryParts = neededCarryParts;
@@ -452,7 +586,7 @@ module.exports = {
         mission.progress = mission.progress || {};
         mission.progress.stage = 'mining_lane';
         mission.progress.goalState = mission.assigned.primary.length > 0 ? 'sustaining' : 'seeking_assignment';
-        mission.progress.pathLength = runtime.pathLength || 0;
+        mission.progress.pathLength = effectivePathLength;
         mission.progress.neededCarryParts = neededCarryParts;
         mission.progress.assignedCarryParts = assignedCarryParts;
         mission.progress.desiredCount = desiredCount;

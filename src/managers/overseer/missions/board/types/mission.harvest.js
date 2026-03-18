@@ -149,7 +149,17 @@ function getSourceInfo(intel, sourceId) {
 
 function computeHarvestMode(intel, sourceInfo, efficientSources) {
     const hasContainer = !!(sourceInfo && sourceInfo.containerId);
-    const hasHauler = !!(intel && Array.isArray(intel.myCreeps) && intel.myCreeps.some(c => c.memory && c.memory.role === 'hauler'));
+    const hasHauler = !!(
+        intel &&
+        Array.isArray(intel.myCreeps) &&
+        intel.myCreeps.some(c => {
+            const memory = c && c.memory ? c.memory : null;
+            if (!memory) return false;
+            if (memory.role === 'hauler' || memory.role === 'miningLaneHauler') return true;
+            if (memory.missionType === 'logisticsMiningV2') return true;
+            return !!memory.miningLaneMissionId;
+        })
+    );
     const isEfficient = !!(efficientSources && efficientSources.has && efficientSources.has(sourceInfo.id));
     const canUseStaticDrop = isEfficient && hasHauler;
 

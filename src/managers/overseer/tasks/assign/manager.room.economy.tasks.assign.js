@@ -187,20 +187,13 @@ var managerTasks = {
         }
 
         const mission = coreMissions[0];
-        const desiredCount = Math.max(
-            1,
-            Math.floor(
-                (mission.meta && Number.isFinite(mission.meta.desiredCount))
-                    ? mission.meta.desiredCount
-                    : 1
-            )
-        );
+        const contractName = mission.meta && mission.meta.missionName ? mission.meta.missionName : null;
+        const desiredCount = 1;
         const assigned = allOwnedCreeps.filter(c =>
             c && c.my && c.memory &&
             c.memory.missionType === 'logisticsCoreV2' &&
             (c.memory.coreLaneMissionId === mission.id || c.memory.missionId === mission.id)
         );
-        const contractName = mission.meta && mission.meta.missionName ? mission.meta.missionName : null;
         const awaitingBind = allOwnedCreeps.filter(c =>
             c && c.my && c.memory &&
             c.memory.role === 'coreLaneHauler' &&

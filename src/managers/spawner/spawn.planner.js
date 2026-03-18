@@ -20,6 +20,20 @@ function getContractSpawnTier(entry) {
     return 1;
 }
 
+function isMiningRole(role) {
+    return role === 'miner' || role === 'remote_miner' || role === 'mineral_miner';
+}
+
+function isHaulingRole(role) {
+    return (
+        role === 'hauler' ||
+        role === 'remote_hauler' ||
+        role === 'user_hauler' ||
+        role === 'coreLaneHauler' ||
+        role === 'miningLaneHauler'
+    );
+}
+
 const spawnPlanner = {
     plan: function(room, contractEntries, fulfillment, options) {
         if (!contractEntries || contractEntries.length === 0) return null;
@@ -78,7 +92,7 @@ const spawnPlanner = {
         const contract = entry && entry.contract;
         if (!contract) return null;
 
-        const budget = this.computeBudget(room);
+        const budget = this.computeBudget(room, contract);
         const buildBody = options && options.buildBody;
         const calculateBodyCost = options && options.calculateBodyCost;
         if (!buildBody || !calculateBodyCost) return null;
@@ -126,19 +140,46 @@ const spawnPlanner = {
         };
     },
 
-    computeBudget: function(room) {
+    computeBudget: function(room, contract) {
         const opState = room._opState;
         let budget = room.energyCapacityAvailable;
+        const role = contract && contract.role ? String(contract.role) : '';
 
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
 
-        const hasMiners = myCreeps.some(c => c.memory.role === 'miner' && !c.spawning);
+        const hasMiners = myCreeps.some(c =>
+            c &&
+            c.memory &&
+            (c.memory.role === 'miner' || c.memory.role === 'remote_miner' || c.memory.role === 'mineral_miner') &&
+            !c.spawning
+        );
         const hasHaulers = myCreeps.some(c =>
-            (c.memory.role === 'hauler' || c.memory.role === 'coreLaneHauler' || c.memory.role === 'miningLaneHauler') && !c.spawning
+            c &&
+            c.memory &&
+            (
+                c.memory.role === 'hauler' ||
+                c.memory.role === 'remote_hauler' ||
+                c.memory.role === 'user_hauler' ||
+                c.memory.role === 'coreLaneHauler' ||
+                c.memory.role === 'miningLaneHauler'
+            ) &&
+            !c.spawning
+        );
+        const hasCoreLaneHaulers = myCreeps.some(c =>
+            c &&
+            c.memory &&
+            c.memory.role === 'coreLaneHauler' &&
+            !c.spawning
         );
 
-        if (!hasMiners || !hasHaulers) {
+        // Bootstrap core lane immediately on wipe: size body from currently available energy,
+        // even if other hauler classes still exist.
+        if (role === 'coreLaneHauler' && !hasCoreLaneHaulers) {
+            budget = room.energyAvailable;
+        } else if ((isMiningRole(role) && !hasMiners) || (isHaulingRole(role) && !hasHaulers)) {
+            budget = room.energyAvailable;
+        } else if (!hasMiners || !hasHaulers) {
             budget = Math.max(room.energyAvailable, 200);
         } else if (opState === 'EMERGENCY') {
             budget = Math.max(room.energyAvailable, 200);

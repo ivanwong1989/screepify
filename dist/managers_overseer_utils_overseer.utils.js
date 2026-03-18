@@ -81,6 +81,64 @@ const overseerUtils = {
         }
     },
 
+    drawMiningLaneV2Visuals: function(room) {
+        if (!room || !Memory || Memory.debugVisual !== true) return;
+        if (!missionBoard || typeof missionBoard.listLiveByRoom !== 'function') return;
+        if (!missionRuntime || typeof missionRuntime.getMissionRuntime !== 'function') return;
+
+        const live = missionBoard.listLiveByRoom(room.name) || [];
+        const missions = live.filter(m => m && m.type === 'logisticsMiningV2');
+        if (missions.length <= 0) return;
+
+        for (let mi = 0; mi < missions.length; mi++) {
+            const mission = missions[mi];
+            const runtime = missionRuntime.getMissionRuntime(mission);
+            if (!runtime || !Array.isArray(runtime.path) || runtime.path.length <= 0) continue;
+
+            const path = runtime.path;
+            for (let i = 1; i < path.length; i++) {
+                const a = path[i - 1];
+                const b = path[i];
+                if (!a || !b || a.roomName !== room.name || b.roomName !== room.name) continue;
+                room.visual.line(a, b, { color: '#ffaa33', width: 0.1, opacity: 0.9, lineStyle: 'dotted' });
+            }
+
+            if (runtime.pickupPos && runtime.pickupPos.roomName === room.name) {
+                room.visual.circle(runtime.pickupPos, { radius: 0.28, fill: '#ffcc66', stroke: '#7a4f00' });
+                room.visual.text('M-P', runtime.pickupPos.x, runtime.pickupPos.y - 0.35, { font: 0.35, color: '#ffdd99' });
+            }
+
+            if (runtime.sinkPos && runtime.sinkPos.roomName === room.name) {
+                room.visual.circle(runtime.sinkPos, { radius: 0.28, fill: '#ff9966', stroke: '#6a2f10' });
+                room.visual.text('M-S', runtime.sinkPos.x, runtime.sinkPos.y - 0.35, { font: 0.35, color: '#ffd2bf' });
+            }
+
+            for (let i = 0; i < path.length; i += 4) {
+                const p = path[i];
+                if (!p || p.roomName !== room.name) continue;
+                room.visual.text(String(i), p.x, p.y + 0.35, { font: 0.32, color: '#ffcc88' });
+            }
+
+            const assigned = mission.assigned && Array.isArray(mission.assigned.primary)
+                ? mission.assigned.primary
+                : [];
+            for (let i = 0; i < assigned.length; i++) {
+                const creep = Game.creeps[assigned[i]];
+                if (!creep || !creep.my || !creep.pos || creep.pos.roomName !== room.name) continue;
+                const laneIndex = runtime.indexByPos
+                    ? runtime.indexByPos[`${creep.pos.roomName}:${creep.pos.x},${creep.pos.y}`]
+                    : undefined;
+                room.visual.circle(creep.pos, { radius: 0.33, fill: 'transparent', stroke: '#ffcc33', strokeWidth: 0.08 });
+                room.visual.text(
+                    `MH ${Number.isInteger(laneIndex) ? laneIndex : 'off'}`,
+                    creep.pos.x,
+                    creep.pos.y - 0.55,
+                    { font: 0.3, color: '#ffe6a3', stroke: '#000000', strokeWidth: 0.12 }
+                );
+            }
+        }
+    },
+
     getRequiredHeadcount: function(mission) {
         if (!mission || !mission.requirements) return 0;
         const req = mission.requirements;
@@ -354,6 +412,7 @@ const overseerUtils = {
             { align: 'left', color: color, font: 0.7 }
         );
         this.drawCoreLaneV2Visuals(room);
+        this.drawMiningLaneV2Visuals(room);
         // ------------------------------------------------------------
         // Debug Visual: Remote Haul cached lanes (heap) with colors + legend
         // ------------------------------------------------------------

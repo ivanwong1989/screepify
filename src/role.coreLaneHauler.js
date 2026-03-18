@@ -5,6 +5,11 @@ const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
 const STATE_RETURN = 'RETURN';
 
+function logCoreLaneDebug(creep, mission, message) {
+    if (typeof debug !== 'function' || !creep || !mission) return;
+    debug('mission.logistics', `[CoreLaneExec] ${creep.name} ${mission.targetRoom || mission.sponsorRoom} ${message}`);
+}
+
 function posKey(pos) {
     return pos ? `${pos.roomName}:${pos.x},${pos.y}` : '';
 }
@@ -41,8 +46,34 @@ function getCurrentIndex(creep, lane) {
     return Number.isInteger(idx) ? idx : -1;
 }
 
-function moveToNearestPathTile(creep, lane) {
+function moveToNearestPathTile(creep, lane, missionId, options) {
     if (!creep || !lane || !Array.isArray(lane.path)) return;
+    const opts = options || {};
+    const preferredIndices = Array.isArray(opts.preferredIndices) ? opts.preferredIndices : [];
+
+    function moveBestFromIndices(indices) {
+        let best = null;
+        let bestRange = Infinity;
+        for (let i = 0; i < indices.length; i++) {
+            const idx = indices[i];
+            if (!Number.isInteger(idx) || idx < 0 || idx >= lane.path.length) continue;
+            const tile = lane.path[idx];
+            if (!tile || tile.roomName !== creep.room.name) continue;
+            const range = creep.pos.getRangeTo(tile);
+            if (range < bestRange) {
+                bestRange = range;
+                best = tile;
+            }
+        }
+        if (best) {
+            creep.moveTo(best, { range: 0, reusePath: 3 });
+            return true;
+        }
+        return false;
+    }
+
+    if (preferredIndices.length > 0 && moveBestFromIndices(preferredIndices)) return;
+
     let best = null;
     let bestRange = Infinity;
     for (let i = 0; i < lane.path.length; i++) {
@@ -55,6 +86,105 @@ function moveToNearestPathTile(creep, lane) {
         }
     }
     if (best) creep.moveTo(best, { range: 0, reusePath: 3 });
+}
+
+function buildLoopPreferredIndices(targetIndex, length) {
+    if (!Number.isInteger(targetIndex) || !Number.isFinite(length) || length <= 0) return [];
+    const out = [];
+    const seen = Object.create(null);
+    const offsets = [0, 1, -1, 2, -2, 3, -3];
+    for (let i = 0; i < offsets.length; i++) {
+        const idx = loopNormalizeIndex(targetIndex + offsets[i], length);
+        if (idx < 0 || seen[idx]) continue;
+        seen[idx] = true;
+        out.push(idx);
+    }
+    return out;
+}
+
+function getLoopHeadQueueTargetIndex(creep, lane, missionId) {
+    if (!lane || !Array.isArray(lane.path) || lane.path.length <= 0) return 0;
+    if (lane.path.length === 1) return 0;
+    const traffic = getCoreLaneTrafficCache(missionId);
+    const occupied = traffic && traffic.posToName ? traffic.posToName : null;
+
+    const headTile = lane.path[0];
+    const headHolder = headTile && occupied ? occupied[posKey(headTile)] : null;
+    if (!headHolder || headHolder === creep.name) return 0;
+
+    const queueStart = 1;
+    const queueWindow = Math.min(4, lane.path.length - 1);
+    for (let i = queueStart; i <= queueWindow; i++) {
+        const tile = lane.path[i];
+        if (!tile || !occupied) return i;
+        const holder = occupied[posKey(tile)];
+        if (!holder || holder === creep.name) return i;
+    }
+    return queueStart;
+}
+
+function getLoopIdleHeadIndex(lane) {
+    if (!lane || !Array.isArray(lane.path) || lane.path.length <= 1) return 0;
+    return 1;
+}
+
+function getLoopIdleQueueIndex(creep, lane, missionId) {
+    if (!lane || !Array.isArray(lane.path) || lane.path.length <= 1) return 0;
+    const traffic = getCoreLaneTrafficCache(missionId);
+    const occupied = traffic && traffic.posToName ? traffic.posToName : null;
+    const queueWindow = Math.min(4, lane.path.length - 1);
+    const current = getCurrentIndex(creep, lane);
+
+    // If already parked in queue band, hold position unless it is clearly occupied by another creep.
+    if (Number.isInteger(current) && current >= 1 && current <= queueWindow) {
+        const tile = lane.path[current];
+        const holder = tile && occupied ? occupied[posKey(tile)] : null;
+        if (!holder || holder === creep.name) return current;
+    }
+
+    for (let i = 1; i <= queueWindow; i++) {
+        const tile = lane.path[i];
+        const holder = tile && occupied ? occupied[posKey(tile)] : null;
+        if (!holder || holder === creep.name) return i;
+    }
+
+    if (Number.isInteger(current) && current >= 1) return current;
+    return 1;
+}
+
+function shouldKeepLoopHeadSlot(creep, lane, missionId) {
+    if (!creep || !lane || !Array.isArray(lane.path) || lane.path.length <= 1) return false;
+    const traffic = getCoreLaneTrafficCache(missionId);
+    const occupied = traffic && traffic.posToName ? traffic.posToName : null;
+    const headTile = lane.path[0];
+    const headHolder = headTile && occupied ? occupied[posKey(headTile)] : null;
+    if (headHolder && headHolder !== creep.name) return false;
+    if (headHolder === creep.name) return true;
+
+    const length = lane.path.length;
+    let bestName = null;
+    let bestDist = Infinity;
+
+    if (traffic && traffic.byName) {
+        for (const name in traffic.byName) {
+            const c = traffic.byName[name];
+            if (!c || !c.my || !c.memory) continue;
+            if (c.memory.missionType !== 'logisticsCoreV2') continue;
+            const idx = getCurrentIndex(c, lane);
+            if (idx < 0) continue;
+            const fwd = loopDistanceForward(idx, 0, length);
+            const rev = loopDistanceForward(0, idx, length);
+            const dist = Math.min(fwd, rev);
+            if (dist < bestDist || (dist === bestDist && (!bestName || name < bestName))) {
+                bestDist = dist;
+                bestName = name;
+            }
+        }
+    }
+
+    // If no on-lane peer found, self becomes keeper when on-lane.
+    if (!bestName) return getCurrentIndex(creep, lane) >= 0;
+    return bestName === creep.name;
 }
 
 function getCoreLaneTrafficCache(missionId) {
@@ -227,31 +357,203 @@ function tryYieldMove(creep, lane, currentIndex, targetIndex, traffic) {
 }
 
 function stepTowardIndex(creep, lane, targetIndex, missionId, runtime) {
-    if (!creep || !lane || !Array.isArray(lane.path)) return;
+    if (!creep || !lane || !Array.isArray(lane.path)) return 'invalid_lane';
     const path = lane.path;
-    if (targetIndex < 0 || targetIndex >= path.length) return;
+    if (targetIndex < 0 || targetIndex >= path.length) return 'invalid_target';
 
     const currentIndex = getCurrentIndex(creep, lane);
     if (currentIndex < 0) {
-        moveToNearestPathTile(creep, lane);
-        return;
+        moveToNearestPathTile(creep, lane, missionId, { preferredIndices: [targetIndex] });
+        return 'move_to_path';
     }
 
-    if (currentIndex === targetIndex) return;
+    if (currentIndex === targetIndex) return 'at_target_index';
+
     const nextIndex = currentIndex < targetIndex ? currentIndex + 1 : currentIndex - 1;
     const nextPos = path[nextIndex];
-    if (!nextPos) return;
-    const traffic = getCoreLaneTrafficCache(missionId);
-    const occupiedBy = traffic && traffic.posToName ? traffic.posToName[posKey(nextPos)] : null;
-    if (occupiedBy && occupiedBy !== creep.name) {
-        const blocker = traffic.byName ? traffic.byName[occupiedBy] : null;
-        if (shouldYield(creep, blocker)) {
-            if (trySwapWithHigherPriority(creep, blocker, lane, currentIndex, targetIndex, runtime)) return;
-            tryYieldMove(creep, lane, currentIndex, targetIndex, traffic);
+    if (!nextPos) return 'missing_next_pos';
+
+    const moveCode = creep.move(creep.pos.getDirectionTo(nextPos));
+    if (moveCode === OK) return 'step';
+
+    creep.moveTo(nextPos, { range: 0, reusePath: 0 });
+    return `move_err:${moveCode}`;
+}
+
+function loopNormalizeIndex(index, length) {
+    if (!Number.isInteger(index) || !Number.isFinite(length) || length <= 0) return -1;
+    const mod = index % length;
+    return mod < 0 ? mod + length : mod;
+}
+
+function loopDistanceForward(fromIndex, toIndex, length) {
+    if (length <= 0) return Infinity;
+    const from = loopNormalizeIndex(fromIndex, length);
+    const to = loopNormalizeIndex(toIndex, length);
+    if (from < 0 || to < 0) return Infinity;
+    return to >= from ? (to - from) : (length - from + to);
+}
+
+function getLoopDirectionToward(creep, lane, fromIndex, toIndex) {
+    const pathLength = lane && Array.isArray(lane.path) ? lane.path.length : 0;
+    if (pathLength <= 0) return 1;
+    const from = loopNormalizeIndex(fromIndex, pathLength);
+    const to = loopNormalizeIndex(toIndex, pathLength);
+    if (from < 0 || to < 0 || from === to) return 1;
+
+    const fwd = loopDistanceForward(from, to, pathLength);
+    const rev = loopDistanceForward(to, from, pathLength);
+    if (fwd < rev) return 1;
+    if (rev < fwd) return -1;
+
+    const memDir = creep && creep.memory ? creep.memory._coreLaneLoopDir : 0;
+    if (memDir === 1 || memDir === -1) return memDir;
+    return 1;
+}
+
+function getLoopNextIndex(currentIndex, direction, length) {
+    if (!Number.isInteger(currentIndex) || !Number.isFinite(length) || length <= 0) return -1;
+    const step = direction === -1 ? -1 : 1;
+    return loopNormalizeIndex(currentIndex + step, length);
+}
+
+function tryLoopYieldMove(creep, lane, currentIndex, direction, traffic) {
+    if (!creep || !lane || !Array.isArray(lane.path) || lane.path.length <= 0) return false;
+    const reverse = getLoopNextIndex(currentIndex, direction === 1 ? -1 : 1, lane.path.length);
+    if (reverse >= 0) {
+        const backPos = lane.path[reverse];
+        if (backPos && isWalkableYieldTile(creep, backPos.x, backPos.y, traffic)) {
+            const occupied = traffic && traffic.posToName ? traffic.posToName[posKey(backPos)] : null;
+            if (!occupied || occupied === creep.name) {
+                creep.move(creep.pos.getDirectionTo(backPos));
+                return true;
+            }
         }
-        return;
     }
-    creep.move(creep.pos.getDirectionTo(nextPos));
+
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            const x = creep.pos.x + dx;
+            const y = creep.pos.y + dy;
+            if (!isWalkableYieldTile(creep, x, y, traffic)) continue;
+            const candidate = new RoomPosition(x, y, creep.room.name);
+            if (lane.indexByPos && Number.isInteger(lane.indexByPos[posKey(candidate)])) continue;
+            creep.move(creep.pos.getDirectionTo(candidate));
+            return true;
+        }
+    }
+    return false;
+}
+
+function tryLoopSwapWithLowerPriority(creep, blocker, lane, currentIndex, nextIndex, missionId, runtime) {
+    if (!creep || !blocker || !lane || !Array.isArray(lane.path)) return false;
+    if (creep.fatigue > 0 || blocker.fatigue > 0) return false;
+    if (!creep.pos.isNearTo(blocker.pos)) return false;
+    if (!Number.isInteger(currentIndex) || !Number.isInteger(nextIndex)) return false;
+
+    const blockerIndex = getCurrentIndex(blocker, lane);
+    if (blockerIndex !== nextIndex) return false;
+
+    // Only force swap when blocker should yield to us by lane priority.
+    if (!shouldYield(blocker, creep)) return false;
+
+    const len = lane.path.length;
+    if (len <= 0) return false;
+    const selfDir = nextIndex === getLoopNextIndex(currentIndex, 1, len) ? 1 : -1;
+    const blockerTarget = getCreepIntentTargetIndex(blocker, lane, runtime);
+    let blockerAllowsSwap = false;
+    if (!Number.isInteger(blockerTarget) || blockerTarget === blockerIndex) {
+        // Stationary blocker: allow priority preemption swap.
+        blockerAllowsSwap = true;
+    } else {
+        const blockerDir = getLoopDirectionToward(blocker, lane, blockerIndex, blockerTarget);
+        // Swap only when intents conflict (opposite directions), avoid same-direction churn.
+        blockerAllowsSwap = blockerDir !== selfDir;
+    }
+    if (!blockerAllowsSwap) return false;
+
+    const blockerMove = blocker.move(blocker.pos.getDirectionTo(creep.pos));
+    if (blockerMove !== OK) return false;
+    const creepMove = creep.move(creep.pos.getDirectionTo(blocker.pos));
+    if (creepMove !== OK) return false;
+
+    // Keep traffic cache coherent for same-tick subsequent reads.
+    const traffic = getCoreLaneTrafficCache(missionId);
+    if (traffic && traffic.posToName) {
+        traffic.posToName[posKey(creep.pos)] = blocker.name;
+        traffic.posToName[posKey(blocker.pos)] = creep.name;
+    }
+    return true;
+}
+
+function stepTowardLoopIndex(creep, lane, targetIndex, missionId, runtime) {
+    if (!creep || !lane || !Array.isArray(lane.path) || lane.path.length <= 0) return 'invalid_lane';
+    const pathLength = lane.path.length;
+    const target = loopNormalizeIndex(targetIndex, pathLength);
+    if (target < 0) return 'invalid_target';
+
+    const currentIndex = getCurrentIndex(creep, lane);
+    if (currentIndex < 0) {
+        moveToNearestPathTile(creep, lane, missionId, { preferredIndices: [target] });
+        return 'move_to_path';
+    }
+
+    if (currentIndex === target) return 'at_target_index';
+
+    const dir = getLoopDirectionToward(creep, lane, currentIndex, target);
+    const nextIndex = getLoopNextIndex(currentIndex, dir, pathLength);
+    if (nextIndex < 0) return 'invalid_next_index';
+
+    const nextPos = lane.path[nextIndex];
+    if (!nextPos) return 'missing_next_pos';
+
+    const moveCode = creep.move(creep.pos.getDirectionTo(nextPos));
+    if (moveCode === OK) {
+        creep.memory._coreLaneLoopDir = dir;
+        return 'step';
+    }
+
+    creep.moveTo(nextPos, { range: 0, reusePath: 0 });
+    return `move_err:${moveCode}`;
+}
+
+function getNearestDemandIndexOnLoop(creep, lane, resourceType) {
+    if (!creep || !lane || !lane.stopsByIndex || !Array.isArray(lane.path) || lane.path.length <= 0) return -1;
+    const currentIndex = getCurrentIndex(creep, lane);
+    if (currentIndex < 0) return -1;
+    const length = lane.path.length;
+    const rt = resourceType || RESOURCE_ENERGY;
+    let best = -1;
+    let bestDistance = Infinity;
+
+    for (const idxKey in lane.stopsByIndex) {
+        const idx = Number(idxKey);
+        if (!Number.isInteger(idx)) continue;
+        const stopIds = lane.stopsByIndex[idx];
+        if (!Array.isArray(stopIds) || stopIds.length <= 0) continue;
+        let hasDemand = false;
+        for (let i = 0; i < stopIds.length; i++) {
+            const target = Game.getObjectById(stopIds[i]);
+            if (!target || !target.store || typeof target.store.getFreeCapacity !== 'function') continue;
+            if (target.store.getFreeCapacity(rt) > 0) {
+                hasDemand = true;
+                break;
+            }
+        }
+        if (!hasDemand) continue;
+        const normalized = loopNormalizeIndex(idx, length);
+        if (normalized < 0) continue;
+        const fwd = loopDistanceForward(currentIndex, normalized, length);
+        const rev = loopDistanceForward(normalized, currentIndex, length);
+        const dist = Math.min(fwd, rev);
+        if (dist < bestDistance) {
+            bestDistance = dist;
+            best = normalized;
+        }
+    }
+
+    return best;
 }
 
 function getStoreAmount(obj, resourceType) {
@@ -412,6 +714,14 @@ function pickLaneJob(runtime, creep, missionId) {
     return null;
 }
 
+function shouldPickNewSideJob(creep, coreLane) {
+    if (!creep || !creep.memory || !coreLane) return false;
+    if (creep.memory.coreLaneState !== STATE_LOAD) return false;
+    if ((creep.memory.coreLaneMode || 'core') !== 'core') return false;
+    if (creep.store && creep.store.getUsedCapacity() > 0) return false;
+    return getCurrentIndex(creep, coreLane) === 0;
+}
+
 function clearJobMemory(creep) {
     if (!creep || !creep.memory) return;
     delete creep.memory.coreLaneJobId;
@@ -455,6 +765,7 @@ module.exports = {
         if (creep.store.getUsedCapacity() <= 0 && creep.memory.coreLaneState !== STATE_RETURN) {
             creep.memory.coreLaneState = STATE_LOAD;
         }
+        const coreLaneIsLoop = coreLane.isLoop === true;
 
         const hasCoreDemand = laneHasEnergyDemand(coreLane);
         let activeJob = creep.memory.coreLaneJobId ? getLaneJobById(runtime, creep.memory.coreLaneJobId) : null;
@@ -466,7 +777,7 @@ module.exports = {
             }
         }
 
-        if (!activeJob) {
+        if (!activeJob && shouldPickNewSideJob(creep, coreLane)) {
             activeJob = pickLaneJob(runtime, creep, mission.id);
             if (activeJob) {
                 creep.memory.coreLaneJobId = activeJob.id;
@@ -474,6 +785,58 @@ module.exports = {
             }
         }
         if (activeJob) claimJob(mission.id, activeJob.id, creep.name);
+
+        if (coreLaneIsLoop) {
+            const idx = getCurrentIndex(creep, coreLane);
+            const jobCarry = activeJob && activeJob.resourceType ? (creep.store[activeJob.resourceType] || 0) : 0;
+            const summarySig = [
+                creep.memory.coreLaneState || '-',
+                creep.memory.coreLaneMode || '-',
+                idx,
+                activeJob ? activeJob.id : '-',
+                creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0,
+                jobCarry,
+                creep.fatigue || 0
+            ].join('|');
+            const isLegitIdleHold =
+                creep.memory.coreLaneState === STATE_LOAD &&
+                (
+                    !hasCoreDemand ||
+                    (
+                        activeJob &&
+                        activeJob.kind === 'stock' &&
+                        creep.store.getUsedCapacity() <= 0
+                    )
+                );
+            const dbg = creep.memory._coreLaneDebug || { lastSig: null, stallTicks: 0 };
+            if (dbg.lastSig === summarySig) {
+                if (isLegitIdleHold || (creep.fatigue || 0) > 0) dbg.stallTicks = 0;
+                else dbg.stallTicks = (dbg.stallTicks || 0) + 1;
+            } else {
+                dbg.stallTicks = 0;
+            }
+            dbg.lastSig = summarySig;
+            creep.memory._coreLaneDebug = dbg;
+
+            logCoreLaneDebug(
+                creep,
+                mission,
+                `loop state=${creep.memory.coreLaneState} mode=${creep.memory.coreLaneMode || '-'} idx=${idx} ` +
+                `fatigue=${creep.fatigue || 0} job=${activeJob ? activeJob.id : '-'} ` +
+                `sIdx=${activeJob && Number.isInteger(activeJob.sourceIndex) ? activeJob.sourceIndex : '-'} ` +
+                `tIdx=${activeJob && Number.isInteger(activeJob.targetIndex) ? activeJob.targetIndex : '-'} ` +
+                `carryE=${creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0} ` +
+                `carryJob=${jobCarry} stalls=${dbg.stallTicks || 0}`
+            );
+            if (!isLegitIdleHold && (dbg.stallTicks || 0) >= 3) {
+                logCoreLaneDebug(
+                    creep,
+                    mission,
+                    `loop stall suspected state=${creep.memory.coreLaneState} mode=${creep.memory.coreLaneMode || '-'} ` +
+                    `idx=${idx} job=${activeJob ? activeJob.id : '-'}`
+                );
+            }
+        }
 
         if (creep.memory.coreLaneState === STATE_LOAD) {
             if (hasCoreDemand) {
@@ -485,7 +848,13 @@ module.exports = {
                 }
 
                 if (!creep.pos.inRangeTo(coreLane.headPos, 0)) {
-                    stepTowardIndex(creep, coreLane, 0, mission.id, runtime);
+                    if (coreLaneIsLoop) {
+                        const targetIdx = 0;
+                        const moveResult = stepTowardLoopIndex(creep, coreLane, targetIdx, mission.id, runtime);
+                        logCoreLaneDebug(creep, mission, `loop LOAD->head move=${moveResult} targetIdx=${targetIdx}`);
+                    } else {
+                        stepTowardIndex(creep, coreLane, 0, mission.id, runtime);
+                    }
                     return;
                 }
 
@@ -497,17 +866,69 @@ module.exports = {
                     if (available <= creep.store.getFreeCapacity(RESOURCE_ENERGY)) return;
                 }
 
-                creep.withdraw(source, RESOURCE_ENERGY);
+                const withdrawCode = creep.withdraw(source, RESOURCE_ENERGY);
+                logCoreLaneDebug(
+                    creep,
+                    mission,
+                    `LOAD withdraw head source=${source.id} code=${withdrawCode} ` +
+                    `free=${creep.store.getFreeCapacity(RESOURCE_ENERGY) || 0} src=${source.store[RESOURCE_ENERGY] || 0}`
+                );
                 if ((creep.store[RESOURCE_ENERGY] || 0) > 0) {
                     creep.memory.coreLaneState = STATE_DELIVER;
                 }
                 return;
             }
 
+            // True idle behavior: when parked at head with no core demand, do not churn stock jobs.
+            if (
+                activeJob &&
+                activeJob.kind === 'stock' &&
+                creep.store.getUsedCapacity() <= 0
+            ) {
+                const idleIdx = 0;
+                const idx = getCurrentIndex(creep, coreLane);
+                if (idx === idleIdx) return;
+                if (idx < 0) {
+                    if (coreLaneIsLoop) {
+                        moveToNearestPathTile(creep, coreLane, mission.id, {
+                            preferredIndices: buildLoopPreferredIndices(idleIdx, coreLane.path.length)
+                        });
+                    } else {
+                        moveToNearestPathTile(creep, coreLane, mission.id, { preferredIndices: [idleIdx] });
+                    }
+                    return;
+                }
+                if (coreLaneIsLoop) {
+                    stepTowardLoopIndex(creep, coreLane, idleIdx, mission.id, runtime);
+                } else {
+                    stepTowardIndex(creep, coreLane, idleIdx, mission.id, runtime);
+                }
+                return;
+            }
+
             if (!activeJob) {
-                if (dumpNonJobCargo(creep, mission, runtime, null)) return;
-                if (!creep.pos.inRangeTo(coreLane.headPos, 0)) {
-                    stepTowardIndex(creep, coreLane, 0, mission.id, runtime);
+                // Idle at head with energy buffered to avoid withdraw->dump thrash on demand flaps.
+                if (dumpNonJobCargo(creep, mission, runtime, RESOURCE_ENERGY)) return;
+                const idleIdx = 0;
+                const idx = getCurrentIndex(creep, coreLane);
+                if (idx < 0) {
+                    if (coreLaneIsLoop) {
+                        moveToNearestPathTile(creep, coreLane, mission.id, {
+                            preferredIndices: buildLoopPreferredIndices(idleIdx, coreLane.path.length)
+                        });
+                        logCoreLaneDebug(creep, mission, 'loop LOAD idle off-lane -> move_to_path');
+                    } else {
+                        moveToNearestPathTile(creep, coreLane, mission.id, { preferredIndices: [idleIdx] });
+                    }
+                    return;
+                }
+                if (idx !== idleIdx) {
+                    if (coreLaneIsLoop) {
+                        const moveResult = stepTowardLoopIndex(creep, coreLane, idleIdx, mission.id, runtime);
+                        logCoreLaneDebug(creep, mission, `loop LOAD idle park move=${moveResult} targetIdx=${idleIdx}`);
+                    } else {
+                        stepTowardIndex(creep, coreLane, idleIdx, mission.id, runtime);
+                    }
                 }
                 return;
             }
@@ -531,7 +952,18 @@ module.exports = {
 
             if (!creep.pos.inRangeTo(source, 1)) {
                 if (Number.isInteger(activeJob.sourceIndex) && activeJob.sourceIndex >= 0) {
-                    stepTowardIndex(creep, lane, activeJob.sourceIndex, mission.id, runtime);
+                    const laneLoop = lane && lane.isLoop === true;
+                    const moveResult = laneLoop
+                        ? stepTowardLoopIndex(creep, lane, activeJob.sourceIndex, mission.id, runtime)
+                        : stepTowardIndex(creep, lane, activeJob.sourceIndex, mission.id, runtime);
+                    if (coreLaneIsLoop) {
+                        logCoreLaneDebug(
+                            creep,
+                            mission,
+                            `loop LOAD job->source move=${moveResult} idx=${getCurrentIndex(creep, lane)} ` +
+                            `targetIdx=${activeJob.sourceIndex} source=${activeJob.sourceId}`
+                        );
+                    }
                     const idx = getCurrentIndex(creep, lane);
                     if (idx === activeJob.sourceIndex) {
                         creep.moveTo(source, { range: 1, reusePath: 3 });
@@ -542,7 +974,13 @@ module.exports = {
                 return;
             }
 
-            creep.withdraw(source, resourceType);
+            const withdrawCode = creep.withdraw(source, resourceType);
+            logCoreLaneDebug(
+                creep,
+                mission,
+                `LOAD withdraw job source=${source.id} res=${resourceType} code=${withdrawCode} ` +
+                `srcAmt=${getStoreAmount(source, resourceType)}`
+            );
             if ((creep.store[resourceType] || 0) > 0) {
                 creep.memory.coreLaneState = STATE_DELIVER;
             }
@@ -559,12 +997,27 @@ module.exports = {
                 const idx = getCurrentIndex(creep, coreLane);
                 const endIndex = coreLane.path.length - 1;
                 if (idx < 0) {
-                    moveToNearestPathTile(creep, coreLane);
+                    if (coreLaneIsLoop) {
+                        const rejoinIdx = getLoopIdleHeadIndex(coreLane);
+                        moveToNearestPathTile(creep, coreLane, mission.id, {
+                            preferredIndices: buildLoopPreferredIndices(rejoinIdx, coreLane.path.length)
+                        });
+                    } else {
+                        moveToNearestPathTile(creep, coreLane, mission.id, { preferredIndices: [0] });
+                    }
+                    if (coreLaneIsLoop) logCoreLaneDebug(creep, mission, 'loop DELIVER core off-lane -> move_to_path');
                     return;
                 }
 
                 if (indexHasEnergyDemand(coreLane, idx) && (creep.store[RESOURCE_ENERGY] || 0) > 0) {
-                    transferEnergyAtCurrentIndex(creep, coreLane);
+                    const didTransfer = transferEnergyAtCurrentIndex(creep, coreLane);
+                    if (coreLaneIsLoop) {
+                        logCoreLaneDebug(
+                            creep,
+                            mission,
+                            `loop DELIVER core idx=${idx} transferAtIndex=${didTransfer ? 1 : 0} carry=${creep.store[RESOURCE_ENERGY] || 0}`
+                        );
+                    }
                     return;
                 }
 
@@ -573,12 +1026,27 @@ module.exports = {
                     return;
                 }
 
-                if (idx >= endIndex) {
+                if (idx >= endIndex && !coreLaneIsLoop) {
                     creep.memory.coreLaneState = STATE_RETURN;
                     return;
                 }
 
-                stepTowardIndex(creep, coreLane, endIndex, mission.id, runtime);
+                let moveResult;
+                if (coreLaneIsLoop) {
+                    const targetDemandIndex = getNearestDemandIndexOnLoop(creep, coreLane, RESOURCE_ENERGY);
+                    if (targetDemandIndex >= 0) {
+                        moveResult = stepTowardLoopIndex(creep, coreLane, targetDemandIndex, mission.id, runtime);
+                    } else {
+                        moveResult = stepTowardLoopIndex(creep, coreLane, 0, mission.id, runtime);
+                    }
+                    logCoreLaneDebug(
+                        creep,
+                        mission,
+                        `loop DELIVER core move=${moveResult} idx=${idx} targetIdx=${targetDemandIndex}`
+                    );
+                } else {
+                    moveResult = stepTowardIndex(creep, coreLane, endIndex, mission.id, runtime);
+                }
                 return;
             }
 
@@ -598,7 +1066,18 @@ module.exports = {
 
             if (!creep.pos.inRangeTo(target, 1)) {
                 if (Number.isInteger(activeJob.targetIndex) && activeJob.targetIndex >= 0) {
-                    stepTowardIndex(creep, lane, activeJob.targetIndex, mission.id, runtime);
+                    const laneLoop = lane && lane.isLoop === true;
+                    const moveResult = laneLoop
+                        ? stepTowardLoopIndex(creep, lane, activeJob.targetIndex, mission.id, runtime)
+                        : stepTowardIndex(creep, lane, activeJob.targetIndex, mission.id, runtime);
+                    if (coreLaneIsLoop) {
+                        logCoreLaneDebug(
+                            creep,
+                            mission,
+                            `loop DELIVER job->target move=${moveResult} idx=${getCurrentIndex(creep, lane)} ` +
+                            `targetIdx=${activeJob.targetIndex} target=${activeJob.targetId}`
+                        );
+                    }
                     const idx = getCurrentIndex(creep, lane);
                     if (idx === activeJob.targetIndex) {
                         creep.moveTo(target, { range: 1, reusePath: 3 });
@@ -609,7 +1088,13 @@ module.exports = {
                 return;
             }
 
-            creep.transfer(target, resourceType);
+            const transferCode = creep.transfer(target, resourceType);
+            logCoreLaneDebug(
+                creep,
+                mission,
+                `DELIVER transfer target=${target.id} res=${resourceType} code=${transferCode} ` +
+                `targetFree=${target.store.getFreeCapacity(resourceType) || 0} carry=${creep.store[resourceType] || 0}`
+            );
             if ((creep.store[resourceType] || 0) <= 0) {
                 const stillRunnable = isJobRunnable(activeJob, 0);
                 creep.memory.coreLaneState = stillRunnable ? STATE_LOAD : STATE_RETURN;
@@ -621,12 +1106,22 @@ module.exports = {
         if (creep.memory.coreLaneState === STATE_RETURN) {
             const idx = getCurrentIndex(creep, coreLane);
             if (idx < 0) {
-                moveToNearestPathTile(creep, coreLane);
+                if (coreLaneIsLoop) {
+                    moveToNearestPathTile(creep, coreLane, mission.id, {
+                        preferredIndices: buildLoopPreferredIndices(0, coreLane.path.length)
+                    });
+                } else {
+                    moveToNearestPathTile(creep, coreLane, mission.id, { preferredIndices: [0] });
+                }
                 return;
             }
 
             if (idx > 0) {
-                stepTowardIndex(creep, coreLane, 0, mission.id, runtime);
+                if (coreLaneIsLoop) {
+                    stepTowardLoopIndex(creep, coreLane, 0, mission.id, runtime);
+                } else {
+                    stepTowardIndex(creep, coreLane, 0, mission.id, runtime);
+                }
                 return;
             }
 

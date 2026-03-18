@@ -13,8 +13,13 @@ const PLAIN_LANE_COST = 20;
 const SWAMP_LANE_COST = 45;
 const ROAD_BASE_COST = 4;
 const ROAD_MAX_COVERAGE_BONUS = 3;
+const MAX_ROUTE_WAYPOINT_CANDIDATES = 28;
+const MAX_ROUTE_EVALUATIONS = 36;
+const MAX_LOOP_WAYPOINTS = 8;
+const LOOP_HEAD_END_RANGE = 3;
+const LOOP_JOIN_MAX_SEGMENT_LENGTH = 6;
 const MIN_HAULERS = 1;
-const MAX_HAULERS = 4;
+const MAX_HAULERS = 1;
 const CORE_LANE_DIRECT_TYPES = new Set([
     STRUCTURE_SPAWN,
     STRUCTURE_EXTENSION,
@@ -33,6 +38,11 @@ const CORE_SERVICE_JOB_PRIORITY = Object.freeze({
     [STRUCTURE_FACTORY]: 80,
     [STRUCTURE_NUKER]: 78
 });
+
+function logLogisticsDebug(message) {
+    if (typeof debug !== 'function') return;
+    debug('mission.logistics', message);
+}
 
 function posKey(pos) {
     return pos ? `${pos.roomName}:${pos.x},${pos.y}` : '';
@@ -171,11 +181,30 @@ function getCoreRefillTargets(room) {
     });
 }
 
-function getCoreServiceEnergyTargets(room) {
+function getCoreLaneTargets(room, hasLabsLane) {
     if (!room) return [];
+    const excludeLabs = hasLabsLane === true;
     return room.find(FIND_MY_STRUCTURES, {
         filter: s =>
             CORE_LANE_DIRECT_TYPES.has(s.structureType) &&
+            (!excludeLabs || s.structureType !== STRUCTURE_LAB)
+    });
+}
+
+function getLabsLaneTargets(room) {
+    if (!room) return [];
+    return room.find(FIND_MY_STRUCTURES, {
+        filter: s => s.structureType === STRUCTURE_LAB
+    });
+}
+
+function getCoreServiceEnergyTargets(room, includeLabs) {
+    if (!room) return [];
+    const allowLabs = includeLabs !== false;
+    return room.find(FIND_MY_STRUCTURES, {
+        filter: s =>
+            CORE_LANE_DIRECT_TYPES.has(s.structureType) &&
+            (allowLabs || s.structureType !== STRUCTURE_LAB) &&
             s.store &&
             typeof s.store.getFreeCapacity === 'function' &&
             s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
@@ -240,14 +269,10 @@ function buildRoomCostMatrix(room, coreTargets, headPos, endPos) {
     return matrix;
 }
 
-function buildPath(room, headPos, endPos) {
-    if (!room || !headPos || !endPos) return null;
-    if (headPos.roomName !== room.name || endPos.roomName !== room.name) return null;
-
-    const coreTargets = getCoreRefillTargets(room);
-    const costMatrix = buildRoomCostMatrix(room, coreTargets, headPos, endPos);
+function searchPathSegment(room, startPos, endPos, costMatrix) {
+    if (!room || !startPos || !endPos || !costMatrix) return null;
     const result = PathFinder.search(
-        headPos,
+        startPos,
         { pos: endPos, range: 0 },
         {
             maxOps: 4000,
@@ -259,11 +284,13 @@ function buildPath(room, headPos, endPos) {
             }
         }
     );
-
     if (!result || !Array.isArray(result.path) || result.path.length <= 0) return null;
     if (result.incomplete) return null;
+    return result.path;
+}
 
-    const path = [clonePos(headPos)].concat(result.path);
+function buildPathData(path) {
+    if (!Array.isArray(path) || path.length <= 0) return null;
     const indexByPos = Object.create(null);
     for (let i = 0; i < path.length; i++) {
         const key = posKey(path[i]);
@@ -276,16 +303,242 @@ function buildPath(room, headPos, endPos) {
     };
 }
 
-function buildStopsByIndex(room, path) {
+function getRouteWaypointCandidates(room, coreTargets, headPos, endPos, limit) {
+    if (!room || !Array.isArray(coreTargets) || coreTargets.length <= 0 || !headPos || !endPos) return [];
+    const roads = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_ROAD });
+    if (!roads || roads.length <= 0) return [];
+
+    const keyed = [];
+    for (let i = 0; i < roads.length; i++) {
+        const road = roads[i];
+        if (!road || !road.pos) continue;
+        const adjacent = countAdjacentTargets(road.pos, coreTargets);
+        if (adjacent <= 0) continue;
+        keyed.push({
+            pos: clonePos(road.pos),
+            adjacent,
+            rangeScore: road.pos.getRangeTo(headPos) + road.pos.getRangeTo(endPos)
+        });
+    }
+
+    keyed.sort((a, b) => {
+        if (a.adjacent !== b.adjacent) return b.adjacent - a.adjacent;
+        return a.rangeScore - b.rangeScore;
+    });
+
+    const max = Math.max(1, Math.min(Number.isFinite(limit) ? limit : MAX_ROUTE_WAYPOINT_CANDIDATES, keyed.length));
+    const out = [];
+    const seen = Object.create(null);
+    for (let i = 0; i < keyed.length && out.length < max; i++) {
+        const candidate = keyed[i];
+        const key = posKey(candidate.pos);
+        if (!key || seen[key]) continue;
+        if ((candidate.pos.x === headPos.x && candidate.pos.y === headPos.y) ||
+            (candidate.pos.x === endPos.x && candidate.pos.y === endPos.y)) {
+            continue;
+        }
+        seen[key] = true;
+        out.push(candidate.pos);
+    }
+    return out;
+}
+
+function scorePathCoverage(path, coreTargets) {
+    if (!Array.isArray(path) || path.length <= 0 || !Array.isArray(coreTargets) || coreTargets.length <= 0) {
+        return { coveredCount: 0, coveredIds: [] };
+    }
+    const covered = new Set();
+    for (let i = 0; i < coreTargets.length; i++) {
+        const target = coreTargets[i];
+        if (!target || !target.id || !target.pos) continue;
+        for (let idx = 0; idx < path.length; idx++) {
+            if (path[idx].getRangeTo(target.pos) <= 1) {
+                covered.add(target.id);
+                break;
+            }
+        }
+    }
+    return { coveredCount: covered.size, coveredIds: Array.from(covered) };
+}
+
+function pathHasRepeatedTiles(path) {
+    if (!Array.isArray(path) || path.length <= 1) return false;
+    const seen = Object.create(null);
+    for (let i = 0; i < path.length; i++) {
+        const key = posKey(path[i]);
+        if (!key) continue;
+        if (seen[key]) return true;
+        seen[key] = true;
+    }
+    return false;
+}
+
+function shouldEvaluateLoopRoutes(headPos, endPos) {
+    if (!headPos || !endPos) return false;
+    return headPos.getRangeTo(endPos) <= LOOP_HEAD_END_RANGE;
+}
+
+function tryPromotePath(candidatePath, coreTargets, bestPath, bestScore) {
+    if (!Array.isArray(candidatePath) || candidatePath.length <= 0) {
+        return { bestPath, bestScore, changed: false };
+    }
+    if (pathHasRepeatedTiles(candidatePath)) {
+        return { bestPath, bestScore, changed: false };
+    }
+
+    const score = scorePathCoverage(candidatePath, coreTargets);
+    const betterCoverage = score.coveredCount > bestScore.coveredCount;
+    const equalCoverageShorter = score.coveredCount === bestScore.coveredCount &&
+        candidatePath.length < bestPath.length;
+    if (!betterCoverage && !equalCoverageShorter) {
+        return { bestPath, bestScore, changed: false };
+    }
+    return {
+        bestPath: candidatePath,
+        bestScore: score,
+        changed: true
+    };
+}
+
+function buildLoopAugmentedPath(room, headPos, costMatrix, basePath, coreTargets) {
+    if (!room || !headPos || !costMatrix || !Array.isArray(basePath) || basePath.length <= 0) return null;
+    const tailPos = basePath[basePath.length - 1];
+    if (!tailPos) return null;
+    const tailRangeToHead = tailPos.getRangeTo(headPos);
+    if (tailRangeToHead > LOOP_HEAD_END_RANGE) return null;
+
+    const joinSegment = searchPathSegment(room, tailPos, headPos, costMatrix);
+    if (!Array.isArray(joinSegment)) return null;
+    if (joinSegment.length > LOOP_JOIN_MAX_SEGMENT_LENGTH) return null;
+
+    // Keep path index mapping unambiguous by excluding the final head tile.
+    const joinWithoutHead = joinSegment.slice(0, Math.max(0, joinSegment.length - 1));
+    const candidatePath = basePath.concat(joinWithoutHead);
+    if (pathHasRepeatedTiles(candidatePath)) return null;
+
+    const score = scorePathCoverage(candidatePath, coreTargets);
+    return {
+        path: candidatePath,
+        score,
+        tailRangeToHead
+    };
+}
+
+function buildPath(room, headPos, endPos, laneTargets) {
+    if (!room || !headPos || !endPos) return null;
+    if (headPos.roomName !== room.name || endPos.roomName !== room.name) return null;
+
+    const coreTargets = Array.isArray(laneTargets) ? laneTargets : getCoreRefillTargets(room);
+    const costMatrix = buildRoomCostMatrix(room, coreTargets, headPos, endPos);
+
+    const direct = searchPathSegment(room, headPos, endPos, costMatrix);
+    if (!direct) return null;
+
+    let bestPath = [clonePos(headPos)].concat(direct);
+    let bestScore = scorePathCoverage(bestPath, coreTargets);
+    let evaluations = 1;
+
+    const waypointCandidates = getRouteWaypointCandidates(
+        room,
+        coreTargets,
+        headPos,
+        endPos,
+        MAX_ROUTE_WAYPOINT_CANDIDATES
+    );
+
+    for (let i = 0; i < waypointCandidates.length; i++) {
+        if (evaluations >= MAX_ROUTE_EVALUATIONS) break;
+        const waypoint = waypointCandidates[i];
+        if (!waypoint) continue;
+
+        const firstSegment = searchPathSegment(room, headPos, waypoint, costMatrix);
+        if (!firstSegment) continue;
+        const secondSegment = searchPathSegment(room, waypoint, endPos, costMatrix);
+        if (!secondSegment) continue;
+        evaluations++;
+
+        const candidatePath = [clonePos(headPos)].concat(firstSegment, secondSegment);
+        const promoted = tryPromotePath(candidatePath, coreTargets, bestPath, bestScore);
+        if (promoted.changed) {
+            bestPath = promoted.bestPath;
+            bestScore = promoted.bestScore;
+        }
+    }
+
+    const loopRouteEligible = shouldEvaluateLoopRoutes(headPos, endPos);
+    if (loopRouteEligible && evaluations < MAX_ROUTE_EVALUATIONS) {
+        const loopCandidates = waypointCandidates.slice(0, Math.max(2, Math.min(MAX_LOOP_WAYPOINTS, waypointCandidates.length)));
+        for (let i = 0; i < loopCandidates.length; i++) {
+            if (evaluations >= MAX_ROUTE_EVALUATIONS) break;
+            const firstWaypoint = loopCandidates[i];
+            if (!firstWaypoint) continue;
+            const firstSegment = searchPathSegment(room, headPos, firstWaypoint, costMatrix);
+            if (!firstSegment) continue;
+
+            for (let j = 0; j < loopCandidates.length; j++) {
+                if (evaluations >= MAX_ROUTE_EVALUATIONS) break;
+                if (i === j) continue;
+                const secondWaypoint = loopCandidates[j];
+                if (!secondWaypoint) continue;
+
+                const middleSegment = searchPathSegment(room, firstWaypoint, secondWaypoint, costMatrix);
+                if (!middleSegment) continue;
+                const endSegment = searchPathSegment(room, secondWaypoint, endPos, costMatrix);
+                if (!endSegment) continue;
+                evaluations++;
+
+                const candidatePath = [clonePos(headPos)].concat(firstSegment, middleSegment, endSegment);
+                const promoted = tryPromotePath(candidatePath, coreTargets, bestPath, bestScore);
+                if (promoted.changed) {
+                    bestPath = promoted.bestPath;
+                    bestScore = promoted.bestScore;
+                }
+            }
+        }
+    }
+
+    let isLoop = false;
+    const loopCandidate = buildLoopAugmentedPath(room, headPos, costMatrix, bestPath, coreTargets);
+    if (loopCandidate) {
+        // When join-to-head is viable, treat the lane as a full loop for index-based circulation.
+        bestPath = loopCandidate.path;
+        bestScore = loopCandidate.score;
+        isLoop = true;
+        logLogisticsDebug(
+            `[LogisticsCoreV2] ${room.name} loop join accepted tailRange=${loopCandidate.tailRangeToHead} ` +
+            `path=${loopCandidate.path.length} covered=${loopCandidate.score.coveredCount}`
+        );
+    } else if (loopRouteEligible) {
+        logLogisticsDebug(
+            `[LogisticsCoreV2] ${room.name} loop join unavailable head=${posKey(headPos)} end=${posKey(endPos)} ` +
+            `bestPath=${bestPath.length} evals=${evaluations}`
+        );
+    }
+
+    const built = buildPathData(bestPath);
+    if (!built) return null;
+    built.coveredTargetCount = bestScore.coveredCount;
+    built.coveredTargetIds = bestScore.coveredIds;
+    built.isLoop = isLoop;
+    logLogisticsDebug(
+        `[LogisticsCoreV2] ${room.name} path built loop=${isLoop ? 1 : 0} len=${built.pathLength} ` +
+        `covered=${built.coveredTargetCount} evals=${evaluations} waypoints=${waypointCandidates.length}`
+    );
+    return built;
+}
+
+function buildStopsByIndex(room, path, laneTargets) {
     const stopsByIndex = Object.create(null);
     if (!room || !Array.isArray(path) || path.length <= 0) return stopsByIndex;
 
-    const targets = room.find(FIND_MY_STRUCTURES, {
-        filter: s =>
-            CORE_LANE_DIRECT_TYPES.has(s.structureType) &&
-            s.store &&
-            typeof s.store.getFreeCapacity === 'function'
-    });
+    const targets = Array.isArray(laneTargets)
+        ? laneTargets.filter(s => s && s.store && typeof s.store.getFreeCapacity === 'function')
+        : room.find(FIND_MY_STRUCTURES, {
+            filter: s =>
+                CORE_LANE_DIRECT_TYPES.has(s.structureType) &&
+                s.store &&
+                typeof s.store.getFreeCapacity === 'function'
+        });
 
     for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
@@ -345,6 +598,23 @@ function getNearestPathInfo(path, pos) {
     return { index: bestIndex, range: bestRange };
 }
 
+function findNearestPathIndexExcluding(path, pos, excludedIndex) {
+    if (!Array.isArray(path) || path.length <= 1 || !pos) return -1;
+    let bestIndex = -1;
+    let bestRange = Infinity;
+    for (let i = 0; i < path.length; i++) {
+        if (i === excludedIndex) continue;
+        const tile = path[i];
+        const range = tile.getRangeTo(pos);
+        if (range < bestRange) {
+            bestRange = range;
+            bestIndex = i;
+            if (bestRange <= 0) break;
+        }
+    }
+    return bestIndex;
+}
+
 function clampNumber(value, fallback, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
@@ -401,6 +671,7 @@ function getTerminalStockJobs(room) {
                             targetId: terminal.id,
                             resourceType,
                             amountHint: need,
+                            pathKey: 'core',
                             priority: 60
                         });
                     }
@@ -422,6 +693,7 @@ function getTerminalStockJobs(room) {
                             targetId: storage.id,
                             resourceType,
                             amountHint: excess,
+                            pathKey: 'core',
                             priority: 60
                         });
                     }
@@ -444,6 +716,7 @@ function getTerminalStockJobs(room) {
                         targetId: storage.id,
                         resourceType,
                         amountHint: flushAll,
+                        pathKey: 'core',
                         priority: 60
                     });
                 }
@@ -474,13 +747,14 @@ function getLabHaulJobs(room) {
             sourceId,
             targetId,
             resourceType,
+            pathKey: 'labs',
             priority: Number.isFinite(contract.priority) ? contract.priority : 60
         });
     }
     return jobs;
 }
 
-function getCoreServiceEnergyJobs(room, runtime, sourceId) {
+function getCoreServiceEnergyJobs(room, runtime, sourceId, includeLabs) {
     if (!room || !runtime || !runtime.paths || !runtime.paths.core) return [];
     const corePath = runtime.paths.core.path;
     if (!Array.isArray(corePath) || corePath.length <= 0) return [];
@@ -500,7 +774,7 @@ function getCoreServiceEnergyJobs(room, runtime, sourceId) {
     const sourceInfo = getNearestPathInfo(corePath, source.pos);
     if (sourceInfo.index < 0) return [];
 
-    const targets = getCoreServiceEnergyTargets(room);
+    const targets = getCoreServiceEnergyTargets(room, includeLabs);
     const jobs = [];
     const seen = new Set();
     for (let i = 0; i < targets.length; i++) {
@@ -607,10 +881,10 @@ function countServicePoints(room, laneJobs) {
 }
 
 function estimateCarryPartsNeeded(corePathLength, coreStopCount, labsPathLength, servicePointCount) {
-    const coreTravelWeight = Math.ceil(Math.max(1, corePathLength || 0) / 10);
+    const coreTravelWeight = Math.ceil(Math.max(1, corePathLength || 0) / 3);
     const coreStopWeight = Math.ceil(Math.max(1, coreStopCount || 0) / 8);
     const labsTravelWeight = labsPathLength > 0 ? Math.ceil(labsPathLength / 14) : 0;
-    const serviceWeight = Math.ceil(Math.max(0, servicePointCount || 0) / 6);
+    const serviceWeight = Math.ceil(Math.max(0, servicePointCount || 0) / 3);
     return Math.max(1, coreTravelWeight + coreStopWeight + labsTravelWeight + serviceWeight);
 }
 
@@ -739,6 +1013,9 @@ module.exports = {
         const coreEndPos = clonePos(flag.pos);
         const labsFlag = getCoreLabsFlag(room);
         const labsEndPos = labsFlag ? clonePos(labsFlag.pos) : null;
+        const hasLabsLane = !!labsEndPos;
+        const coreLaneTargets = getCoreLaneTargets(room, hasLabsLane);
+        const labsLaneTargets = hasLabsLane ? getLabsLaneTargets(room) : [];
         const headKey = posKey(headPos);
         const coreEndKey = posKey(coreEndPos);
         const labsEndKey = posKey(labsEndPos);
@@ -754,15 +1031,17 @@ module.exports = {
             (Game.time - runtime.lastBuiltTick) >= REBUILD_INTERVAL;
 
         if (shouldRebuild) {
-            const builtCore = buildPath(room, headPos, coreEndPos);
+            const builtCore = buildPath(room, headPos, coreEndPos, coreLaneTargets);
             if (builtCore) {
                 runtime.paths.core = {
                     path: builtCore.path,
                     indexByPos: builtCore.indexByPos,
                     pathLength: builtCore.pathLength,
+                    coveredTargetCount: Number.isFinite(builtCore.coveredTargetCount) ? builtCore.coveredTargetCount : 0,
+                    isLoop: builtCore.isLoop === true,
                     headPos: clonePos(headPos),
                     endPos: clonePos(coreEndPos),
-                    stopsByIndex: buildStopsByIndex(room, builtCore.path)
+                    stopsByIndex: buildStopsByIndex(room, builtCore.path, coreLaneTargets)
                 };
                 // Backward compatibility with older readers.
                 runtime.path = builtCore.path;
@@ -771,10 +1050,22 @@ module.exports = {
                 runtime.stopsByIndex = runtime.paths.core.stopsByIndex;
                 runtime.headPos = clonePos(headPos);
                 runtime.endPos = clonePos(coreEndPos);
+                runtime.coveredTargetCount = runtime.paths.core.coveredTargetCount;
+                runtime.isLoop = runtime.paths.core.isLoop;
+                logLogisticsDebug(
+                    `[LogisticsCoreV2] ${room.name} rebuild core loop=${runtime.paths.core.isLoop ? 1 : 0} ` +
+                    `len=${runtime.paths.core.pathLength} covered=${runtime.paths.core.coveredTargetCount} ` +
+                    `head=${headKey} end=${coreEndKey}`
+                );
+            } else {
+                logLogisticsDebug(
+                    `[LogisticsCoreV2] ${room.name} rebuild core failed head=${headKey} end=${coreEndKey} ` +
+                    `targets=${coreLaneTargets.length}`
+                );
             }
 
             if (labsEndPos) {
-                const builtLabs = buildPath(room, headPos, labsEndPos);
+                const builtLabs = buildPath(room, headPos, labsEndPos, labsLaneTargets);
                 if (builtLabs) {
                     runtime.paths.labs = {
                         path: builtLabs.path,
@@ -801,7 +1092,7 @@ module.exports = {
 
         // Keep lane stops current even when path does not rebuild.
         if (runtime.paths && runtime.paths.core && Array.isArray(runtime.paths.core.path)) {
-            runtime.paths.core.stopsByIndex = buildStopsByIndex(room, runtime.paths.core.path);
+            runtime.paths.core.stopsByIndex = buildStopsByIndex(room, runtime.paths.core.path, coreLaneTargets);
             runtime.stopsByIndex = runtime.paths.core.stopsByIndex;
         }
 
@@ -814,7 +1105,7 @@ module.exports = {
         if (!coreJobSourceId && room.storage) coreJobSourceId = room.storage.id;
         const stockJobs = getTerminalStockJobs(room);
         const labJobs = getLabHaulJobs(room);
-        const coreServiceJobs = getCoreServiceEnergyJobs(room, runtime, coreJobSourceId);
+        const coreServiceJobs = getCoreServiceEnergyJobs(room, runtime, coreJobSourceId, !hasLabsLane);
         const jobs = coreServiceJobs.concat(stockJobs, labJobs);
         const jobsById = Object.create(null);
         const laneJobs = [];
@@ -829,17 +1120,41 @@ module.exports = {
             if (amount <= 0) continue;
             if (target.store.getFreeCapacity(job.resourceType) <= 0) continue;
 
-            const pathKey = job.pathKey || ((labsPath && labsPath.length > 0) ? 'labs' : 'core');
-            const path = pathKey === 'labs' ? labsPath : (runtime.paths.core && runtime.paths.core.path);
+            let pathKey = job.pathKey || ((labsPath && labsPath.length > 0) ? 'labs' : 'core');
+            let path = pathKey === 'labs' ? labsPath : (runtime.paths.core && runtime.paths.core.path);
+            if ((!Array.isArray(path) || path.length <= 0) && pathKey !== 'core') {
+                pathKey = 'core';
+                path = runtime.paths.core && runtime.paths.core.path;
+            }
             if (!Array.isArray(path) || path.length <= 0) continue;
 
-            const sourceIndex = Number.isInteger(job.sourceIndex)
+            let sourceIndex = Number.isInteger(job.sourceIndex)
                 ? job.sourceIndex
                 : findNearestPathIndex(path, source.pos, true);
-            const targetIndex = Number.isInteger(job.targetIndex)
+            let targetIndex = Number.isInteger(job.targetIndex)
                 ? job.targetIndex
                 : findNearestPathIndex(path, target.pos, true);
             if (sourceIndex < 0 || targetIndex < 0) continue;
+
+            if (sourceIndex === targetIndex && path.length > 1) {
+                const targetAlt = findNearestPathIndexExcluding(path, target.pos, sourceIndex);
+                if (targetAlt >= 0) {
+                    targetIndex = targetAlt;
+                } else {
+                    const sourceAlt = findNearestPathIndexExcluding(path, source.pos, targetIndex);
+                    if (sourceAlt >= 0) sourceIndex = sourceAlt;
+                }
+                if (sourceIndex === targetIndex) {
+                    logLogisticsDebug(
+                        `[LogisticsCoreV2] ${room.name} drop degenerate job id=${job.id} path=${pathKey} idx=${sourceIndex}`
+                    );
+                    continue;
+                }
+                logLogisticsDebug(
+                    `[LogisticsCoreV2] ${room.name} adjust job indices id=${job.id} path=${pathKey} ` +
+                    `source=${sourceIndex} target=${targetIndex}`
+                );
+            }
 
             const item = {
                 id: job.id,
@@ -868,15 +1183,9 @@ module.exports = {
         runtime.assignedCreeps = getAssignedCoreLaneCreeps(mission.id, room.name);
         mission.assigned.primary = runtime.assignedCreeps.slice();
         const assignedCarryParts = getAssignedCarryParts(mission.assigned.primary);
-        const estimatedCarryPerHauler = getEstimatedCarryPartsPerHauler(room);
         const basePlan = computeBaselineFleetPlan(room, runtime, laneJobs);
         const neededCarryParts = basePlan.neededCarryParts;
-        const desiredCount = clampNumber(
-            Math.ceil(neededCarryParts / Math.max(1, estimatedCarryPerHauler)),
-            1,
-            MIN_HAULERS,
-            MAX_HAULERS
-        );
+        const desiredCount = 1;
         mission.meta.headSourceId = runtime.headSourceId || anchor.headSourceId || null;
         if (!mission.meta.missionName) {
             mission.meta.missionName = `logistics:coreV2:${mission.targetRoom || mission.sponsorRoom}`;
@@ -903,6 +1212,9 @@ module.exports = {
         mission.progress.pathLength = runtime.paths && runtime.paths.core && Number.isFinite(runtime.paths.core.pathLength)
             ? runtime.paths.core.pathLength
             : 0;
+        mission.progress.coveredCoreTargets = runtime.paths && runtime.paths.core && Number.isFinite(runtime.paths.core.coveredTargetCount)
+            ? runtime.paths.core.coveredTargetCount
+            : 0;
         mission.progress.labsPathLength = runtime.paths && runtime.paths.labs && Number.isFinite(runtime.paths.labs.pathLength)
             ? runtime.paths.labs.pathLength
             : 0;
@@ -915,6 +1227,30 @@ module.exports = {
         mission.progress.desiredCount = desiredCount;
         mission.progress.assignedPrimary = mission.assigned.primary.length;
         mission.lastProgressTick = Game.time;
+
+        const isLoopCore = !!(runtime.paths && runtime.paths.core && runtime.paths.core.isLoop);
+        if (isLoopCore) {
+            let forwardJobs = 0;
+            let reverseJobs = 0;
+            let sameIndexJobs = 0;
+            for (let i = 0; i < laneJobs.length; i++) {
+                const job = laneJobs[i];
+                if (!job || job.pathKey !== 'core') continue;
+                if (!Number.isInteger(job.sourceIndex) || !Number.isInteger(job.targetIndex)) continue;
+                if (job.sourceIndex === job.targetIndex) {
+                    sameIndexJobs++;
+                    continue;
+                }
+                if (job.targetIndex > job.sourceIndex) forwardJobs++;
+                else reverseJobs++;
+            }
+            logLogisticsDebug(
+                `[LogisticsCoreV2] ${room.name} loop active rebuild=${shouldRebuild ? 1 : 0} ` +
+                `assigned=${mission.assigned.primary.length}/${desiredCount} jobs=${laneJobs.length} ` +
+                `outstanding=${mission.progress.jobsOutstanding} coreLen=${mission.progress.pathLength} ` +
+                `dirFwd=${forwardJobs} dirRev=${reverseJobs} sameIdx=${sameIndexJobs}`
+            );
+        }
 
     },
 
@@ -938,8 +1274,8 @@ module.exports = {
             roleCensus: 'coreLaneHauler',
             requirements: {
                 archetype: 'coreLaneHauler',
-                minCount: desiredCount,
-                maxCount: desiredCount,
+                minCount: 1,
+                maxCount: 1,
                 requiredCarry: neededCarryParts,
                 spawn: true,
                 spawnFromFleet: false

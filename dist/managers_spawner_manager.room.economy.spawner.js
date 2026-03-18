@@ -171,6 +171,10 @@ var managerSpawner = {
     },
 
     generateMinerBody: function(budget) {
+        if (budget < 200) {
+            return this.sortBody([WORK, MOVE]);
+        }
+
         // Base: WORK, CARRY, MOVE (200)
         let body = [WORK, CARRY, MOVE];
         let cost = 200;
