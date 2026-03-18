@@ -428,16 +428,6 @@ function refreshMissionData(mission, runtimeCtx) {
     return planState;
 }
 
-function shouldReconcile(roomName, missionBoard, room, intel) {
-    if (!room || !room.controller || !room.controller.my) return false;
-    const existing = missionBoard.listLiveByRoom(roomName).filter(m => m.type === 'harvest').length;
-    const sourceCount = intel && Array.isArray(intel.sources)
-        ? intel.sources.length
-        : room.find(FIND_SOURCES).length;
-    if (existing < sourceCount) return true;
-    return missionThrottle.shouldRunReconcile('harvest', roomName, Game.time);
-}
-
 module.exports = {
     makeKey(context) {
         const roomName = context.targetRoom || context.sponsorRoom;
@@ -446,7 +436,7 @@ module.exports = {
 
     reconcileRoom({ room, intel, context, missionBoard }) {
         if (!room || !missionBoard) return;
-        if (!shouldReconcile(room.name, missionBoard, room, intel)) return;
+        if (!missionThrottle.shouldRunReconcile('harvest', room.name, Game.time)) return;
 
         const sources = intel && Array.isArray(intel.sources)
             ? intel.sources

@@ -15,6 +15,7 @@ var roleCoreLaneHauler = require('role_role.coreLaneHauler');
 var roleMiningLaneHauler = require('role_role.miningLaneHauler');
 var roleWorker = require('role_role.worker');
 var roleUpgrader = require('role_role.upgrader');
+var roleMiner = require('role_role.miner');
 var runColony = require('runColony');
 var telemetry = require('telemetry_index');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
@@ -197,6 +198,8 @@ module.exports.loop = function() {
                     roleUpgrader.run(creep);
                 } else if (creep.memory.role === 'worker') {
                     roleWorker.run(creep);
+                } else if (creep.memory.role === 'miner' || creep.memory.role === 'mobile_miner') {
+                    roleMiner.run(creep);
                 } else {
                     roleUniversal.run(creep);
                 }

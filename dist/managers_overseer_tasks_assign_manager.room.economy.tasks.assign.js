@@ -1,7 +1,6 @@
 const { profRequire } = require('utils_profRequire');
 
 const execUpgradeTask = profRequire('managers_overseer_tasks_exec_upgrade', 'tasks.exec.upgrade');
-const execHarvestTask = profRequire('managers_overseer_tasks_exec_harvest', 'tasks.exec.harvest');
 const execRemoteHarvestTask = profRequire('managers_overseer_tasks_exec_remoteHarvest', 'tasks.exec.remoteHarvest');
 const execMineralTask = profRequire('managers_overseer_tasks_exec_mineral', 'tasks.exec.mineral');
 const execTransferTask = profRequire('managers_overseer_tasks_exec_transfer', 'tasks.exec.transfer');
@@ -771,7 +770,7 @@ var managerTasks = {
                 delete creep.memory.taskState;
                 break;
             case 'harvest':
-                task = execHarvestTask({ creep, mission, room });
+                // Harvest miners execute directly in role.miner.
                 break;
             case 'remote_harvest':
                 task = execRemoteHarvestTask({ creep, mission, room });
