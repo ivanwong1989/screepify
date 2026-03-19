@@ -24,6 +24,7 @@ function getReconcileInterval(type) {
         case 'pickup': return 11;
         case 'logistics': return 9;
         case 'logisticsCoreV2': return 7;
+        case 'logisticsSimpleCore': return 7;
         case 'logisticsMiningV2': return 11;
         case 'remoteHarvest': return 47;
         case 'remoteHaul': return 37;
@@ -32,7 +33,7 @@ function getReconcileInterval(type) {
         case 'decongest': return 29;
         case 'tower': return 1;
         case 'towerPassive': return 7;
-        case 'remoteBuild': return 17;
+        case 'remoteBuild': return 100;
         case 'remoteRepair': return 23;
         case 'userRemoteReserve': return 7;
         case 'userRemoteClaim': return 11;
@@ -52,6 +53,12 @@ function shouldRunReconcile(type, roomName, tick) {
     return shouldRunEvery(interval, offset, tick);
 }
 
+function shouldRunScoped(scopeKey, roomName, interval, tick) {
+    const runInterval = Math.max(1, Number(interval) || 1);
+    const offset = hashString(`${scopeKey}:${roomName}`) % runInterval;
+    return shouldRunEvery(runInterval, offset, tick);
+}
+
 function shouldRunDetector(type, roomName, tick) {
     return shouldRunReconcile(type, roomName, tick);
 }
@@ -65,6 +72,7 @@ function getMissionUpdateInterval(mission) {
         if (mission.type === 'upgrade') return 11;
         if (mission.type === 'tower') return 3;
         if (mission.type === 'logisticsCoreV2') return 7;
+        if (mission.type === 'logisticsSimpleCore') return 7;
         if (mission.type === 'logisticsMiningV2') return 11;
         if (mission.type === 'remoteHarvest') return 53;
         if (mission.type === 'remoteHaul') return 31;
@@ -92,6 +100,7 @@ function shouldCheckMission(mission, tick) {
 
 module.exports = {
     shouldRunEvery,
+    shouldRunScoped,
     getMissionUpdateInterval,
     shouldCheckMission,
     getReconcileInterval,

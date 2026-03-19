@@ -49,7 +49,7 @@ const getHomeSpawnBusyTicks = (homeRoomName) => {
 
 const shouldIgnoreForNearDeath = (creep, role, leadTicks, homeRoomName) => {
     if (!creep || !role) return false;
-    if (role !== 'miner' && role !== 'hauler' && role !== 'coreLaneHauler') return false;
+    if (role !== 'miner' && role !== 'hauler' && role !== 'coreLaneHauler' && role !== 'simpleHauler') return false;
     if (!Number.isFinite(creep.ticksToLive)) return false;
 
     const lead = getNearDeathLeadTicks(leadTicks);

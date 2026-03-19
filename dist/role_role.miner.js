@@ -171,12 +171,21 @@ function runStaticDrop(creep, source, data, resourceType) {
 }
 
 function runMobile(creep, source, data, resourceType) {
-    if ((creep.store[resourceType] || 0) <= 0) {
+    const carried = creep.store[resourceType] || 0;
+    if (carried <= 0) {
         tryHarvest(creep, source);
         return;
     }
 
     const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType);
+    if (!transferTarget && data.fallback === 'upgrade' && tryUpgradeFallback(creep)) return;
+
+    const sourceDepleted = Number.isFinite(source.energy) && source.energy <= 0;
+    if (!isFull(creep, resourceType) && !sourceDepleted) {
+        tryHarvest(creep, source);
+        return;
+    }
+
     if (transferTarget) {
         tryTransfer(creep, transferTarget, resourceType, Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1);
         return;

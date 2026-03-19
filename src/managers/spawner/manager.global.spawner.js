@@ -3,7 +3,13 @@ function getCandidateSpawnTier(candidate) {
     const targetRoom = candidate && candidate.targetRoom ? candidate.targetRoom : null;
     const homeRoom = candidate && candidate.homeRoom ? candidate.homeRoom : null;
 
-    if (role === 'miner' || role === 'hauler' || role === 'coreLaneHauler' || role === 'miningLaneHauler') return 0;
+    if (
+        role === 'miner' ||
+        role === 'hauler' ||
+        role === 'coreLaneHauler' ||
+        role === 'miningLaneHauler' ||
+        role === 'simpleHauler'
+    ) return 0;
 
     const remoteByRole = role.indexOf('remote_') === 0;
     const remoteByTarget = !!(targetRoom && homeRoom && targetRoom !== homeRoom);

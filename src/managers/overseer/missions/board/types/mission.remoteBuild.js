@@ -1,18 +1,14 @@
+const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
-const missionGeneratorBridge = require('managers_overseer_missions_board_utils_missionGeneratorBridge');
 
-function cloneContract(contract) {
-    if (!contract || typeof contract !== 'object') return null;
-    return Object.assign({}, contract);
-}
-
-function getContract(mission) {
-    return mission && mission.data ? mission.data.contract : null;
-}
+const MAX_REMOTE_BUILD_SITES_PER_ROOM = 3;
+const MAX_REMOTE_ROAD_SITES_PER_TICK = 3;
+const REMOTE_ROAD_PLANNER_INTERVAL = 197;
+const GLOBAL_CONSTRUCTION_SITE_LIMIT = 100;
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -20,182 +16,348 @@ function cleanupAssigned(mission) {
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
 }
 
-const MAX_REMOTE_BUILD_SITES_PER_ROOM = 3;
-
-function getLiveRemoteBuildContractsByRoom(room, missionBoard) {
-    const byRoom = Object.create(null);
-    if (!room || !missionBoard) return byRoom;
-    const live = missionBoard.listLiveByRoom(room.name);
-    for (let i = 0; i < live.length; i++) {
-        const mission = live[i];
-        if (!mission || mission.type !== 'remoteBuild') continue;
-        const contract = mission.data && mission.data.contract ? mission.data.contract : null;
-        if (!contract) continue;
-        const remoteRoom = (contract.data && contract.data.remoteRoom)
-            || (contract.targetPos && contract.targetPos.roomName)
-            || mission.targetRoom
-            || null;
-        if (!remoteRoom) continue;
-        if (!byRoom[remoteRoom]) byRoom[remoteRoom] = [];
-        byRoom[remoteRoom].push(contract);
-    }
-    return byRoom;
+function toPosObject(pos, fallbackRoomName) {
+    if (!pos) return null;
+    const x = Number(pos.x);
+    const y = Number(pos.y);
+    const roomName = pos.roomName || fallbackRoomName || null;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !roomName) return null;
+    return { x, y, roomName };
 }
 
-function generateRemoteBuildContracts(room, context, missionBoard, contracts) {
-    if (!room || !Array.isArray(contracts) || !missionBoard) return;
-    const entries = remoteUtils.getRemoteEconomicContext(room, {
-        opState: context && context.opState ? context.opState : null,
+function getRemoteEntry(homeRoom, remoteRoomName, opState) {
+    if (!homeRoom || !remoteRoomName) return null;
+    const entries = remoteUtils.getRemoteEconomicContext(homeRoom, {
+        opState: opState || null,
         maxScoutAge: 4000
     });
-    const liveByRoom = getLiveRemoteBuildContractsByRoom(room, missionBoard);
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry && entry.name === remoteRoomName) return entry;
+    }
+    return null;
+}
 
+function canPlaceRoadSite(room, x, y) {
+    if (!room || x < 1 || x > 48 || y < 1 || y > 48) return false;
+
+    const terrain = room.getTerrain();
+    if (!terrain || terrain.get(x, y) === TERRAIN_MASK_WALL) return false;
+
+    const structures = room.lookForAt(LOOK_STRUCTURES, x, y);
+    for (let i = 0; i < structures.length; i++) {
+        const s = structures[i];
+        if (!s) continue;
+        if (s.structureType === STRUCTURE_ROAD) return false;
+        if (s.structureType === STRUCTURE_RAMPART) continue;
+        return false;
+    }
+
+    const sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y);
+    return !sites || sites.length <= 0;
+}
+
+function isSwampTile(room, x, y) {
+    if (!room) return false;
+    const terrain = room.getTerrain();
+    if (!terrain) return false;
+    return terrain.get(x, y) === TERRAIN_MASK_SWAMP;
+}
+
+function seedRoadSitesFromCachedRemoteHaulLanes(homeRoom, entries) {
+    if (!homeRoom || !Array.isArray(entries) || entries.length <= 0) return 0;
+
+    const allSites = Game.constructionSites ? Object.keys(Game.constructionSites).length : 0;
+    if (allSites >= GLOBAL_CONSTRUCTION_SITE_LIMIT) return 0;
+
+    const laneStore = heap.getStore('remoteHaul', { ttl: null });
+    const roomStore = laneStore && laneStore.rooms ? laneStore.rooms[homeRoom.name] : null;
+    const lanes = roomStore && roomStore.lanes ? roomStore.lanes : null;
+    if (!lanes) return 0;
+
+    const enabledVisibleRooms = Object.create(null);
     for (let i = 0; i < entries.length; i++) {
         const wrapped = entries[i];
-        const remoteRoom = wrapped && wrapped.name ? wrapped.name : null;
-        if (!remoteRoom || !wrapped || !wrapped.enabled) continue;
+        if (!wrapped || !wrapped.enabled || !wrapped.name || !wrapped.room) continue;
+        enabledVisibleRooms[wrapped.name] = wrapped.room;
+    }
+    const roomNames = Object.keys(enabledVisibleRooms);
+    if (roomNames.length <= 0) return 0;
 
-        const remote = wrapped.room || null;
-        if (!remote) {
-            const existing = liveByRoom[remoteRoom] || [];
-            for (let j = 0; j < existing.length; j++) {
-                const retained = cloneContract(existing[j]);
-                if (retained) contracts.push(retained);
+    const perRoomBudget = Object.create(null);
+    for (let i = 0; i < roomNames.length; i++) {
+        const roomName = roomNames[i];
+        const remote = enabledVisibleRooms[roomName];
+        const activeSites = remote.find(FIND_MY_CONSTRUCTION_SITES) || [];
+        perRoomBudget[roomName] = Math.max(0, MAX_REMOTE_BUILD_SITES_PER_ROOM - activeSites.length);
+    }
+
+    let remainingGlobal = Math.min(
+        MAX_REMOTE_ROAD_SITES_PER_TICK,
+        Math.max(0, GLOBAL_CONSTRUCTION_SITE_LIMIT - allSites)
+    );
+    if (remainingGlobal <= 0) return 0;
+
+    const seen = Object.create(null);
+    const laneKeys = Object.keys(lanes);
+    let placed = 0;
+
+    for (let i = 0; i < laneKeys.length && remainingGlobal > 0; i++) {
+        const laneKey = laneKeys[i];
+        if (!laneKey || !laneKey.endsWith(':F')) continue;
+        const lane = lanes[laneKey];
+        if (!lane || !Array.isArray(lane.p) || lane.p.length <= 0) continue;
+
+        for (let j = 0; j < lane.p.length && remainingGlobal > 0; j++) {
+            const p = lane.p[j];
+            if (!p || !p.r || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+            const remote = enabledVisibleRooms[p.r];
+            if (!remote) continue;
+            if (!perRoomBudget[p.r] || perRoomBudget[p.r] <= 0) continue;
+
+            const key = `${p.r}:${p.x}:${p.y}`;
+            if (seen[key]) continue;
+            seen[key] = 1;
+
+            // Keep auto-roading sparse: only pave swamp tiles on remote lanes.
+            if (!isSwampTile(remote, p.x, p.y)) continue;
+            if (!canPlaceRoadSite(remote, p.x, p.y)) continue;
+
+            const result = remote.createConstructionSite(p.x, p.y, STRUCTURE_ROAD);
+            if (result === OK) {
+                perRoomBudget[p.r] -= 1;
+                remainingGlobal -= 1;
+                placed += 1;
+                continue;
             }
-            continue;
-        }
-
-        const sites = remote.find(FIND_MY_CONSTRUCTION_SITES);
-        if (!sites || sites.length <= 0) continue;
-
-        const sourcesInfo = wrapped.entry && Array.isArray(wrapped.entry.sourcesInfo) ? wrapped.entry.sourcesInfo : [];
-        const sourceIds = sourcesInfo.map(s => s && s.id).filter(Boolean);
-        const containerIds = sourcesInfo.map(s => s && s.containerId).filter(Boolean);
-        const capped = sites.slice(0, MAX_REMOTE_BUILD_SITES_PER_ROOM);
-
-        for (let j = 0; j < capped.length; j++) {
-            const site = capped[j];
-            if (!site || !site.id || !site.pos) continue;
-            contracts.push({
-                name: `remoteBuild:${remoteRoom}:${site.id}`,
-                type: 'remote_build',
-                archetype: 'remote_worker',
-                requirements: {
-                    archetype: 'remote_worker',
-                    minCount: 1,
-                    maxCount: 1,
-                    spawn: true
-                },
-                targetId: site.id,
-                targetPos: { x: site.pos.x, y: site.pos.y, roomName: site.pos.roomName },
-                data: {
-                    remoteRoom,
-                    targetPos: { x: site.pos.x, y: site.pos.y, roomName: site.pos.roomName },
-                    sourceIds,
-                    containerIds,
-                    requiredWork: 4
-                },
-                priority: 55
-            });
+            if (result === ERR_FULL) return placed;
         }
     }
+
+    return placed;
 }
 
 module.exports = {
     makeKey(context) {
-        const roomName = context.sponsorRoom || context.targetRoom;
+        const sponsorRoom = context.sponsorRoom || context.targetRoom || null;
+        const targetRoom = context.targetRoom || context.sponsorRoom || null;
+        const siteId = context.siteId || context.targetId || null;
+        if (sponsorRoom && targetRoom && siteId) {
+            return missionKeys.makeRemoteBuildKey(sponsorRoom, targetRoom, siteId);
+        }
         return missionKeys.makeUserMissionKey(
-            roomName,
+            sponsorRoom || targetRoom || 'unknown',
             'remoteBuild',
-            context.contract && context.contract.name ? context.contract.name : null,
-            context.namespace || 'remoteBuild'
+            siteId,
+            'remoteBuild'
         );
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !intel || !missionBoard) return;
+    reconcileRoom({ room, context, missionBoard }) {
+        if (!room || !missionBoard) return;
         if (context && context.opState === 'EMERGENCY') return;
-        if (!missionThrottle.shouldRunReconcile('remoteBuild', room.name, Game.time)) return;
-        missionGeneratorBridge.runGeneratorAsTyped({
-            room,
-            intel,
-            context,
-            missionBoard,
-            namespace: 'remoteBuild',
-            type: 'remoteBuild',
-            generate: (scanRoom, scanIntel, scanContext, contracts) =>
-                generateRemoteBuildContracts(scanRoom, scanContext, missionBoard, contracts),
-            mapContract: (contract) => ({
-                sponsorRoom: room.name,
-                targetRoom: (contract && contract.targetPos && contract.targetPos.roomName) || room.name
-            })
+        const shouldRunBuildReconcile = missionThrottle.shouldRunReconcile('remoteBuild', room.name, Game.time);
+        const shouldRunRoadPlanner = missionThrottle.shouldRunScoped(
+            'remoteBuild:roads',
+            room.name,
+            REMOTE_ROAD_PLANNER_INTERVAL,
+            Game.time
+        );
+        if (!shouldRunBuildReconcile && !shouldRunRoadPlanner) return;
+
+        const live = missionBoard.listLiveByRoom(room.name);
+        const liveRemoteBuild = [];
+        for (let i = 0; i < live.length; i++) {
+            const mission = live[i];
+            if (mission && mission.type === 'remoteBuild') liveRemoteBuild.push(mission);
+        }
+
+        const entries = remoteUtils.getRemoteEconomicContext(room, {
+            opState: context && context.opState ? context.opState : null,
+            maxScoutAge: 4000
         });
+        const enabledRooms = new Set(entries.filter(e => e && e.enabled && e.name).map(e => e.name));
+
+        if (shouldRunBuildReconcile) {
+            for (let i = 0; i < liveRemoteBuild.length; i++) {
+                const mission = liveRemoteBuild[i];
+                if (!mission) continue;
+                if (mission.targetId && mission.targetRoom && mission.sponsorRoom) {
+                    const expectedKey = missionKeys.makeRemoteBuildKey(
+                        mission.sponsorRoom,
+                        mission.targetRoom,
+                        mission.targetId
+                    );
+                    if (mission.id !== expectedKey) {
+                        missionBoard.markCancelled(mission.id, 'legacy_key_migration');
+                        continue;
+                    }
+                }
+                const remoteRoom = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
+                if (remoteRoom && !enabledRooms.has(remoteRoom)) {
+                    missionBoard.markCancelled(mission.id, 'remote_room_not_enabled');
+                }
+            }
+        }
+
+        if (shouldRunRoadPlanner) {
+            seedRoadSitesFromCachedRemoteHaulLanes(room, entries);
+        }
+        if (!shouldRunBuildReconcile) return;
+
+        for (let i = 0; i < entries.length; i++) {
+            const wrapped = entries[i];
+            const remoteRoom = wrapped && wrapped.name ? wrapped.name : null;
+            const entry = wrapped && wrapped.entry ? wrapped.entry : null;
+            const remote = wrapped && wrapped.room ? wrapped.room : null;
+            const enabled = !!(wrapped && wrapped.enabled);
+            if (!enabled || !remoteRoom || !remote) continue;
+
+            const sites = remote.find(FIND_MY_CONSTRUCTION_SITES);
+            if (!sites || sites.length <= 0) continue;
+
+            const sourcesInfo = entry && Array.isArray(entry.sourcesInfo) ? entry.sourcesInfo : [];
+            const sourceIds = sourcesInfo.map(s => s && s.id).filter(Boolean);
+            const containerIds = sourcesInfo.map(s => s && s.containerId).filter(Boolean);
+            const capped = sites.slice(0, MAX_REMOTE_BUILD_SITES_PER_ROOM);
+
+            for (let j = 0; j < capped.length; j++) {
+                const site = capped[j];
+                if (!site || !site.id || !site.pos) continue;
+                missionBoard.createMission('remoteBuild', {
+                    sponsorRoom: room.name,
+                    targetRoom: remoteRoom,
+                    siteId: site.id,
+                    targetPos: { x: site.pos.x, y: site.pos.y, roomName: site.pos.roomName },
+                    sourceIds,
+                    containerIds,
+                    requiredWork: 4,
+                    priority: 55
+                }, { room, context });
+            }
+        }
     },
 
     create(context) {
         const now = Game.time;
-        const contract = cloneContract(context.contract) || {};
-        const key = this.makeKey(context);
+        const remoteRoom = context.targetRoom || context.sponsorRoom;
+        const targetPos = toPosObject(context.targetPos, remoteRoom);
+        const siteId = context.siteId || context.targetId || null;
         return {
-            id: key,
-            key,
+            id: this.makeKey(context),
+            key: this.makeKey(context),
             type: 'remoteBuild',
             class: missionClasses.FINITE,
             state: missionStates.ACTIVE,
             sponsorRoom: context.sponsorRoom,
-            targetRoom: context.targetRoom || context.sponsorRoom,
-            priority: Number.isFinite(contract.priority) ? contract.priority : 55,
+            targetRoom: remoteRoom,
+            priority: Number.isFinite(context.priority) ? context.priority : 55,
             createdTick: now,
             updatedTick: now,
             lastCheckedTick: 0,
             lastProgressTick: now,
-            targetId: contract.targetId || null,
+            targetId: siteId,
             assigned: { primary: [], support: [] },
-            demand: null,
+            demand: { role: 'remote_worker', count: 1, bodyProfile: 'remote_worker' },
             goal: {
                 kind: 'finite',
-                target: { kind: 'remote_build_contract', roomName: context.targetRoom || context.sponsorRoom },
-                success: { kind: 'site_built_or_contract_replaced' }
+                target: { kind: 'remote_build_site', roomName: remoteRoom, id: siteId },
+                success: { kind: 'site_built_or_removed' }
             },
             progress: { stage: 'remote_build', goalState: 'awaiting_assignment' },
             meta: {
-                namespace: context.namespace || 'remoteBuild',
-                contractType: contract.type || null,
-                missionName: contract.name || null
+                remoteRoom,
+                missionName: `remoteBuild:${remoteRoom}:${siteId || 'anon'}`,
+                requiredWork: Number.isFinite(context.requiredWork) ? context.requiredWork : 4
             },
-            data: { contract },
+            data: {
+                remoteRoom,
+                targetPos,
+                sourceIds: Array.isArray(context.sourceIds) ? context.sourceIds : [],
+                containerIds: Array.isArray(context.containerIds) ? context.containerIds : []
+            },
             statusReason: null
         };
     },
 
-    validate(mission) {
-        return !!getContract(mission);
+    validate(mission, runtimeCtx) {
+        const sponsor = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[mission.sponsorRoom];
+        const context = runtimeCtx && runtimeCtx.context ? runtimeCtx.context : null;
+        if (!sponsor || !sponsor.controller || !sponsor.controller.my) return false;
+        const entry = getRemoteEntry(sponsor, mission.targetRoom, context && context.opState);
+        return !!(entry && entry.enabled);
     },
 
-    refresh(mission) {
+    refresh(mission, runtimeCtx) {
         cleanupAssigned(mission);
-        const contract = getContract(mission);
-        if (!contract) return;
-        mission.priority = Number.isFinite(contract.priority) ? contract.priority : (mission.priority || 55);
-        mission.targetId = contract.targetId || mission.targetId || null;
         mission.meta = mission.meta || {};
-        mission.meta.contractType = contract.type || mission.meta.contractType || null;
-        mission.meta.missionName = contract.name || mission.meta.missionName || null;
+        mission.data = mission.data || {};
         mission.progress = mission.progress || {};
+
+        const site = mission.targetId ? Game.getObjectById(mission.targetId) : null;
+        if (site && site.pos) {
+            mission.data.targetPos = { x: site.pos.x, y: site.pos.y, roomName: site.pos.roomName };
+            mission.targetRoom = site.pos.roomName;
+            mission.lastProgressTick = Game.time;
+        }
+
+        mission.meta.remoteRoom = mission.meta.remoteRoom || mission.targetRoom;
+        mission.meta.requiredWork = Number.isFinite(mission.meta.requiredWork) ? mission.meta.requiredWork : 4;
+        mission.meta.missionName = mission.meta.missionName || `remoteBuild:${mission.targetRoom}:${mission.targetId || 'anon'}`;
+
+        mission.requirements = {
+            archetype: 'remote_worker',
+            requiredWork: mission.meta.requiredWork,
+            minCount: 1,
+            maxCount: 1,
+            spawn: true
+        };
+        mission.demand = {
+            role: 'remote_worker',
+            count: Math.max(0, 1 - mission.assigned.primary.length),
+            bodyProfile: 'remote_worker'
+        };
         mission.progress.stage = 'remote_build';
         mission.progress.goalState = mission.assigned.primary.length > 0 ? 'executing' : 'awaiting_assignment';
+
+        if (!Array.isArray(mission.data.sourceIds)) mission.data.sourceIds = [];
+        if (!Array.isArray(mission.data.containerIds)) mission.data.containerIds = [];
     },
 
-    isComplete() {
-        return false;
+    isComplete(mission, runtimeCtx) {
+        const site = mission.targetId ? Game.getObjectById(mission.targetId) : null;
+        if (site) return false;
+        const remoteRoomName = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
+        if (!remoteRoomName) return true;
+        const remoteRoom = Game.rooms[remoteRoomName];
+        if (!remoteRoom) return false;
+        return true;
     },
 
     toContractMission(mission) {
-        const contract = getContract(mission);
-        if (!contract) return null;
-        return cloneContract(contract);
+        return {
+            name: mission.meta && mission.meta.missionName
+                ? mission.meta.missionName
+                : `remoteBuild:${mission.targetRoom}:${mission.targetId || 'anon'}`,
+            type: 'remote_build',
+            archetype: 'remote_worker',
+            targetId: mission.targetId || null,
+            targetPos: mission.data && mission.data.targetPos ? mission.data.targetPos : null,
+            data: {
+                remoteRoom: mission.data && mission.data.remoteRoom ? mission.data.remoteRoom : mission.targetRoom,
+                targetPos: mission.data && mission.data.targetPos ? mission.data.targetPos : null,
+                sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [],
+                containerIds: mission.data && Array.isArray(mission.data.containerIds) ? mission.data.containerIds : [],
+                requiredWork: mission.meta && Number.isFinite(mission.meta.requiredWork) ? mission.meta.requiredWork : 4
+            },
+            requirements: mission.requirements || {
+                archetype: 'remote_worker',
+                requiredWork: 4,
+                minCount: 1,
+                maxCount: 1,
+                spawn: true
+            },
+            priority: Number.isFinite(mission.priority) ? mission.priority : 55
+        };
     }
 };
-
-
-

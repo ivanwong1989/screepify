@@ -13,9 +13,12 @@ var roleAssault = require('role_role.assault');
 var roleTower = require('role_role.tower');
 var roleCoreLaneHauler = require('role_role.coreLaneHauler');
 var roleMiningLaneHauler = require('role_role.miningLaneHauler');
+var roleSimpleHauler = require('role_role.simpleHauler');
 var roleWorker = require('role_role.worker');
 var roleUpgrader = require('role_role.upgrader');
 var roleMiner = require('role_role.miner');
+var roleRemoteHarvest = require('role_role.remoteHarvest');
+var roleRemoteHaul = require('role_role.remoteHaul');
 var roleMineralMiner = require('role_role.mineralMiner');
 var runColony = require('runColony');
 var telemetry = require('telemetry_index');
@@ -171,6 +174,7 @@ module.exports.loop = function() {
                 'universal',
                 'coreLaneHauler',
                 'miningLaneHauler',
+                'simpleHauler',
                 'miner',
                 'remote_miner',
                 'mineral_miner',
@@ -195,12 +199,18 @@ module.exports.loop = function() {
                     roleCoreLaneHauler.run(creep);
                 } else if (creep.memory.role === 'miningLaneHauler') {
                     roleMiningLaneHauler.run(creep);
+                } else if (creep.memory.role === 'simpleHauler') {
+                    roleSimpleHauler.run(creep);
                 } else if (creep.memory.role === 'upgrader') {
                     roleUpgrader.run(creep);
                 } else if (creep.memory.role === 'worker') {
                     roleWorker.run(creep);
                 } else if (creep.memory.role === 'miner' || creep.memory.role === 'mobile_miner') {
                     roleMiner.run(creep);
+                } else if (creep.memory.role === 'remote_miner') {
+                    roleRemoteHarvest.run(creep);
+                } else if (creep.memory.role === 'remote_hauler') {
+                    roleRemoteHaul.run(creep);
                 } else if (creep.memory.role === 'mineral_miner') {
                     roleMineralMiner.run(creep);
                 } else {

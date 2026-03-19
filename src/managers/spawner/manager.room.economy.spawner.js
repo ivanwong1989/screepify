@@ -111,7 +111,13 @@ var managerSpawner = {
         if (archetype === 'worker' || archetype === 'upgrader') {
             budget = Math.min(budget, 3000);
         }
-        if (archetype === 'hauler' || archetype == 'user_hauler' || archetype === 'coreLaneHauler' || archetype === 'miningLaneHauler') {
+        if (
+            archetype === 'hauler' ||
+            archetype == 'user_hauler' ||
+            archetype === 'coreLaneHauler' ||
+            archetype === 'miningLaneHauler' ||
+            archetype === 'simpleHauler'
+        ) {
             budget = Math.min(budget, 4000);
         } 
         // --- BODY BUDGET END ---       
@@ -145,7 +151,8 @@ var managerSpawner = {
             mission.archetype === 'remote_hauler' ||
             mission.archetype === 'user_hauler' ||
             mission.archetype === 'coreLaneHauler' ||
-            mission.archetype === 'miningLaneHauler'
+            mission.archetype === 'miningLaneHauler' ||
+            mission.archetype === 'simpleHauler'
         ) {
             const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
             const includeRepairWorkPart = mission.archetype === 'remote_hauler';

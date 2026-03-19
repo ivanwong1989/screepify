@@ -4,6 +4,7 @@ const missionBuild = require('managers_overseer_missions_board_types_mission.bui
 const missionRepair = require('managers_overseer_missions_board_types_mission.repair');
 const missionUpgrade = require('managers_overseer_missions_board_types_mission.upgrade');
 const missionLogisticsCoreV2 = require('managers_overseer_missions_board_types_mission.logisticsCoreV2');
+const missionLogisticsSimpleCore = require('managers_overseer_missions_board_types_mission.logisticsSimpleCore');
 const missionLogisticsMiningV2 = require('managers_overseer_missions_board_types_mission.logisticsMiningV2');
 const missionRemoteHarvest = require('managers_overseer_missions_board_types_mission.remoteHarvest');
 const missionRemoteHaul = require('managers_overseer_missions_board_types_mission.remoteHaul');
@@ -29,6 +30,7 @@ function ensureRegistered() {
     missionRegistry.register('repair', missionRepair);
     missionRegistry.register('upgrade', missionUpgrade);
     missionRegistry.register('logisticsCoreV2', missionLogisticsCoreV2);
+    missionRegistry.register('logisticsSimpleCore', missionLogisticsSimpleCore);
     missionRegistry.register('logisticsMiningV2', missionLogisticsMiningV2);
     missionRegistry.register('remoteHarvest', missionRemoteHarvest);
     missionRegistry.register('remoteHaul', missionRemoteHaul);

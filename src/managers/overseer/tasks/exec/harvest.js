@@ -165,10 +165,13 @@ module.exports = function execHarvestTask(ctx) {
         return { type: 'harvest', targetId: sourceId };
     }
 
-    helpers.updateState(creep, resourceType, { allowPartialWork: true });
-    if (creep.memory.taskState !== 'working') {
+    const carried = creep.store.getUsedCapacity(resourceType) || 0;
+    if (carried <= 0) {
         return { type: 'harvest', targetId: sourceId };
     }
+    const freeCapacity = creep.store.getFreeCapacity(resourceType) || 0;
+    const sourceDepleted = Number.isFinite(source.energy) && source.energy <= 0;
+    if (freeCapacity > 0 && !sourceDepleted) return { type: 'harvest', targetId: sourceId };
 
     const transferTarget = getFirstValidDropoff(creep.room, dropoffIds, resourceType);
     if (transferTarget) {

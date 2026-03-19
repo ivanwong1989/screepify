@@ -8,8 +8,10 @@ const BUILD_WORKER_TUNING = Object.freeze({
     desiredWorkScaleStartRcl: 5,
     desiredWorkPerRclAboveScaleStart: 1,
     desiredWorkMax: 2,
-    minCount: 1,
-    maxCount: 1
+    minCountWithStorage: 1,
+    maxCountWithStorage: 1,
+    minCountNoStorage: 3,
+    maxCountNoStorage: 3
 });
 
 function getDesiredBuildWork(rcl) {
@@ -23,6 +25,24 @@ function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
     if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
+}
+
+function hasRoomStorage(room) {
+    return !!(room && room.storage);
+}
+
+function getBuildCountBounds(room, fallbackHasStorage) {
+    const hasStorage = room ? hasRoomStorage(room) : (fallbackHasStorage === true);
+    if (hasStorage) {
+        return {
+            minCount: BUILD_WORKER_TUNING.minCountWithStorage,
+            maxCount: BUILD_WORKER_TUNING.maxCountWithStorage
+        };
+    }
+    return {
+        minCount: BUILD_WORKER_TUNING.minCountNoStorage,
+        maxCount: BUILD_WORKER_TUNING.maxCountNoStorage
+    };
 }
 
 module.exports = {
@@ -42,6 +62,7 @@ module.exports = {
 
         const rcl = (room.controller && room.controller.level) || 1;
         const requiredWork = getDesiredBuildWork(rcl);
+        const countBounds = getBuildCountBounds(room, null);
 
         for (let i = 0; i < sites.length; i++) {
             const site = sites[i];
@@ -51,6 +72,9 @@ module.exports = {
                 targetRoom: room.name,
                 siteId: site.id,
                 requiredWork,
+                minCount: countBounds.minCount,
+                maxCount: countBounds.maxCount,
+                hasStorage: hasRoomStorage(room),
                 priority: 60
             }, { room, intel, context });
         }
@@ -58,6 +82,7 @@ module.exports = {
 
     create(context) {
         const now = Game.time;
+        const countBounds = getBuildCountBounds(null, context.hasStorage === true);
         return {
             id: this.makeKey(context),
             key: this.makeKey(context),
@@ -81,8 +106,9 @@ module.exports = {
             meta: {
                 missionName: `build:${context.siteId}`,
                 requiredWork: Number.isFinite(context.requiredWork) ? context.requiredWork : getDesiredBuildWork(1),
-                minCount: BUILD_WORKER_TUNING.minCount,
-                maxCount: BUILD_WORKER_TUNING.maxCount
+                hasStorage: context.hasStorage === true,
+                minCount: Number.isFinite(context.minCount) ? context.minCount : countBounds.minCount,
+                maxCount: Number.isFinite(context.maxCount) ? context.maxCount : countBounds.maxCount
             },
             statusReason: null
         };
@@ -104,11 +130,13 @@ module.exports = {
         const site = Game.getObjectById(mission.targetId);
         const rcl = (room && room.controller && room.controller.level) || 1;
         const requiredWork = getDesiredBuildWork(rcl);
+        const countBounds = getBuildCountBounds(room, mission.meta && mission.meta.hasStorage);
 
         mission.meta = mission.meta || {};
         mission.meta.requiredWork = requiredWork;
-        mission.meta.minCount = BUILD_WORKER_TUNING.minCount;
-        mission.meta.maxCount = BUILD_WORKER_TUNING.maxCount;
+        mission.meta.hasStorage = hasRoomStorage(room);
+        mission.meta.minCount = countBounds.minCount;
+        mission.meta.maxCount = countBounds.maxCount;
         mission.meta.missionName = mission.meta.missionName || `build:${mission.targetId}`;
 
         mission.progress = mission.progress || {};
@@ -154,8 +182,8 @@ module.exports = {
             requirements: {
                 archetype: 'worker',
                 requiredWork: mission.meta && Number.isFinite(mission.meta.requiredWork) ? mission.meta.requiredWork : getDesiredBuildWork(1),
-                minCount: mission.meta && Number.isFinite(mission.meta.minCount) ? mission.meta.minCount : BUILD_WORKER_TUNING.minCount,
-                maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : BUILD_WORKER_TUNING.maxCount,
+                minCount: mission.meta && Number.isFinite(mission.meta.minCount) ? mission.meta.minCount : BUILD_WORKER_TUNING.minCountWithStorage,
+                maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : BUILD_WORKER_TUNING.maxCountWithStorage,
                 spawnFromFleet: true
             },
             priority: mission.priority || 60

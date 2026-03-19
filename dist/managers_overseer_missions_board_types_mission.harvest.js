@@ -147,7 +147,53 @@ function getSourceInfo(intel, sourceId) {
     return null;
 }
 
-function computeHarvestMode(intel, sourceInfo, efficientSources) {
+function getEarlyGameMobileSourceId(room, intel) {
+    if (!room || !intel || !Array.isArray(intel.sources) || intel.sources.length <= 0) return null;
+    const spawns = (intel.structures && intel.structures[STRUCTURE_SPAWN]) || room.find(FIND_MY_SPAWNS);
+    const anchorSpawn = spawns && spawns.length > 0 ? spawns[0] : null;
+
+    let best = null;
+    let bestRange = Infinity;
+    for (let i = 0; i < intel.sources.length; i++) {
+        const source = intel.sources[i];
+        if (!source || !source.id) continue;
+        const pos = source.pos && source.pos.roomName
+            ? new RoomPosition(source.pos.x, source.pos.y, source.pos.roomName)
+            : null;
+        const range = (anchorSpawn && anchorSpawn.pos && pos && pos.roomName === room.name)
+            ? anchorSpawn.pos.getRangeTo(pos)
+            : Infinity;
+
+        if (
+            !best ||
+            range < bestRange ||
+            (range === bestRange && String(source.id) < String(best.id))
+        ) {
+            best = source;
+            bestRange = range;
+        }
+    }
+
+    return best ? best.id : null;
+}
+
+function shouldUseEarlySplit(room, intel) {
+    if (!room || !intel || !Array.isArray(intel.sources) || intel.sources.length <= 0) return false;
+    if (room.storage) return false;
+    for (let i = 0; i < intel.sources.length; i++) {
+        const source = intel.sources[i];
+        if (source && source.containerId) return false;
+    }
+    return true;
+}
+
+function computeHarvestMode(room, intel, sourceInfo, efficientSources) {
+    if (shouldUseEarlySplit(room, intel)) {
+        const mobileSourceId = getEarlyGameMobileSourceId(room, intel);
+        if (mobileSourceId && sourceInfo && sourceInfo.id === mobileSourceId) return 'mobile';
+        return 'static_drop';
+    }
+
     const hasContainer = !!(sourceInfo && sourceInfo.containerId);
     const hasHauler = !!(
         intel &&
@@ -155,7 +201,7 @@ function computeHarvestMode(intel, sourceInfo, efficientSources) {
         intel.myCreeps.some(c => {
             const memory = c && c.memory ? c.memory : null;
             if (!memory) return false;
-            if (memory.role === 'hauler' || memory.role === 'miningLaneHauler') return true;
+            if (memory.role === 'hauler' || memory.role === 'miningLaneHauler' || memory.role === 'simpleHauler') return true;
             if (memory.missionType === 'logisticsMiningV2') return true;
             return !!memory.miningLaneMissionId;
         })
@@ -348,7 +394,7 @@ function refreshMissionData(mission, runtimeCtx) {
 
     const source = Game.getObjectById(mission.targetId);
     const sourceInfo = getSourceInfo(intel, mission.targetId);
-    const mode = computeHarvestMode(intel, sourceInfo || { id: mission.targetId }, efficientSources);
+    const mode = computeHarvestMode(room, intel, sourceInfo || { id: mission.targetId }, efficientSources);
     const containerId = sourceInfo && sourceInfo.containerId ? sourceInfo.containerId : null;
     const linkId = sourceInfo && sourceInfo.linkId ? sourceInfo.linkId : null;
     const maxCount = Math.max(1, (sourceInfo && sourceInfo.availableSpaces) || 1);

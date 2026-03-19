@@ -32,6 +32,10 @@ function makeRemoteHaulKey(homeRoomName, remoteRoomName, sourceId) {
     return `remoteHaul:${homeRoomName}:${remoteRoomName}:${sourceId}`;
 }
 
+function makeRemoteBuildKey(homeRoomName, remoteRoomName, siteId) {
+    return `remoteBuild:${homeRoomName}:${remoteRoomName}:${siteId}`;
+}
+
 function makeScoutKey(roomName) {
     return `scout:${roomName}`;
 }
@@ -73,6 +77,7 @@ module.exports = {
     makeUpgradeKey,
     makeRemoteHarvestKey,
     makeRemoteHaulKey,
+    makeRemoteBuildKey,
     makeScoutKey,
     makeMineralKey,
     makeDecongestKey,

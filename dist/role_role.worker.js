@@ -45,7 +45,6 @@ function getEnergyIntent(creep, mission) {
         if (getEnergyAmount(roomStorage) > 0) {
             return { type: 'withdraw', target: roomStorage };
         }
-        return null;
     }
 
     const dropped = room.find(FIND_DROPPED_RESOURCES, {
@@ -57,21 +56,56 @@ function getEnergyIntent(creep, mission) {
     }
 
     const ids = mission && mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [];
-    let best = null;
-    let bestRange = Infinity;
+    let bestGather = null;
+    let bestGatherRange = Infinity;
+    let bestHarvest = null;
+    let bestHarvestRange = Infinity;
+    const canHarvest = creep.getActiveBodyparts(WORK) > 0;
 
     for (let i = 0; i < ids.length; i++) {
         const target = Game.getObjectById(ids[i]);
-        if (!target || target.structureType !== STRUCTURE_CONTAINER) continue;
-        const amount = getEnergyAmount(target);
-        if (amount <= 0) continue;
-        const range = creep.pos.getRangeTo(target.pos);
-        if (range < bestRange) {
-            best = target;
-            bestRange = range;
+        if (!target || !target.pos) continue;
+
+        if (target.resourceType === RESOURCE_ENERGY) {
+            const amount = getEnergyAmount(target);
+            if (amount > 0) {
+                const range = creep.pos.getRangeTo(target.pos);
+                if (range < bestGatherRange) {
+                    bestGather = { type: 'pickup', target };
+                    bestGatherRange = range;
+                }
+            }
+            continue;
+        }
+
+        if (target.store && typeof target.store.getUsedCapacity === 'function') {
+            const amount = getEnergyAmount(target);
+            if (amount > 0) {
+                const range = creep.pos.getRangeTo(target.pos);
+                if (range < bestGatherRange) {
+                    bestGather = { type: 'withdraw', target };
+                    bestGatherRange = range;
+                }
+            }
+            continue;
+        }
+
+        if (canHarvest && target instanceof Source) {
+            const amount = getEnergyAmount(target);
+            if (amount > 0) {
+                const range = creep.pos.getRangeTo(target.pos);
+                if (range < bestHarvestRange) {
+                    bestHarvest = { type: 'harvest', target };
+                    bestHarvestRange = range;
+                }
+            }
         }
     }
 
+    if (bestGather) return bestGather;
+    if (bestHarvest) return bestHarvest;
+
+    let best = null;
     if (!best) {
         const stores = room.find(FIND_STRUCTURES, {
             filter: s =>
@@ -83,6 +117,14 @@ function getEnergyIntent(creep, mission) {
         if (stores.length > 0) best = creep.pos.findClosestByRange(stores);
     }
 
+    if (!best && canHarvest) {
+        const sources = room.find(FIND_SOURCES_ACTIVE);
+        if (sources.length > 0) {
+            const source = creep.pos.findClosestByRange(sources);
+            if (source) return { type: 'harvest', target: source };
+        }
+    }
+
     if (!best) return null;
 
     if (best.resourceType === RESOURCE_ENERGY) {
@@ -91,12 +133,56 @@ function getEnergyIntent(creep, mission) {
     return { type: 'withdraw', target: best };
 }
 
+function getRelevantSources(creep, mission) {
+    const ids = mission && mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [];
+    const sources = [];
+    for (let i = 0; i < ids.length; i++) {
+        const target = Game.getObjectById(ids[i]);
+        if (target instanceof Source) sources.push(target);
+    }
+
+    if (sources.length > 0) return sources;
+    if (!creep || !creep.room) return [];
+    return creep.room.find(FIND_SOURCES);
+}
+
+function vacateSourceRingIfNeeded(creep, mission, allowSourceRing) {
+    if (!creep || allowSourceRing) return false;
+
+    const sources = getRelevantSources(creep, mission);
+    if (!sources || sources.length <= 0) return false;
+
+    let nearest = null;
+    let nearestRange = Infinity;
+    for (let i = 0; i < sources.length; i++) {
+        const source = sources[i];
+        if (!source || !source.pos) continue;
+        const range = creep.pos.getRangeTo(source.pos);
+        if (range < nearestRange) {
+            nearest = source;
+            nearestRange = range;
+        }
+    }
+
+    if (!nearest || nearestRange > 1) return false;
+    borderNav.moveToTarget(creep, nearest, 2);
+    return true;
+}
+
 function runGather(creep, mission) {
     const intent = getEnergyIntent(creep, mission);
+    const allowSourceRing = !!(intent && intent.type === 'harvest' && intent.target instanceof Source);
+    if (vacateSourceRingIfNeeded(creep, mission, allowSourceRing)) return;
     if (!intent || !intent.target) return;
 
     if (intent.type === 'pickup') {
         if (creep.pickup(intent.target) === ERR_NOT_IN_RANGE) {
+            borderNav.moveToTarget(creep, intent.target, 1);
+        }
+        return;
+    }
+    if (intent.type === 'harvest') {
+        if (creep.harvest(intent.target) === ERR_NOT_IN_RANGE) {
             borderNav.moveToTarget(creep, intent.target, 1);
         }
         return;
@@ -183,6 +269,8 @@ const roleWorker = {
             runGather(creep, mission);
             return;
         }
+
+        if (vacateSourceRingIfNeeded(creep, mission, false)) return;
 
         if (mission.type === 'build') {
             runBuild(creep, mission);

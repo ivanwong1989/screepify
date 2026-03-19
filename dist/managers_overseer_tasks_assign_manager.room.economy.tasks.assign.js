@@ -1,9 +1,7 @@
 const { profRequire } = require('utils_profRequire');
 
 const execUpgradeTask = profRequire('managers_overseer_tasks_exec_upgrade', 'tasks.exec.upgrade');
-const execRemoteHarvestTask = profRequire('managers_overseer_tasks_exec_remoteHarvest', 'tasks.exec.remoteHarvest');
 const execTransferTask = profRequire('managers_overseer_tasks_exec_transfer', 'tasks.exec.transfer');
-const execRemoteHaulTask = profRequire('managers_overseer_tasks_exec_remoteHaul', 'tasks.exec.remoteHaul');
 const execRemoteBuildTask = profRequire('managers_overseer_tasks_exec_remoteBuild', 'tasks.exec.remoteBuild');
 const execRemoteRepairTask = profRequire('managers_overseer_tasks_exec_remoteRepair', 'tasks.exec.remoteRepair');
 const execRemoteMove2FlagTask = profRequire('managers_overseer_tasks_exec_remoteMove2Flag', 'tasks.exec.remoteMove2Flag');
@@ -827,7 +825,7 @@ var managerTasks = {
                 // Harvest miners execute directly in role.miner.
                 break;
             case 'remote_harvest':
-                task = execRemoteHarvestTask({ creep, mission, room });
+                // Remote harvest miners execute directly in role.remoteHarvest.
                 break;
             case 'mineral':
                 // Mineral miners execute directly in role.mineralMiner.
@@ -836,7 +834,7 @@ var managerTasks = {
                 task = execTransferTask({ creep, mission, room });
                 break;
             case 'remote_haul':
-                task = execRemoteHaulTask({ creep, mission, room });
+                // Remote haulers execute directly in role.remoteHaul.
                 break;
             case 'upgrade':
                 task = execUpgradeTask({ creep, mission, room });
