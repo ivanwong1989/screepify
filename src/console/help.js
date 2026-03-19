@@ -36,7 +36,6 @@ module.exports = function registerHelpConsole() {
                 'clearflags()        - Clear all flags',
                 '   clearflags("<prefix>") - Clear all flags matching this prefix',   
                 'flag directives:',
-                '  Parking*        - decongest parking flags',
                 '  W/A/AM          - assault mission flags (W=wait, W1.. waypoints, A=attack, AM=mass attack)',
                 '  Y/B/BM          - assault mission flags (Y=wait, Y1.. waypoints, B=attack, BM=mass attack)',
                 '  Z/D             - assault dismantler flags (Z=wait, Z1.. waypoints, D=target)'

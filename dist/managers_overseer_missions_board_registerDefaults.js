@@ -12,7 +12,6 @@ const missionRemoteHarvest = require('managers_overseer_missions_board_types_mis
 const missionRemoteHaul = require('managers_overseer_missions_board_types_mission.remoteHaul');
 const missionScout = require('managers_overseer_missions_board_types_mission.scout');
 const missionMineral = require('managers_overseer_missions_board_types_mission.mineral');
-const missionDecongest = require('managers_overseer_missions_board_types_mission.decongest');
 const missionContract = require('managers_overseer_missions_board_types_mission.contract');
 const missionUserTransfer = require('managers_overseer_missions_board_types_mission.userTransfer');
 const missionUserRemoteMove2Flag = require('managers_overseer_missions_board_types_mission.userRemoteMove2Flag');
@@ -40,7 +39,6 @@ function ensureRegistered() {
     missionRegistry.register('remoteHaul', missionRemoteHaul);
     missionRegistry.register('scout', missionScout);
     missionRegistry.register('mineral', missionMineral);
-    missionRegistry.register('decongest', missionDecongest);
     missionRegistry.register('contract', missionContract);
     missionRegistry.register('userTransfer', missionUserTransfer);
     missionRegistry.register('userRemoteMove2Flag', missionUserRemoteMove2Flag);

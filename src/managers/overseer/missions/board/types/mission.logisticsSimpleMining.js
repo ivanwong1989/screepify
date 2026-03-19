@@ -4,7 +4,7 @@ const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const CORE_END_FLAG = 'CORE_END';
-const MAX_SIMPLE_MINING_HAULERS = 2;
+const MAX_SIMPLE_MINING_HAULERS = 4;
 
 function hasCoreLaneFlag(room) {
     if (!room) return false;
@@ -126,6 +126,13 @@ function estimateDesiredCount(movableEnergy) {
     return Math.max(1, Math.min(MAX_SIMPLE_MINING_HAULERS, Math.ceil(movableEnergy / 600)));
 }
 
+function getEnergySourceCount(room, intel) {
+    if (intel && Array.isArray(intel.sources)) return intel.sources.length;
+    if (!room) return 0;
+    const sources = room.find(FIND_SOURCES);
+    return Array.isArray(sources) ? sources.length : 0;
+}
+
 function estimateRequiredCarry(movableEnergy, desiredCount) {
     if (!Number.isFinite(movableEnergy) || movableEnergy <= 0 || desiredCount <= 0) return 0;
     const perHaulerNeed = Math.ceil(movableEnergy / Math.max(1, desiredCount));
@@ -219,15 +226,17 @@ module.exports = {
         const sinks = getSinkTargets(room, intel);
         const sinkIds = sinks.map(s => s.id);
         const sourceIds = getSourceIds(room, intel);
+        const sourceCount = getEnergySourceCount(room, intel);
         const supply = estimateSupply(sourceIds);
         const sinkFree = estimateSinkFree(sinks);
         const movableEnergy = Math.max(0, Math.min(supply, sinkFree));
-        const desiredCount = estimateDesiredCount(movableEnergy);
+        const desiredCount = Math.max(0, Math.min(sourceCount, estimateDesiredCount(movableEnergy)));
         const requiredCarry = estimateRequiredCarry(movableEnergy, desiredCount);
 
         mission.targetId = sinkIds.length > 0 ? sinkIds[0] : null;
         mission.meta = mission.meta || {};
         mission.meta.desiredCount = desiredCount;
+        mission.meta.maxBySources = sourceCount;
         mission.meta.requiredCarry = requiredCarry;
         if (!mission.meta.missionName) mission.meta.missionName = `logistics:simpleMining:${roomName}`;
 
@@ -253,6 +262,7 @@ module.exports = {
         mission.progress.goalState = mission.assigned.primary.length > 0 ? 'sustaining' : 'seeking_assignment';
         mission.progress.assignedPrimary = mission.assigned.primary.length;
         mission.progress.sourceCount = sourceIds.length;
+        mission.progress.energySourceCount = sourceCount;
         mission.progress.sinkCount = sinkIds.length;
         mission.progress.sourceSupply = supply;
         mission.progress.sinkFree = sinkFree;

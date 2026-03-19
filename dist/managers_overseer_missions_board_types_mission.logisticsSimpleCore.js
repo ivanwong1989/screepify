@@ -11,6 +11,7 @@ const SIMPLE_CORE_TARGET_TYPES = new Set([
 ]);
 const TOWER_REFILL_MIN_FREE = 100;
 const MAX_SIMPLE_HAULERS = 2;
+const MIN_SIMPLE_CORE_HAULERS = 1;
 
 function logSimpleCoreDebug(message) {
     if (typeof debug !== 'function') return;
@@ -234,8 +235,8 @@ module.exports = {
         const sourceSupply = estimateSourceSupply(room, sourceIds);
         const observedAssigned = getObservedAssignedSimpleHaulers(mission, roomName);
 
-        let desiredCount = estimateDesiredCount(totalNeed);
-        if (desiredCount > 0 && sourceSupply <= 0) desiredCount = 0;
+        let desiredCount = Math.max(MIN_SIMPLE_CORE_HAULERS, estimateDesiredCount(totalNeed));
+        if (sourceSupply <= 0) desiredCount = MIN_SIMPLE_CORE_HAULERS;
         const requiredCarry = estimateRequiredCarry(totalNeed, desiredCount);
 
         mission.targetId = refillIds.length > 0 ? refillIds[0] : null;

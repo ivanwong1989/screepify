@@ -90,7 +90,6 @@ const overseerMissions = {
             'remoteHaul',
             'scout',
             'mineral',
-            'decongest',
             'userTransfer',
             'userRemoteMove2Flag',
             'userRemoteReserve',

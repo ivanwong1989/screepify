@@ -31,7 +31,6 @@ function getReconcileInterval(type) {
         case 'remoteHaul': return 37;
         case 'scout': return 41;
         case 'mineral': return 61;
-        case 'decongest': return 29;
         case 'tower': return 1;
         case 'towerPassive': return 7;
         case 'remoteBuild': return 100;
@@ -80,7 +79,6 @@ function getMissionUpdateInterval(mission) {
         if (mission.type === 'remoteHaul') return 31;
         if (mission.type === 'scout') return 37;
         if (mission.type === 'mineral') return 61;
-        if (mission.type === 'decongest') return 29;
         return 31;
     }
     if (mission.class === 'finite') {

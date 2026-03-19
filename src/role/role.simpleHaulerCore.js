@@ -116,6 +116,18 @@ module.exports = {
 
         const homeRoomName = creep.memory.room || (creep.room && creep.room.name);
         const mission = getSimpleMission(homeRoomName);
+        const assignedMissionName = creep.memory.missionName || null;
+        const simpleMissionName = mission && mission.meta && mission.meta.missionName
+            ? mission.meta.missionName
+            : `logistics:simpleCore:${homeRoomName}`;
+
+        // Simple-core role must only run when explicitly assigned to simple-core mission.
+        if (assignedMissionName !== simpleMissionName) {
+            delete creep.memory.simpleHaulerState;
+            delete creep.memory.task;
+            return;
+        }
+
         if (!mission) {
             logSimpleCoreRoleDebug(
                 creep,
@@ -128,10 +140,6 @@ module.exports = {
             delete creep.memory.simpleHaulerState;
             return;
         }
-        const desiredCount = mission && mission.meta && Number.isFinite(mission.meta.desiredCount)
-            ? mission.meta.desiredCount
-            : 0;
-
         if (creep.room.name !== homeRoomName) {
             moveHome(creep);
             return;
@@ -142,16 +150,6 @@ module.exports = {
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) creep.memory.simpleHaulerState = STATE_DELIVER;
         const refillTargets = getRefillTargets(mission, creep.room);
         const blockedSourceIds = new Set();
-
-        if (desiredCount <= 0 && creep.store.getUsedCapacity(RESOURCE_ENERGY) <= 0) {
-            logSimpleCoreRoleDebug(
-                creep,
-                `idle desiredZero mission=${mission.meta && mission.meta.missionName ? mission.meta.missionName : '-'}`
-            );
-            const anchor = creep.room.find(FIND_MY_SPAWNS)[0];
-            if (anchor) creep.moveTo(anchor, { range: 2, reusePath: 10 });
-            return;
-        }
 
         // Keep cargo clean; simple haulers should only carry energy.
         for (const type in creep.store) {

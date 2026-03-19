@@ -4,7 +4,7 @@ const vacateSource = require('managers_overseer_tasks_exec__policy_vacate_source
 
 module.exports = function execUpgradeTask(ctx) {
     const { creep, mission, room } = ctx;
-    helpers.updateState(creep);
+    helpers.updateState(creep, RESOURCE_ENERGY, { requireFull: true, allowPartialWork: true });
     if (creep.memory.taskState === 'working') {
         const controller = creep.room && creep.room.controller;
         if (controller) {
@@ -24,9 +24,19 @@ module.exports = function execUpgradeTask(ctx) {
         return { type: 'upgrade', targetId: mission.targetId };
     }
 
-    const allowedIds = (mission.data && mission.data.sourceIds) ? mission.data.sourceIds : null;
-    const task = execGatherTask({ creep, room, options: { allowedIds } });
+    const task = execGatherTask({
+        creep,
+        room,
+        options: {
+            preferNearestAvailable: true,
+            disallowSourceHarvest: true
+        }
+    });
     if (!task) {
+        if ((creep.store[RESOURCE_ENERGY] || 0) > 0) {
+            creep.memory.taskState = 'working';
+            return { type: 'upgrade', targetId: mission.targetId };
+        }
         delete creep.memory.missionName;
         delete creep.memory.taskState;
         return null;

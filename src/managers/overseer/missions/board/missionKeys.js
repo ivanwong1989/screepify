@@ -44,10 +44,6 @@ function makeMineralKey(roomName, mineralId) {
     return `mineral:${roomName}:${mineralId}`;
 }
 
-function makeDecongestKey(roomName, variant) {
-    return `decongest:${roomName}:${variant || 'parking'}`;
-}
-
 function makeContractKey(roomName, mission) {
     if (!mission) return null;
     const type = mission.type || 'unknown';
@@ -80,7 +76,6 @@ module.exports = {
     makeRemoteBuildKey,
     makeScoutKey,
     makeMineralKey,
-    makeDecongestKey,
     makeContractKey,
     makeUserMissionKey
 };

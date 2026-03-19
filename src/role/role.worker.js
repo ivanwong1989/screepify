@@ -38,9 +38,40 @@ function getEnergyAmount(target) {
     return 0;
 }
 
+function getClosestWithdrawIntentByIds(creep, ids) {
+    if (!creep || !Array.isArray(ids) || ids.length <= 0) return null;
+    let best = null;
+    let bestRange = Infinity;
+    for (let i = 0; i < ids.length; i++) {
+        const target = Game.getObjectById(ids[i]);
+        if (!target || !target.pos || !target.store || typeof target.store.getUsedCapacity !== 'function') continue;
+        const amount = getEnergyAmount(target);
+        if (amount <= 0) continue;
+        const range = creep.pos.getRangeTo(target.pos);
+        if (!best || range < bestRange) {
+            best = target;
+            bestRange = range;
+        }
+    }
+    if (!best) return null;
+    return { type: 'withdraw', target: best };
+}
+
 function getEnergyIntent(creep, mission) {
     const room = creep.room;
     const roomStorage = room && room.storage ? room.storage : null;
+    const isBuildOrRepairMission = !!(mission && (mission.type === 'build' || mission.type === 'repair'));
+    const disallowSourceHarvestMission = mission && (mission.type === 'build' || mission.type === 'repair');
+    const allowSourceHarvest = !disallowSourceHarvestMission;
+
+    if (isBuildOrRepairMission) {
+        const nonMiningContainerIds = mission && mission.data && Array.isArray(mission.data.nonMiningContainerIds)
+            ? mission.data.nonMiningContainerIds
+            : [];
+        const preferred = getClosestWithdrawIntentByIds(creep, nonMiningContainerIds);
+        if (preferred) return preferred;
+    }
+
     if (roomStorage) {
         if (getEnergyAmount(roomStorage) > 0) {
             return { type: 'withdraw', target: roomStorage };
@@ -61,6 +92,7 @@ function getEnergyIntent(creep, mission) {
     let bestHarvest = null;
     let bestHarvestRange = Infinity;
     const canHarvest = creep.getActiveBodyparts(WORK) > 0;
+    const canHarvestFromSources = canHarvest && allowSourceHarvest;
 
     for (let i = 0; i < ids.length; i++) {
         const target = Game.getObjectById(ids[i]);
@@ -90,7 +122,7 @@ function getEnergyIntent(creep, mission) {
             continue;
         }
 
-        if (canHarvest && target instanceof Source) {
+        if (canHarvestFromSources && target instanceof Source) {
             const amount = getEnergyAmount(target);
             if (amount > 0) {
                 const range = creep.pos.getRangeTo(target.pos);
@@ -117,7 +149,7 @@ function getEnergyIntent(creep, mission) {
         if (stores.length > 0) best = creep.pos.findClosestByRange(stores);
     }
 
-    if (!best && canHarvest) {
+    if (!best && canHarvestFromSources) {
         const sources = room.find(FIND_SOURCES_ACTIVE);
         if (sources.length > 0) {
             const source = creep.pos.findClosestByRange(sources);
@@ -173,22 +205,36 @@ function runGather(creep, mission) {
     const intent = getEnergyIntent(creep, mission);
     const allowSourceRing = !!(intent && intent.type === 'harvest' && intent.target instanceof Source);
     if (vacateSourceRingIfNeeded(creep, mission, allowSourceRing)) return;
-    if (!intent || !intent.target) return;
+    if (!intent || !intent.target) {
+        if ((creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0) > 0) {
+            creep.memory.workerState = 'work';
+        }
+        return;
+    }
 
     if (intent.type === 'pickup') {
-        if (creep.pickup(intent.target) === ERR_NOT_IN_RANGE) {
+        const result = creep.pickup(intent.target);
+        if (result === ERR_NOT_IN_RANGE) {
             borderNav.moveToTarget(creep, intent.target, 1);
+        } else if (result === ERR_FULL || result === ERR_INVALID_TARGET) {
+            creep.memory.workerState = 'work';
         }
         return;
     }
     if (intent.type === 'harvest') {
-        if (creep.harvest(intent.target) === ERR_NOT_IN_RANGE) {
+        const result = creep.harvest(intent.target);
+        if (result === ERR_NOT_IN_RANGE) {
             borderNav.moveToTarget(creep, intent.target, 1);
+        } else if (result === ERR_FULL || result === ERR_NOT_ENOUGH_RESOURCES) {
+            creep.memory.workerState = 'work';
         }
         return;
     }
-    if (creep.withdraw(intent.target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+    const result = creep.withdraw(intent.target, RESOURCE_ENERGY);
+    if (result === ERR_NOT_IN_RANGE) {
         borderNav.moveToTarget(creep, intent.target, 1);
+    } else if (result === ERR_FULL || result === ERR_NOT_ENOUGH_RESOURCES || result === ERR_INVALID_TARGET) {
+        creep.memory.workerState = 'work';
     }
 }
 
@@ -201,7 +247,11 @@ function runBuild(creep, mission) {
     const result = creep.build(target);
     if (result === ERR_NOT_IN_RANGE) {
         borderNav.moveToTarget(creep, target, 3);
+    } else if (result === ERR_NOT_ENOUGH_RESOURCES) {
+        creep.memory.workerState = 'gather';
     } else if (result === ERR_INVALID_TARGET) {
+        clearWorkerAssignment(creep);
+    } else if (result === ERR_NO_BODYPART) {
         clearWorkerAssignment(creep);
     }
 }
@@ -269,8 +319,6 @@ const roleWorker = {
             runGather(creep, mission);
             return;
         }
-
-        if (vacateSourceRingIfNeeded(creep, mission, false)) return;
 
         if (mission.type === 'build') {
             runBuild(creep, mission);

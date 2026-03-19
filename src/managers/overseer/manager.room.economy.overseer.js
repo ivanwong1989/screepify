@@ -143,10 +143,7 @@ var managerOverseer = {
         // 6. Analyze Census (Match Creeps to Missions)
         overseerUtils.analyzeCensus(missions, censusCreeps);
 
-        // 7. Reassign Workers (Optimize assignments)
-        overseerUtils.reassignWorkers(room, missions, intel);
-
-        // 8. Publish Missions (Contract for Tasker and Spawner)
+        // 7. Publish Missions (Contract for Tasker and Spawner)
         room._missions = missions;
         room._opState = opState;
         room._economyState = economyState;

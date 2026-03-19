@@ -355,7 +355,7 @@ function refreshMissionData(mission, runtimeCtx) {
 
     const source = Game.getObjectById(mission.targetId);
     const sourceInfo = getSourceInfo(intel, mission.targetId);
-    const maxCount = 1;
+    const maxCount = 3;
     const budget = context && Number.isFinite(context.budget) ? context.budget : room.energyCapacityAvailable;
     const dropoffIds = computeDropoffIds(room, intel);
     const planSignature = buildPlanSignature(room.name, mission.targetId, dropoffIds, budget);
@@ -397,7 +397,7 @@ function refreshMissionData(mission, runtimeCtx) {
     }
 
     mission.requirements = {
-        archetype: 'miner',
+        archetype: 'simple_miner',
         requiredWork: plan.targetWork,
         minCount: 1,
         maxCount
@@ -427,7 +427,7 @@ function refreshMissionData(mission, runtimeCtx) {
     }
 
     mission.demand = {
-        role: 'miner',
+        role: 'simple_miner',
         count: Math.max(0, 1 - mission.assigned.primary.length),
         bodyProfile: 'miner_mobile'
     };
@@ -475,7 +475,7 @@ module.exports = {
             lastProgressTick: now,
             targetId: context.sourceId,
             assigned: { primary: [], support: [] },
-            demand: { role: 'miner', count: 1, bodyProfile: 'miner_mobile' },
+            demand: { role: 'simple_miner', count: 1, bodyProfile: 'miner_mobile' },
             goal: {
                 kind: 'service',
                 target: {
@@ -535,7 +535,7 @@ module.exports = {
         updateAssignmentState(mission);
         const needed = Math.max(0, 1 - mission.assigned.primary.length);
         return {
-            role: 'miner',
+            role: 'simple_miner',
             count: needed,
             priority: mission.priority || 90
         };
@@ -549,11 +549,11 @@ module.exports = {
         return {
             name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `simpleHarvest:${mission.targetId}`,
             type: 'simple_harvest',
-            archetype: 'miner',
+            archetype: 'simple_miner',
             sourceId: mission.targetId,
             pos: sourcePos,
             requirements: mission.requirements || {
-                archetype: 'miner',
+                archetype: 'simple_miner',
                 requiredWork: 5,
                 minCount: 1,
                 maxCount: 1

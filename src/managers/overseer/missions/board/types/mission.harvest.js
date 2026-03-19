@@ -175,7 +175,49 @@ function hasNonMiningContainers(room, intel) {
 function shouldActivateHarvest(room, intel) {
     if (!room || !room.controller || !room.controller.my) return false;
     if (room.storage) return true;
-    return hasNonMiningContainers(room, intel);
+    if (hasNonMiningContainers(room, intel)) return true;
+
+    const sources = intel && Array.isArray(intel.sources) ? intel.sources : room.find(FIND_SOURCES);
+    return (sources && sources.length > 1) || false;
+}
+
+function shouldUseHybridEarlyHarvest(room, intel) {
+    if (!room || !room.controller || !room.controller.my) return false;
+    if (room.storage) return false;
+    if (hasNonMiningContainers(room, intel)) return false;
+    const sources = intel && Array.isArray(intel.sources) ? intel.sources : room.find(FIND_SOURCES);
+    return !!(sources && sources.length > 1);
+}
+
+function pickSimpleHarvestAnchorSourceId(room, intel) {
+    const sources = intel && Array.isArray(intel.sources)
+        ? intel.sources
+        : room.find(FIND_SOURCES).map(s => ({ id: s.id, pos: s.pos }));
+    if (!sources || sources.length <= 0) return null;
+
+    const spawns = (intel && intel.structures && intel.structures[STRUCTURE_SPAWN]) || room.find(FIND_MY_SPAWNS);
+    const anchorSpawn = spawns && spawns.length > 0 ? spawns[0] : null;
+
+    let best = null;
+    let bestRange = Infinity;
+    for (let i = 0; i < sources.length; i++) {
+        const source = sources[i];
+        if (!source || !source.id || !source.pos) continue;
+
+        const pos = source.pos instanceof RoomPosition
+            ? source.pos
+            : (source.pos.roomName ? new RoomPosition(source.pos.x, source.pos.y, source.pos.roomName) : null);
+        const range = (anchorSpawn && anchorSpawn.pos && pos && pos.roomName === room.name)
+            ? anchorSpawn.pos.getRangeTo(pos)
+            : Infinity;
+
+        if (!best || range < bestRange || (range === bestRange && String(source.id) < String(best.id))) {
+            best = source;
+            bestRange = range;
+        }
+    }
+
+    return best && best.id ? best.id : null;
 }
 
 function computeHarvestMode(sourceInfo) {
@@ -436,10 +478,14 @@ module.exports = {
         const sources = intel && Array.isArray(intel.sources)
             ? intel.sources
             : room.find(FIND_SOURCES).map(s => ({ id: s.id, availableSpaces: 1 }));
+        const simpleHarvestAnchorSourceId = shouldUseHybridEarlyHarvest(room, intel)
+            ? pickSimpleHarvestAnchorSourceId(room, intel)
+            : null;
 
         for (let i = 0; i < sources.length; i++) {
             const source = sources[i];
             if (!source || !source.id) continue;
+            if (simpleHarvestAnchorSourceId && source.id === simpleHarvestAnchorSourceId) continue;
             missionBoard.createMission('harvest', {
                 sponsorRoom: room.name,
                 targetRoom: room.name,

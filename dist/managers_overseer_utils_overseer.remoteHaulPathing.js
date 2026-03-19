@@ -11,6 +11,8 @@ const DEFAULT_PICKUP_END_MIN_RANGE = 1;
 
 let _cmCacheTick = -1;
 let _cmCache = Object.create(null);
+let _sourceRingCacheTick = -1;
+let _sourceRingCache = Object.create(null);
 
 const isFresh = (t, ttl) => (t != null) && (Game.time - t <= ttl);
 
@@ -78,6 +80,80 @@ const getPathingCostMatrix = (roomName) => {
 const xyToIndex = (x, y) => (y * 50) + x;
 const indexToXY = (idx) => ({ x: idx % 50, y: Math.floor(idx / 50) });
 
+const getSourceRingIndexes = (roomName) => {
+    if (_sourceRingCacheTick !== Game.time) {
+        _sourceRingCacheTick = Game.time;
+        _sourceRingCache = Object.create(null);
+    }
+    if (Object.prototype.hasOwnProperty.call(_sourceRingCache, roomName)) return _sourceRingCache[roomName];
+
+    const room = Game.rooms[roomName];
+    if (!room) {
+        _sourceRingCache[roomName] = null;
+        return null;
+    }
+
+    const sources = room.find(FIND_SOURCES);
+    if (!Array.isArray(sources) || sources.length === 0) {
+        _sourceRingCache[roomName] = [];
+        return _sourceRingCache[roomName];
+    }
+
+    const idxMap = Object.create(null);
+    for (let i = 0; i < sources.length; i++) {
+        const src = sources[i];
+        if (!src || !src.pos) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                const x = src.pos.x + dx;
+                const y = src.pos.y + dy;
+                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+                idxMap[xyToIndex(x, y)] = 1;
+            }
+        }
+    }
+
+    const keys = Object.keys(idxMap);
+    const out = new Array(keys.length);
+    for (let i = 0; i < keys.length; i++) out[i] = Number(keys[i]);
+
+    _sourceRingCache[roomName] = out;
+    return out;
+};
+
+const buildSourceExemptionsByRoom = (positions, radius = 1) => {
+    const byRoom = Object.create(null);
+    if (!Array.isArray(positions) || positions.length === 0) return byRoom;
+    const r = Number.isFinite(radius) ? Math.max(0, radius) : 1;
+
+    for (let i = 0; i < positions.length; i++) {
+        const p = positions[i];
+        if (!p || !p.roomName) continue;
+
+        let roomEx = byRoom[p.roomName];
+        if (!roomEx) {
+            roomEx = [];
+            byRoom[p.roomName] = roomEx;
+        }
+        roomEx.push({ x: p.x, y: p.y, radius: r });
+    }
+
+    return byRoom;
+};
+
+const isSourceExemptTile = (roomExemptions, x, y) => {
+    if (!Array.isArray(roomExemptions) || roomExemptions.length === 0) return false;
+
+    for (let i = 0; i < roomExemptions.length; i++) {
+        const ex = roomExemptions[i];
+        if (!ex) continue;
+        const dx = Math.abs(x - ex.x);
+        const dy = Math.abs(y - ex.y);
+        if (Math.max(dx, dy) <= ex.radius) return true;
+    }
+    return false;
+};
+
 const getRoomReservations = (reservations, roomName) => {
     let roomRes = reservations[roomName];
     if (!roomRes) {
@@ -136,8 +212,9 @@ const buildHardBlocksByRoom = (blockedTiles) => {
     return byRoom;
 };
 
-const makeReservedRoomCallback = (reservations, tilePenalty, neighborPenalty, blockedTiles) => {
+const makeReservedRoomCallback = (reservations, tilePenalty, neighborPenalty, blockedTiles, sourceExemptPositions) => {
     const hardBlocksByRoom = buildHardBlocksByRoom(blockedTiles);
+    const sourceExemptionsByRoom = buildSourceExemptionsByRoom(sourceExemptPositions, 1);
     const compiled = Object.create(null);
 
     const getCompiled = (roomName) => {
@@ -145,7 +222,22 @@ const makeReservedRoomCallback = (reservations, tilePenalty, neighborPenalty, bl
         if (c) return c;
 
         const hardMap = hardBlocksByRoom[roomName];
-        const hardKeys = hardMap ? Object.keys(hardMap) : [];
+        const sourceRings = getSourceRingIndexes(roomName) || [];
+        const roomExemptions = sourceExemptionsByRoom[roomName] || null;
+
+        const hardIdxMap = Object.create(null);
+        if (hardMap) {
+            const hardKeys = Object.keys(hardMap);
+            for (let i = 0; i < hardKeys.length; i++) hardIdxMap[hardKeys[i]] = 1;
+        }
+        for (let i = 0; i < sourceRings.length; i++) {
+            const idx = sourceRings[i];
+            const { x, y } = indexToXY(idx);
+            if (isSourceExemptTile(roomExemptions, x, y)) continue;
+            hardIdxMap[idx] = 1;
+        }
+
+        const hardKeys = Object.keys(hardIdxMap);
         const hard = new Array(hardKeys.length);
         for (let i = 0; i < hardKeys.length; i++) {
             hard[i] = Number(hardKeys[i]);
@@ -220,6 +312,40 @@ const makeReservedRoomCallback = (reservations, tilePenalty, neighborPenalty, bl
         }
 
         return cm;
+    };
+};
+
+const makeHardBlockOnlyRoomCallback = (blockedTiles, sourceExemptPositions) => {
+    const hardBlocksByRoom = buildHardBlocksByRoom(blockedTiles);
+    const sourceExemptionsByRoom = buildSourceExemptionsByRoom(sourceExemptPositions, 1);
+
+    return (roomName) => {
+        const base = getPathingCostMatrix(roomName);
+        const cm = base ? base.clone() : new PathFinder.CostMatrix();
+        let applied = false;
+
+        const hardMap = hardBlocksByRoom[roomName];
+        if (hardMap) {
+            const keys = Object.keys(hardMap);
+            for (let i = 0; i < keys.length; i++) {
+                const idx = Number(keys[i]);
+                const { x, y } = indexToXY(idx);
+                cm.set(x, y, 255);
+                applied = true;
+            }
+        }
+
+        const sourceRings = getSourceRingIndexes(roomName) || [];
+        const roomExemptions = sourceExemptionsByRoom[roomName] || null;
+        for (let i = 0; i < sourceRings.length; i++) {
+            const idx = sourceRings[i];
+            const { x, y } = indexToXY(idx);
+            if (isSourceExemptTile(roomExemptions, x, y)) continue;
+            cm.set(x, y, 255);
+            applied = true;
+        }
+
+        return applied ? cm : (base || undefined);
     };
 };
 
@@ -531,27 +657,15 @@ const createLaneManager = (homeRoom, targetSignature, opts = {}) => {
         h.budgetUsed++;
 
         const blockedTiles = Array.isArray(laneOpts.blockedTiles) ? laneOpts.blockedTiles : null;
+        const sourceExemptPositions = [dropoffPos, pickupPos];
         const reservedRoomCallback = makeReservedRoomCallback(
             reservations,
             reservedTilePenalty,
             reservedNeighborPenalty,
-            blockedTiles
+            blockedTiles,
+            sourceExemptPositions
         );
-        const hardBlockOnlyRoomCallback = (roomName) => {
-            const base = getPathingCostMatrix(roomName);
-            const cm = base ? base.clone() : new PathFinder.CostMatrix();
-            let applied = false;
-            if (blockedTiles && blockedTiles.length > 0) {
-                for (let i = 0; i < blockedTiles.length; i++) {
-                    const p = blockedTiles[i];
-                    if (!p || p.roomName !== roomName) continue;
-                    if (p.x < 0 || p.x > 49 || p.y < 0 || p.y > 49) continue;
-                    cm.set(p.x, p.y, 255);
-                    applied = true;
-                }
-            }
-            return applied ? cm : (base || undefined);
-        };
+        const hardBlockOnlyRoomCallback = makeHardBlockOnlyRoomCallback(blockedTiles, sourceExemptPositions);
 
         // Fast path: build forward lane first. Reverse search only when needed.
         let f = computePathData(dropoffPos, pickupPos, null, reservedRoomCallback);

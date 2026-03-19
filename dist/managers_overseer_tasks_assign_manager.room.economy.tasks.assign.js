@@ -5,14 +5,10 @@ const execTransferTask = profRequire('managers_overseer_tasks_exec_transfer', 't
 const execRemoteBuildTask = profRequire('managers_overseer_tasks_exec_remoteBuild', 'tasks.exec.remoteBuild');
 const execRemoteRepairTask = profRequire('managers_overseer_tasks_exec_remoteRepair', 'tasks.exec.remoteRepair');
 const execRemoteMove2FlagTask = profRequire('managers_overseer_tasks_exec_remoteMove2Flag', 'tasks.exec.remoteMove2Flag');
-const execDecongestTask = profRequire('managers_overseer_tasks_exec_decongest', 'tasks.exec.decongest');
 const execDismantleTask = profRequire('managers_overseer_tasks_exec_dismantle', 'tasks.exec.dismantle');
 const execReserveTask = profRequire('managers_overseer_tasks_exec_reserve', 'tasks.exec.reserve');
 const execClaimTask = profRequire('managers_overseer_tasks_exec_claim', 'tasks.exec.claim');
-const execScoutTask = profRequire('managers_overseer_tasks_exec_scout', 'tasks.exec.scout');
 const missionBoard = profRequire('managers_overseer_missions_board_missionBoard', 'missions.board');
-
-
 
 /**
  * The Task Manager reads the Overseer's demands and missions.
@@ -200,12 +196,6 @@ var managerTasks = {
             contractName &&
             c.memory.missionName === contractName
         );
-        const stuckInParking = allOwnedCreeps.filter(c =>
-            c && c.my && c.memory &&
-            c.memory.role === 'coreLaneHauler' &&
-            !this.isCoreLaneAssigned(c) &&
-            c.memory.missionName === 'decongest:parking'
-        );
 
         if (assigned.length > desiredCount) {
             for (let i = desiredCount; i < assigned.length; i++) this.clearCoreLaneAssignment(assigned[i]);
@@ -214,15 +204,6 @@ var managerTasks = {
         let bound = assigned.length;
         for (let i = 0; i < awaitingBind.length && bound < desiredCount; i++) {
             this.bindCoreLaneMission(awaitingBind[i], mission);
-            bound++;
-        }
-
-        // Reclaim core-lane haulers that drifted into parking decongest.
-        for (let i = 0; i < stuckInParking.length && bound < desiredCount; i++) {
-            delete stuckInParking[i].memory.missionName;
-            delete stuckInParking[i].memory.task;
-            delete stuckInParking[i].memory.taskState;
-            this.bindCoreLaneMission(stuckInParking[i], mission);
             bound++;
         }
 
@@ -396,125 +377,6 @@ var managerTasks = {
                 }
             }
         });
-
-        const hasHigherPriorityUnderfilledMission = (priorityFloor, excludeNames) => {
-            for (const name in missionStatus) {
-                if (excludeNames && excludeNames.has(name)) continue;
-                const st = missionStatus[name];
-                const m = st.mission;
-                const pr = m.priority || 0;
-                if (pr <= priorityFloor) continue;
-
-                if (this.isMissionUnderfilled(st)) {
-                    return true;
-                }
-            }
-            return false;
-        };
-
-        const clearMissionAssignment = (creep) => {
-            delete creep.memory.missionName;
-            delete creep.memory.taskState;
-            delete creep.memory.task;
-            delete creep.memory.scout;
-        };
-
-        // --- Preempt idle:upgrade when real work is underfilled ---
-        const idleUpName = 'idle:upgrade';
-        const idleUp = missionStatus[idleUpName] ? missionStatus[idleUpName].mission : null;
-        const idlePriority = idleUp ? (idleUp.priority || 0) : -99999;
-
-        if (idleUp && hasHigherPriorityUnderfilledMission(idlePriority, new Set([idleUpName]))) {
-            // Unassign idle upgraders so they can be reassigned this tick
-            creeps.forEach(creep => {
-                if (creep.spawning) return;
-                if (creep.memory.missionName !== idleUpName) return;
-                clearMissionAssignment(creep);
-            });
-        }
-
-        // --- Preempt regular upgrade missions when higher-priority work is underfilled ---
-        const preemptibleUpgradeMissionNames = new Set(
-            Object.keys(missionStatus).filter(name => {
-                if (name === idleUpName) return false;
-                const m = missionStatus[name].mission;
-                return m && m.type === 'upgrade';
-            })
-        );
-
-        if (preemptibleUpgradeMissionNames.size > 0) {
-            let shouldPreemptUpgrades = false;
-            for (const name of preemptibleUpgradeMissionNames) {
-                const mission = missionStatus[name].mission;
-                const priority = mission ? (mission.priority || 0) : 0;
-                if (hasHigherPriorityUnderfilledMission(priority, preemptibleUpgradeMissionNames)) {
-                    shouldPreemptUpgrades = true;
-                    break;
-                }
-            }
-
-            if (shouldPreemptUpgrades) {
-                creeps.forEach(creep => {
-                    if (creep.spawning) return;
-                    const missionName = creep.memory.missionName;
-                    if (!missionName || !preemptibleUpgradeMissionNames.has(missionName)) return;
-                    clearMissionAssignment(creep);
-                });
-            }
-        }
-
-        // --- Rebalance overfilled local harvest missions ---
-        // If a harvest source is already fully satisfied by assigned WORK, release surplus miners
-        // so they can be reassigned to other underfilled harvest missions this tick.
-        const hasUnderfilledHarvestMission = () => {
-            for (const name in missionStatus) {
-                const st = missionStatus[name];
-                if (!st || !st.mission || st.mission.type !== 'harvest') continue;
-                if (this.isMissionUnderfilled(st)) return true;
-            }
-            return false;
-        };
-
-        if (hasUnderfilledHarvestMission()) {
-            for (const name in missionStatus) {
-                const status = missionStatus[name];
-                if (!status || !status.mission || status.mission.type !== 'harvest') continue;
-                if (!Array.isArray(status.assignedCreeps) || status.assignedCreeps.length <= 1) continue;
-
-                const candidates = status.assignedCreeps
-                    .filter(c => c && !c.spawning && c.memory && c.memory.missionName === name)
-                    .sort((a, b) => {
-                        const ap = this.getCreepActiveParts(a);
-                        const bp = this.getCreepActiveParts(b);
-                        if (ap.work !== bp.work) return ap.work - bp.work;
-                        const at = Number.isFinite(a.ticksToLive) ? a.ticksToLive : 1500;
-                        const bt = Number.isFinite(b.ticksToLive) ? b.ticksToLive : 1500;
-                        return at - bt;
-                    });
-
-                for (const creep of candidates) {
-                    if (!hasUnderfilledHarvestMission()) break;
-                    if (status.assignedCount <= 1) break;
-
-                    const p = this.getCreepActiveParts(creep);
-                    status.assignedCount -= 1;
-                    status.assignedWorkParts -= p.work;
-                    status.assignedCarryParts -= p.carry;
-                    status.assignedClaimParts -= p.claim;
-
-                    // Keep this assignment if removing the creep would make the mission underfilled again.
-                    if (this.isMissionUnderfilled(status)) {
-                        status.assignedCount += 1;
-                        status.assignedWorkParts += p.work;
-                        status.assignedCarryParts += p.carry;
-                        status.assignedClaimParts += p.claim;
-                        continue;
-                    }
-
-                    clearMissionAssignment(creep);
-                }
-            }
-        }
 
         // 4. Assign Idle Creeps
         const localIdle = managedLocalCreeps.filter(c => !c.spawning && !c.memory.missionName);
@@ -741,9 +603,6 @@ var managerTasks = {
             // Dedicated upgraders should only take upgrade missions.
             if (creep.memory.role === 'upgrader' && m.type !== 'upgrade') continue;
 
-            // Keep logistics core v2 haulers out of parking decongest.
-            if (m.name === 'decongest:parking' && creep.memory.role === 'coreLaneHauler') continue;
-
             const home = creep.memory.room;
             const awayFromHome = home && creep.room && creep.room.name !== home;
             if (awayFromHome && !this.isRemoteMission(m, home)) continue;
@@ -858,7 +717,7 @@ var managerTasks = {
                 // Harvest miners execute directly in role.miner.
                 break;
             case 'simple_harvest':
-                // Simple-harvest miners execute directly in role.miner.
+                // Simple-harvest miners execute directly in role.simpleHarvest.
                 break;
             case 'remote_harvest':
                 // Remote harvest miners execute directly in role.remoteHarvest.
@@ -887,9 +746,6 @@ var managerTasks = {
             case 'repair':
                 // Repair/fortify workers execute directly in role.worker from mission contract data.
                 break;
-            case 'decongest':
-                task = execDecongestTask({ creep, mission, room });
-                break;
             case 'dismantle':
                 task = execDismantleTask({ creep, mission, room });
                 break;
@@ -900,7 +756,7 @@ var managerTasks = {
                 task = execClaimTask({ creep, mission, room });
                 break;
             case 'scout':
-                task = execScoutTask({ creep, mission, room });
+                // Scout executes directly in role.scout.
                 break;
             case 'move2flag':
                 task = execRemoteMove2FlagTask({ creep, mission, room});

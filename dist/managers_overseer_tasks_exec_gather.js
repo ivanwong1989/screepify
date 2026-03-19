@@ -19,6 +19,7 @@ module.exports = function execGatherTask(ctx) {
     const allowedIds = options.allowedIds || null;
     const excludeIds = options.excludeIds || [];
     const preferNearestAvailable = !!options.preferNearestAvailable;
+    const disallowSourceHarvest = !!options.disallowSourceHarvest;
 
     if (allowedIds && allowedIds.length > 0) {
         const targets = allowedIds.map(id => helpers.getCachedObject(creep.room, id)).filter(t => t);
@@ -117,7 +118,7 @@ module.exports = function execGatherTask(ctx) {
         }
     }
 
-    if (creep.getActiveBodyparts(WORK) > 0) {
+    if (!disallowSourceHarvest && creep.getActiveBodyparts(WORK) > 0) {
         const source = creep.pos.findClosestByRange(cache.sourcesActive || []);
         if (source) {
             return { type: 'harvest', targetId: source.id };

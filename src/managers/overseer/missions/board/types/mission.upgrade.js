@@ -123,7 +123,7 @@ module.exports = {
 
         let upgradePriority = 50;
         let desiredWork = 15;
-        if (controller && controller.level < 3) desiredWork = 8;
+        if (controller && controller.level < 3) desiredWork = 15;
         let spawnAllowed = true;
 
         if (economyState === 'STOCKPILING') {

@@ -4,6 +4,7 @@ function getCandidateSpawnTier(candidate) {
     const homeRoom = candidate && candidate.homeRoom ? candidate.homeRoom : null;
 
     if (
+        role === 'simple_miner' ||
         role === 'miner' ||
         role === 'hauler' ||
         role === 'coreLaneHauler' ||
@@ -84,7 +85,7 @@ module.exports = {
         const homeSpawns = homeRoom ? homeRoom.find(FIND_MY_SPAWNS) : [];
         const remoteCandidates = candidates.filter(s => {
             if (s.room.name === candidate.homeRoom) return false;
-            if (candidate.role === 'miner') return false;
+            if (candidate.role === 'miner' || candidate.role === 'simple_miner') return false;
             if (s.room.energyAvailable < candidate.cost) return false;
             if (s.room._opState === 'EMERGENCY') return false;
 

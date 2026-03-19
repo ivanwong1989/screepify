@@ -129,7 +129,7 @@ var managerSpawner = {
             }
             return this.generateMilitaryBody(budget, mission.requirements.body);
         }
-        if (mission.archetype === 'miner') {
+        if (mission.archetype === 'miner' || mission.archetype === 'simple_miner') {
             // Mobile harvesters need extra mobility early (1W 1C 2M ratio per segment)
             if (mission && mission.data && mission.data.mode === 'mobile') {
                 return this.generateMobileMinerBody(budget);

@@ -16,6 +16,7 @@ function getContractSpawnTier(entry) {
     const contract = entry && entry.contract ? entry.contract : null;
     const role = contract && contract.role ? String(contract.role) : '';
     if (
+        role === 'simple_miner' ||
         role === 'miner' ||
         role === 'hauler' ||
         role === 'coreLaneHauler' ||
@@ -28,7 +29,7 @@ function getContractSpawnTier(entry) {
 }
 
 function isMiningRole(role) {
-    return role === 'miner' || role === 'remote_miner' || role === 'mineral_miner';
+    return role === 'simple_miner' || role === 'miner' || role === 'remote_miner' || role === 'mineral_miner';
 }
 
 function isHaulingRole(role) {
@@ -159,9 +160,14 @@ const spawnPlanner = {
 
         const hasMiners = myCreeps.some(c =>
             c &&
-            c.memory &&
-            (c.memory.role === 'miner' || c.memory.role === 'remote_miner' || c.memory.role === 'mineral_miner') &&
-            !c.spawning
+                c.memory &&
+                (
+                    c.memory.role === 'simple_miner' ||
+                    c.memory.role === 'miner' ||
+                    c.memory.role === 'remote_miner' ||
+                    c.memory.role === 'mineral_miner'
+                ) &&
+                !c.spawning
         );
         const hasHaulers = myCreeps.some(c =>
             c &&

@@ -15,6 +15,7 @@ const TRANSFER_BUFFER_TICKS = 2;
 const LONG_LANE_DAMP_START = 20;
 const LONG_LANE_DAMP_FACTOR = 0.65;
 const MAX_REMOTE_HAULER_CARRY_PARTS = 16;
+const MAX_REMOTE_HAULERS_PER_LANE = 2;
 const REMOTE_HAUL_PLAN_CACHE_TTL = 250;
 const REMOTE_HAUL_PLAN_STORE = 'remoteHaulPlan';
 const REMOTE_HAUL_REPLAN_INTERVAL = 97;
@@ -214,7 +215,10 @@ function buildLanePlan(planCtx) {
     const roundTrip = (effectivePathLen * 2) + TRANSFER_BUFFER_TICKS;
     const carryParts = Math.min(Math.max(1, Math.floor((planCtx.budget || 0) / 100)), MAX_REMOTE_HAULER_CARRY_PARTS);
     const requiredCarryParts = Math.ceil((ENERGY_PER_TICK * roundTrip) / 50);
-    const reqCount = Math.max(1, Math.ceil(requiredCarryParts / carryParts));
+    const reqCount = Math.max(
+        1,
+        Math.min(MAX_REMOTE_HAULERS_PER_LANE, Math.ceil(requiredCarryParts / carryParts))
+    );
 
     return {
         pickupId,
@@ -484,7 +488,7 @@ module.exports = {
         };
         mission.demand = {
             role: 'remote_hauler',
-            count: Math.max(0, 1 - mission.assigned.primary.length),
+            count: Math.max(0, plan.reqCount - mission.assigned.primary.length),
             bodyProfile: 'remote_hauler'
         };
         mission.data = {
@@ -531,7 +535,7 @@ module.exports = {
                 archetype: 'remote_hauler',
                 requiredCarry: 1,
                 minCount: 1,
-                maxCount: 1,
+                maxCount: MAX_REMOTE_HAULERS_PER_LANE,
                 maxCarryParts: MAX_REMOTE_HAULER_CARRY_PARTS,
                 spawnFromFleet: false
             },

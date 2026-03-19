@@ -2,7 +2,6 @@ const DEBUG_CATEGORIES = Object.freeze([
     'admiral',
     'general',
     'mission.build',
-    'mission.decongest',
     'mission.user.drainer',
     'mission.dismantle.flag',
     'mission.harvest',

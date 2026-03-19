@@ -78,6 +78,32 @@ function getMissionFortifyTargetHits(room, structure, existingTarget) {
     return target;
 }
 
+function getMiningContainerIdSet(intel) {
+    const ids = new Set();
+    const sources = intel && Array.isArray(intel.sources) ? intel.sources : [];
+    for (let i = 0; i < sources.length; i++) {
+        const id = sources[i] && sources[i].containerId ? sources[i].containerId : null;
+        if (id) ids.add(id);
+    }
+    return ids;
+}
+
+function getNonMiningContainerIds(room, intel) {
+    if (!room) return [];
+    const miningContainerIds = getMiningContainerIdSet(intel);
+    const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
+        ? intel.structures[STRUCTURE_CONTAINER]
+        : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
+
+    const ids = [];
+    for (let i = 0; i < containers.length; i++) {
+        const c = containers[i];
+        if (!c || !c.id || miningContainerIds.has(c.id)) continue;
+        ids.push(c.id);
+    }
+    return ids;
+}
+
 module.exports = {
     makeKey(context) {
         return missionKeys.makeRepairTargetKey(
@@ -217,6 +243,7 @@ module.exports = {
         };
         mission.data = {
             sourceIds: intel && Array.isArray(intel.allEnergySources) ? intel.allEnergySources.map(s => s.id) : [],
+            nonMiningContainerIds: getNonMiningContainerIds(room, intel),
             allowPartial: true,
             fortify,
             targetHits: Number.isFinite(mission.meta.targetHits) ? mission.meta.targetHits : null
@@ -246,6 +273,9 @@ module.exports = {
             targetId: mission.targetId,
             data: {
                 sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [],
+                nonMiningContainerIds: mission.data && Array.isArray(mission.data.nonMiningContainerIds)
+                    ? mission.data.nonMiningContainerIds
+                    : [],
                 fortify,
                 allowPartial: true,
                 targetHits: mission.data && Number.isFinite(mission.data.targetHits) ? mission.data.targetHits : null

@@ -32,6 +32,18 @@ module.exports = function execRepairTask(ctx) {
     }
 
     let task = null;
+    if (mission.data && Array.isArray(mission.data.nonMiningContainerIds) && mission.data.nonMiningContainerIds.length > 0) {
+        task = execGatherTask({
+            creep,
+            room,
+            options: {
+                allowedIds: mission.data.nonMiningContainerIds,
+                allowPartial: !!mission.data.allowPartial
+            }
+        });
+        if (task) return task;
+    }
+
     if (mission.data && mission.data.sourceId) {
         task = execGatherTask({ creep, room, options: { allowedIds: [mission.data.sourceId], allowPartial: !!mission.data.allowPartial } });
     } else {

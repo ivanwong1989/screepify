@@ -261,111 +261,8 @@ const overseerUtils = {
     },
 
     reassignWorkers: function(room, missions, intel) {
-        const creepsByMission = Object.create(null);
-        intel.myCreeps.forEach(c => {
-            const memory = c.memory || {};
-            const missionName = memory.missionName;
-            if (missionName) {
-                if (!creepsByMission[missionName]) creepsByMission[missionName] = [];
-                creepsByMission[missionName].push(c);
-            }
-        });
-
-        const missionsByName = Object.create(null);
-        missions.forEach(m => { missionsByName[m.name] = m; });
-
-        const moveCreeps = (fromMissionName, toMission, count) => {
-            if (!toMission || count <= 0) return 0;
-            const fromCreeps = creepsByMission[fromMissionName];
-            if (!fromCreeps || fromCreeps.length === 0) return 0;
-            let moved = 0;
-            const toCreeps = creepsByMission[toMission.name] || (creepsByMission[toMission.name] = []);
-            while (moved < count && fromCreeps.length > 0) {
-                const creep = fromCreeps.pop();
-                const memory = creep.memory || {};
-                memory.missionName = toMission.name;
-                delete memory.task;
-                memory.taskState = 'init';
-                const fromMission = missionsByName[fromMissionName];
-                if (fromMission && fromMission.census) fromMission.census.count--;
-                if (toMission.census) toMission.census.count++;
-                toCreeps.push(creep);
-                moved++;
-            }
-            return moved;
-        };
-
-        if (intel.constructionSites.length > 0) {
-            const buildMissions = missions.filter(m => m.type === 'build');
-            const upgradeMission = missionsByName['upgrade:controller'];
-            if (buildMissions.length > 0 && upgradeMission) {
-                const upgraders = creepsByMission['upgrade:controller'] || [];
-                let available = upgraders.length - 1;
-                if (available > 0) {
-                    const sortedBuilds = [...buildMissions].sort((a, b) => (b.priority || 0) - (a.priority || 0));
-                    for (const buildMission of sortedBuilds) {
-                        if (available <= 0) break;
-                        const required = this.getRequiredHeadcount(buildMission);
-                        const assigned = buildMission.census ? buildMission.census.count : 0;
-                        const deficit = Math.max(0, required - assigned);
-                        if (deficit <= 0) continue;
-                        const moved = moveCreeps('upgrade:controller', buildMission, Math.min(deficit, available));
-                        available -= moved;
-                    }
-                }
-            }
-        }
-
-        const parkingMission = missionsByName['decongest:parking'];
-        if (parkingMission && parkingMission.census && parkingMission.census.count > 0) {
-             const parkedCreeps = creepsByMission['decongest:parking'] || [];
-             let parkedTotal = parkedCreeps.length;
-             if (parkedTotal > 0) {
-                 const parkedByRole = Object.create(null);
-                 parkedCreeps.forEach(c => {
-                     const role = c.memory && c.memory.role;
-                     if (!role) return;
-                     if (!parkedByRole[role]) parkedByRole[role] = [];
-                     parkedByRole[role].push(c);
-                 });
-                 const sortedMissions = [...missions].sort((a, b) => b.priority - a.priority);
-                 for (const mission of sortedMissions) {
-                     if (parkedTotal === 0) break;
-                     if (mission.name === 'decongest:parking' || mission.type === 'hauler_fleet' || mission.type === 'remote_hauler_fleet' || mission.type === 'worker_fleet' || mission.type === 'remote_worker_fleet' || !mission.requirements) continue;
-                     const required = this.getRequiredHeadcount(mission);
-                     if (required <= 0) continue;
-                     const deficit = required - (mission.census ? mission.census.count : 0);
-                     if (deficit > 0) {
-                         const role = mission.requirements.archetype;
-                         const candidates = parkedByRole[role];
-                         if (!candidates || candidates.length === 0) continue;
-                         let movedCount = 0;
-                         const toCreeps = creepsByMission[mission.name] || (creepsByMission[mission.name] = []);
-                         while (movedCount < deficit && candidates.length > 0) {
-                             const creep = candidates.pop();
-                             const memory = creep.memory || {};
-                             memory.missionName = mission.name;
-                             delete memory.task;
-                             memory.taskState = 'init';
-                             if (parkingMission.census) parkingMission.census.count--;
-                             if (mission.census) mission.census.count++;
-                             toCreeps.push(creep);
-                             parkedTotal--;
-                             const list = creepsByMission['decongest:parking'];
-                             if (list) {
-                                 const index = list.indexOf(creep);
-                                 if (index !== -1) {
-                                     const last = list.length - 1;
-                                     if (index !== last) list[index] = list[last];
-                                     list.pop();
-                                 }
-                             }
-                             movedCount++;
-                         }
-                     }
-                 }
-             }
-        }
+        // Mission ownership is strict: no cross-mission reassignment here.
+        return;
     },
 
     getLiveBoardVisualMissions: function(room, contractMissions) {
@@ -591,23 +488,11 @@ const overseerUtils = {
                     const target = Game.getObjectById(id);
                     if (target) room.visual.text(`🔨 ${progress.short}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
                 });
-            } else if (m.type === 'decongest') {
-                if (m.targetIds) {
-                    m.targetIds.forEach(id => {
-                        const target = Game.getObjectById(id);
-                        if (target) room.visual.text(`🅿️`, target.pos.x, target.pos.y, { font: 0.5, color: '#ffffff', stroke: '#000000', strokeWidth: 0.15 });
-                    });
-                }
-                if (m.targetNames) {
-                    m.targetNames.forEach(name => {
-                        const target = Game.flags[name];
-                        if (target && target.pos.roomName === room.name) room.visual.text(`🅿️`, target.pos.x, target.pos.y, { font: 0.5, color: '#ffffff', stroke: '#000000', strokeWidth: 0.15 });
-                    });
-                }
             }
         });
     }
 };
 
 module.exports = overseerUtils;
+
 
