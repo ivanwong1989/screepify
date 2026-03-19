@@ -3,9 +3,6 @@ const missionRuntime = require('managers_overseer_missions_board_missionRuntime'
 
 const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
-const DIRECT_DELIVER_LOAD_RATIO = 0.8;
-const DIRECT_NO_PICKUP_GRACE_TICKS = 20;
-const LANE_NO_PICKUP_GRACE_TICKS = 120;
 
 function posKey(pos) {
     return pos ? `${pos.roomName}:${pos.x},${pos.y}` : '';
@@ -128,48 +125,14 @@ function getSinkTarget(creep, runtime, mission) {
     return containers.length > 0 ? containers[0] : null;
 }
 
-function findPickupTarget(creep, runtime, mission) {
-    if (!creep || !runtime) return null;
-    if (runtime.pickupId) {
-        const source = Game.getObjectById(runtime.pickupId);
-        if (source && source.store && (source.store[RESOURCE_ENERGY] || 0) > 0) {
-            return { obj: source, kind: 'store' };
-        }
-    }
-    const anchor = runtime.pickupPos;
-    if (anchor) {
-        const look = creep.room.lookForAt(LOOK_RESOURCES, anchor.x, anchor.y) || [];
-        let best = null;
-        for (let i = 0; i < look.length; i++) {
-            const res = look[i];
-            if (!res || res.resourceType !== RESOURCE_ENERGY || res.amount <= 0) continue;
-            if (!best || res.amount > best.amount) best = res;
-        }
-        if (best) return { obj: best, kind: 'drop' };
-        const nearby = anchor.findInRange(FIND_DROPPED_RESOURCES, 1, {
-            filter: r => r && r.resourceType === RESOURCE_ENERGY && r.amount > 0
-        });
-        if (nearby && nearby.length > 0) {
-            nearby.sort((a, b) => b.amount - a.amount);
-            if (nearby[0]) return { obj: nearby[0], kind: 'drop' };
-        }
-    }
-
-    // Fallback: for drop-mining, energy can appear on any source-adjacent tile, not only around the cached anchor.
-    const source = mission && mission.targetId ? Game.getObjectById(mission.targetId) : null;
-    if (source && source.pos) {
-        const aroundSource = source.pos.findInRange(FIND_DROPPED_RESOURCES, 1, {
-            filter: r => r && r.resourceType === RESOURCE_ENERGY && r.amount > 0
-        });
-        if (aroundSource && aroundSource.length > 0) {
-            aroundSource.sort((a, b) => {
-                if (b.amount !== a.amount) return b.amount - a.amount;
-                return creep.pos.getRangeTo(a.pos) - creep.pos.getRangeTo(b.pos);
-            });
-            return { obj: aroundSource[0], kind: 'drop' };
-        }
-    }
-    return null;
+function getPickupContainer(runtime, mission) {
+    const runtimePickupId = runtime && runtime.pickupId ? runtime.pickupId : null;
+    const missionPickupId = mission && mission.meta && mission.meta.pickupId ? mission.meta.pickupId : null;
+    const pickupId = runtimePickupId || missionPickupId;
+    if (!pickupId) return null;
+    const container = Game.getObjectById(pickupId);
+    if (!container || !container.store) return null;
+    return container;
 }
 
 function clearAssignment(creep) {
@@ -178,7 +141,6 @@ function clearAssignment(creep) {
     delete creep.memory.missionId;
     delete creep.memory.missionType;
     delete creep.memory.miningLaneState;
-    delete creep.memory.miningLaneNoPickupTicks;
 }
 
 module.exports = {
@@ -199,81 +161,19 @@ module.exports = {
         if (!creep.memory.miningLaneState) creep.memory.miningLaneState = STATE_LOAD;
         if ((creep.store[RESOURCE_ENERGY] || 0) <= 0) creep.memory.miningLaneState = STATE_LOAD;
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) creep.memory.miningLaneState = STATE_DELIVER;
-        if (!Number.isFinite(creep.memory.miningLaneNoPickupTicks)) creep.memory.miningLaneNoPickupTicks = 0;
 
         if (creep.memory.miningLaneState === STATE_LOAD) {
-            const pickup = findPickupTarget(creep, runtime, mission);
-            if (pickup) creep.memory.miningLaneNoPickupTicks = 0;
-
-            if (pickup && pickup.obj && creep.pos.inRangeTo(pickup.obj, 1)) {
-                let code = ERR_INVALID_TARGET;
-                if (pickup.kind === 'store') {
-                    code = creep.withdraw(pickup.obj, RESOURCE_ENERGY);
-                } else {
-                    code = creep.pickup(pickup.obj);
-                }
-                debugLog(creep, mission, runtime, 'LOAD_PICKUP_ATTEMPT', `kind=${pickup.kind} target=${pickup.obj.id || '-'} code=${code}`);
-                if (creep.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) {
-                    creep.memory.miningLaneState = STATE_DELIVER;
-                    debugLog(creep, mission, runtime, 'LOAD_FULL_SWITCH_TO_DELIVER');
-                }
+            const pickup = getPickupContainer(runtime, mission);
+            if (!pickup) {
+                debugLog(creep, mission, runtime, 'LOAD_NO_PICKUP_CONTAINER');
                 return;
             }
 
             const carried = creep.store[RESOURCE_ENERGY] || 0;
-            if (!pickup && carried > 0) {
-                const capacity = Math.max(1, creep.store.getCapacity(RESOURCE_ENERGY) || 0);
-                const loadRatio = carried / capacity;
-                creep.memory.miningLaneNoPickupTicks = (creep.memory.miningLaneNoPickupTicks || 0) + 1;
-                const waited = creep.memory.miningLaneNoPickupTicks;
-
-                if (laneMode) {
-                    // Lane haulers should prefer full loads to avoid small-payload churn.
-                    if (waited >= LANE_NO_PICKUP_GRACE_TICKS) {
-                        creep.memory.miningLaneState = STATE_DELIVER;
-                        debugLog(
-                            creep,
-                            mission,
-                            runtime,
-                            'LOAD_NO_PICKUP_SWITCH_TO_DELIVER',
-                            `carried=${carried} ratio=${loadRatio.toFixed(2)} waited=${waited} mode=lane_grace`
-                        );
-                        return;
-                    }
-                }
-
-                if (!laneMode) {
-                    const shouldDeliver =
-                        loadRatio >= DIRECT_DELIVER_LOAD_RATIO ||
-                        waited >= DIRECT_NO_PICKUP_GRACE_TICKS;
-                    if (shouldDeliver) {
-                        creep.memory.miningLaneState = STATE_DELIVER;
-                        debugLog(
-                            creep,
-                            mission,
-                            runtime,
-                            'LOAD_NO_PICKUP_SWITCH_TO_DELIVER',
-                            `carried=${carried} ratio=${loadRatio.toFixed(2)} waited=${waited}`
-                        );
-                        return;
-                    }
-                }
-            }
-
-            if (!pickup && carried <= 0 && !laneMode && mission && mission.targetId) {
-                creep.memory.miningLaneNoPickupTicks = (creep.memory.miningLaneNoPickupTicks || 0) + 1;
-                const source = Game.getObjectById(mission.targetId);
-                if (source && source.pos && !creep.pos.inRangeTo(source.pos, 1)) {
-                    const moveCode = creep.moveTo(source.pos, { range: 1, reusePath: 6 });
-                    debugLog(
-                        creep,
-                        mission,
-                        runtime,
-                        'LOAD_NO_PICKUP_MOVE_TO_SOURCE',
-                        `source=${source.id} code=${moveCode}`
-                    );
-                    return;
-                }
+            if (carried > 0 && (pickup.store[RESOURCE_ENERGY] || 0) <= 0) {
+                creep.memory.miningLaneState = STATE_DELIVER;
+                debugLog(creep, mission, runtime, 'LOAD_CONTAINER_EMPTY_SWITCH_TO_DELIVER', `carried=${carried}`);
+                return;
             }
 
             if (laneMode) {
@@ -291,22 +191,26 @@ module.exports = {
                 }
             }
 
-            if (runtime.pickupPos && !creep.pos.inRangeTo(runtime.pickupPos, 1)) {
-                const moveCode = creep.moveTo(runtime.pickupPos, { range: 1, reusePath: laneMode ? 3 : 8 });
+            if (!creep.pos.inRangeTo(pickup, 1)) {
+                const moveCode = creep.moveTo(pickup, { range: 1, reusePath: laneMode ? 3 : 8 });
                 debugLog(
                     creep,
                     mission,
                     runtime,
                     'LOAD_AT_SOURCE_MOVE_TO_PICKUP',
-                    `pickupPos=${runtime.pickupPos.roomName}:${runtime.pickupPos.x},${runtime.pickupPos.y} code=${moveCode}`
+                    `pickupId=${pickup.id} code=${moveCode}`
                 );
                 return;
             }
-            debugLog(creep, mission, runtime, 'LOAD_NO_PICKUP_SEEN');
+
+            const withdrawCode = creep.withdraw(pickup, RESOURCE_ENERGY);
+            debugLog(creep, mission, runtime, 'LOAD_PICKUP_ATTEMPT', `kind=store target=${pickup.id} code=${withdrawCode}`);
+            if (creep.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) {
+                creep.memory.miningLaneState = STATE_DELIVER;
+                debugLog(creep, mission, runtime, 'LOAD_FULL_SWITCH_TO_DELIVER');
+            }
             return;
         }
-
-        creep.memory.miningLaneNoPickupTicks = 0;
 
         const sink = getSinkTarget(creep, runtime, mission);
         if (!sink) {

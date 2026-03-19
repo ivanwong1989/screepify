@@ -4,20 +4,14 @@ const missionClasses = require('managers_overseer_missions_board_missionClassifi
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
-const HARVEST_TRAVEL_CACHE_TTL = 200;
-const HARVEST_TRAVEL_STORE = 'harvestTravel';
-const HARVEST_PLAN_CACHE_TTL = 250;
-const HARVEST_PLAN_STORE = 'harvestPlan';
-const HARVEST_PLAN_REPLAN_INTERVAL = 101;
+const SIMPLE_HARVEST_TRAVEL_CACHE_TTL = 200;
+const SIMPLE_HARVEST_TRAVEL_STORE = 'simpleHarvestTravel';
+const SIMPLE_HARVEST_PLAN_CACHE_TTL = 250;
+const SIMPLE_HARVEST_PLAN_STORE = 'simpleHarvestPlan';
+const SIMPLE_HARVEST_REPLAN_INTERVAL = 101;
 
 function getSourceAnchorPos(room, source) {
     if (!room || !source || !source.pos) return null;
-
-    const containerId = (source && source.containerId) || null;
-    if (containerId) {
-        const container = Game.getObjectById(containerId);
-        if (container && container.pos) return container.pos;
-    }
 
     const terrain = room.getTerrain();
     let best = null;
@@ -62,23 +56,15 @@ function estimateTravelTicks(pathLen, bodyLen, moveParts) {
     return pathLen * ticksPerStep;
 }
 
-function estimateMinerStatsForPlanning(budget, mode) {
-    if (mode === 'mobile') {
-        const segments = Math.max(1, Math.floor((budget || 0) / 250));
-        const work = Math.min(5, segments);
-        const move = Math.max(2, segments * 2);
-        const carry = Math.max(1, segments);
-        return { work, move, carry, bodyLen: work + move + carry };
-    }
-
-    const safeBudget = Math.max(200, budget || 0);
-    const work = Math.max(1, Math.min(7, 1 + Math.floor((safeBudget - 200) / 100)));
-    const carry = 1;
-    const move = 1;
-    return { work, move, carry, bodyLen: work + carry + move };
+function estimateMobileMinerStats(budget) {
+    const segments = Math.max(1, Math.floor((budget || 0) / 250));
+    const work = Math.min(5, segments);
+    const move = Math.max(2, segments * 2);
+    const carry = Math.max(1, segments);
+    return { work, move, carry, bodyLen: work + move + carry };
 }
 
-function getHarvestTravelEstimate(room, spawns, source, archStats) {
+function getTravelEstimate(room, spawns, source, archStats) {
     if (!room || !source || !source.id || !spawns || spawns.length === 0) {
         return {
             sourceDistance: 0,
@@ -88,7 +74,7 @@ function getHarvestTravelEstimate(room, spawns, source, archStats) {
         };
     }
 
-    const store = heap.getStore(HARVEST_TRAVEL_STORE, { ttl: HARVEST_TRAVEL_CACHE_TTL });
+    const store = heap.getStore(SIMPLE_HARVEST_TRAVEL_STORE, { ttl: SIMPLE_HARVEST_TRAVEL_CACHE_TTL });
     const cacheKey = `${room.name}:${source.id}`;
     let cached = store[cacheKey];
 
@@ -157,7 +143,7 @@ function getMiningContainerIdSet(intel) {
     return ids;
 }
 
-function hasNonMiningContainers(room, intel) {
+function hasNonMiningContainer(room, intel) {
     if (!room) return false;
     const miningContainerIds = getMiningContainerIdSet(intel);
     const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
@@ -172,24 +158,66 @@ function hasNonMiningContainers(room, intel) {
     return false;
 }
 
-function shouldActivateHarvest(room, intel) {
+function shouldActivateSimpleHarvest(room, intel) {
     if (!room || !room.controller || !room.controller.my) return false;
-    if (room.storage) return true;
-    return hasNonMiningContainers(room, intel);
+    if (room.storage) return false;
+    return !hasNonMiningContainer(room, intel);
 }
 
-function computeHarvestMode(sourceInfo) {
-    return (sourceInfo && sourceInfo.containerId) ? 'static' : 'static_drop';
-}
+function pickSimpleHarvestSource(room, intel) {
+    const sources = intel && Array.isArray(intel.sources)
+        ? intel.sources
+        : room.find(FIND_SOURCES).map(s => ({ id: s.id, pos: s.pos }));
+    if (!sources || sources.length <= 0) return null;
 
-function computeDropoffIds(mode, sourceInfo) {
-    if (mode === 'static') {
-        const ids = [];
-        if (sourceInfo && sourceInfo.linkId) ids.push(sourceInfo.linkId);
-        if (sourceInfo && sourceInfo.containerId) ids.push(sourceInfo.containerId);
-        return ids;
+    const spawns = (intel && intel.structures && intel.structures[STRUCTURE_SPAWN]) || room.find(FIND_MY_SPAWNS);
+    const anchorSpawn = spawns && spawns.length > 0 ? spawns[0] : null;
+
+    let best = null;
+    let bestRange = Infinity;
+
+    for (let i = 0; i < sources.length; i++) {
+        const source = sources[i];
+        if (!source || !source.id || !source.pos) continue;
+
+        const pos = source.pos instanceof RoomPosition
+            ? source.pos
+            : (source.pos.roomName ? new RoomPosition(source.pos.x, source.pos.y, source.pos.roomName) : null);
+        const range = (anchorSpawn && anchorSpawn.pos && pos && pos.roomName === room.name)
+            ? anchorSpawn.pos.getRangeTo(pos)
+            : Infinity;
+
+        if (!best || range < bestRange || (range === bestRange && String(source.id) < String(best.id))) {
+            best = source;
+            bestRange = range;
+        }
     }
-    return [];
+
+    return best;
+}
+
+function computeDropoffIds(room, intel) {
+    const spawns = (intel && intel.structures && intel.structures[STRUCTURE_SPAWN]) || room.find(FIND_MY_SPAWNS);
+    const extensions = (intel && intel.structures && intel.structures[STRUCTURE_EXTENSION]) || room.find(FIND_MY_STRUCTURES, {
+        filter: s => s.structureType === STRUCTURE_EXTENSION
+    });
+
+    const spawnIds = spawns
+        .filter(s => s && s.store && (s.store.getFreeCapacity(RESOURCE_ENERGY) || 0) > 0)
+        .map(s => s.id);
+    const extensionIds = extensions
+        .filter(e => e && e.store && (e.store.getFreeCapacity(RESOURCE_ENERGY) || 0) > 0)
+        .map(e => e.id);
+
+    const miningContainerIds = getMiningContainerIdSet(intel);
+    const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
+        ? intel.structures[STRUCTURE_CONTAINER]
+        : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
+    const nonMiningContainerIds = containers
+        .filter(c => c && c.id && !miningContainerIds.has(c.id) && c.store && (c.store.getFreeCapacity(RESOURCE_ENERGY) || 0) > 0)
+        .map(c => c.id);
+
+    return [...spawnIds, ...extensionIds, ...nonMiningContainerIds];
 }
 
 function updateAssignmentState(mission) {
@@ -205,19 +233,12 @@ function updateAssignmentState(mission) {
 function buildSpawnSlots(roomName, sourceId, maxCount) {
     const slots = [];
     for (let i = 0; i < Math.max(1, maxCount || 1); i++) {
-        slots.push(`harvest:${roomName}:${sourceId}:${i}`);
+        slots.push(`simpleHarvest:${roomName}:${sourceId}:${i}`);
     }
     return slots;
 }
 
-function buildStaticRolesBySlot(mode, maxCount) {
-    if (mode !== 'static' || maxCount <= 1) return {};
-    const roles = { '0': 'container' };
-    for (let i = 1; i < maxCount; i++) roles[String(i)] = 'overflow';
-    return roles;
-}
-
-function buildHarvestGoalContract(mission) {
+function buildGoalContract(mission) {
     const targetRoom = mission.targetRoom || mission.sponsorRoom;
     return {
         kind: 'service',
@@ -240,7 +261,7 @@ function buildHarvestGoalContract(mission) {
 
 function ensureGoalContract(mission) {
     if (!mission.goal || typeof mission.goal !== 'object') {
-        mission.goal = buildHarvestGoalContract(mission);
+        mission.goal = buildGoalContract(mission);
         return;
     }
     mission.goal.kind = mission.goal.kind || 'service';
@@ -259,29 +280,22 @@ function ensureGoalContract(mission) {
     mission.goal.completion = mission.goal.completion || 'never';
 }
 
-function buildPlanSignature(roomName, sourceId, mode, containerId, linkId, maxCount, budget) {
+function buildPlanSignature(roomName, sourceId, dropoffIds, budget) {
     const budgetBucket = Math.max(1, Math.floor((budget || 0) / 100));
-    return [
-        roomName,
-        sourceId,
-        mode,
-        containerId || '-',
-        linkId || '-',
-        maxCount,
-        budgetBucket
-    ].join(':');
+    const dropoffSig = Array.isArray(dropoffIds) && dropoffIds.length > 0 ? dropoffIds.join(',') : '-';
+    return [roomName, sourceId, dropoffSig, budgetBucket].join(':');
 }
 
-function getCachedHarvestPlan(signature) {
-    const store = heap.getStore(HARVEST_PLAN_STORE, { ttl: HARVEST_PLAN_CACHE_TTL });
+function getCachedPlan(signature) {
+    const store = heap.getStore(SIMPLE_HARVEST_PLAN_STORE, { ttl: SIMPLE_HARVEST_PLAN_CACHE_TTL });
     const cached = store[signature];
     if (!cached || !Number.isFinite(cached.tick)) return null;
-    if ((Game.time - cached.tick) > HARVEST_PLAN_REPLAN_INTERVAL) return null;
+    if ((Game.time - cached.tick) > SIMPLE_HARVEST_REPLAN_INTERVAL) return null;
     return cached;
 }
 
-function setCachedHarvestPlan(signature, plan) {
-    const store = heap.getStore(HARVEST_PLAN_STORE, { ttl: HARVEST_PLAN_CACHE_TTL });
+function setCachedPlan(signature, plan) {
+    const store = heap.getStore(SIMPLE_HARVEST_PLAN_STORE, { ttl: SIMPLE_HARVEST_PLAN_CACHE_TTL });
     store[signature] = Object.assign({ tick: Game.time }, plan);
 }
 
@@ -290,7 +304,7 @@ function shouldReplanMission(mission, signature) {
     if (!meta.planSignature) return true;
     if (meta.planSignature !== signature) return true;
     if (!Number.isFinite(meta.planTick)) return true;
-    if ((Game.time - meta.planTick) >= HARVEST_PLAN_REPLAN_INTERVAL) return true;
+    if ((Game.time - meta.planTick) >= SIMPLE_HARVEST_REPLAN_INTERVAL) return true;
     return !Array.isArray(meta.dropoffIds);
 }
 
@@ -308,10 +322,9 @@ function updateProgressState(mission, planState) {
 }
 
 function buildFreshPlan(planCtx) {
-    const dropoffIds = computeDropoffIds(planCtx.mode, planCtx.sourceInfo);
-    const archStats = estimateMinerStatsForPlanning(planCtx.budget, planCtx.mode);
+    const archStats = estimateMobileMinerStats(planCtx.budget);
     const spawns = (planCtx.intel && planCtx.intel.structures && planCtx.intel.structures[STRUCTURE_SPAWN]) || planCtx.room.find(FIND_MY_SPAWNS);
-    const travel = planCtx.source ? getHarvestTravelEstimate(planCtx.room, spawns, planCtx.source, archStats) : {
+    const travel = planCtx.source ? getTravelEstimate(planCtx.room, spawns, planCtx.source, archStats) : {
         sourceDistance: 0,
         travelTicks: 0,
         preSpawnLeadTicks: 0,
@@ -319,16 +332,16 @@ function buildFreshPlan(planCtx) {
     };
 
     return {
-        mode: planCtx.mode,
-        dropoffIds,
-        fallback: 'none',
+        mode: 'mobile',
+        dropoffIds: planCtx.dropoffIds,
+        fallback: 'upgrade',
         dropoffRange: 1,
         sourceDistance: travel.sourceDistance,
         travelTicks: travel.travelTicks,
         preSpawnLeadTicks: travel.preSpawnLeadTicks,
         travelFromSpawnId: travel.travelFromSpawnId,
-        staticRolesBySlot: buildStaticRolesBySlot(planCtx.mode, planCtx.maxCount),
-        targetWork: 7,
+        staticRolesBySlot: {},
+        targetWork: 5,
         maxCount: planCtx.maxCount
     };
 }
@@ -342,17 +355,15 @@ function refreshMissionData(mission, runtimeCtx) {
 
     const source = Game.getObjectById(mission.targetId);
     const sourceInfo = getSourceInfo(intel, mission.targetId);
-    const mode = computeHarvestMode(sourceInfo || { id: mission.targetId });
-    const containerId = sourceInfo && sourceInfo.containerId ? sourceInfo.containerId : null;
-    const linkId = sourceInfo && sourceInfo.linkId ? sourceInfo.linkId : null;
-    const maxCount = Math.max(1, (sourceInfo && sourceInfo.availableSpaces) || 1);
+    const maxCount = 1;
     const budget = context && Number.isFinite(context.budget) ? context.budget : room.energyCapacityAvailable;
-    const planSignature = buildPlanSignature(room.name, mission.targetId, mode, containerId, linkId, maxCount, budget);
+    const dropoffIds = computeDropoffIds(room, intel);
+    const planSignature = buildPlanSignature(room.name, mission.targetId, dropoffIds, budget);
 
     let planState = 'cached';
     let plan = null;
     if (shouldReplanMission(mission, planSignature)) {
-        const cachedPlan = getCachedHarvestPlan(planSignature);
+        const cachedPlan = getCachedPlan(planSignature);
         if (cachedPlan) {
             plan = cachedPlan;
             planState = 'cache_hit';
@@ -362,25 +373,25 @@ function refreshMissionData(mission, runtimeCtx) {
                 intel,
                 source,
                 sourceInfo,
-                mode,
                 budget,
+                dropoffIds,
                 maxCount
             });
-            setCachedHarvestPlan(planSignature, plan);
+            setCachedPlan(planSignature, plan);
             planState = 'replanned';
         }
     } else {
         plan = {
-            mode: mission.meta && mission.meta.mode ? mission.meta.mode : mode,
-            dropoffIds: mission.meta && Array.isArray(mission.meta.dropoffIds) ? mission.meta.dropoffIds : [],
-            fallback: mission.meta && mission.meta.fallback ? mission.meta.fallback : 'none',
+            mode: 'mobile',
+            dropoffIds: mission.meta && Array.isArray(mission.meta.dropoffIds) ? mission.meta.dropoffIds : dropoffIds,
+            fallback: 'upgrade',
             dropoffRange: mission.meta && Number.isFinite(mission.meta.dropoffRange) ? mission.meta.dropoffRange : 1,
             sourceDistance: mission.meta && Number.isFinite(mission.meta.sourceDistance) ? mission.meta.sourceDistance : 0,
             travelTicks: mission.meta && Number.isFinite(mission.meta.travelTicks) ? mission.meta.travelTicks : 0,
             preSpawnLeadTicks: mission.meta && Number.isFinite(mission.meta.preSpawnLeadTicks) ? mission.meta.preSpawnLeadTicks : 0,
             travelFromSpawnId: mission.meta && mission.meta.travelFromSpawnId ? mission.meta.travelFromSpawnId : null,
-            staticRolesBySlot: mission.meta && mission.meta.staticRolesBySlot ? mission.meta.staticRolesBySlot : {},
-            targetWork: mission.meta && Number.isFinite(mission.meta.targetWork) ? mission.meta.targetWork : 7,
+            staticRolesBySlot: {},
+            targetWork: mission.meta && Number.isFinite(mission.meta.targetWork) ? mission.meta.targetWork : 5,
             maxCount
         };
     }
@@ -393,11 +404,11 @@ function refreshMissionData(mission, runtimeCtx) {
     };
     mission.spawnSlots = buildSpawnSlots(room.name, mission.targetId, maxCount);
     mission.meta = mission.meta || {};
-    mission.meta.containerId = containerId;
-    mission.meta.linkId = linkId;
-    mission.meta.mode = plan.mode;
+    mission.meta.containerId = null;
+    mission.meta.linkId = null;
+    mission.meta.mode = 'mobile';
     mission.meta.dropoffIds = plan.dropoffIds;
-    mission.meta.fallback = plan.fallback;
+    mission.meta.fallback = 'upgrade';
     mission.meta.dropoffRange = plan.dropoffRange;
     mission.meta.sourceDistance = plan.sourceDistance;
     mission.meta.travelTicks = plan.travelTicks;
@@ -405,7 +416,7 @@ function refreshMissionData(mission, runtimeCtx) {
     mission.meta.travelFromSpawnId = plan.travelFromSpawnId;
     mission.meta.maxCount = maxCount;
     mission.meta.targetWork = plan.targetWork;
-    mission.meta.staticRolesBySlot = plan.staticRolesBySlot;
+    mission.meta.staticRolesBySlot = {};
     mission.meta.planSignature = planSignature;
     if (planState !== 'cached') mission.meta.planTick = Game.time;
     mission.meta.lastKnownRoom = room.name;
@@ -414,40 +425,37 @@ function refreshMissionData(mission, runtimeCtx) {
     } else if (sourceInfo && sourceInfo.pos && sourceInfo.pos.roomName) {
         mission.meta.sourcePos = { x: sourceInfo.pos.x, y: sourceInfo.pos.y, roomName: sourceInfo.pos.roomName };
     }
+
     mission.demand = {
         role: 'miner',
         count: Math.max(0, 1 - mission.assigned.primary.length),
-        bodyProfile: 'miner_static'
+        bodyProfile: 'miner_mobile'
     };
+
     return planState;
 }
 
 module.exports = {
     makeKey(context) {
         const roomName = context.targetRoom || context.sponsorRoom;
-        return missionKeys.makeHarvestKey(roomName, context.sourceId);
+        return missionKeys.makeUserMissionKey(roomName, 'simpleHarvest', context.sourceId, 'source');
     },
 
     reconcileRoom({ room, intel, context, missionBoard }) {
         if (!room || !missionBoard) return;
-        if (!missionThrottle.shouldRunReconcile('harvest', room.name, Game.time)) return;
-        if (!shouldActivateHarvest(room, intel)) return;
+        if (!missionThrottle.shouldRunReconcile('simpleHarvest', room.name, Game.time)) return;
+        if (!shouldActivateSimpleHarvest(room, intel)) return;
 
-        const sources = intel && Array.isArray(intel.sources)
-            ? intel.sources
-            : room.find(FIND_SOURCES).map(s => ({ id: s.id, availableSpaces: 1 }));
+        const source = pickSimpleHarvestSource(room, intel);
+        if (!source || !source.id) return;
 
-        for (let i = 0; i < sources.length; i++) {
-            const source = sources[i];
-            if (!source || !source.id) continue;
-            missionBoard.createMission('harvest', {
-                sponsorRoom: room.name,
-                targetRoom: room.name,
-                sourceId: source.id,
-                availableSpaces: source.availableSpaces,
-                priority: context && context.opState === 'EMERGENCY' ? 1000 : 100
-            }, { room, intel, context });
-        }
+        missionBoard.createMission('simpleHarvest', {
+            sponsorRoom: room.name,
+            targetRoom: room.name,
+            sourceId: source.id,
+            availableSpaces: source.availableSpaces,
+            priority: context && context.opState === 'EMERGENCY' ? 1000 : 120
+        }, { room, intel, context });
     },
 
     create(context) {
@@ -455,19 +463,19 @@ module.exports = {
         return {
             id: this.makeKey(context),
             key: this.makeKey(context),
-            type: 'harvest',
+            type: 'simpleHarvest',
             class: missionClasses.SERVICE,
             state: missionStates.ACTIVE,
             sponsorRoom: context.sponsorRoom,
             targetRoom: context.targetRoom || context.sponsorRoom,
-            priority: Number.isFinite(context.priority) ? context.priority : 100,
+            priority: Number.isFinite(context.priority) ? context.priority : 120,
             createdTick: now,
             updatedTick: now,
             lastCheckedTick: 0,
             lastProgressTick: now,
             targetId: context.sourceId,
             assigned: { primary: [], support: [] },
-            demand: { role: 'miner', count: 1, bodyProfile: 'miner_static' },
+            demand: { role: 'miner', count: 1, bodyProfile: 'miner_mobile' },
             goal: {
                 kind: 'service',
                 target: {
@@ -493,7 +501,7 @@ module.exports = {
                 lastPlanTick: 0
             },
             meta: {
-                missionName: `harvest:${context.sourceId}`
+                missionName: `simpleHarvest:${context.sourceId}`
             },
             statusReason: null
         };
@@ -506,7 +514,7 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
-        if (!shouldActivateHarvest(room, runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null)) return false;
+        if (!shouldActivateSimpleHarvest(room, runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null)) return false;
 
         const source = Game.getObjectById(mission.targetId);
         return !!source;
@@ -529,7 +537,7 @@ module.exports = {
         return {
             role: 'miner',
             count: needed,
-            priority: mission.priority || 80
+            priority: mission.priority || 90
         };
     },
 
@@ -539,37 +547,33 @@ module.exports = {
             ? new RoomPosition(mission.meta.sourcePos.x, mission.meta.sourcePos.y, mission.meta.sourcePos.roomName)
             : null;
         return {
-            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `harvest:${mission.targetId}`,
-            type: 'harvest',
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `simpleHarvest:${mission.targetId}`,
+            type: 'simple_harvest',
             archetype: 'miner',
             sourceId: mission.targetId,
             pos: sourcePos,
             requirements: mission.requirements || {
                 archetype: 'miner',
-                requiredWork: 7,
+                requiredWork: 5,
                 minCount: 1,
                 maxCount: 1
             },
             spawnSlots: mission.spawnSlots || buildSpawnSlots(roomName, mission.targetId, 1),
             data: {
                 sourceId: mission.targetId,
-                mode: mission.meta && mission.meta.mode ? mission.meta.mode : 'static_drop',
+                mode: 'mobile',
                 dropoffIds: mission.meta && Array.isArray(mission.meta.dropoffIds) ? mission.meta.dropoffIds : [],
-                fallback: mission.meta && mission.meta.fallback ? mission.meta.fallback : 'none',
-                containerId: mission.meta && mission.meta.containerId ? mission.meta.containerId : null,
+                fallback: 'upgrade',
+                containerId: null,
                 dropoffRange: mission.meta && Number.isFinite(mission.meta.dropoffRange) ? mission.meta.dropoffRange : 1,
-                staticRolesBySlot: mission.meta && mission.meta.staticRolesBySlot ? mission.meta.staticRolesBySlot : {},
+                staticRolesBySlot: {},
                 overflowPolicy: 'drop',
                 sourceDistance: mission.meta && Number.isFinite(mission.meta.sourceDistance) ? mission.meta.sourceDistance : 0,
                 travelTicks: mission.meta && Number.isFinite(mission.meta.travelTicks) ? mission.meta.travelTicks : 0,
                 preSpawnLeadTicks: mission.meta && Number.isFinite(mission.meta.preSpawnLeadTicks) ? mission.meta.preSpawnLeadTicks : 0,
                 travelFromSpawnId: mission.meta && mission.meta.travelFromSpawnId ? mission.meta.travelFromSpawnId : null
             },
-            priority: mission.priority || 100
+            priority: mission.priority || 120
         };
     }
 };
-
-
-
-

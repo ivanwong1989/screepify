@@ -8,7 +8,8 @@ function getCandidateSpawnTier(candidate) {
         role === 'hauler' ||
         role === 'coreLaneHauler' ||
         role === 'miningLaneHauler' ||
-        role === 'simpleHauler'
+        role === 'simpleHaulerCore' ||
+        role === 'simpleMiningHauler'
     ) return 0;
 
     const remoteByRole = role.indexOf('remote_') === 0;
@@ -175,3 +176,4 @@ module.exports = {
         }
     }
 };
+

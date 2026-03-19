@@ -218,7 +218,7 @@ const roleMiner = {
             return;
         }
 
-        if (mission.type !== 'harvest') {
+        if (mission.type !== 'harvest' && mission.type !== 'simple_harvest') {
             roleUniversal.run(creep);
             return;
         }

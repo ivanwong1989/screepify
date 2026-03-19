@@ -4,6 +4,11 @@ const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
 const TOWER_REFILL_MIN_FREE = 100;
 
+function logSimpleCoreRoleDebug(creep, message) {
+    if (typeof debug !== 'function' || !creep) return;
+    debug('mission.logistics', `[SimpleCoreRole] ${creep.name} ${message}`);
+}
+
 function getSimpleMission(homeRoomName) {
     if (!homeRoomName) return null;
     const live = missionBoard.listLiveByRoom(homeRoomName) || [];
@@ -50,31 +55,16 @@ function getRefillTargets(mission, room) {
     });
 }
 
-function getSinkTargets(mission, room) {
-    const fromMission = getObjectsByIds(mission && mission.data ? mission.data.sinkTargetIds : []);
-    const valid = fromMission.filter(s => s && s.store && (s.store.getFreeCapacity(RESOURCE_ENERGY) || 0) > 0);
-    if (valid.length > 0) return valid;
-
-    if (!room) return [];
-    const spawns = room.find(FIND_MY_SPAWNS);
-    if (!spawns || spawns.length <= 0) return [];
-    const containers = room.find(FIND_STRUCTURES, {
-        filter: s =>
-            s.structureType === STRUCTURE_CONTAINER &&
-            s.store &&
-            (s.store.getFreeCapacity(RESOURCE_ENERGY) || 0) > 0
-    });
-    return containers.filter(c => spawns.some(spawn => spawn.pos.getRangeTo(c.pos) <= 3));
-}
-
-function pickBestEnergySource(creep, mission, room) {
+function pickBestEnergySource(creep, mission, room, blockedSourceIds) {
     if (!creep || !room) return null;
+    const blocked = blockedSourceIds instanceof Set ? blockedSourceIds : new Set();
 
     const preferredIds = mission && mission.data && Array.isArray(mission.data.sourceIds)
         ? mission.data.sourceIds
         : [];
     const preferred = getObjectsByIds(preferredIds).filter(obj => {
         if (!obj) return false;
+        if (obj.id && blocked.has(obj.id)) return false;
         if (obj.store) return (obj.store[RESOURCE_ENERGY] || 0) > 0;
         if (obj.resourceType === RESOURCE_ENERGY && Number.isFinite(obj.amount)) return obj.amount > 0;
         return false;
@@ -82,22 +72,23 @@ function pickBestEnergySource(creep, mission, room) {
     if (preferred.length > 0) return creep.pos.findClosestByPath(preferred) || creep.pos.findClosestByRange(preferred);
 
     const dropped = room.find(FIND_DROPPED_RESOURCES, {
-        filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
+        filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0 && (!r.id || !blocked.has(r.id))
     });
     if (dropped.length > 0) return creep.pos.findClosestByPath(dropped) || creep.pos.findClosestByRange(dropped);
 
     const tombstones = room.find(FIND_TOMBSTONES, {
-        filter: t => t.store && (t.store[RESOURCE_ENERGY] || 0) > 0
+        filter: t => t.store && (t.store[RESOURCE_ENERGY] || 0) > 0 && (!t.id || !blocked.has(t.id))
     });
     if (tombstones.length > 0) return creep.pos.findClosestByPath(tombstones) || creep.pos.findClosestByRange(tombstones);
 
     const ruins = room.find(FIND_RUINS, {
-        filter: r => r.store && (r.store[RESOURCE_ENERGY] || 0) > 0
+        filter: r => r.store && (r.store[RESOURCE_ENERGY] || 0) > 0 && (!r.id || !blocked.has(r.id))
     });
     if (ruins.length > 0) return creep.pos.findClosestByPath(ruins) || creep.pos.findClosestByRange(ruins);
 
     const structures = room.find(FIND_STRUCTURES, {
         filter: s => {
+            if (s.id && blocked.has(s.id)) return false;
             if (!s.store) return false;
             if ((s.store[RESOURCE_ENERGY] || 0) <= 0) return false;
             return (
@@ -125,17 +116,21 @@ module.exports = {
 
         const homeRoomName = creep.memory.room || (creep.room && creep.room.name);
         const mission = getSimpleMission(homeRoomName);
-        const desiredCount = mission && mission.meta && Number.isFinite(mission.meta.desiredCount)
-            ? mission.meta.desiredCount
-            : 0;
-        if (!mission || desiredCount <= 0) {
-            creep.memory.role = 'hauler';
+        if (!mission) {
+            logSimpleCoreRoleDebug(
+                creep,
+                `unassign noMission home=${homeRoomName || '-'} oldMissionName=${creep.memory.missionName || '-'} ` +
+                `state=${creep.memory.simpleHaulerState || '-'} carry=${creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0}`
+            );
             delete creep.memory.missionName;
             delete creep.memory.task;
             delete creep.memory.taskState;
             delete creep.memory.simpleHaulerState;
             return;
         }
+        const desiredCount = mission && mission.meta && Number.isFinite(mission.meta.desiredCount)
+            ? mission.meta.desiredCount
+            : 0;
 
         if (creep.room.name !== homeRoomName) {
             moveHome(creep);
@@ -145,6 +140,18 @@ module.exports = {
         if (!creep.memory.simpleHaulerState) creep.memory.simpleHaulerState = STATE_LOAD;
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) <= 0) creep.memory.simpleHaulerState = STATE_LOAD;
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) creep.memory.simpleHaulerState = STATE_DELIVER;
+        const refillTargets = getRefillTargets(mission, creep.room);
+        const blockedSourceIds = new Set();
+
+        if (desiredCount <= 0 && creep.store.getUsedCapacity(RESOURCE_ENERGY) <= 0) {
+            logSimpleCoreRoleDebug(
+                creep,
+                `idle desiredZero mission=${mission.meta && mission.meta.missionName ? mission.meta.missionName : '-'}`
+            );
+            const anchor = creep.room.find(FIND_MY_SPAWNS)[0];
+            if (anchor) creep.moveTo(anchor, { range: 2, reusePath: 10 });
+            return;
+        }
 
         // Keep cargo clean; simple haulers should only carry energy.
         for (const type in creep.store) {
@@ -160,7 +167,7 @@ module.exports = {
         }
 
         if (creep.memory.simpleHaulerState === STATE_LOAD) {
-            const source = pickBestEnergySource(creep, mission, creep.room);
+            const source = pickBestEnergySource(creep, mission, creep.room, blockedSourceIds);
             if (!source) {
                 const anchor = creep.room.find(FIND_MY_SPAWNS)[0];
                 if (anchor) creep.moveTo(anchor, { range: 2, reusePath: 7 });
@@ -181,15 +188,13 @@ module.exports = {
             return;
         }
 
-        const refillTargets = getRefillTargets(mission, creep.room);
-        const targetPool = refillTargets.length > 0 ? refillTargets : getSinkTargets(mission, creep.room);
-        if (targetPool.length <= 0) {
+        if (refillTargets.length <= 0) {
             const anchor = creep.room.find(FIND_MY_SPAWNS)[0];
             if (anchor) creep.moveTo(anchor, { range: 2, reusePath: 7 });
             return;
         }
 
-        const target = creep.pos.findClosestByPath(targetPool) || creep.pos.findClosestByRange(targetPool);
+        const target = creep.pos.findClosestByPath(refillTargets) || creep.pos.findClosestByRange(refillTargets);
         if (!target) return;
         const code = creep.transfer(target, RESOURCE_ENERGY);
         if (code === ERR_NOT_IN_RANGE) creep.moveTo(target, { range: 1, reusePath: 5 });

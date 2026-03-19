@@ -13,7 +13,8 @@ var roleAssault = require('role_role.assault');
 var roleTower = require('role_role.tower');
 var roleCoreLaneHauler = require('role_role.coreLaneHauler');
 var roleMiningLaneHauler = require('role_role.miningLaneHauler');
-var roleSimpleHauler = require('role_role.simpleHauler');
+var roleSimpleHaulerCore = require('role_role.simpleHaulerCore');
+var roleSimpleMiningHauler = require('role_role.simpleMiningHauler');
 var roleWorker = require('role_role.worker');
 var roleUpgrader = require('role_role.upgrader');
 var roleMiner = require('role_role.miner');
@@ -174,7 +175,8 @@ module.exports.loop = function() {
                 'universal',
                 'coreLaneHauler',
                 'miningLaneHauler',
-                'simpleHauler',
+                'simpleHaulerCore',
+                'simpleMiningHauler',
                 'miner',
                 'remote_miner',
                 'mineral_miner',
@@ -199,8 +201,10 @@ module.exports.loop = function() {
                     roleCoreLaneHauler.run(creep);
                 } else if (creep.memory.role === 'miningLaneHauler') {
                     roleMiningLaneHauler.run(creep);
-                } else if (creep.memory.role === 'simpleHauler') {
-                    roleSimpleHauler.run(creep);
+                } else if (creep.memory.role === 'simpleHaulerCore') {
+                    roleSimpleHaulerCore.run(creep);
+                } else if (creep.memory.role === 'simpleMiningHauler') {
+                    roleSimpleMiningHauler.run(creep);
                 } else if (creep.memory.role === 'upgrader') {
                     roleUpgrader.run(creep);
                 } else if (creep.memory.role === 'worker') {
@@ -226,3 +230,4 @@ module.exports.loop = function() {
 
     //});
 };
+

@@ -147,100 +147,49 @@ function getSourceInfo(intel, sourceId) {
     return null;
 }
 
-function getEarlyGameMobileSourceId(room, intel) {
-    if (!room || !intel || !Array.isArray(intel.sources) || intel.sources.length <= 0) return null;
-    const spawns = (intel.structures && intel.structures[STRUCTURE_SPAWN]) || room.find(FIND_MY_SPAWNS);
-    const anchorSpawn = spawns && spawns.length > 0 ? spawns[0] : null;
-
-    let best = null;
-    let bestRange = Infinity;
-    for (let i = 0; i < intel.sources.length; i++) {
-        const source = intel.sources[i];
-        if (!source || !source.id) continue;
-        const pos = source.pos && source.pos.roomName
-            ? new RoomPosition(source.pos.x, source.pos.y, source.pos.roomName)
-            : null;
-        const range = (anchorSpawn && anchorSpawn.pos && pos && pos.roomName === room.name)
-            ? anchorSpawn.pos.getRangeTo(pos)
-            : Infinity;
-
-        if (
-            !best ||
-            range < bestRange ||
-            (range === bestRange && String(source.id) < String(best.id))
-        ) {
-            best = source;
-            bestRange = range;
-        }
+function getMiningContainerIdSet(intel) {
+    const ids = new Set();
+    const sources = intel && Array.isArray(intel.sources) ? intel.sources : [];
+    for (let i = 0; i < sources.length; i++) {
+        const id = sources[i] && sources[i].containerId ? sources[i].containerId : null;
+        if (id) ids.add(id);
     }
-
-    return best ? best.id : null;
+    return ids;
 }
 
-function shouldUseEarlySplit(room, intel) {
-    if (!room || !intel || !Array.isArray(intel.sources) || intel.sources.length <= 0) return false;
-    if (room.storage) return false;
-    for (let i = 0; i < intel.sources.length; i++) {
-        const source = intel.sources[i];
-        if (source && source.containerId) return false;
+function hasNonMiningContainers(room, intel) {
+    if (!room) return false;
+    const miningContainerIds = getMiningContainerIdSet(intel);
+    const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
+        ? intel.structures[STRUCTURE_CONTAINER]
+        : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
+
+    for (let i = 0; i < containers.length; i++) {
+        const c = containers[i];
+        if (!c || !c.id) continue;
+        if (!miningContainerIds.has(c.id)) return true;
     }
-    return true;
+    return false;
 }
 
-function computeHarvestMode(room, intel, sourceInfo, efficientSources) {
-    if (shouldUseEarlySplit(room, intel)) {
-        const mobileSourceId = getEarlyGameMobileSourceId(room, intel);
-        if (mobileSourceId && sourceInfo && sourceInfo.id === mobileSourceId) return 'mobile';
-        return 'static_drop';
-    }
-
-    const hasContainer = !!(sourceInfo && sourceInfo.containerId);
-    const hasHauler = !!(
-        intel &&
-        Array.isArray(intel.myCreeps) &&
-        intel.myCreeps.some(c => {
-            const memory = c && c.memory ? c.memory : null;
-            if (!memory) return false;
-            if (memory.role === 'hauler' || memory.role === 'miningLaneHauler' || memory.role === 'simpleHauler') return true;
-            if (memory.missionType === 'logisticsMiningV2') return true;
-            return !!memory.miningLaneMissionId;
-        })
-    );
-    const isEfficient = !!(efficientSources && efficientSources.has && efficientSources.has(sourceInfo.id));
-    const canUseStaticDrop = isEfficient && hasHauler;
-
-    if (canUseStaticDrop) {
-        return hasContainer ? 'static' : 'static_drop';
-    }
-    return 'mobile';
+function shouldActivateHarvest(room, intel) {
+    if (!room || !room.controller || !room.controller.my) return false;
+    if (room.storage) return true;
+    return hasNonMiningContainers(room, intel);
 }
 
-function computeDropoffIds(mode, room, intel, sourceInfo) {
+function computeHarvestMode(sourceInfo) {
+    return (sourceInfo && sourceInfo.containerId) ? 'static' : 'static_drop';
+}
+
+function computeDropoffIds(mode, sourceInfo) {
     if (mode === 'static') {
         const ids = [];
         if (sourceInfo && sourceInfo.linkId) ids.push(sourceInfo.linkId);
         if (sourceInfo && sourceInfo.containerId) ids.push(sourceInfo.containerId);
         return ids;
     }
-    if (mode === 'static_drop') return [];
-    const spawns = (intel && intel.structures && intel.structures[STRUCTURE_SPAWN]) || room.find(FIND_MY_SPAWNS);
-    const extensions = (intel && intel.structures && intel.structures[STRUCTURE_EXTENSION]) || room.find(FIND_MY_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_EXTENSION
-    });
-    const towers = (intel && intel.structures && intel.structures[STRUCTURE_TOWER]) || room.find(FIND_MY_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_TOWER
-    });
-
-    const spawnExt = [
-        ...spawns.filter(s => s.store && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0).map(s => s.id),
-        ...extensions.filter(e => e.store && e.store.getFreeCapacity(RESOURCE_ENERGY) > 0).map(e => e.id)
-    ];
-    const towerIds = towers.filter(t => t.store && t.store.getFreeCapacity(RESOURCE_ENERGY) >= 50).map(t => t.id);
-    const storageIds = room.storage && room.storage.store && room.storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        ? [room.storage.id]
-        : [];
-
-    return [...spawnExt, ...towerIds, ...storageIds];
+    return [];
 }
 
 function updateAssignmentState(mission) {
@@ -359,7 +308,7 @@ function updateProgressState(mission, planState) {
 }
 
 function buildFreshPlan(planCtx) {
-    const dropoffIds = computeDropoffIds(planCtx.mode, planCtx.room, planCtx.intel, planCtx.sourceInfo);
+    const dropoffIds = computeDropoffIds(planCtx.mode, planCtx.sourceInfo);
     const archStats = estimateMinerStatsForPlanning(planCtx.budget, planCtx.mode);
     const spawns = (planCtx.intel && planCtx.intel.structures && planCtx.intel.structures[STRUCTURE_SPAWN]) || planCtx.room.find(FIND_MY_SPAWNS);
     const travel = planCtx.source ? getHarvestTravelEstimate(planCtx.room, spawns, planCtx.source, archStats) : {
@@ -372,7 +321,7 @@ function buildFreshPlan(planCtx) {
     return {
         mode: planCtx.mode,
         dropoffIds,
-        fallback: planCtx.mode === 'mobile' ? 'upgrade' : 'none',
+        fallback: 'none',
         dropoffRange: 1,
         sourceDistance: travel.sourceDistance,
         travelTicks: travel.travelTicks,
@@ -390,11 +339,10 @@ function refreshMissionData(mission, runtimeCtx) {
     if (!room) return 'cached';
     const intel = runtimeCtx ? runtimeCtx.intel : null;
     const context = runtimeCtx ? runtimeCtx.context : null;
-    const efficientSources = context && context.efficientSources ? context.efficientSources : null;
 
     const source = Game.getObjectById(mission.targetId);
     const sourceInfo = getSourceInfo(intel, mission.targetId);
-    const mode = computeHarvestMode(room, intel, sourceInfo || { id: mission.targetId }, efficientSources);
+    const mode = computeHarvestMode(sourceInfo || { id: mission.targetId });
     const containerId = sourceInfo && sourceInfo.containerId ? sourceInfo.containerId : null;
     const linkId = sourceInfo && sourceInfo.linkId ? sourceInfo.linkId : null;
     const maxCount = Math.max(1, (sourceInfo && sourceInfo.availableSpaces) || 1);
@@ -425,7 +373,7 @@ function refreshMissionData(mission, runtimeCtx) {
         plan = {
             mode: mission.meta && mission.meta.mode ? mission.meta.mode : mode,
             dropoffIds: mission.meta && Array.isArray(mission.meta.dropoffIds) ? mission.meta.dropoffIds : [],
-            fallback: mission.meta && mission.meta.fallback ? mission.meta.fallback : 'upgrade',
+            fallback: mission.meta && mission.meta.fallback ? mission.meta.fallback : 'none',
             dropoffRange: mission.meta && Number.isFinite(mission.meta.dropoffRange) ? mission.meta.dropoffRange : 1,
             sourceDistance: mission.meta && Number.isFinite(mission.meta.sourceDistance) ? mission.meta.sourceDistance : 0,
             travelTicks: mission.meta && Number.isFinite(mission.meta.travelTicks) ? mission.meta.travelTicks : 0,
@@ -469,7 +417,7 @@ function refreshMissionData(mission, runtimeCtx) {
     mission.demand = {
         role: 'miner',
         count: Math.max(0, 1 - mission.assigned.primary.length),
-        bodyProfile: plan.mode === 'mobile' ? 'miner_mobile' : 'miner_static'
+        bodyProfile: 'miner_static'
     };
     return planState;
 }
@@ -483,6 +431,7 @@ module.exports = {
     reconcileRoom({ room, intel, context, missionBoard }) {
         if (!room || !missionBoard) return;
         if (!missionThrottle.shouldRunReconcile('harvest', room.name, Game.time)) return;
+        if (!shouldActivateHarvest(room, intel)) return;
 
         const sources = intel && Array.isArray(intel.sources)
             ? intel.sources
@@ -557,6 +506,7 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
+        if (!shouldActivateHarvest(room, runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null)) return false;
 
         const source = Game.getObjectById(mission.targetId);
         return !!source;
@@ -603,9 +553,9 @@ module.exports = {
             spawnSlots: mission.spawnSlots || buildSpawnSlots(roomName, mission.targetId, 1),
             data: {
                 sourceId: mission.targetId,
-                mode: mission.meta && mission.meta.mode ? mission.meta.mode : 'mobile',
+                mode: mission.meta && mission.meta.mode ? mission.meta.mode : 'static_drop',
                 dropoffIds: mission.meta && Array.isArray(mission.meta.dropoffIds) ? mission.meta.dropoffIds : [],
-                fallback: mission.meta && mission.meta.fallback ? mission.meta.fallback : 'upgrade',
+                fallback: mission.meta && mission.meta.fallback ? mission.meta.fallback : 'none',
                 containerId: mission.meta && mission.meta.containerId ? mission.meta.containerId : null,
                 dropoffRange: mission.meta && Number.isFinite(mission.meta.dropoffRange) ? mission.meta.dropoffRange : 1,
                 staticRolesBySlot: mission.meta && mission.meta.staticRolesBySlot ? mission.meta.staticRolesBySlot : {},
@@ -619,6 +569,7 @@ module.exports = {
         };
     }
 };
+
 
 
 

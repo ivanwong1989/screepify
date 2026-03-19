@@ -20,7 +20,8 @@ function getContractSpawnTier(entry) {
         role === 'hauler' ||
         role === 'coreLaneHauler' ||
         role === 'miningLaneHauler' ||
-        role === 'simpleHauler'
+        role === 'simpleHaulerCore' ||
+        role === 'simpleMiningHauler'
     ) return 0;
     if (isRemoteContract(entry)) return 2;
     return 1;
@@ -37,7 +38,8 @@ function isHaulingRole(role) {
         role === 'user_hauler' ||
         role === 'coreLaneHauler' ||
         role === 'miningLaneHauler' ||
-        role === 'simpleHauler'
+        role === 'simpleHaulerCore' ||
+        role === 'simpleMiningHauler'
     );
 }
 
@@ -170,7 +172,8 @@ const spawnPlanner = {
                 c.memory.role === 'user_hauler' ||
                 c.memory.role === 'coreLaneHauler' ||
                 c.memory.role === 'miningLaneHauler' ||
-                c.memory.role === 'simpleHauler'
+                c.memory.role === 'simpleHaulerCore' ||
+                c.memory.role === 'simpleMiningHauler'
             ) &&
             !c.spawning
         );
@@ -198,3 +201,4 @@ const spawnPlanner = {
 };
 
 module.exports = spawnPlanner;
+
