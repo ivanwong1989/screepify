@@ -34,13 +34,8 @@ function getReconcileInterval(type) {
         case 'tower': return 1;
         case 'towerPassive': return 7;
         case 'remoteBuild': return 100;
-        case 'remoteRepair': return 23;
-        case 'userRemoteReserve': return 7;
-        case 'userRemoteClaim': return 11;
         case 'userRemoteMove2Flag': return 7;
         case 'labs': return 5;
-        case 'userDismantle': return 7;
-        case 'userTransfer': return 5;
         case 'reserve': return 73;
         case 'upgrade': return 13;
         default: return 31;

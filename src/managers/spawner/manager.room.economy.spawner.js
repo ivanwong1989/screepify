@@ -108,7 +108,7 @@ var managerSpawner = {
         if (archetype === 'dismantler') {
             budget = Math.min(budget, 2100);
         }
-        if (archetype === 'worker' || archetype === 'upgrader') {
+        if (archetype === 'worker' || archetype === 'builder' || archetype === 'repairer' || archetype === 'upgrader') {
             budget = Math.min(budget, 3000);
         }
         if (
@@ -160,6 +160,8 @@ var managerSpawner = {
             const includeRepairWorkPart = mission.archetype === 'remote_hauler';
             return this.generateHaulerBody(budget, maxCarryParts, includeRepairWorkPart);
         } else if (mission.archetype === 'upgrader') {
+            return this.generateWorkerBody(budget);
+        } else if (mission.archetype === 'worker' || mission.archetype === 'builder' || mission.archetype === 'repairer') {
             return this.generateWorkerBody(budget);
         } else if (mission.archetype == 'remote_worker') {
             return this.generateRemoteWorkerBody(budget);

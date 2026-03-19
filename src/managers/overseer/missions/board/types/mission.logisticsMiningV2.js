@@ -4,7 +4,6 @@ const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
 
-const CORE_END_FLAG = 'CORE_END';
 const REBUILD_INTERVAL = 100;
 const PLAIN_COST = 10;
 const SWAMP_COST = 30;
@@ -36,17 +35,6 @@ function getSourceInfo(intel, sourceId) {
         if (s && s.id === sourceId) return s;
     }
     return null;
-}
-
-function hasCoreLaneFlag(room) {
-    if (!room) return false;
-    const flag = Game.flags[CORE_END_FLAG];
-    return !!(flag && flag.pos && flag.pos.roomName === room.name);
-}
-
-function hasEfficientMiningInfra(room) {
-    if (!room) return false;
-    return !!room.storage && hasCoreLaneFlag(room);
 }
 
 function hasStableSink(room, intel) {
@@ -300,11 +288,8 @@ function estimateRequiredCarryParts(pathLength) {
     return Math.max(1, Math.ceil((SOURCE_ENERGY_PER_TICK * roundTripTicks) / 50));
 }
 
-function shouldActivateSource(room, intel, context, sourceInfo) {
+function shouldActivateSource(room, intel, sourceInfo) {
     if (!room || !sourceInfo || !sourceInfo.id) return false;
-    if (!hasEfficientMiningInfra(room)) return false;
-    const efficientSources = context && context.efficientSources ? context.efficientSources : null;
-    if (!efficientSources || !efficientSources.has(sourceInfo.id)) return false;
     if (!hasStableSink(room, intel)) return false;
     return hasSourceContainer(sourceInfo);
 }
@@ -326,7 +311,7 @@ module.exports = {
         const sources = Array.isArray(intel.sources) ? intel.sources : [];
         for (let i = 0; i < sources.length; i++) {
             const sourceInfo = sources[i];
-            if (!shouldActivateSource(room, intel, context, sourceInfo)) continue;
+            if (!shouldActivateSource(room, intel, sourceInfo)) continue;
             missionBoard.createMission('logisticsMiningV2', {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
@@ -382,16 +367,11 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room || !room.controller || !room.controller.my) return false;
-        if (!hasEfficientMiningInfra(room)) return false;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         if (!hasStableSink(room, intel)) return false;
         const sourceInfo = getSourceInfo(intel, mission.targetId);
         if (!sourceInfo) return false;
         if (!hasSourceContainer(sourceInfo)) return false;
-        const efficientSources = runtimeCtx && runtimeCtx.context && runtimeCtx.context.efficientSources
-            ? runtimeCtx.context.efficientSources
-            : null;
-        if (!efficientSources || !efficientSources.has(sourceInfo.id)) return false;
         return true;
     },
 

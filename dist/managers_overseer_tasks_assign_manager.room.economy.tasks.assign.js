@@ -1,13 +1,6 @@
 const { profRequire } = require('utils_profRequire');
 
-const execUpgradeTask = profRequire('managers_overseer_tasks_exec_upgrade', 'tasks.exec.upgrade');
-const execTransferTask = profRequire('managers_overseer_tasks_exec_transfer', 'tasks.exec.transfer');
-const execRemoteBuildTask = profRequire('managers_overseer_tasks_exec_remoteBuild', 'tasks.exec.remoteBuild');
-const execRemoteRepairTask = profRequire('managers_overseer_tasks_exec_remoteRepair', 'tasks.exec.remoteRepair');
 const execRemoteMove2FlagTask = profRequire('managers_overseer_tasks_exec_remoteMove2Flag', 'tasks.exec.remoteMove2Flag');
-const execDismantleTask = profRequire('managers_overseer_tasks_exec_dismantle', 'tasks.exec.dismantle');
-const execReserveTask = profRequire('managers_overseer_tasks_exec_reserve', 'tasks.exec.reserve');
-const execClaimTask = profRequire('managers_overseer_tasks_exec_claim', 'tasks.exec.claim');
 const missionBoard = profRequire('managers_overseer_missions_board_missionBoard', 'missions.board');
 
 /**
@@ -46,15 +39,6 @@ var managerTasks = {
         debug('mission.logistics', `[SimpleCoreAssign] ${message}`);
     },
 
-    isSupplyExtensionOrSpawnMission: function(mission) {
-        if (!mission || mission.type !== 'transfer') return false;
-        if (!mission.data || mission.data.mode !== 'supply') return false;
-        if (!mission.targetId) return false;
-        const target = Game.getObjectById(mission.targetId);
-        if (!target) return false;
-        return target.structureType === STRUCTURE_EXTENSION || target.structureType === STRUCTURE_SPAWN;
-    },
-
     getMissionNeeds: function(mission) {
         // Cache on the mission object for this tick only.
         if (mission && mission._needsTick === Game.time && mission._needs) return mission._needs;
@@ -62,18 +46,16 @@ var managerTasks = {
         const type = mission ? mission.type : null;
         const needs = { work: false, carry: false, claim: false };
 
-        if (type === 'harvest' || type === 'simple_harvest' || type === 'remote_harvest' || type === 'mineral' || type === 'dismantle') {
+        if (type === 'harvest' || type === 'simple_harvest' || type === 'remote_harvest' || type === 'mineral') {
             needs.work = true;
         } else if (
             type === 'upgrade' || type === 'build' || type === 'repair' ||
-            type === 'remote_build' || type === 'remote_repair'
+            type === 'remote_build'
         ) {
             needs.work = true;
             needs.carry = true;
-        } else if (type === 'transfer' || type === 'remote_haul') {
+        } else if (type === 'remote_haul') {
             needs.carry = true;
-        } else if (type === 'remote_reserve' || type === 'remote_claim') {
-            needs.claim = true;
         }
 
         mission._needsTick = Game.time;
@@ -403,16 +385,6 @@ var managerTasks = {
                 }
                 creep.memory.missionName = bestMission.name;
                 creep.memory.taskState = 'init'; // Initialize state
-                if (this.shouldDebugLogisticsSupply() && creep.memory.role === 'hauler' && this.isSupplyExtensionOrSpawnMission(bestMission)) {
-                    const target = bestMission.targetId ? Game.getObjectById(bestMission.targetId) : null;
-                    const free = target && target.store && typeof target.store.getFreeCapacity === 'function'
-                        ? target.store.getFreeCapacity(RESOURCE_ENERGY)
-                        : null;
-                    console.log(
-                        `[LogisticsSupply][Assign] tick=${Game.time} creep=${creep.name} mission=${bestMission.name}` +
-                        ` target=${bestMission.targetId} type=${target && target.structureType ? target.structureType : '-'} free=${free !== null ? free : '-'}`
-                    );
-                }
                 if (bestMission.type === 'remote_haul' && creep.memory.role === 'remote_hauler') {
                     const missionContractId = this.getMissionContractId(
                         creep.memory.room,
@@ -725,35 +697,20 @@ var managerTasks = {
             case 'mineral':
                 // Mineral miners execute directly in role.mineralMiner.
                 break;
-            case 'transfer':
-                task = execTransferTask({ creep, mission, room });
-                break;
             case 'remote_haul':
                 // Remote haulers execute directly in role.remoteHaul.
                 break;
             case 'upgrade':
-                task = execUpgradeTask({ creep, mission, room });
+                // Upgraders execute directly in role.upgrader from mission contract data.
                 break;
             case 'build':
                 // Build workers execute directly in role.worker from mission contract data.
                 break;
             case 'remote_build':
-                task = execRemoteBuildTask({ creep, mission, room });
-                break;
-            case 'remote_repair':
-                task = execRemoteRepairTask({ creep, mission, room });
+                // Remote workers execute directly in role.remoteWorker from mission contract data.
                 break;
             case 'repair':
                 // Repair/fortify workers execute directly in role.worker from mission contract data.
-                break;
-            case 'dismantle':
-                task = execDismantleTask({ creep, mission, room });
-                break;
-            case 'remote_reserve':
-                task = execReserveTask({ creep, mission, room });
-                break;
-            case 'remote_claim':
-                task = execClaimTask({ creep, mission, room });
                 break;
             case 'scout':
                 // Scout executes directly in role.scout.
@@ -1195,12 +1152,9 @@ var managerTasks = {
             const hint =
                 (m === 'upgrade') ? 'U' :
                 (m === 'build' || m === 'remote_build') ? 'B' :
-                (m === 'repair' || m === 'remote_repair') ? 'R' :
+                (m === 'repair') ? 'R' :
                 (m === 'transfer' || m === 'remote_haul') ? 'T' :
                 (m === 'harvest' || m === 'simple_harvest' || m === 'remote_harvest' || m === 'mineral') ? 'H' :
-                (m === 'dismantle') ? 'D' :
-                (m === 'remote_reserve') ? 'V' :
-                (m === 'remote_claim') ? 'C' :
                 null;
             if (hint) msg += hint;
         }

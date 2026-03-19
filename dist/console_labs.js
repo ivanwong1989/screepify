@@ -1,5 +1,4 @@
 var managerLabs = require('managers_structures_manager.labs');
-var userMissions = require('userMissions');
 
 function showLabHelp() {
     const lines = [
@@ -10,7 +9,6 @@ function showLabHelp() {
         'lab("room", roomName, { ... })          - patch per-room lab settings',
         'lab("room", roomName, "on|off")         - enable/disable per-room lab manager',
         'lab("roomsReset")                        - clear all per-room lab overrides (rooms follow global config)',
-        'lab("clear", roomName)                  - remove lab transfer missions for a room',
         'lab("stop")                             - set mode="idle" (stop reactions)',
         'lab("idle")                             - set mode="idle" (no reactions; optional cleanupIdle can clear labs)',
         'lab("purge")                            - set mode="purge" (clear minerals from all labs back to storage/terminal)',
@@ -43,29 +41,6 @@ function showLabHelp() {
     ];
     for (const line of lines) console.log(line);
     return 'Done';
-}
-
-function clearLabMissions(roomName) {
-    const key = ('' + roomName).trim().toUpperCase();
-    if (!key) return 'Usage: lab("clear", "W1N1")';
-
-    const missions = userMissions.getByType('transfer');
-    const prefix = `labhaul:${key}:`; // matches manager.labs.js mission naming
-
-    let removed = 0;
-    for (const mission of missions) {
-        if (!mission) continue;
-
-        // lab manager publishes "name" (stable id); support "label" too just in case
-        const name = mission.name || mission.label;
-        if (!name || typeof name !== 'string') continue;
-
-        if (name.startsWith(prefix)) {
-            if (userMissions.removeMission(mission.id)) removed += 1;
-        }
-    }
-
-    return `Removed ${removed} lab transfer missions for ${key}`;
 }
 
 function normalizeRoomName(roomName) {
@@ -123,13 +98,6 @@ module.exports = function registerLabConsole() {
         if (cmd === 'roomsreset' || cmd === 'resetrooms' || cmd === 'clearrooms') {
             managerLabs.applyPatch({ rooms: null });
             const msg = 'Cleared all per-room lab overrides. All rooms now follow global lab config.';
-            console.log(msg);
-            return msg;
-        }
-
-        if (cmd === 'clear') {
-            const roomName = normalizeRoomName(args[0]);
-            const msg = clearLabMissions(roomName);
             console.log(msg);
             return msg;
         }

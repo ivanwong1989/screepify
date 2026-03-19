@@ -176,7 +176,7 @@ module.exports = {
             lastProgressTick: now,
             targetId: context.targetId,
             assigned: { primary: [], support: [] },
-            demand: { role: 'worker', count: 1, bodyProfile: 'worker' },
+            demand: { role: 'repairer', count: 1, bodyProfile: 'worker' },
             progress: {
                 stage: fortify ? 'fortify' : 'repair',
                 lastHits: 0
@@ -237,7 +237,7 @@ module.exports = {
         }
 
         mission.demand = {
-            role: 'worker',
+            role: 'repairer',
             count: Math.max(0, mission.meta.minCount - mission.assigned.primary.length),
             bodyProfile: 'worker'
         };
@@ -269,7 +269,7 @@ module.exports = {
         return {
             name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `${fortify ? 'fortify' : 'repair'}:${mission.targetId}`,
             type: 'repair',
-            archetype: 'worker',
+            archetype: 'repairer',
             targetId: mission.targetId,
             data: {
                 sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [],
@@ -281,7 +281,7 @@ module.exports = {
                 targetHits: mission.data && Number.isFinite(mission.data.targetHits) ? mission.data.targetHits : null
             },
             requirements: {
-                archetype: 'worker',
+                archetype: 'repairer',
                 requiredWork: mission.meta && Number.isFinite(mission.meta.desiredWork) ? mission.meta.desiredWork : getDesiredRepairWork(fortify),
                 minCount: mission.meta && Number.isFinite(mission.meta.minCount) ? mission.meta.minCount : getRepairMinCount(fortify),
                 maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : getRepairMaxCount(fortify),

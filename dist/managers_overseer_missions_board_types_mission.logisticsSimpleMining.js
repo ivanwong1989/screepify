@@ -3,23 +3,11 @@ const missionClasses = require('managers_overseer_missions_board_missionClassifi
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
-const CORE_END_FLAG = 'CORE_END';
 const MAX_SIMPLE_MINING_HAULERS = 4;
-
-function hasCoreLaneFlag(room) {
-    if (!room) return false;
-    const flag = Game.flags[CORE_END_FLAG];
-    return !!(flag && flag.pos && flag.pos.roomName === room.name);
-}
-
-function hasEfficientMiningInfra(room) {
-    if (!room) return false;
-    return !!room.storage && hasCoreLaneFlag(room);
-}
 
 function shouldActivate(room) {
     if (!room || !room.controller || !room.controller.my) return false;
-    return !hasEfficientMiningInfra(room);
+    return true;
 }
 
 function getMiningContainerIds(intel) {
@@ -35,13 +23,40 @@ function getMiningContainerIds(intel) {
     return ids;
 }
 
+function getV2UngatedSourceIdSet(intel) {
+    const ids = new Set();
+    const sources = intel && Array.isArray(intel.sources) ? intel.sources : [];
+    for (let i = 0; i < sources.length; i++) {
+        const source = sources[i];
+        if (!source || !source.id || !source.containerId) continue;
+        ids.add(source.id);
+    }
+    return ids;
+}
+
+function getSimpleMiningSourceInfos(intel, blockedSourceIds) {
+    const sourceInfos = intel && Array.isArray(intel.sources) ? intel.sources : [];
+    if (!blockedSourceIds || blockedSourceIds.size <= 0) return sourceInfos;
+    return sourceInfos.filter(s => s && s.id && !blockedSourceIds.has(s.id));
+}
+
 function getSinkTargets(room, intel) {
     if (!room) return [];
     const miningContainerIdSet = new Set(getMiningContainerIds(intel));
+    const sinks = [];
+
+    if (
+        room.storage &&
+        room.storage.store &&
+        typeof room.storage.store.getFreeCapacity === 'function'
+    ) {
+        const storageFree = room.storage.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+        if (storageFree > 0) sinks.push(room.storage);
+    }
+
     const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
         ? intel.structures[STRUCTURE_CONTAINER]
         : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
-    const sinks = [];
     for (let i = 0; i < containers.length; i++) {
         const container = containers[i];
         if (!container || !container.id || !container.store) continue;
@@ -72,7 +87,11 @@ function getSourceIds(room, intel) {
     const ids = [];
     const seen = Object.create(null);
     const sourceInfos = intel && Array.isArray(intel.sources) ? intel.sources : [];
-    const miningContainerIds = getMiningContainerIds(intel);
+    const miningContainerIds = [];
+    for (let i = 0; i < sourceInfos.length; i++) {
+        const containerId = sourceInfos[i] && sourceInfos[i].containerId ? sourceInfos[i].containerId : null;
+        if (containerId) miningContainerIds.push(containerId);
+    }
 
     function addId(id) {
         if (!id || seen[id]) return;
@@ -126,8 +145,10 @@ function estimateDesiredCount(movableEnergy) {
     return Math.max(1, Math.min(MAX_SIMPLE_MINING_HAULERS, Math.ceil(movableEnergy / 600)));
 }
 
-function getEnergySourceCount(room, intel) {
-    if (intel && Array.isArray(intel.sources)) return intel.sources.length;
+function getEnergySourceCount(room, intel, blockedSourceIds) {
+    if (intel && Array.isArray(intel.sources)) {
+        return getSimpleMiningSourceInfos(intel, blockedSourceIds).length;
+    }
     if (!room) return 0;
     const sources = room.find(FIND_SOURCES);
     return Array.isArray(sources) ? sources.length : 0;
@@ -212,7 +233,12 @@ module.exports = {
     validate(mission, runtimeCtx) {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
-        return shouldActivate(room);
+        if (!shouldActivate(room)) return false;
+        const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+        if (!intel || !Array.isArray(intel.sources)) return true;
+        const blockedSourceIds = getV2UngatedSourceIdSet(intel);
+        const simpleSourceInfos = getSimpleMiningSourceInfos(intel, blockedSourceIds);
+        return simpleSourceInfos.length > 0;
     },
 
     refresh(mission, runtimeCtx) {
@@ -223,10 +249,12 @@ module.exports = {
         if (!room || !shouldActivate(room)) return;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
 
+        const blockedSourceIds = getV2UngatedSourceIdSet(intel);
+        const simpleSourceInfos = getSimpleMiningSourceInfos(intel, blockedSourceIds);
         const sinks = getSinkTargets(room, intel);
         const sinkIds = sinks.map(s => s.id);
-        const sourceIds = getSourceIds(room, intel);
-        const sourceCount = getEnergySourceCount(room, intel);
+        const sourceIds = getSourceIds(room, { sources: simpleSourceInfos });
+        const sourceCount = getEnergySourceCount(room, intel, blockedSourceIds);
         const supply = estimateSupply(sourceIds);
         const sinkFree = estimateSinkFree(sinks);
         const movableEnergy = Math.max(0, Math.min(supply, sinkFree));

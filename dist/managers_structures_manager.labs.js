@@ -183,6 +183,16 @@ function chooseSink(room, resourceType) {
     return null;
 }
 
+function chooseEnergySource(room) {
+    if (room.storage && room.storage.store && (room.storage.store[RESOURCE_ENERGY] || 0) > 0) {
+        return room.storage;
+    }
+    if (room.terminal && room.terminal.store && (room.terminal.store[RESOURCE_ENERGY] || 0) > 0) {
+        return room.terminal;
+    }
+    return null;
+}
+
 
 function buildBoostLogisticsMissions(room, cfg, labs, labById) {
     const missions = [];
@@ -540,6 +550,20 @@ function summarizeConfig(cfg) {
     return lines.join('\n');
 }
 
+function classifyLabNeedFromLabel(label) {
+    if (!label || typeof label !== 'string') return 'transfer';
+    const parts = label.split(':');
+    if (parts.length < 3) return 'transfer';
+    if (parts[2] === 'clear') return 'clear';
+    if (parts[2] === 'fill') return 'fill';
+    if (parts[2] === 'reverse') {
+        const op = parts[3] || '';
+        if (op === 'clear' || op === 'clearCompound') return 'reverse_clear';
+        if (op === 'fill') return 'reverse_fill';
+    }
+    return 'transfer';
+}
+
 const managerLabs = {
     getConfig: function() {
         return ensureLabConfig();
@@ -593,6 +617,72 @@ const managerLabs = {
         }
 
         return buildLabLogisticsMissions(room, cfg);
+    },
+
+    getLogisticsNeeds: function(room, options) {
+        const contracts = this.getLogisticsMissions(room);
+        const opts = options || {};
+        const includeEnergy = opts.includeEnergy === true;
+
+        const needs = [];
+        if (Array.isArray(contracts) && contracts.length > 0) {
+            for (let i = 0; i < contracts.length; i++) {
+                const contract = contracts[i];
+                if (!contract || contract.type !== 'transfer') continue;
+
+                const resourceType = contract.data && contract.data.resourceType ? contract.data.resourceType : null;
+                const sourceId = contract.data && contract.data.sourceId ? contract.data.sourceId : null;
+                const targetId = contract.targetId || null;
+                if (!resourceType || !targetId || !sourceId) continue;
+
+                needs.push({
+                    id: contract.name || `labNeed:${sourceId}:${targetId}:${resourceType}:${i}`,
+                    provider: 'labs',
+                    type: 'transfer',
+                    operation: classifyLabNeedFromLabel(contract.name),
+                    sourceId,
+                    targetId,
+                    resourceType,
+                    priority: Number.isFinite(contract.priority) ? contract.priority : 60,
+                    meta: {
+                        label: contract.name || null
+                    }
+                });
+            }
+        }
+
+        if (includeEnergy && room && room.controller && room.controller.my) {
+            const cache = global.getRoomCache(room);
+            const labs = cache && cache.myStructuresByType ? (cache.myStructuresByType[STRUCTURE_LAB] || []) : [];
+            const energySource = chooseEnergySource(room);
+            const sourceId = energySource ? energySource.id : null;
+
+            if (sourceId) {
+                for (let i = 0; i < labs.length; i++) {
+                    const lab = labs[i];
+                    if (!lab || !lab.store || typeof lab.store.getFreeCapacity !== 'function') continue;
+                    const free = lab.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+                    if (free <= 0) continue;
+
+                    needs.push({
+                        id: `labNeed:energy:${sourceId}:${lab.id}`,
+                        provider: 'labs',
+                        type: 'transfer',
+                        operation: 'energy_fill',
+                        sourceId,
+                        targetId: lab.id,
+                        resourceType: RESOURCE_ENERGY,
+                        amountHint: free,
+                        priority: 86,
+                        meta: {
+                            label: `labhaul:${room.name}:energy:${lab.id}`
+                        }
+                    });
+                }
+            }
+        }
+
+        return needs;
     },
 
     run: function(room) {

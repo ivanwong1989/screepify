@@ -385,6 +385,13 @@ function tryPromotePath(candidatePath, coreTargets, bestPath, bestScore) {
     }
 
     const score = scorePathCoverage(candidatePath, coreTargets);
+    if (!Array.isArray(bestPath) || bestPath.length <= 0 || !bestScore) {
+        return {
+            bestPath: candidatePath,
+            bestScore: score,
+            changed: true
+        };
+    }
     const betterCoverage = score.coveredCount > bestScore.coveredCount;
     const equalCoverageShorter = score.coveredCount === bestScore.coveredCount &&
         candidatePath.length < bestPath.length;
@@ -431,9 +438,12 @@ function buildPath(room, headPos, endPos, laneTargets) {
 
     const direct = searchPathSegment(room, headPos, endPos, costMatrix);
     if (!direct) return null;
+    const directPath = [clonePos(headPos)].concat(direct);
+    const directScore = scorePathCoverage(directPath, coreTargets);
+    const loopRouteEligible = shouldEvaluateLoopRoutes(headPos, endPos);
 
-    let bestPath = [clonePos(headPos)].concat(direct);
-    let bestScore = scorePathCoverage(bestPath, coreTargets);
+    let bestPath = loopRouteEligible ? null : directPath;
+    let bestScore = loopRouteEligible ? null : directScore;
     let evaluations = 1;
 
     const waypointCandidates = getRouteWaypointCandidates(
@@ -463,7 +473,6 @@ function buildPath(room, headPos, endPos, laneTargets) {
         }
     }
 
-    const loopRouteEligible = shouldEvaluateLoopRoutes(headPos, endPos);
     if (loopRouteEligible && evaluations < MAX_ROUTE_EVALUATIONS) {
         const loopCandidates = waypointCandidates.slice(0, Math.max(2, Math.min(MAX_LOOP_WAYPOINTS, waypointCandidates.length)));
         for (let i = 0; i < loopCandidates.length; i++) {
@@ -492,6 +501,15 @@ function buildPath(room, headPos, endPos, laneTargets) {
                     bestScore = promoted.bestScore;
                 }
             }
+        }
+    }
+    if (loopRouteEligible) {
+        if (!Array.isArray(bestPath) || bestPath.length <= 0) {
+            bestPath = directPath;
+            bestScore = directScore;
+        } else if (!bestScore || bestScore.coveredCount < directScore.coveredCount) {
+            bestPath = directPath;
+            bestScore = directScore;
         }
     }
 
@@ -725,28 +743,41 @@ function getTerminalStockJobs(room) {
     return jobs;
 }
 
-function getLabHaulJobs(room) {
-    if (!room || !managerLabs || typeof managerLabs.getLogisticsMissions !== 'function') return [];
-    const contracts = managerLabs.getLogisticsMissions(room);
-    if (!Array.isArray(contracts) || contracts.length <= 0) return [];
+function getLabHaulJobs(room, includeEnergyNeeds) {
+    if (!room || !managerLabs) return [];
+
+    const needs = (typeof managerLabs.getLogisticsNeeds === 'function')
+        ? managerLabs.getLogisticsNeeds(room, { includeEnergy: includeEnergyNeeds === true })
+        : [];
+    if (!Array.isArray(needs) || needs.length <= 0) return [];
 
     const jobs = [];
-    for (let i = 0; i < contracts.length; i++) {
-        const contract = contracts[i];
-        if (!contract || contract.type !== 'transfer') continue;
-        const resourceType = contract.data && contract.data.resourceType;
-        const targetId = contract.targetId || null;
-        const sourceId = contract.data && contract.data.sourceId ? contract.data.sourceId : null;
+    for (let i = 0; i < needs.length; i++) {
+        const need = needs[i];
+        if (!need || need.type !== 'transfer') continue;
+        const resourceType = need.resourceType || null;
+        const targetId = need.targetId || null;
+        const sourceId = need.sourceId || null;
         if (!resourceType || !targetId || !sourceId) continue;
+        const operation = need.operation || 'transfer';
+        const basePriority = Number.isFinite(need.priority) ? need.priority : 60;
+        const isClearOp = (
+            operation === 'clear' ||
+            operation === 'reverse_clear' ||
+            operation === 'reverse_clearCompound'
+        );
+        // In idle/purge flows, clear ops should win over energy fills so labs are emptied promptly.
+        const priority = isClearOp ? Math.max(basePriority, 90) : basePriority;
 
         jobs.push({
-            id: contract.name || `labhaul:${sourceId}:${targetId}:${resourceType}:${i}`,
+            id: need.id || `labhaul:${sourceId}:${targetId}:${resourceType}:${i}`,
             kind: 'labs',
             sourceId,
             targetId,
             resourceType,
             pathKey: 'labs',
-            priority: Number.isFinite(contract.priority) ? contract.priority : 60
+            priority,
+            operation
         });
     }
     return jobs;
@@ -1091,7 +1122,7 @@ module.exports = {
         }
         if (!coreJobSourceId && room.storage) coreJobSourceId = room.storage.id;
         const stockJobs = getTerminalStockJobs(room);
-        const labJobs = getLabHaulJobs(room);
+        const labJobs = getLabHaulJobs(room, hasLabsLane);
         const coreServiceJobs = getCoreServiceEnergyJobs(room, runtime, coreJobSourceId, !hasLabsLane);
         const jobs = coreServiceJobs.concat(stockJobs, labJobs);
         const jobsById = Object.create(null);
@@ -1151,6 +1182,7 @@ module.exports = {
                 resourceType: job.resourceType || RESOURCE_ENERGY,
                 amountHint: Number.isFinite(job.amountHint) ? Math.max(0, Math.floor(job.amountHint)) : null,
                 priority: Number.isFinite(job.priority) ? job.priority : 60,
+                operation: job.operation || null,
                 pathKey,
                 sourceIndex,
                 targetIndex

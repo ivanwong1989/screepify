@@ -42,11 +42,9 @@ function showMissionHelp() {
         'mission(\"add\", { type: \"claim\", roomName, sponsorRoom, priority, persist, label })',
         'mission(\"add\",\"reserve\", roomName, sponsorRoom?, priority?, persist?, label?)',
         'mission(\"add\", { type: \"reserve\", roomName, sponsorRoom, priority, persist, label })',
-        'mission(\"add\",\"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?)',
-        'mission(\"add\", { type: \"transfer\", sourceId, targetId, resourceType, sponsorRoom, priority, persist, label, count, sourceRoom, targetRoom })',
         'mission(\"add\",\"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?)',
         'mission(\"add\", { type: \"move2flag\", flagName, sponsorRoom, priority, persist, label })',
-        'mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, sourceId, targetId, resourceType, sourceRoom, flagName })',
+        'mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, targetId, flagName })',
         'mission(\"enable\", id) / mission(\"disable\", id)',
         'mission(\"remove\", id)',
         `available types: ${types.join(', ') || '(none)'}`
@@ -74,12 +72,6 @@ function normalizeMissionPatch(patch) {
     }
     if ('label' in patch) next.label = patch.label ? ('' + patch.label).trim() : '';
     if ('targetId' in patch) next.targetId = patch.targetId ? ('' + patch.targetId).trim() : null;
-    if ('sourceId' in patch) next.sourceId = patch.sourceId ? ('' + patch.sourceId).trim() : null;
-    if ('resourceType' in patch) next.resourceType = patch.resourceType ? ('' + patch.resourceType).trim() : null;
-    if ('sourceRoom' in patch) {
-        const sourceRoom = userMissions.normalizeRoomName(patch.sourceRoom);
-        next.sourceRoom = sourceRoom || null;
-    }
     if ('flagName' in patch) {
         next.flagName = patch.flagName ? ('' + patch.flagName).trim() : null;
     }
@@ -93,13 +85,6 @@ function normalizeMissionPatch(patch) {
     if (pos) {
         next.targetPos = pos;
         if (!next.targetRoom) next.targetRoom = pos.roomName;
-    }
-
-    if ('count' in patch) {
-        const n = Number(patch.count);
-        if (Number.isFinite(n) && n >= 1) {
-            next.count = Math.floor(n);
-        }
     }
 
     return next;
@@ -118,10 +103,6 @@ function normalizeRoomNamesOnData(data) {
     if (data.sponsorRoom !== undefined) {
         const sponsorRoom = userMissions.normalizeRoomName(data.sponsorRoom);
         data.sponsorRoom = sponsorRoom || null;
-    }
-    if (data.sourceRoom !== undefined) {
-        const sourceRoom = userMissions.normalizeRoomName(data.sourceRoom);
-        data.sourceRoom = sourceRoom || null;
     }
     return data;
 }
@@ -162,7 +143,7 @@ module.exports = function registerMissionConsole() {
                 type = typeOrData;
             }
             const key = type ? ('' + type).trim().toLowerCase() : '';
-            if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"transfer\", sourceId, targetId, resourceType?, sponsorRoom?, priority?, persist?, label?, count?) OR mission(\"add\", \"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", { type, ... })';
+            if (!key) return 'Usage: mission(\"add\", \"dismantle\", room, x, y, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"drainer\", roomName, x?, y?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"reserve\", roomName, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", \"move2flag\", flagName?, sponsorRoom?, priority?, persist?, label?) OR mission(\"add\", { type, ... })';
 
             if (!data) {
                 const roomNameArg = normalizeRoomArg(args[0]);
@@ -201,17 +182,6 @@ module.exports = function registerMissionConsole() {
                         priority: args[2],
                         persist: args[3],
                         label: args[4]
-                    };
-                } else if (key === 'transfer') {
-                    data = {
-                        sourceId: args[0],
-                        targetId: args[1],
-                        resourceType: args[2],
-                        sponsorRoom: args[3],
-                        priority: args[4],
-                        persist: args[5],
-                        label: args[6],
-                        count: args[7],
                     };
                 } else if (key === 'move2flag') {
                     data = {
@@ -260,19 +230,6 @@ module.exports = function registerMissionConsole() {
                     const sponsorRoom = shared.resolveSponsorRoomForTargetRoom(data.roomName || data.targetRoom);
                     if (sponsorRoom) data.sponsorRoom = sponsorRoom;
                 }
-            } else if (key === 'transfer') {
-                if (!data.sponsorRoom) {
-                    const sponsorRoom = shared.resolveSponsorRoomForTransfer(data.sourceId, data.targetId);
-                    if (sponsorRoom) data.sponsorRoom = sponsorRoom;
-                }
-                if (!data.targetRoom) {
-                    const targetRoom = shared.resolveRoomNameForObjectId(data.targetId);
-                    if (targetRoom) data.targetRoom = targetRoom;
-                }
-                if (!data.sourceRoom) {
-                    const sourceRoom = shared.resolveRoomNameForObjectId(data.sourceId);
-                    if (sourceRoom) data.sourceRoom = sourceRoom;
-                }
             } else if (key === 'move2flag') {
                 if (!data.flagName) data.flagName = 'M';
                 const flag = Game.flags[data.flagName];
@@ -294,7 +251,7 @@ module.exports = function registerMissionConsole() {
         if (cmd === 'set' || cmd === 'update') {
             const id = typeOrData ? ('' + typeOrData).trim() : '';
             const patch = normalizeMissionPatch(args[0]);
-            if (!id || !patch) return 'Usage: mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, sourceId, targetId, resourceType, sourceRoom, flagName, count })';
+            if (!id || !patch) return 'Usage: mission(\"set\", id, { sponsorRoom, priority, persist, label, x, y, roomName, targetRoom, targetId, flagName })';
             const updated = userMissions.updateMission(id, patch);
             if (!updated) return `Unknown mission id: ${id}`;
             return `Updated mission ${id}`;

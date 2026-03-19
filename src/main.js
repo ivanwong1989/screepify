@@ -21,6 +21,7 @@ var roleMiner = require('role_role.miner');
 var roleSimpleHarvest = require('role_role.simpleHarvest');
 var roleRemoteHarvest = require('role_role.remoteHarvest');
 var roleRemoteHaul = require('role_role.remoteHaul');
+var roleRemoteWorker = require('role_role.remoteWorker');
 var roleMineralMiner = require('role_role.mineralMiner');
 var roleScout = require('role_role.scout');
 var runColony = require('runColony');
@@ -68,11 +69,7 @@ profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'over
     ['managers_overseer_missions_board_types_mission.scout', 'mission.scout'],
     ['managers_overseer_missions_board_types_mission.mineral', 'mission.mineral'],
     ['managers_overseer_missions_board_types_mission.contract', 'mission.contract'],
-    ['managers_overseer_missions_board_types_mission.userTransfer', 'mission.userTransfer'],
     ['managers_overseer_missions_board_types_mission.userRemoteMove2Flag', 'mission.userRemoteMove2Flag'],
-    ['managers_overseer_missions_board_types_mission.userRemoteReserve', 'mission.userRemoteReserve'],
-    ['managers_overseer_missions_board_types_mission.userRemoteClaim', 'mission.userRemoteClaim'],
-    ['managers_overseer_missions_board_types_mission.userDismantle', 'mission.userDismantle'],
     ['managers_overseer_missions_board_types_mission.tower', 'mission.tower'],
     ['managers_overseer_missions_board_types_mission.labs', 'mission.labs'],
     ['managers_overseer_missions_board_types_mission.remoteBuild', 'mission.remoteBuild']
@@ -209,7 +206,7 @@ module.exports.loop = function() {
                     roleSimpleMiningHauler.run(creep);
                 } else if (creep.memory.role === 'upgrader') {
                     roleUpgrader.run(creep);
-                } else if (creep.memory.role === 'worker') {
+                } else if (creep.memory.role === 'worker' || creep.memory.role === 'builder' || creep.memory.role === 'repairer') {
                     roleWorker.run(creep);
                 } else if (creep.memory.role === 'simple_miner') {
                     roleSimpleHarvest.run(creep);
@@ -219,6 +216,8 @@ module.exports.loop = function() {
                     roleRemoteHarvest.run(creep);
                 } else if (creep.memory.role === 'remote_hauler') {
                     roleRemoteHaul.run(creep);
+                } else if (creep.memory.role === 'remote_worker') {
+                    roleRemoteWorker.run(creep);
                 } else if (creep.memory.role === 'mineral_miner') {
                     roleMineralMiner.run(creep);
                 } else if (creep.memory.role === 'scout') {

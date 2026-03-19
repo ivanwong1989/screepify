@@ -124,7 +124,7 @@ module.exports = {
             lastProgressTick: now,
             targetId: context.siteId,
             assigned: { primary: [], support: [] },
-            demand: { role: 'worker', count: 1, bodyProfile: 'worker' },
+            demand: { role: 'builder', count: 1, bodyProfile: 'worker' },
             progress: {
                 stage: 'building',
                 lastProgress: 0
@@ -176,7 +176,7 @@ module.exports = {
         }
 
         mission.demand = {
-            role: 'worker',
+            role: 'builder',
             count: Math.max(0, mission.meta.minCount - mission.assigned.primary.length),
             bodyProfile: 'worker'
         };
@@ -201,7 +201,7 @@ module.exports = {
         return {
             name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `build:${mission.targetId}`,
             type: 'build',
-            archetype: 'worker',
+            archetype: 'builder',
             targetId: mission.targetId,
             data: {
                 sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [],
@@ -210,7 +210,7 @@ module.exports = {
                     : []
             },
             requirements: {
-                archetype: 'worker',
+                archetype: 'builder',
                 requiredWork: mission.meta && Number.isFinite(mission.meta.requiredWork) ? mission.meta.requiredWork : getDesiredBuildWork(1),
                 minCount: mission.meta && Number.isFinite(mission.meta.minCount) ? mission.meta.minCount : BUILD_WORKER_TUNING.minCountWithStorage,
                 maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : BUILD_WORKER_TUNING.maxCountWithStorage,

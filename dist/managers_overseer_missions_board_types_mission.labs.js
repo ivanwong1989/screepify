@@ -3,7 +3,6 @@ const missionClasses = require('managers_overseer_missions_board_missionClassifi
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 const missionGeneratorBridge = require('managers_overseer_missions_board_utils_missionGeneratorBridge');
-const managerLabs = require('managers_structures_manager.labs');
 
 function cloneContract(contract) {
     if (!contract || typeof contract !== 'object') return null;
@@ -24,13 +23,9 @@ function cleanupAssigned(mission) {
 
 function generateLabsContracts(room, missions) {
     if (!room || !Array.isArray(missions)) return;
-    const labMissions = managerLabs.getLogisticsMissions(room);
-    if (!Array.isArray(labMissions) || labMissions.length <= 0) return;
-    for (let i = 0; i < labMissions.length; i++) {
-        const contract = labMissions[i];
-        if (!contract) continue;
-        missions.push(contract);
-    }
+    // Deprecated path: standalone lab logistics contracts are now serviced by logisticsCoreV2
+    // through managerLabs.getLogisticsNeeds(). Keep this generator empty so namespace
+    // reconciliation cancels any legacy labs missions still present on the board.
 }
 
 module.exports = {
@@ -117,8 +112,7 @@ module.exports = {
     },
 
     toContractMission(mission) {
-        const contract = getContract(mission);
-        if (!contract) return null;
-        return cloneContract(contract);
+        // Deprecated: prevent publishing direct lab logistics contracts to task assignment.
+        return null;
     }
 };

@@ -21,11 +21,6 @@ const MISSION_DEFS = Object.freeze({
         required: ['roomName'],
         optional: ['x', 'y', 'sponsorRoom', 'priority', 'persist', 'label', 'targetPos', 'targetRoom']
     },
-    transfer: {
-        label: 'Transfer resources from a source structure to a target structure (user-directed logistics).',
-        required: ['sourceId', 'targetId'],
-        optional: ['resourceType', 'sponsorRoom', 'priority', 'persist', 'label', 'sourceRoom', 'targetRoom', 'count']
-    },
     move2flag: {
         label: 'Move a single creep along flag waypoints to a target flag (user-directed).',
         required: ['flagName'],
@@ -41,6 +36,26 @@ function ensureStore() {
     if (!store.items || typeof store.items !== 'object') store.items = {};
     if (!Number.isFinite(store.count)) store.count = 0;
     if (!Number.isFinite(store.nextId)) store.nextId = 1;
+
+    // Prune legacy/unknown mission types so removed mission types (e.g. transfer)
+    // do not linger in memory and continue showing up in console output.
+    const keys = Object.keys(store.items);
+    if (keys.length > 0) {
+        let removed = 0;
+        for (let i = 0; i < keys.length; i++) {
+            const id = keys[i];
+            const item = store.items[id];
+            const type = item && item.type ? ('' + item.type).trim().toLowerCase() : '';
+            if (!type || !MISSION_DEFS[type]) {
+                delete store.items[id];
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            store.count = Math.max(0, Object.keys(store.items).length);
+        }
+    }
+
     return store;
 }
 
@@ -90,7 +105,7 @@ function getDefinitions() {
 }
 
 function getAll() {
-    const store = Memory.userMissions;
+    const store = ensureStore();
     if (!store || !store.items || !Number.isFinite(store.count) || store.count === 0) return [];
     return Object.values(store.items);
 }
@@ -108,15 +123,10 @@ function addMission(type, data) {
     if (!key) return { error: 'Missing mission type.' };
     if (!MISSION_DEFS[key]) return { error: `Unknown mission type: ${key}` };
 
-    const sourceIdRaw = data && (data.sourceId || data.source || data.from);
-    const targetIdRaw = data && (data.targetId || data.target || data.to);
-    const sourceId = sourceIdRaw ? ('' + sourceIdRaw).trim() : '';
-    const targetId = targetIdRaw ? ('' + targetIdRaw).trim() : '';
-
     const targetPos = normalizeTargetPos(data && (data.targetPos || data.pos || data.target));
     const roomName = normalizeRoomName((data && (data.roomName || data.targetRoom)) || (targetPos && targetPos.roomName));
-    const transferTargetRoom = normalizeRoomName(data && data.targetRoom);
-    const transferSourceRoom = normalizeRoomName(data && data.sourceRoom);
+    const targetRoom = normalizeRoomName(data && data.targetRoom);
+    const targetId = data && data.targetId ? ('' + data.targetId).trim() : '';
     const x = clampPosCoord(data && data.x);
     const y = clampPosCoord(data && data.y);
     const finalTargetPos = targetPos || (roomName && x !== null && y !== null ? { x, y, roomName } : null);
@@ -135,9 +145,6 @@ function addMission(type, data) {
     if (key === 'drainer' && !roomName) {
         return { error: 'Missing target room (roomName).' };
     }
-    if (key === 'transfer' && (!sourceId || !targetId)) {
-        return { error: 'Missing sourceId or targetId.' };
-    }
     if (key === 'move2flag' && !flagName) {
         return { error: 'Missing flagName.' };
     }
@@ -151,14 +158,12 @@ function addMission(type, data) {
         priority: Number.isFinite(data && data.priority) ? data.priority : DEFAULT_PRIORITY,
         sponsorRoom: normalizeRoomName(data && data.sponsorRoom),
         targetPos: finalTargetPos || null,
-        targetRoom: key === 'reserve' || key === 'drainer' || key === 'claim' ? roomName : (key === 'transfer' ? transferTargetRoom : null),
-        sourceRoom: key === 'transfer' ? transferSourceRoom : null,
-        sourceId: key === 'transfer' ? sourceId : null,
-        resourceType: key === 'transfer' && data && data.resourceType ? ('' + data.resourceType).trim() : null,
-        targetId: key === 'transfer' ? targetId : (data && data.targetId ? ('' + data.targetId) : null),
+        targetRoom: key === 'reserve' || key === 'drainer' || key === 'claim'
+            ? roomName
+            : (targetRoom || null),
+        targetId: targetId || null,
         persist: normalizeBool(data && data.persist, false),
         label: data && data.label ? ('' + data.label).trim() : '',
-        count: key === 'transfer' ? (Number.isFinite(Number(data && data.count)) ? Math.max(1, Math.floor(Number(data.count))) : 1) : null,
         flagName: key === 'move2flag' ? flagName : null
     };
 

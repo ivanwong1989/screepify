@@ -13,11 +13,7 @@ const missionRemoteHaul = require('managers_overseer_missions_board_types_missio
 const missionScout = require('managers_overseer_missions_board_types_mission.scout');
 const missionMineral = require('managers_overseer_missions_board_types_mission.mineral');
 const missionContract = require('managers_overseer_missions_board_types_mission.contract');
-const missionUserTransfer = require('managers_overseer_missions_board_types_mission.userTransfer');
 const missionUserRemoteMove2Flag = require('managers_overseer_missions_board_types_mission.userRemoteMove2Flag');
-const missionUserRemoteReserve = require('managers_overseer_missions_board_types_mission.userRemoteReserve');
-const missionUserRemoteClaim = require('managers_overseer_missions_board_types_mission.userRemoteClaim');
-const missionUserDismantle = require('managers_overseer_missions_board_types_mission.userDismantle');
 const missionTower = require('managers_overseer_missions_board_types_mission.tower');
 const missionLabs = require('managers_overseer_missions_board_types_mission.labs');
 const missionRemoteBuild = require('managers_overseer_missions_board_types_mission.remoteBuild');
@@ -40,11 +36,7 @@ function ensureRegistered() {
     missionRegistry.register('scout', missionScout);
     missionRegistry.register('mineral', missionMineral);
     missionRegistry.register('contract', missionContract);
-    missionRegistry.register('userTransfer', missionUserTransfer);
     missionRegistry.register('userRemoteMove2Flag', missionUserRemoteMove2Flag);
-    missionRegistry.register('userRemoteReserve', missionUserRemoteReserve);
-    missionRegistry.register('userRemoteClaim', missionUserRemoteClaim);
-    missionRegistry.register('userDismantle', missionUserDismantle);
     missionRegistry.register('tower', missionTower);
     missionRegistry.register('labs', missionLabs);
     missionRegistry.register('remoteBuild', missionRemoteBuild);

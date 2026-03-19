@@ -75,7 +75,6 @@ const overseerMissions = {
         const orderedTypes = [
             'contract',
             'tower',
-            'labs',
             'remoteBuild',
             'simpleHarvest',
             'harvest',
@@ -90,7 +89,6 @@ const overseerMissions = {
             'remoteHaul',
             'scout',
             'mineral',
-            'userTransfer',
             'userRemoteMove2Flag',
             'userRemoteReserve',
             'userRemoteClaim',
