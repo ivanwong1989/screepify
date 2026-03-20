@@ -9,6 +9,7 @@ const MAX_REMOTE_BUILD_SITES_PER_ROOM = 3;
 const MAX_REMOTE_ROAD_SITES_PER_TICK = 3;
 const REMOTE_ROAD_PLANNER_INTERVAL = 197;
 const GLOBAL_CONSTRUCTION_SITE_LIMIT = 100;
+const REMOTE_BUILD_CONTEXT_INDEX_STORE = 'remoteBuildContextIndex';
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -25,17 +26,31 @@ function toPosObject(pos, fallbackRoomName) {
     return { x, y, roomName };
 }
 
-function getRemoteEntry(homeRoom, remoteRoomName, opState) {
-    if (!homeRoom || !remoteRoomName) return null;
+function getRemoteContextIndex(homeRoom, opState) {
+    if (!homeRoom) return { entries: [], byName: Object.create(null) };
+    const store = heap.getStore(REMOTE_BUILD_CONTEXT_INDEX_STORE, { ttl: 3 });
+    const key = `${homeRoom.name}:${opState || 'none'}:${Game.time}`;
+    const cached = store[key];
+    if (cached && Array.isArray(cached.entries) && cached.byName) return cached;
+
     const entries = remoteUtils.getRemoteEconomicContext(homeRoom, {
         opState: opState || null,
         maxScoutAge: 4000
     });
+    const byName = Object.create(null);
     for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
-        if (entry && entry.name === remoteRoomName) return entry;
+        if (entry && entry.name) byName[entry.name] = entry;
     }
-    return null;
+    const next = { tick: Game.time, entries, byName };
+    store[key] = next;
+    return next;
+}
+
+function getRemoteEntry(homeRoom, remoteRoomName, opState) {
+    if (!homeRoom || !remoteRoomName) return null;
+    const ctx = getRemoteContextIndex(homeRoom, opState);
+    return ctx.byName[remoteRoomName] || null;
 }
 
 function canPlaceRoadSite(room, x, y) {
@@ -164,21 +179,18 @@ module.exports = {
             Game.time
         );
         if (!shouldRunBuildReconcile && !shouldRunRoadPlanner) return;
-
-        const live = missionBoard.listLiveByRoom(room.name);
-        const liveRemoteBuild = [];
-        for (let i = 0; i < live.length; i++) {
-            const mission = live[i];
-            if (mission && mission.type === 'remoteBuild') liveRemoteBuild.push(mission);
-        }
-
-        const entries = remoteUtils.getRemoteEconomicContext(room, {
-            opState: context && context.opState ? context.opState : null,
-            maxScoutAge: 4000
-        });
-        const enabledRooms = new Set(entries.filter(e => e && e.enabled && e.name).map(e => e.name));
+        const opState = context && context.opState ? context.opState : null;
+        const remoteCtx = getRemoteContextIndex(room, opState);
+        const entries = remoteCtx.entries;
 
         if (shouldRunBuildReconcile) {
+            const live = missionBoard.listLiveByRoom(room.name);
+            const liveRemoteBuild = [];
+            for (let i = 0; i < live.length; i++) {
+                const mission = live[i];
+                if (mission && mission.type === 'remoteBuild') liveRemoteBuild.push(mission);
+            }
+
             for (let i = 0; i < liveRemoteBuild.length; i++) {
                 const mission = liveRemoteBuild[i];
                 if (!mission) continue;
@@ -194,7 +206,8 @@ module.exports = {
                     }
                 }
                 const remoteRoom = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
-                if (remoteRoom && !enabledRooms.has(remoteRoom)) {
+                const enabledRemote = remoteRoom ? remoteCtx.byName[remoteRoom] : null;
+                if (remoteRoom && !(enabledRemote && enabledRemote.enabled)) {
                     missionBoard.markCancelled(mission.id, 'remote_room_not_enabled');
                 }
             }

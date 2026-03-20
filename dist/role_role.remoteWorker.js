@@ -1,5 +1,5 @@
-const borderNav = require('utils_creepBorderNav');
 const roleUniversal = require('role_role.universal');
+const movement = require('utils_movement');
 
 const REMOTE_WORKER_MISSION_TYPES = new Set(['remote_build']);
 const REMOTE_GATHER_RANGE = 20;
@@ -14,6 +14,7 @@ function clearRemoteWorkerAssignment(creep) {
     delete creep.memory.task;
     delete creep.memory.taskState;
     delete creep.memory._remoteEnergy;
+    delete creep.memory._trafficMove;
 }
 
 function toRoomPosition(pos) {
@@ -88,7 +89,10 @@ function executeIntent(creep, intent) {
         const pos = toRoomPosition(intent.targetPos);
         if (!pos) return false;
         if (!creep.pos.inRangeTo(pos, Number.isFinite(intent.range) ? intent.range : 1)) {
-            borderNav.moveToTarget(creep, pos, Number.isFinite(intent.range) ? intent.range : 1);
+            movement.planMoveTo(creep, pos, {
+                range: Number.isFinite(intent.range) ? intent.range : 1,
+                maxRooms: (pos.roomName && creep.room && pos.roomName !== creep.room.name) ? 16 : 1
+            });
         }
         return true;
     }
@@ -99,22 +103,22 @@ function executeIntent(creep, intent) {
     switch (intent.type) {
         case 'build': {
             const result = creep.build(target);
-            if (result === ERR_NOT_IN_RANGE) borderNav.moveToTarget(creep, target, 3);
+            if (result === ERR_NOT_IN_RANGE) movement.planMoveTo(creep, target, { range: 3, maxRooms: 1 });
             return true;
         }
         case 'harvest': {
             const result = creep.harvest(target);
-            if (result === ERR_NOT_IN_RANGE) borderNav.moveToTarget(creep, target, 1);
+            if (result === ERR_NOT_IN_RANGE) movement.planMoveTo(creep, target, { range: 1, maxRooms: 1 });
             return true;
         }
         case 'withdraw': {
             const result = creep.withdraw(target, intent.resourceType || RESOURCE_ENERGY);
-            if (result === ERR_NOT_IN_RANGE) borderNav.moveToTarget(creep, target, 1);
+            if (result === ERR_NOT_IN_RANGE) movement.planMoveTo(creep, target, { range: 1, maxRooms: 1 });
             return true;
         }
         case 'pickup': {
             const result = creep.pickup(target);
-            if (result === ERR_NOT_IN_RANGE) borderNav.moveToTarget(creep, target, 1);
+            if (result === ERR_NOT_IN_RANGE) movement.planMoveTo(creep, target, { range: 1, maxRooms: 1 });
             return true;
         }
         default:
@@ -437,6 +441,7 @@ function getRemoteBuildIntent(creep, mission, homeRoom, homeRoomName) {
 const roleRemoteWorker = {
     run: function(creep) {
         if (!creep || !creep.memory) return;
+        movement.enableTrafficForBuildWorker(creep);
 
         const missionName = creep.memory.missionName;
         if (!missionName) {

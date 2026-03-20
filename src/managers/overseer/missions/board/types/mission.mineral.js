@@ -10,12 +10,19 @@ function cleanupAssigned(mission) {
 }
 
 function getMineralInfo(intel, id) {
-    const minerals = intel && Array.isArray(intel.minerals) ? intel.minerals : [];
-    for (let i = 0; i < minerals.length; i++) {
-        const m = minerals[i];
-        if (m && m.id === id) return m;
+    if (!intel || !id) return null;
+    if (intel._mineralByIdTick !== Game.time || !intel._mineralById) {
+        const byId = Object.create(null);
+        const minerals = Array.isArray(intel.minerals) ? intel.minerals : [];
+        for (let i = 0; i < minerals.length; i++) {
+            const mineral = minerals[i];
+            if (!mineral || !mineral.id) continue;
+            byId[mineral.id] = mineral;
+        }
+        intel._mineralById = byId;
+        intel._mineralByIdTick = Game.time;
     }
-    return null;
+    return intel._mineralById[id] || null;
 }
 
 module.exports = {
@@ -80,29 +87,35 @@ module.exports = {
         cleanupAssigned(mission);
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const mineral = getMineralInfo(intel, mission.targetId);
+        const depleted = !mineral || mineral.mineralAmount <= 0 || (mineral.ticksToRegeneration && mineral.ticksToRegeneration > 0);
+        const spawnSlot = `mineral:${mission.sponsorRoom}:${mission.targetId}:0`;
+        const assignedCount = mission.assigned.primary.length;
 
         mission.meta = mission.meta || {};
         mission.meta.missionName = mission.meta.missionName || `mineral:${mission.targetId}`;
-        mission.meta.depleted = !mineral || mineral.mineralAmount <= 0 || (mineral.ticksToRegeneration && mineral.ticksToRegeneration > 0);
+        mission.meta.depleted = depleted;
 
         mission.mineralId = mission.targetId;
-        mission.requirements = {
-            archetype: 'mineral_miner',
-            minCount: 1,
-            maxCount: 1
-        };
-        mission.spawnSlots = [`mineral:${mission.sponsorRoom}:${mission.targetId}:0`];
-        mission.data = {
-            containerId: mineral && mineral.containerId ? mineral.containerId : null,
-            extractorId: mineral && mineral.extractorId ? mineral.extractorId : null,
-            resourceType: mineral && mineral.mineralType ? mineral.mineralType : null
-        };
-        mission.demand = {
-            role: 'mineral_miner',
-            count: mission.meta.depleted ? 0 : Math.max(0, 1 - mission.assigned.primary.length),
-            bodyProfile: 'mineral_miner'
-        };
-        if (mission.assigned.primary.length > 0 && !mission.meta.depleted) mission.lastProgressTick = Game.time;
+        mission.requirements = mission.requirements || {};
+        mission.requirements.archetype = 'mineral_miner';
+        mission.requirements.minCount = 1;
+        mission.requirements.maxCount = 1;
+
+        if (!Array.isArray(mission.spawnSlots) || mission.spawnSlots.length !== 1 || mission.spawnSlots[0] !== spawnSlot) {
+            mission.spawnSlots = [spawnSlot];
+        }
+
+        mission.data = mission.data || {};
+        mission.data.containerId = mineral && mineral.containerId ? mineral.containerId : null;
+        mission.data.extractorId = mineral && mineral.extractorId ? mineral.extractorId : null;
+        mission.data.resourceType = mineral && mineral.mineralType ? mineral.mineralType : null;
+
+        mission.demand = mission.demand || {};
+        mission.demand.role = 'mineral_miner';
+        mission.demand.count = depleted ? 0 : Math.max(0, 1 - assignedCount);
+        mission.demand.bodyProfile = 'mineral_miner';
+
+        if (assignedCount > 0 && !depleted) mission.lastProgressTick = Game.time;
     },
 
     isComplete(mission) {

@@ -76,14 +76,33 @@ function getObjectsByIds(ids, memo) {
     return out;
 }
 
+function isEnergySourceObject(obj) {
+    if (!obj) return false;
+    if (obj.store) return (obj.store[RESOURCE_ENERGY] || 0) > 0;
+    if (obj.resourceType === RESOURCE_ENERGY && Number.isFinite(obj.amount)) return obj.amount > 0;
+    return false;
+}
+
+function isRefillTargetObject(obj) {
+    if (!obj || !obj.store || typeof obj.store.getFreeCapacity !== 'function') return false;
+    if (
+        obj.structureType !== STRUCTURE_SPAWN &&
+        obj.structureType !== STRUCTURE_EXTENSION &&
+        obj.structureType !== STRUCTURE_TOWER
+    ) return false;
+    const free = obj.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+    if (obj.structureType === STRUCTURE_TOWER) return free >= TOWER_REFILL_MIN_FREE;
+    return free > 0;
+}
+
+function pickClosestTarget(creep, targets) {
+    if (!creep || !Array.isArray(targets) || targets.length <= 0) return null;
+    return creep.pos.findClosestByRange(targets) || creep.pos.findClosestByPath(targets);
+}
+
 function getRefillTargets(mission, room, memo) {
     const fromMission = getObjectsByIds(mission && mission.data ? mission.data.refillTargetIds : [], memo);
-    const valid = fromMission.filter(s => {
-        if (!s || !s.store || typeof s.store.getFreeCapacity !== 'function') return false;
-        const free = s.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
-        if (s.structureType === STRUCTURE_TOWER) return free >= TOWER_REFILL_MIN_FREE;
-        return free > 0;
-    });
+    const valid = fromMission.filter(isRefillTargetObject);
     if (valid.length > 0) return valid;
 
     if (!room) return [];
@@ -91,17 +110,77 @@ function getRefillTargets(mission, room, memo) {
     const myStructures = roomCache && Array.isArray(roomCache.myStructures)
         ? roomCache.myStructures
         : room.find(FIND_MY_STRUCTURES);
-    return myStructures.filter(s => {
-        if (!s || !s.store || typeof s.store.getFreeCapacity !== 'function') return false;
-        if (
-            s.structureType !== STRUCTURE_SPAWN &&
-            s.structureType !== STRUCTURE_EXTENSION &&
-            s.structureType !== STRUCTURE_TOWER
-        ) return false;
-        const free = s.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
-        if (s.structureType === STRUCTURE_TOWER) return free >= TOWER_REFILL_MIN_FREE;
-        return free > 0;
-    });
+    return myStructures.filter(isRefillTargetObject);
+}
+
+function getFallbackEnergySources(room, blockedSourceIds, memo) {
+    if (!room) return [];
+    const blocked = blockedSourceIds instanceof Set ? blockedSourceIds : new Set();
+    const roomCache = getRoomCache(room);
+
+    const droppedAll = roomCache && Array.isArray(roomCache.dropped)
+        ? roomCache.dropped
+        : room.find(FIND_DROPPED_RESOURCES);
+    const dropped = droppedAll.filter(r =>
+        r &&
+        r.resourceType === RESOURCE_ENERGY &&
+        r.amount > 0 &&
+        (!r.id || !blocked.has(r.id))
+    );
+
+    const tombstonesAll = roomCache && Array.isArray(roomCache.tombstones)
+        ? roomCache.tombstones
+        : room.find(FIND_TOMBSTONES);
+    const tombstones = tombstonesAll.filter(t =>
+        t &&
+        t.store &&
+        (t.store[RESOURCE_ENERGY] || 0) > 0 &&
+        (!t.id || !blocked.has(t.id))
+    );
+
+    const ruinsAll = roomCache && Array.isArray(roomCache.ruins)
+        ? roomCache.ruins
+        : room.find(FIND_RUINS);
+    const ruins = ruinsAll.filter(r =>
+        r &&
+        r.store &&
+        (r.store[RESOURCE_ENERGY] || 0) > 0 &&
+        (!r.id || !blocked.has(r.id))
+    );
+
+    let structures = [];
+    if (roomCache && roomCache.structuresByType) {
+        const byType = roomCache.structuresByType;
+        structures = []
+            .concat(byType[STRUCTURE_CONTAINER] || [])
+            .concat(byType[STRUCTURE_STORAGE] || [])
+            .concat(byType[STRUCTURE_TERMINAL] || [])
+            .concat(byType[STRUCTURE_LINK] || []);
+    } else {
+        structures = room.find(FIND_STRUCTURES, {
+            filter: s =>
+                s &&
+                s.store &&
+                (
+                    s.structureType === STRUCTURE_CONTAINER ||
+                    s.structureType === STRUCTURE_STORAGE ||
+                    s.structureType === STRUCTURE_TERMINAL ||
+                    s.structureType === STRUCTURE_LINK
+                )
+        });
+    }
+
+    const stores = structures.filter(s =>
+        s &&
+        (!s.id || !blocked.has(s.id)) &&
+        s.store &&
+        (s.store[RESOURCE_ENERGY] || 0) > 0
+    );
+
+    if (memo) {
+        memo.fallbackEnergySourceCount = dropped.length + tombstones.length + ruins.length + stores.length;
+    }
+    return dropped.concat(tombstones, ruins, stores);
 }
 
 function pickBestEnergySource(creep, mission, room, blockedSourceIds, memo) {
@@ -112,44 +191,13 @@ function pickBestEnergySource(creep, mission, room, blockedSourceIds, memo) {
         ? mission.data.sourceIds
         : [];
     const preferred = getObjectsByIds(preferredIds, memo).filter(obj => {
-        if (!obj) return false;
+        if (!isEnergySourceObject(obj)) return false;
         if (obj.id && blocked.has(obj.id)) return false;
-        if (obj.store) return (obj.store[RESOURCE_ENERGY] || 0) > 0;
-        if (obj.resourceType === RESOURCE_ENERGY && Number.isFinite(obj.amount)) return obj.amount > 0;
-        return false;
+        return true;
     });
-    if (preferred.length > 0) return creep.pos.findClosestByPath(preferred) || creep.pos.findClosestByRange(preferred);
+    if (preferred.length > 0) return pickClosestTarget(creep, preferred);
 
-    const dropped = room.find(FIND_DROPPED_RESOURCES, {
-        filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0 && (!r.id || !blocked.has(r.id))
-    });
-    if (dropped.length > 0) return creep.pos.findClosestByPath(dropped) || creep.pos.findClosestByRange(dropped);
-
-    const tombstones = room.find(FIND_TOMBSTONES, {
-        filter: t => t.store && (t.store[RESOURCE_ENERGY] || 0) > 0 && (!t.id || !blocked.has(t.id))
-    });
-    if (tombstones.length > 0) return creep.pos.findClosestByPath(tombstones) || creep.pos.findClosestByRange(tombstones);
-
-    const ruins = room.find(FIND_RUINS, {
-        filter: r => r.store && (r.store[RESOURCE_ENERGY] || 0) > 0 && (!r.id || !blocked.has(r.id))
-    });
-    if (ruins.length > 0) return creep.pos.findClosestByPath(ruins) || creep.pos.findClosestByRange(ruins);
-
-    const structures = room.find(FIND_STRUCTURES, {
-        filter: s => {
-            if (s.id && blocked.has(s.id)) return false;
-            if (!s.store) return false;
-            if ((s.store[RESOURCE_ENERGY] || 0) <= 0) return false;
-            return (
-                s.structureType === STRUCTURE_CONTAINER ||
-                s.structureType === STRUCTURE_STORAGE ||
-                s.structureType === STRUCTURE_TERMINAL ||
-                s.structureType === STRUCTURE_LINK
-            );
-        }
-    });
-    if (structures.length > 0) return creep.pos.findClosestByPath(structures) || creep.pos.findClosestByRange(structures);
-    return null;
+    return pickClosestTarget(creep, getFallbackEnergySources(room, blocked, memo));
 }
 
 function moveHome(creep) {
@@ -184,6 +232,8 @@ module.exports = {
         // Simple-core role must only run when explicitly assigned to simple-core mission.
         if (assignedMissionName !== simpleMissionName) {
             if (creep.memory.simpleHaulerState !== undefined) delete creep.memory.simpleHaulerState;
+            if (creep.memory.simpleHaulerSourceId !== undefined) delete creep.memory.simpleHaulerSourceId;
+            if (creep.memory.simpleHaulerTargetId !== undefined) delete creep.memory.simpleHaulerTargetId;
             if (creep.memory.task !== undefined) delete creep.memory.task;
             if (creep.memory._trafficMove !== undefined) delete creep.memory._trafficMove;
             return;
@@ -199,6 +249,8 @@ module.exports = {
             if (creep.memory.task !== undefined) delete creep.memory.task;
             if (creep.memory.taskState !== undefined) delete creep.memory.taskState;
             if (creep.memory.simpleHaulerState !== undefined) delete creep.memory.simpleHaulerState;
+            if (creep.memory.simpleHaulerSourceId !== undefined) delete creep.memory.simpleHaulerSourceId;
+            if (creep.memory.simpleHaulerTargetId !== undefined) delete creep.memory.simpleHaulerTargetId;
             if (creep.memory._trafficMove !== undefined) delete creep.memory._trafficMove;
             return;
         }
@@ -209,8 +261,14 @@ module.exports = {
         }
 
         if (!creep.memory.simpleHaulerState) creep.memory.simpleHaulerState = STATE_LOAD;
-        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) <= 0) creep.memory.simpleHaulerState = STATE_LOAD;
-        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) creep.memory.simpleHaulerState = STATE_DELIVER;
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) <= 0) {
+            if (creep.memory.simpleHaulerState !== STATE_LOAD) creep.memory.simpleHaulerState = STATE_LOAD;
+            if (creep.memory.simpleHaulerTargetId !== undefined) delete creep.memory.simpleHaulerTargetId;
+        }
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) {
+            if (creep.memory.simpleHaulerState !== STATE_DELIVER) creep.memory.simpleHaulerState = STATE_DELIVER;
+            if (creep.memory.simpleHaulerSourceId !== undefined) delete creep.memory.simpleHaulerSourceId;
+        }
         const refillTargets = getRefillTargets(mission, creep.room, memo);
         const blockedSourceIds = new Set();
 
@@ -228,7 +286,16 @@ module.exports = {
         }
 
         if (creep.memory.simpleHaulerState === STATE_LOAD) {
-            const source = pickBestEnergySource(creep, mission, creep.room, blockedSourceIds, memo);
+            let source = getObjectByIdCached(creep.memory.simpleHaulerSourceId, memo);
+            if (!isEnergySourceObject(source) || (source && source.id && blockedSourceIds.has(source.id))) {
+                source = null;
+            }
+            if (!source) {
+                source = pickBestEnergySource(creep, mission, creep.room, blockedSourceIds, memo);
+                const nextSourceId = source && source.id ? source.id : null;
+                if (nextSourceId) creep.memory.simpleHaulerSourceId = nextSourceId;
+                else if (creep.memory.simpleHaulerSourceId !== undefined) delete creep.memory.simpleHaulerSourceId;
+            }
             if (!source) {
                 const anchor = getAnchorSpawn(creep.room, memo);
                 if (anchor) moveToTarget(creep, anchor, 2);
@@ -238,14 +305,21 @@ module.exports = {
             if (source.resourceType === RESOURCE_ENERGY && Number.isFinite(source.amount)) {
                 const code = creep.pickup(source);
                 if (code === ERR_NOT_IN_RANGE) moveToTarget(creep, source, 1);
+                if (code === ERR_INVALID_TARGET || code === ERR_NOT_ENOUGH_RESOURCES) {
+                    if (creep.memory.simpleHaulerSourceId !== undefined) delete creep.memory.simpleHaulerSourceId;
+                }
                 return;
             }
 
             if (source.store && (source.store[RESOURCE_ENERGY] || 0) > 0) {
                 const code = creep.withdraw(source, RESOURCE_ENERGY);
                 if (code === ERR_NOT_IN_RANGE) moveToTarget(creep, source, 1);
+                if (code === ERR_INVALID_TARGET || code === ERR_NOT_ENOUGH_RESOURCES) {
+                    if (creep.memory.simpleHaulerSourceId !== undefined) delete creep.memory.simpleHaulerSourceId;
+                }
                 return;
             }
+            if (creep.memory.simpleHaulerSourceId !== undefined) delete creep.memory.simpleHaulerSourceId;
             return;
         }
 
@@ -255,9 +329,19 @@ module.exports = {
             return;
         }
 
-        const target = creep.pos.findClosestByPath(refillTargets) || creep.pos.findClosestByRange(refillTargets);
+        let target = getObjectByIdCached(creep.memory.simpleHaulerTargetId, memo);
+        if (!isRefillTargetObject(target)) target = null;
+        if (!target) {
+            target = pickClosestTarget(creep, refillTargets);
+            const nextTargetId = target && target.id ? target.id : null;
+            if (nextTargetId) creep.memory.simpleHaulerTargetId = nextTargetId;
+            else if (creep.memory.simpleHaulerTargetId !== undefined) delete creep.memory.simpleHaulerTargetId;
+        }
         if (!target) return;
         const code = creep.transfer(target, RESOURCE_ENERGY);
         if (code === ERR_NOT_IN_RANGE) moveToTarget(creep, target, 1);
+        if (code === ERR_INVALID_TARGET || code === ERR_FULL) {
+            if (creep.memory.simpleHaulerTargetId !== undefined) delete creep.memory.simpleHaulerTargetId;
+        }
     }
 };

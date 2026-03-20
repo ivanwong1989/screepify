@@ -2,6 +2,7 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
+const heap = require('utils_heap');
 
 const CORE_END_FLAG = 'CORE_END';
 const SIMPLE_CORE_TARGET_TYPES = new Set([
@@ -12,6 +13,9 @@ const SIMPLE_CORE_TARGET_TYPES = new Set([
 const TOWER_REFILL_MIN_FREE = 100;
 const MAX_SIMPLE_HAULERS = 2;
 const MIN_SIMPLE_CORE_HAULERS = 1;
+const SIMPLE_CORE_PLAN_STORE = 'missionLogisticsSimpleCorePlan';
+const SIMPLE_CORE_PLAN_CACHE_TTL = 30;
+const SIMPLE_CORE_PLAN_REPLAN_INTERVAL = 5;
 
 function shallowArrayEqual(a, b) {
     if (a === b) return true;
@@ -292,6 +296,91 @@ function getObservedAssignedSimpleHaulers(mission, roomName) {
     return assigned;
 }
 
+function getSimpleCorePlanStore() {
+    return heap.getStore(SIMPLE_CORE_PLAN_STORE, { ttl: SIMPLE_CORE_PLAN_CACHE_TTL });
+}
+
+function getSimpleCorePlanSignature(roomName, intel, roomMemo) {
+    const sourceCount = intel && Array.isArray(intel.allEnergySources) ? intel.allEnergySources.length : 0;
+    const myStructureCount = roomMemo && Array.isArray(roomMemo.myStructures) ? roomMemo.myStructures.length : 0;
+    const droppedCount = roomMemo && Array.isArray(roomMemo.dropped) ? roomMemo.dropped.length : 0;
+    const tombstoneCount = roomMemo && Array.isArray(roomMemo.tombstones) ? roomMemo.tombstones.length : 0;
+    const ruinCount = roomMemo && Array.isArray(roomMemo.ruins) ? roomMemo.ruins.length : 0;
+    const linkCount = roomMemo && Array.isArray(roomMemo.myLinks) ? roomMemo.myLinks.length : 0;
+    return [
+        roomName || '-',
+        sourceCount,
+        myStructureCount,
+        droppedCount,
+        tombstoneCount,
+        ruinCount,
+        linkCount
+    ].join(':');
+}
+
+function getCachedSimpleCorePlan(roomName, signature) {
+    if (!roomName || !signature) return null;
+    const store = getSimpleCorePlanStore();
+    const key = `${roomName}:${signature}`;
+    const cached = store[key];
+    if (!cached || !Number.isFinite(cached.tick)) return null;
+    if ((Game.time - cached.tick) > SIMPLE_CORE_PLAN_REPLAN_INTERVAL) return null;
+    return cached;
+}
+
+function setCachedSimpleCorePlan(roomName, signature, plan) {
+    if (!roomName || !signature) return;
+    const store = getSimpleCorePlanStore();
+    const key = `${roomName}:${signature}`;
+    store[key] = Object.assign({ tick: Game.time }, plan);
+}
+
+function shouldReplanSimpleCoreMission(mission, signature) {
+    const meta = mission && mission.meta ? mission.meta : {};
+    const data = mission && mission.data ? mission.data : {};
+    if (!meta || meta.planSignature !== signature) return true;
+    if (!Number.isFinite(meta.planTick)) return true;
+    if ((Game.time - meta.planTick) >= SIMPLE_CORE_PLAN_REPLAN_INTERVAL) return true;
+    if (!Array.isArray(data.refillTargetIds) || !Array.isArray(data.sourceIds)) return true;
+    return false;
+}
+
+function getActiveRefillTargetsByIds(refillIds, roomMemo, objectCache) {
+    const targets = [];
+    const activeIds = [];
+    if (!Array.isArray(refillIds) || refillIds.length <= 0) {
+        return { targets, activeIds };
+    }
+    for (let i = 0; i < refillIds.length; i++) {
+        const target = getObjectByIdCached(refillIds[i], objectCache, roomMemo);
+        if (!target || !target.store || typeof target.store.getFreeCapacity !== 'function') continue;
+        if (!SIMPLE_CORE_TARGET_TYPES.has(target.structureType)) continue;
+        const free = target.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+        if (target.structureType === STRUCTURE_TOWER && free < TOWER_REFILL_MIN_FREE) continue;
+        if (target.structureType !== STRUCTURE_TOWER && free <= 0) continue;
+        activeIds.push(target.id);
+        targets.push(target);
+    }
+    return { targets, activeIds };
+}
+
+function getActiveSourceIds(sourceIds, roomMemo, objectCache) {
+    const activeIds = [];
+    if (!Array.isArray(sourceIds) || sourceIds.length <= 0) return activeIds;
+    for (let i = 0; i < sourceIds.length; i++) {
+        const source = getObjectByIdCached(sourceIds[i], objectCache, roomMemo);
+        if (!source) continue;
+        if (source.store && (source.store[RESOURCE_ENERGY] || 0) > 0) {
+            activeIds.push(source.id);
+            continue;
+        }
+        if (source.resourceType === RESOURCE_ENERGY && Number.isFinite(source.amount) && source.amount > 0) {
+            activeIds.push(source.id);
+        }
+    }
+    return activeIds;
+}
+
 module.exports = {
     makeKey(context) {
         return missionKeys.makeUserMissionKey(
@@ -372,22 +461,52 @@ module.exports = {
         if (!shouldActivate(room, roomMemo)) return;
         const objectCache = Object.create(null);
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
-        const refillTargets = getSimpleCoreTargets(room, roomMemo);
-        const refillIds = refillTargets.map(t => t.id);
-        const sourceIds = getSourceIds(room, intel, refillIds, roomMemo);
+        const planSignature = getSimpleCorePlanSignature(roomName, intel, roomMemo);
+        const shouldReplan = shouldReplanSimpleCoreMission(mission, planSignature);
+
+        let planState = 'cached';
+        let refillIds = mission && mission.data && Array.isArray(mission.data.refillTargetIds)
+            ? mission.data.refillTargetIds
+            : [];
+        let sourceIds = mission && mission.data && Array.isArray(mission.data.sourceIds)
+            ? mission.data.sourceIds
+            : [];
+
+        if (shouldReplan) {
+            const cachedPlan = getCachedSimpleCorePlan(roomName, planSignature);
+            if (cachedPlan && Array.isArray(cachedPlan.refillIds) && Array.isArray(cachedPlan.sourceIds)) {
+                refillIds = cachedPlan.refillIds.slice();
+                sourceIds = cachedPlan.sourceIds.slice();
+                planState = 'cache_hit';
+            } else {
+                const nextTargets = getSimpleCoreTargets(room, roomMemo);
+                const nextRefillIds = nextTargets.map(t => t.id);
+                refillIds = nextRefillIds;
+                sourceIds = getSourceIds(room, intel, nextRefillIds, roomMemo);
+                setCachedSimpleCorePlan(roomName, planSignature, { refillIds, sourceIds });
+                planState = 'replanned';
+            }
+        }
+
+        const activeRefill = getActiveRefillTargetsByIds(refillIds, roomMemo, objectCache);
+        const activeSourceIds = getActiveSourceIds(sourceIds, roomMemo, objectCache);
+        const refillTargets = activeRefill.targets;
+        const activeRefillIds = activeRefill.activeIds;
         const refillNeed = sumEnergyNeed(refillTargets);
         const totalNeed = refillNeed;
-        const sourceSupply = estimateSourceSupply(room, sourceIds, roomMemo, objectCache);
+        const sourceSupply = estimateSourceSupply(room, activeSourceIds, roomMemo, objectCache);
         const observedAssigned = getObservedAssignedSimpleHaulers(mission, roomName);
 
         let desiredCount = Math.max(MIN_SIMPLE_CORE_HAULERS, estimateDesiredCount(totalNeed));
         if (sourceSupply <= 0) desiredCount = MIN_SIMPLE_CORE_HAULERS;
         const requiredCarry = estimateRequiredCarry(totalNeed, desiredCount);
 
-        setIfChanged(mission, 'targetId', refillIds.length > 0 ? refillIds[0] : null);
+        setIfChanged(mission, 'targetId', activeRefillIds.length > 0 ? activeRefillIds[0] : null);
         mission.meta = mission.meta || {};
         setIfChanged(mission.meta, 'desiredCount', desiredCount);
         setIfChanged(mission.meta, 'requiredCarry', requiredCarry);
+        setIfChanged(mission.meta, 'planSignature', planSignature);
+        if (planState !== 'cached') setIfChanged(mission.meta, 'planTick', Game.time);
         if (!mission.meta.missionName) {
             setIfChanged(mission.meta, 'missionName', `logistics:simpleCore:${roomName}`);
         }
@@ -409,19 +528,20 @@ module.exports = {
         setObjectIfChanged(mission, 'demand', nextDemand);
 
         mission.data = mission.data || {};
-        setArrayIfChanged(mission.data, 'refillTargetIds', refillIds);
-        setArrayIfChanged(mission.data, 'sourceIds', sourceIds);
+        setArrayIfChanged(mission.data, 'refillTargetIds', activeRefillIds);
+        setArrayIfChanged(mission.data, 'sourceIds', activeSourceIds);
 
         mission.progress = mission.progress || {};
         setIfChanged(mission.progress, 'stage', 'simple_core_refill');
         setIfChanged(mission.progress, 'goalState', mission.assigned.primary.length > 0 ? 'sustaining' : 'seeking_assignment');
         setIfChanged(mission.progress, 'assignedPrimary', mission.assigned.primary.length);
-        setIfChanged(mission.progress, 'refillTargetCount', refillIds.length);
-        setIfChanged(mission.progress, 'sourceCount', sourceIds.length);
+        setIfChanged(mission.progress, 'refillTargetCount', activeRefillIds.length);
+        setIfChanged(mission.progress, 'sourceCount', activeSourceIds.length);
         setIfChanged(mission.progress, 'sourceSupply', sourceSupply);
         setIfChanged(mission.progress, 'refillNeed', refillNeed);
         setIfChanged(mission.progress, 'totalNeed', totalNeed);
         setIfChanged(mission.progress, 'requiredCarry', requiredCarry);
+        setIfChanged(mission.progress, 'planState', planState);
         setIfChanged(mission.progress, 'observedAssigned', observedAssigned.length);
         setArrayIfChanged(mission.progress, 'assignedNames', mission.assigned.primary);
         setArrayIfChanged(mission.progress, 'observedNames', observedAssigned);
@@ -436,9 +556,9 @@ module.exports = {
         }
         logSimpleCoreDebug(
             `[SimpleCore] ${roomName} desired=${desiredCount} assigned=${mission.assigned.primary.length} ` +
-            `observed=${observedAssigned.length} refillTargets=${refillIds.length} ` +
-            `sources=${sourceIds.length} sourceSupply=${sourceSupply} totalNeed=${totalNeed} ` +
-            `demand=${mission.demand.count} requiredCarry=${requiredCarry}`
+            `observed=${observedAssigned.length} refillTargets=${activeRefillIds.length} ` +
+            `sources=${activeSourceIds.length} sourceSupply=${sourceSupply} totalNeed=${totalNeed} ` +
+            `demand=${mission.demand.count} requiredCarry=${requiredCarry} planState=${planState}`
         );
     },
 

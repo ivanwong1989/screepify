@@ -19,6 +19,7 @@ const MAX_REMOTE_HAULERS_PER_LANE = 2;
 const REMOTE_HAUL_PLAN_CACHE_TTL = 250;
 const REMOTE_HAUL_PLAN_STORE = 'remoteHaulPlan';
 const REMOTE_HAUL_REPLAN_INTERVAL = 97;
+const REMOTE_HAUL_CONTEXT_INDEX_STORE = 'remoteHaulContextIndex';
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -56,17 +57,31 @@ function buildOtherSourceRings(sources, currentSourceId, roomName) {
     return blockedTiles;
 }
 
-function getRemoteEntry(homeRoom, remoteRoomName, opState) {
-    if (!homeRoom || !remoteRoomName) return null;
+function getRemoteContextIndex(homeRoom, opState) {
+    if (!homeRoom) return { entries: [], byName: Object.create(null) };
+    const store = heap.getStore(REMOTE_HAUL_CONTEXT_INDEX_STORE, { ttl: 3 });
+    const key = `${homeRoom.name}:${opState || 'none'}:${Game.time}`;
+    const cached = store[key];
+    if (cached && Array.isArray(cached.entries) && cached.byName) return cached;
+
     const entries = remoteUtils.getRemoteEconomicContext(homeRoom, {
         opState: opState || null,
         maxScoutAge: 4000
     });
+    const byName = Object.create(null);
     for (let i = 0; i < entries.length; i++) {
-        const e = entries[i];
-        if (e && e.name === remoteRoomName) return e;
+        const entry = entries[i];
+        if (entry && entry.name) byName[entry.name] = entry;
     }
-    return null;
+    const next = { tick: Game.time, entries, byName };
+    store[key] = next;
+    return next;
+}
+
+function getRemoteEntry(homeRoom, remoteRoomName, opState) {
+    if (!homeRoom || !remoteRoomName) return null;
+    const ctx = getRemoteContextIndex(homeRoom, opState);
+    return ctx.byName[remoteRoomName] || null;
 }
 
 function getSourceInfo(entry, sourceId) {
@@ -267,17 +282,16 @@ module.exports = {
             return;
         }
 
-        const entries = remoteUtils.getRemoteEconomicContext(room, {
-            opState: context && context.opState ? context.opState : null,
-            maxScoutAge: 4000
-        });
-        const enabledRooms = new Set(entries.filter(e => e && e.enabled && e.name).map(e => e.name));
+        const opState = context && context.opState ? context.opState : null;
+        const remoteCtx = getRemoteContextIndex(room, opState);
+        const entries = remoteCtx.entries;
 
         for (let i = 0; i < liveRemoteHaul.length; i++) {
             const mission = liveRemoteHaul[i];
             if (!mission) continue;
             const remoteRoom = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
-            if (remoteRoom && !enabledRooms.has(remoteRoom)) {
+            const enabledRemote = remoteRoom ? remoteCtx.byName[remoteRoom] : null;
+            if (remoteRoom && !(enabledRemote && enabledRemote.enabled)) {
                 missionBoard.markCancelled(mission.id, 'remote_room_not_enabled');
             }
         }

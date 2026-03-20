@@ -8,6 +8,7 @@ const missionThrottle = require('managers_overseer_missions_board_utils_missionT
 const REMOTE_HARVEST_PLAN_CACHE_TTL = 300;
 const REMOTE_HARVEST_PLAN_STORE = 'remoteHarvestPlan';
 const REMOTE_HARVEST_REPLAN_INTERVAL = 151;
+const REMOTE_HARVEST_CONTEXT_INDEX_STORE = 'remoteHarvestContextIndex';
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -15,17 +16,31 @@ function cleanupAssigned(mission) {
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
 }
 
-function getRemoteEntry(homeRoom, remoteRoomName, opState) {
-    if (!homeRoom || !remoteRoomName) return null;
+function getRemoteContextIndex(homeRoom, opState) {
+    if (!homeRoom) return { entries: [], byName: Object.create(null) };
+    const store = heap.getStore(REMOTE_HARVEST_CONTEXT_INDEX_STORE, { ttl: 3 });
+    const key = `${homeRoom.name}:${opState || 'none'}:${Game.time}`;
+    const cached = store[key];
+    if (cached && Array.isArray(cached.entries) && cached.byName) return cached;
+
     const entries = remoteUtils.getRemoteEconomicContext(homeRoom, {
         opState: opState || null,
         maxScoutAge: 4000
     });
+    const byName = Object.create(null);
     for (let i = 0; i < entries.length; i++) {
-        const e = entries[i];
-        if (e && e.name === remoteRoomName) return e;
+        const entry = entries[i];
+        if (entry && entry.name) byName[entry.name] = entry;
     }
-    return null;
+    const next = { tick: Game.time, entries, byName };
+    store[key] = next;
+    return next;
+}
+
+function getRemoteEntry(homeRoom, remoteRoomName, opState) {
+    if (!homeRoom || !remoteRoomName) return null;
+    const ctx = getRemoteContextIndex(homeRoom, opState);
+    return ctx.byName[remoteRoomName] || null;
 }
 
 function getSourceInfo(entry, sourceId) {
@@ -163,17 +178,16 @@ module.exports = {
             return;
         }
 
-        const entries = remoteUtils.getRemoteEconomicContext(room, {
-            opState: context && context.opState ? context.opState : null,
-            maxScoutAge: 4000
-        });
-        const enabledRooms = new Set(entries.filter(e => e && e.enabled && e.name).map(e => e.name));
+        const opState = context && context.opState ? context.opState : null;
+        const remoteCtx = getRemoteContextIndex(room, opState);
+        const entries = remoteCtx.entries;
 
         for (let i = 0; i < liveRemoteHarvest.length; i++) {
             const mission = liveRemoteHarvest[i];
             if (!mission) continue;
             const remoteRoom = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
-            if (remoteRoom && !enabledRooms.has(remoteRoom)) {
+            const enabledRemote = remoteRoom ? remoteCtx.byName[remoteRoom] : null;
+            if (remoteRoom && !(enabledRemote && enabledRemote.enabled)) {
                 missionBoard.markCancelled(mission.id, 'remote_room_not_enabled');
             }
         }
