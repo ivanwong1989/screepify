@@ -88,11 +88,18 @@ function getMiningContainerIdSet(intel) {
     return ids;
 }
 
-function getNonMiningContainerIds(room, intel) {
+function getRoomCache(room) {
+    if (!room || typeof global.getRoomCache !== 'function') return null;
+    return global.getRoomCache(room);
+}
+
+function getNonMiningContainerIds(room, intel, roomCache) {
     if (!room) return [];
     const miningContainerIds = getMiningContainerIdSet(intel);
     const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
         ? intel.structures[STRUCTURE_CONTAINER]
+        : (roomCache && roomCache.structuresByType && roomCache.structuresByType[STRUCTURE_CONTAINER])
+            ? roomCache.structuresByType[STRUCTURE_CONTAINER]
         : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
 
     const ids = [];
@@ -102,6 +109,72 @@ function getNonMiningContainerIds(room, intel) {
         ids.push(c.id);
     }
     return ids;
+}
+
+function buildStructureByIdIndex(intel, roomCache) {
+    const byId = Object.create(null);
+    if (intel && intel.structures) {
+        const byType = intel.structures;
+        const keys = Object.keys(byType);
+        for (let i = 0; i < keys.length; i++) {
+            const list = byType[keys[i]];
+            if (!Array.isArray(list)) continue;
+            for (let j = 0; j < list.length; j++) {
+                const s = list[j];
+                if (s && s.id) byId[s.id] = s;
+            }
+        }
+        return byId;
+    }
+
+    const structures = roomCache && Array.isArray(roomCache.structures) ? roomCache.structures : [];
+    for (let i = 0; i < structures.length; i++) {
+        const s = structures[i];
+        if (s && s.id) byId[s.id] = s;
+    }
+    return byId;
+}
+
+function getRepairRoomMemo(room, intel, roomCache) {
+    if (!room) {
+        return {
+            sourceIds: [],
+            nonMiningContainerIds: [],
+            structureById: Object.create(null)
+        };
+    }
+
+    if (roomCache && roomCache._repairMissionMemo && roomCache._repairMissionMemo.time === Game.time) {
+        return roomCache._repairMissionMemo;
+    }
+
+    const allEnergySources = (intel && Array.isArray(intel.allEnergySources)) ? intel.allEnergySources : [];
+    const sourceIds = [];
+    for (let i = 0; i < allEnergySources.length; i++) {
+        const source = allEnergySources[i];
+        if (source && source.id) sourceIds.push(source.id);
+    }
+
+    const memo = {
+        time: Game.time,
+        sourceIds,
+        nonMiningContainerIds: getNonMiningContainerIds(room, intel, roomCache),
+        structureById: buildStructureByIdIndex(intel, roomCache)
+    };
+
+    if (roomCache) roomCache._repairMissionMemo = memo;
+    return memo;
+}
+
+function getTargetStructure(mission, runtimeCtx) {
+    const roomName = mission.targetRoom || mission.sponsorRoom;
+    const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
+    if (!room) return { room: null, structure: null, memo: null };
+    const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+    const roomCache = getRoomCache(room);
+    const memo = getRepairRoomMemo(room, intel, roomCache);
+    const structure = (memo.structureById && memo.structureById[mission.targetId]) || Game.getObjectById(mission.targetId);
+    return { room, structure, memo };
 }
 
 module.exports = {
@@ -195,19 +268,20 @@ module.exports = {
     },
 
     validate(mission, runtimeCtx) {
-        const roomName = mission.targetRoom || mission.sponsorRoom;
-        const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
+        const resolved = getTargetStructure(mission, runtimeCtx);
+        const room = resolved.room;
         if (!room) return true;
-        const structure = Game.getObjectById(mission.targetId);
+        const structure = resolved.structure;
         return !!structure;
     },
 
     refresh(mission, runtimeCtx) {
         cleanupAssigned(mission);
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
-        const roomName = mission.targetRoom || mission.sponsorRoom;
-        const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
-        const structure = Game.getObjectById(mission.targetId);
+        const resolved = getTargetStructure(mission, runtimeCtx);
+        const room = resolved.room;
+        const structure = resolved.structure;
+        const roomMemo = resolved.memo;
         const fortify = !!(mission.meta && mission.meta.fortify);
 
         mission.progress = mission.progress || {};
@@ -242,8 +316,8 @@ module.exports = {
             bodyProfile: 'worker'
         };
         mission.data = {
-            sourceIds: intel && Array.isArray(intel.allEnergySources) ? intel.allEnergySources.map(s => s.id) : [],
-            nonMiningContainerIds: getNonMiningContainerIds(room, intel),
+            sourceIds: roomMemo ? roomMemo.sourceIds : [],
+            nonMiningContainerIds: roomMemo ? roomMemo.nonMiningContainerIds : getNonMiningContainerIds(room, intel, null),
             allowPartial: true,
             fortify,
             targetHits: Number.isFinite(mission.meta.targetHits) ? mission.meta.targetHits : null
@@ -251,9 +325,9 @@ module.exports = {
     },
 
     isComplete(mission, runtimeCtx) {
-        const roomName = mission.targetRoom || mission.sponsorRoom;
-        const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
-        const structure = Game.getObjectById(mission.targetId);
+        const resolved = getTargetStructure(mission, runtimeCtx);
+        const room = resolved.room;
+        const structure = resolved.structure;
         if (!structure) return !!room;
 
         const fortify = !!(mission.meta && mission.meta.fortify);

@@ -136,6 +136,67 @@ function getPickupContainer(runtime, mission) {
     return container;
 }
 
+function getSourceLink(runtime, mission) {
+    const runtimeLinkId = runtime && runtime.sourceLinkId ? runtime.sourceLinkId : null;
+    const missionLinkId = mission && mission.meta && mission.meta.linkId ? mission.meta.linkId : null;
+    const linkId = runtimeLinkId || missionLinkId;
+    if (!linkId) return null;
+    const link = Game.getObjectById(linkId);
+    if (!link || link.structureType !== STRUCTURE_LINK || !link.store) return null;
+    return link;
+}
+
+function getStationPos(runtime, mission) {
+    const runtimePos = runtime && runtime.stationPos ? runtime.stationPos : null;
+    const missionPos = mission && mission.meta && mission.meta.stationPos ? mission.meta.stationPos : null;
+    const pos = runtimePos || missionPos;
+    if (!pos || pos.x === undefined || pos.y === undefined || !pos.roomName) return null;
+    return new RoomPosition(pos.x, pos.y, pos.roomName);
+}
+
+function runLinkOverflowMode(creep, mission, runtime) {
+    const pickup = getPickupContainer(runtime, mission);
+    const sourceLink = getSourceLink(runtime, mission);
+    if (!pickup || !sourceLink) {
+        debugLog(creep, mission, runtime, 'LINK_OVERFLOW_MISSING_TARGETS');
+        return;
+    }
+
+    const stationPos = getStationPos(runtime, mission);
+    if (stationPos && !creep.pos.isEqualTo(stationPos)) {
+        const moveCode = movement.planMoveTo(creep, stationPos, { range: 0, maxRooms: 1 });
+        debugLog(creep, mission, runtime, 'LINK_OVERFLOW_MOVE_TO_STATION', `code=${moveCode}`);
+        return;
+    }
+
+    const nearPickup = creep.pos.inRangeTo(pickup, 1);
+    const nearLink = creep.pos.inRangeTo(sourceLink, 1);
+    if (!nearPickup || !nearLink) {
+        const moveTarget = nearPickup ? sourceLink : pickup;
+        const moveCode = movement.planMoveTo(creep, moveTarget, { range: 1, maxRooms: 1 });
+        debugLog(creep, mission, runtime, 'LINK_OVERFLOW_REPOSITION', `target=${moveTarget.id} code=${moveCode}`);
+        return;
+    }
+
+    const carried = creep.store[RESOURCE_ENERGY] || 0;
+    const linkFree = sourceLink.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+    const containerEnergy = pickup.store[RESOURCE_ENERGY] || 0;
+
+    if (carried > 0 && linkFree > 0) {
+        const transferCode = creep.transfer(sourceLink, RESOURCE_ENERGY);
+        debugLog(creep, mission, runtime, 'LINK_OVERFLOW_TRANSFER', `code=${transferCode}`);
+        return;
+    }
+
+    if (containerEnergy > 0 && creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+        const withdrawCode = creep.withdraw(pickup, RESOURCE_ENERGY);
+        debugLog(creep, mission, runtime, 'LINK_OVERFLOW_WITHDRAW', `code=${withdrawCode}`);
+        return;
+    }
+
+    debugLog(creep, mission, runtime, 'LINK_OVERFLOW_IDLE', `carried=${carried} linkFree=${linkFree} container=${containerEnergy}`);
+}
+
 function clearAssignment(creep) {
     if (!creep || !creep.memory) return;
     delete creep.memory.miningLaneMissionId;
@@ -159,6 +220,13 @@ module.exports = {
         const runtime = getRuntime(mission);
         if (!runtime) {
             debugLog(creep, mission, null, 'NO_RUNTIME');
+            return;
+        }
+        const linkOverflowMode =
+            (runtime && runtime.linkAssistActive === true) ||
+            (mission && mission.meta && mission.meta.pathMode === 'link_overflow');
+        if (linkOverflowMode) {
+            runLinkOverflowMode(creep, mission, runtime);
             return;
         }
         const laneMode = hasLanePath(runtime);

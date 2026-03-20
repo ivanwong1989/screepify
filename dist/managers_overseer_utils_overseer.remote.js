@@ -4,7 +4,7 @@
 // Reads from: room.memory.overseer.scout (new format from overseer.scout.js)
 // Removes: old remote memory tree + "must be reserved by me" gating.
 // Enables by default for non-hostile rooms, with RCL3+ room-count gating.
-const HOSTILE_GATE_TICKS = 7200; // ~6h at ~3s/tick
+const HOSTILE_GATE_TICKS = 100; // ~6h at ~3s/tick
 const DEFENSE_PRESENCE_ROLES = Object.freeze({
     defender: true,
     brawler: true,

@@ -57,6 +57,79 @@ function cleanupAssigned(mission) {
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
 }
 
+function getRoomCache(room) {
+    if (!room || typeof global.getRoomCache !== 'function') return null;
+    return global.getRoomCache(room);
+}
+
+function getLogisticsRoomMemo(room, roomCache) {
+    if (!room) {
+        return {
+            mySpawns: [],
+            myStructures: [],
+            myStructuresByType: Object.create(null),
+            structures: [],
+            constructionSites: [],
+            roads: [],
+            labs: [],
+            objectById: Object.create(null)
+        };
+    }
+
+    if (roomCache && roomCache._logisticsCoreV2Memo && roomCache._logisticsCoreV2Memo.time === Game.time) {
+        return roomCache._logisticsCoreV2Memo;
+    }
+
+    const myStructuresByType = roomCache && roomCache.myStructuresByType ? roomCache.myStructuresByType : Object.create(null);
+    const myStructures = roomCache && Array.isArray(roomCache.myStructures) ? roomCache.myStructures : room.find(FIND_MY_STRUCTURES);
+    const structures = roomCache && Array.isArray(roomCache.structures) ? roomCache.structures : room.find(FIND_STRUCTURES);
+    const constructionSites = roomCache && Array.isArray(roomCache.constructionSites)
+        ? roomCache.constructionSites
+        : room.find(FIND_CONSTRUCTION_SITES);
+    const mySpawns = Array.isArray(myStructuresByType[STRUCTURE_SPAWN])
+        ? myStructuresByType[STRUCTURE_SPAWN]
+        : room.find(FIND_MY_SPAWNS);
+    const structuresByType = roomCache && roomCache.structuresByType ? roomCache.structuresByType : Object.create(null);
+    const roads = Array.isArray(structuresByType[STRUCTURE_ROAD])
+        ? structuresByType[STRUCTURE_ROAD]
+        : structures.filter(s => s && s.structureType === STRUCTURE_ROAD);
+    const labs = Array.isArray(myStructuresByType[STRUCTURE_LAB])
+        ? myStructuresByType[STRUCTURE_LAB]
+        : myStructures.filter(s => s && s.structureType === STRUCTURE_LAB);
+    const objectById = Object.create(null);
+    for (let i = 0; i < structures.length; i++) {
+        const obj = structures[i];
+        if (obj && obj.id) objectById[obj.id] = obj;
+    }
+
+    const memo = {
+        time: Game.time,
+        mySpawns,
+        myStructures,
+        myStructuresByType,
+        structures,
+        constructionSites,
+        roads,
+        labs,
+        objectById
+    };
+
+    if (roomCache) roomCache._logisticsCoreV2Memo = memo;
+    return memo;
+}
+
+function getObjectByIdCached(id, objectCache, roomMemo) {
+    if (!id) return null;
+    if (objectCache && objectCache[id] !== undefined) return objectCache[id];
+    if (roomMemo && roomMemo.objectById && roomMemo.objectById[id]) {
+        if (objectCache) objectCache[id] = roomMemo.objectById[id];
+        return roomMemo.objectById[id];
+    }
+    const obj = Game.getObjectById(id);
+    if (objectCache) objectCache[id] = obj || null;
+    return obj;
+}
+
 function getCoreEndFlag(room) {
     if (!room) return null;
     const flag = Game.flags[CORE_END_FLAG];
@@ -110,9 +183,9 @@ function getAdjacentRoadTiles(room, originPos) {
     return result;
 }
 
-function selectHeadAnchor(room, flag) {
+function selectHeadAnchor(room, flag, roomMemo) {
     if (!room) return null;
-    const spawns = room.find(FIND_MY_SPAWNS);
+    const spawns = roomMemo && Array.isArray(roomMemo.mySpawns) ? roomMemo.mySpawns : room.find(FIND_MY_SPAWNS);
     if (!spawns || spawns.length <= 0) return null;
 
     if (room.storage) {
@@ -172,41 +245,51 @@ function isWalkableStructure(structure) {
     return false;
 }
 
-function getCoreRefillTargets(room) {
+function getCoreRefillTargets(room, roomMemo) {
     if (!room) return [];
-    return room.find(FIND_MY_STRUCTURES, {
-        filter: s => CORE_LANE_DIRECT_TYPES.has(s.structureType)
-    });
+    const myStructures = roomMemo && Array.isArray(roomMemo.myStructures) ? roomMemo.myStructures : room.find(FIND_MY_STRUCTURES);
+    const out = [];
+    for (let i = 0; i < myStructures.length; i++) {
+        const s = myStructures[i];
+        if (s && CORE_LANE_DIRECT_TYPES.has(s.structureType)) out.push(s);
+    }
+    return out;
 }
 
-function getCoreLaneTargets(room, hasLabsLane) {
+function getCoreLaneTargets(room, hasLabsLane, roomMemo) {
     if (!room) return [];
     const excludeLabs = hasLabsLane === true;
-    return room.find(FIND_MY_STRUCTURES, {
-        filter: s =>
-            CORE_LANE_DIRECT_TYPES.has(s.structureType) &&
-            (!excludeLabs || s.structureType !== STRUCTURE_LAB)
-    });
+    const myStructures = roomMemo && Array.isArray(roomMemo.myStructures) ? roomMemo.myStructures : room.find(FIND_MY_STRUCTURES);
+    const out = [];
+    for (let i = 0; i < myStructures.length; i++) {
+        const s = myStructures[i];
+        if (!s || !CORE_LANE_DIRECT_TYPES.has(s.structureType)) continue;
+        if (excludeLabs && s.structureType === STRUCTURE_LAB) continue;
+        out.push(s);
+    }
+    return out;
 }
 
-function getLabsLaneTargets(room) {
+function getLabsLaneTargets(room, roomMemo) {
     if (!room) return [];
-    return room.find(FIND_MY_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_LAB
-    });
+    if (roomMemo && Array.isArray(roomMemo.labs)) return roomMemo.labs;
+    return room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LAB });
 }
 
-function getCoreServiceEnergyTargets(room, includeLabs) {
+function getCoreServiceEnergyTargets(room, includeLabs, roomMemo) {
     if (!room) return [];
     const allowLabs = includeLabs !== false;
-    return room.find(FIND_MY_STRUCTURES, {
-        filter: s =>
-            CORE_LANE_DIRECT_TYPES.has(s.structureType) &&
-            (allowLabs || s.structureType !== STRUCTURE_LAB) &&
-            s.store &&
-            typeof s.store.getFreeCapacity === 'function' &&
-            s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-    });
+    const myStructures = roomMemo && Array.isArray(roomMemo.myStructures) ? roomMemo.myStructures : room.find(FIND_MY_STRUCTURES);
+    const out = [];
+    for (let i = 0; i < myStructures.length; i++) {
+        const s = myStructures[i];
+        if (!s || !CORE_LANE_DIRECT_TYPES.has(s.structureType)) continue;
+        if (!allowLabs && s.structureType === STRUCTURE_LAB) continue;
+        if (!s.store || typeof s.store.getFreeCapacity !== 'function') continue;
+        if (s.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) continue;
+        out.push(s);
+    }
+    return out;
 }
 
 function countAdjacentTargets(pos, targets) {
@@ -220,7 +303,7 @@ function countAdjacentTargets(pos, targets) {
     return count;
 }
 
-function buildRoomCostMatrix(room, coreTargets, headPos, endPos) {
+function buildRoomCostMatrix(room, coreTargets, headPos, endPos, roomMemo) {
     const matrix = new PathFinder.CostMatrix();
     if (!room) return matrix;
 
@@ -238,7 +321,7 @@ function buildRoomCostMatrix(room, coreTargets, headPos, endPos) {
         }
     }
 
-    const structures = room.find(FIND_STRUCTURES);
+    const structures = roomMemo && Array.isArray(roomMemo.structures) ? roomMemo.structures : room.find(FIND_STRUCTURES);
     for (let i = 0; i < structures.length; i++) {
         const s = structures[i];
         if (!s || !s.pos) continue;
@@ -256,7 +339,9 @@ function buildRoomCostMatrix(room, coreTargets, headPos, endPos) {
         }
     }
 
-    const sites = room.find(FIND_CONSTRUCTION_SITES);
+    const sites = roomMemo && Array.isArray(roomMemo.constructionSites)
+        ? roomMemo.constructionSites
+        : room.find(FIND_CONSTRUCTION_SITES);
     for (let i = 0; i < sites.length; i++) {
         const site = sites[i];
         if (!site || !site.pos) continue;
@@ -301,9 +386,11 @@ function buildPathData(path) {
     };
 }
 
-function getRouteWaypointCandidates(room, coreTargets, headPos, endPos, limit) {
+function getRouteWaypointCandidates(room, coreTargets, headPos, endPos, limit, roomMemo) {
     if (!room || !Array.isArray(coreTargets) || coreTargets.length <= 0 || !headPos || !endPos) return [];
-    const roads = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_ROAD });
+    const roads = roomMemo && Array.isArray(roomMemo.roads)
+        ? roomMemo.roads
+        : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_ROAD });
     if (!roads || roads.length <= 0) return [];
 
     const keyed = [];
@@ -429,12 +516,12 @@ function buildLoopAugmentedPath(room, headPos, costMatrix, basePath, coreTargets
     };
 }
 
-function buildPath(room, headPos, endPos, laneTargets) {
+function buildPath(room, headPos, endPos, laneTargets, roomMemo) {
     if (!room || !headPos || !endPos) return null;
     if (headPos.roomName !== room.name || endPos.roomName !== room.name) return null;
 
-    const coreTargets = Array.isArray(laneTargets) ? laneTargets : getCoreRefillTargets(room);
-    const costMatrix = buildRoomCostMatrix(room, coreTargets, headPos, endPos);
+    const coreTargets = Array.isArray(laneTargets) ? laneTargets : getCoreRefillTargets(room, roomMemo);
+    const costMatrix = buildRoomCostMatrix(room, coreTargets, headPos, endPos, roomMemo);
 
     const direct = searchPathSegment(room, headPos, endPos, costMatrix);
     if (!direct) return null;
@@ -451,7 +538,8 @@ function buildPath(room, headPos, endPos, laneTargets) {
         coreTargets,
         headPos,
         endPos,
-        MAX_ROUTE_WAYPOINT_CANDIDATES
+        MAX_ROUTE_WAYPOINT_CANDIDATES,
+        roomMemo
     );
 
     for (let i = 0; i < waypointCandidates.length; i++) {
@@ -543,18 +631,13 @@ function buildPath(room, headPos, endPos, laneTargets) {
     return built;
 }
 
-function buildStopsByIndex(room, path, laneTargets) {
+function buildStopsByIndex(room, path, laneTargets, roomMemo) {
     const stopsByIndex = Object.create(null);
     if (!room || !Array.isArray(path) || path.length <= 0) return stopsByIndex;
 
     const targets = Array.isArray(laneTargets)
         ? laneTargets.filter(s => s && s.store && typeof s.store.getFreeCapacity === 'function')
-        : room.find(FIND_MY_STRUCTURES, {
-            filter: s =>
-                CORE_LANE_DIRECT_TYPES.has(s.structureType) &&
-                s.store &&
-                typeof s.store.getFreeCapacity === 'function'
-        });
+        : getCoreRefillTargets(room, roomMemo).filter(s => s && s.store && typeof s.store.getFreeCapacity === 'function');
 
     for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
@@ -783,13 +866,13 @@ function getLabHaulJobs(room, includeEnergyNeeds) {
     return jobs;
 }
 
-function getCoreServiceEnergyJobs(room, runtime, sourceId, includeLabs) {
+function getCoreServiceEnergyJobs(room, runtime, sourceId, includeLabs, roomMemo, objectCache) {
     if (!room || !runtime || !runtime.paths || !runtime.paths.core) return [];
     const corePath = runtime.paths.core.path;
     if (!Array.isArray(corePath) || corePath.length <= 0) return [];
 
     let actualSourceId = sourceId || null;
-    let source = actualSourceId ? Game.getObjectById(actualSourceId) : null;
+    let source = actualSourceId ? getObjectByIdCached(actualSourceId, objectCache, roomMemo) : null;
     if ((!source || !source.store) && room.storage) {
         source = room.storage;
         actualSourceId = room.storage.id;
@@ -803,7 +886,7 @@ function getCoreServiceEnergyJobs(room, runtime, sourceId, includeLabs) {
     const sourceInfo = getNearestPathInfo(corePath, source.pos);
     if (sourceInfo.index < 0) return [];
 
-    const targets = getCoreServiceEnergyTargets(room, includeLabs);
+    const targets = getCoreServiceEnergyTargets(room, includeLabs, roomMemo);
     const jobs = [];
     const seen = new Set();
     for (let i = 0; i < targets.length; i++) {
@@ -838,9 +921,9 @@ function getCoreServiceEnergyJobs(room, runtime, sourceId, includeLabs) {
     return jobs;
 }
 
-function shouldActivate(room) {
+function shouldActivate(room, roomMemo) {
     if (!room || !room.controller || !room.controller.my) return false;
-    const spawns = room.find(FIND_MY_SPAWNS);
+    const spawns = roomMemo && Array.isArray(roomMemo.mySpawns) ? roomMemo.mySpawns : room.find(FIND_MY_SPAWNS);
     if (!spawns || spawns.length <= 0) return false;
     if (!room.storage && spawns.length <= 0) return false;
     if (!getCoreEndFlag(room)) return false;
@@ -888,12 +971,14 @@ function countCoreStops(stopsByIndex) {
     return total;
 }
 
-function countServicePoints(room, laneJobs) {
+function countServicePoints(room, laneJobs, roomMemo) {
     const points = new Set();
     if (room && room.storage && room.storage.id) points.add(room.storage.id);
     if (room && room.terminal && room.terminal.id) points.add(room.terminal.id);
     if (room) {
-        const labs = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LAB });
+        const labs = roomMemo && Array.isArray(roomMemo.labs)
+            ? roomMemo.labs
+            : room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LAB });
         for (let i = 0; i < labs.length; i++) {
             if (labs[i] && labs[i].id) points.add(labs[i].id);
         }
@@ -917,13 +1002,13 @@ function estimateCarryPartsNeeded(corePathLength, coreStopCount, labsPathLength,
     return Math.max(1, coreTravelWeight + coreStopWeight + labsTravelWeight + serviceWeight);
 }
 
-function computeBaselineFleetPlan(room, runtime, laneJobs) {
+function computeBaselineFleetPlan(room, runtime, laneJobs, roomMemo) {
     const corePathLength = runtime && runtime.paths && runtime.paths.core ? (runtime.paths.core.pathLength || 0) : 0;
     const labsPathLength = runtime && runtime.paths && runtime.paths.labs ? (runtime.paths.labs.pathLength || 0) : 0;
     const coreStopCount = runtime && runtime.paths && runtime.paths.core
         ? countCoreStops(runtime.paths.core.stopsByIndex)
         : 0;
-    const servicePointCount = countServicePoints(room, laneJobs);
+    const servicePointCount = countServicePoints(room, laneJobs, roomMemo);
     const neededCarryParts = estimateCarryPartsNeeded(
         corePathLength,
         coreStopCount,
@@ -939,14 +1024,14 @@ function computeBaselineFleetPlan(room, runtime, laneJobs) {
     };
 }
 
-function computeOutstandingLaneJobs(laneJobs) {
+function computeOutstandingLaneJobs(laneJobs, roomMemo, objectCache) {
     if (!Array.isArray(laneJobs) || laneJobs.length <= 0) return 0;
     let total = 0;
     for (let i = 0; i < laneJobs.length; i++) {
         const job = laneJobs[i];
         if (!job || !job.resourceType) continue;
-        const source = job.sourceId ? Game.getObjectById(job.sourceId) : null;
-        const target = job.targetId ? Game.getObjectById(job.targetId) : null;
+        const source = job.sourceId ? getObjectByIdCached(job.sourceId, objectCache, roomMemo) : null;
+        const target = job.targetId ? getObjectByIdCached(job.targetId, objectCache, roomMemo) : null;
         if (!source || !target || !source.store || !target.store) continue;
         const available = getStoreAmount(source, job.resourceType);
         const free = target.store.getFreeCapacity(job.resourceType) || 0;
@@ -969,7 +1054,8 @@ module.exports = {
     reconcileRoom({ room, intel, context, missionBoard }) {
         if (!room || !intel || !missionBoard) return;
         if (!missionThrottle.shouldRunReconcile('logisticsCoreV2', room.name, Game.time)) return;
-        if (!shouldActivate(room)) return;
+        const roomMemo = getLogisticsRoomMemo(room, getRoomCache(room));
+        if (!shouldActivate(room, roomMemo)) return;
 
         missionBoard.createMission('logisticsCoreV2', {
             sponsorRoom: room.name,
@@ -1023,7 +1109,8 @@ module.exports = {
     validate(mission, runtimeCtx) {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
-        return shouldActivate(room);
+        const roomMemo = getLogisticsRoomMemo(room, getRoomCache(room));
+        return shouldActivate(room, roomMemo);
     },
 
     refresh(mission, runtimeCtx) {
@@ -1031,10 +1118,13 @@ module.exports = {
 
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
-        if (!shouldActivate(room)) return;
+        const roomCache = getRoomCache(room);
+        const roomMemo = getLogisticsRoomMemo(room, roomCache);
+        if (!shouldActivate(room, roomMemo)) return;
+        const objectCache = Object.create(null);
 
         const flag = getCoreEndFlag(room);
-        const anchor = selectHeadAnchor(room, flag);
+        const anchor = selectHeadAnchor(room, flag, roomMemo);
         if (!flag || !anchor || !anchor.headPos) return;
 
         const runtime = missionRuntime.getMissionRuntime(mission);
@@ -1043,8 +1133,8 @@ module.exports = {
         const labsFlag = getCoreLabsFlag(room);
         const labsEndPos = labsFlag ? clonePos(labsFlag.pos) : null;
         const hasLabsLane = !!labsEndPos;
-        const coreLaneTargets = getCoreLaneTargets(room, hasLabsLane);
-        const labsLaneTargets = hasLabsLane ? getLabsLaneTargets(room) : [];
+        const coreLaneTargets = getCoreLaneTargets(room, hasLabsLane, roomMemo);
+        const labsLaneTargets = hasLabsLane ? getLabsLaneTargets(room, roomMemo) : [];
         const headKey = posKey(headPos);
         const coreEndKey = posKey(coreEndPos);
         const labsEndKey = posKey(labsEndPos);
@@ -1060,7 +1150,7 @@ module.exports = {
         const shouldRebuild = buildInputsChanged || rebuildIntervalElapsed;
 
         if (shouldRebuild) {
-            const builtCore = buildPath(room, headPos, coreEndPos, coreLaneTargets);
+            const builtCore = buildPath(room, headPos, coreEndPos, coreLaneTargets, roomMemo);
             if (builtCore) {
                 runtime.paths.core = {
                     path: builtCore.path,
@@ -1070,7 +1160,7 @@ module.exports = {
                     isLoop: builtCore.isLoop === true,
                     headPos: clonePos(headPos),
                     endPos: clonePos(coreEndPos),
-                    stopsByIndex: buildStopsByIndex(room, builtCore.path, coreLaneTargets)
+                    stopsByIndex: buildStopsByIndex(room, builtCore.path, coreLaneTargets, roomMemo)
                 };
                 logLogisticsDebug(
                     `[LogisticsCoreV2] ${room.name} rebuild core loop=${runtime.paths.core.isLoop ? 1 : 0} ` +
@@ -1085,7 +1175,7 @@ module.exports = {
             }
 
             if (labsEndPos) {
-                const builtLabs = buildPath(room, headPos, labsEndPos, labsLaneTargets);
+                const builtLabs = buildPath(room, headPos, labsEndPos, labsLaneTargets, roomMemo);
                 if (builtLabs) {
                     runtime.paths.labs = {
                         path: builtLabs.path,
@@ -1111,27 +1201,27 @@ module.exports = {
 
         // Keep lane stops current even when path does not rebuild.
         if (runtime.paths && runtime.paths.core && Array.isArray(runtime.paths.core.path)) {
-            runtime.paths.core.stopsByIndex = buildStopsByIndex(room, runtime.paths.core.path, coreLaneTargets);
+            runtime.paths.core.stopsByIndex = buildStopsByIndex(room, runtime.paths.core.path, coreLaneTargets, roomMemo);
         }
 
         const labsPath = runtime.paths && runtime.paths.labs ? runtime.paths.labs.path : null;
         let coreJobSourceId = runtime.headSourceId || anchor.headSourceId || null;
-        const coreJobSourceObj = coreJobSourceId ? Game.getObjectById(coreJobSourceId) : null;
+        const coreJobSourceObj = coreJobSourceId ? getObjectByIdCached(coreJobSourceId, objectCache, roomMemo) : null;
         if (coreJobSourceObj && coreJobSourceObj.structureType === STRUCTURE_SPAWN && room.storage) {
             coreJobSourceId = room.storage.id;
         }
         if (!coreJobSourceId && room.storage) coreJobSourceId = room.storage.id;
         const stockJobs = getTerminalStockJobs(room);
         const labJobs = getLabHaulJobs(room, hasLabsLane);
-        const coreServiceJobs = getCoreServiceEnergyJobs(room, runtime, coreJobSourceId, !hasLabsLane);
+        const coreServiceJobs = getCoreServiceEnergyJobs(room, runtime, coreJobSourceId, !hasLabsLane, roomMemo, objectCache);
         const jobs = coreServiceJobs.concat(stockJobs, labJobs);
         const jobsById = Object.create(null);
         const laneJobs = [];
         for (let i = 0; i < jobs.length; i++) {
             const job = jobs[i];
             if (!job || !job.id || jobsById[job.id]) continue;
-            const source = job.sourceId ? Game.getObjectById(job.sourceId) : null;
-            const target = job.targetId ? Game.getObjectById(job.targetId) : null;
+            const source = job.sourceId ? getObjectByIdCached(job.sourceId, objectCache, roomMemo) : null;
+            const target = job.targetId ? getObjectByIdCached(job.targetId, objectCache, roomMemo) : null;
             if (!source || !target || !source.pos || !target.pos) continue;
             if (!source.store || !target.store) continue;
             const amount = getStoreAmount(source, job.resourceType);
@@ -1202,7 +1292,7 @@ module.exports = {
         runtime.assignedCreeps = getAssignedCoreLaneCreeps(mission.id, room.name);
         mission.assigned.primary = runtime.assignedCreeps.slice();
         const assignedCarryParts = getAssignedCarryParts(mission.assigned.primary);
-        const basePlan = computeBaselineFleetPlan(room, runtime, laneJobs);
+        const basePlan = computeBaselineFleetPlan(room, runtime, laneJobs, roomMemo);
         const neededCarryParts = basePlan.neededCarryParts;
         const desiredCount = 1;
         mission.meta.headSourceId = runtime.headSourceId || anchor.headSourceId || null;
@@ -1241,7 +1331,7 @@ module.exports = {
         mission.progress.labsJobs = Array.isArray(runtime.laneJobs) ? runtime.laneJobs.length : 0;
         mission.progress.coreStopCount = basePlan.coreStopCount;
         mission.progress.servicePointCount = basePlan.servicePointCount;
-        mission.progress.jobsOutstanding = computeOutstandingLaneJobs(laneJobs);
+        mission.progress.jobsOutstanding = computeOutstandingLaneJobs(laneJobs, roomMemo, objectCache);
         mission.progress.neededCarryParts = neededCarryParts;
         mission.progress.intendedCarryParts = mission.meta.intendedCarryParts;
         mission.progress.assignedCarryParts = assignedCarryParts;

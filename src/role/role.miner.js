@@ -1,5 +1,47 @@
 const borderNav = require('utils_creepBorderNav');
 const roleUniversal = require('role_role.universal');
+const heap = require('utils_heap');
+
+const MINER_HEAP_STORE = 'roleMiner';
+
+function getRoomCache(room) {
+    if (!room || typeof global.getRoomCache !== 'function') return null;
+    return global.getRoomCache(room);
+}
+
+function getMinerRoomMemo(room, roomCache) {
+    if (!room) return null;
+    const store = heap.getStore(MINER_HEAP_STORE, { ttl: 50 });
+    const existing = store[room.name];
+    if (existing && existing.time === Game.time) return existing;
+
+    const occupancy = Object.create(null);
+    const creeps = (roomCache && Array.isArray(roomCache.creeps))
+        ? roomCache.creeps
+        : room.find(FIND_CREEPS);
+    for (let i = 0; i < creeps.length; i++) {
+        const c = creeps[i];
+        if (!c || !c.pos) continue;
+        const key = `${c.pos.x}:${c.pos.y}`;
+        occupancy[key] = (occupancy[key] || 0) + 1;
+    }
+
+    const memo = {
+        time: Game.time,
+        idObj: Object.create(null),
+        slotByBindId: Object.create(null),
+        occupancyByTile: occupancy
+    };
+    store[room.name] = memo;
+    return memo;
+}
+
+function getObjectByIdCached(memo, id) {
+    if (!id) return null;
+    if (!memo) return Game.getObjectById(id);
+    if (memo.idObj[id] === undefined) memo.idObj[id] = Game.getObjectById(id) || null;
+    return memo.idObj[id];
+}
 
 function clearMinerAssignment(creep) {
     if (!creep || !creep.memory) return;
@@ -25,20 +67,38 @@ function getMissionByName(homeRoom, missionName) {
     return homeRoom._minerMissionMap[missionName] || null;
 }
 
-function getHarvestSlotIndex(creep) {
+function getHarvestSlotIndex(creep, memo) {
     const bindId = creep && creep.memory ? creep.memory.bindId : null;
     if (!bindId) return 0;
-    const parts = String(bindId).split(':');
-    const index = Number(parts[parts.length - 1]);
-    return Number.isFinite(index) ? index : 0;
+    if (memo && memo.slotByBindId[bindId] !== undefined) return memo.slotByBindId[bindId];
+    const text = String(bindId);
+    const splitAt = text.lastIndexOf(':');
+    const rawIndex = splitAt >= 0 ? text.substring(splitAt + 1) : text;
+    const index = Number(rawIndex);
+    const resolved = Number.isFinite(index) ? index : 0;
+    if (memo) memo.slotByBindId[bindId] = resolved;
+    return resolved;
 }
 
-function getFirstValidDropoff(dropoffIds, resourceType) {
+function getTileOccupancy(memo, pos) {
+    if (!memo || !pos) return 0;
+    return memo.occupancyByTile[`${pos.x}:${pos.y}`] || 0;
+}
+
+function isContainerTileFreeForCreep(container, creep, memo) {
+    if (!container || !container.pos || !creep || !creep.pos) return true;
+    const occupied = getTileOccupancy(memo, container.pos);
+    if (occupied <= 0) return true;
+    if (creep.pos.isEqualTo(container.pos)) return occupied <= 1;
+    return occupied <= 0;
+}
+
+function getFirstValidDropoff(dropoffIds, resourceType, memo) {
     if (!Array.isArray(dropoffIds) || dropoffIds.length <= 0) return null;
     for (let i = 0; i < dropoffIds.length; i++) {
         const id = dropoffIds[i];
         if (!id) continue;
-        const target = Game.getObjectById(id);
+        const target = getObjectByIdCached(memo, id);
         if (!target || !target.store) continue;
         if ((target.store.getFreeCapacity(resourceType) || 0) > 0) return target;
     }
@@ -84,10 +144,9 @@ function isFull(creep, resourceType) {
     return (creep.store.getFreeCapacity(resourceType) || 0) <= 0;
 }
 
-function runStaticContainer(creep, source, container, data, resourceType) {
+function runStaticContainer(creep, source, container, data, resourceType, memo) {
     if (!creep.pos.isEqualTo(container.pos)) {
-        const creepsOnContainer = container.pos.lookFor(LOOK_CREEPS).filter(c => c && c.id !== creep.id);
-        if (creepsOnContainer.length === 0) {
+        if (isContainerTileFreeForCreep(container, creep, memo)) {
             tryMoveTo(creep, container, 0);
         } else {
             tryMoveTo(creep, container, 1);
@@ -96,7 +155,7 @@ function runStaticContainer(creep, source, container, data, resourceType) {
     }
 
     if ((creep.store[resourceType] || 0) > 0 && isFull(creep, resourceType)) {
-        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType);
+        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType, memo);
         if (transferTarget) {
             tryTransfer(creep, transferTarget, resourceType, Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1);
             return;
@@ -108,7 +167,7 @@ function runStaticContainer(creep, source, container, data, resourceType) {
     tryHarvest(creep, source);
 }
 
-function runStaticOverflow(creep, source, container, data, resourceType) {
+function runStaticOverflow(creep, source, container, data, resourceType, memo) {
     if (creep.pos.isEqualTo(container.pos)) {
         tryMoveTo(creep, source, 1);
         return;
@@ -120,6 +179,12 @@ function runStaticOverflow(creep, source, container, data, resourceType) {
     }
 
     if ((creep.store[resourceType] || 0) > 0 && isFull(creep, resourceType)) {
+        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType, memo);
+        if (transferTarget) {
+            tryTransfer(creep, transferTarget, resourceType, Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1);
+            return;
+        }
+
         if (
             creep.pos.inRangeTo(container.pos, 1) &&
             container.store &&
@@ -134,26 +199,20 @@ function runStaticOverflow(creep, source, container, data, resourceType) {
             return;
         }
 
-        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType);
-        if (transferTarget) {
-            tryTransfer(creep, transferTarget, resourceType, Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1);
-            return;
-        }
-
         if (data.fallback === 'upgrade' && tryUpgradeFallback(creep)) return;
     }
 
     tryHarvest(creep, source);
 }
 
-function runStaticDrop(creep, source, data, resourceType) {
+function runStaticDrop(creep, source, data, resourceType, memo) {
     if (!creep.pos.inRangeTo(source.pos, 1)) {
         tryMoveTo(creep, source, 1);
         return;
     }
 
     if ((creep.store[resourceType] || 0) > 0 && isFull(creep, resourceType)) {
-        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType);
+        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType, memo);
         if (transferTarget) {
             tryTransfer(creep, transferTarget, resourceType, Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1);
             return;
@@ -170,14 +229,14 @@ function runStaticDrop(creep, source, data, resourceType) {
     tryHarvest(creep, source);
 }
 
-function runMobile(creep, source, data, resourceType) {
+function runMobile(creep, source, data, resourceType, memo) {
     const carried = creep.store[resourceType] || 0;
     if (carried <= 0) {
         tryHarvest(creep, source);
         return;
     }
 
-    const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType);
+    const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType, memo);
     if (!transferTarget && data.fallback === 'upgrade' && tryUpgradeFallback(creep)) return;
 
     const sourceDepleted = Number.isFinite(source.energy) && source.energy <= 0;
@@ -193,6 +252,51 @@ function runMobile(creep, source, data, resourceType) {
 
     if (data.fallback === 'upgrade' && tryUpgradeFallback(creep)) return;
     tryMoveTo(creep, source, 1);
+}
+
+function clearTransientTaskMemory(creep) {
+    if (!creep || !creep.memory) return;
+    if (creep.memory.task !== undefined) delete creep.memory.task;
+    if (creep.memory.taskState !== undefined) delete creep.memory.taskState;
+}
+
+function getMissionRoleData(mission, memo) {
+    const data = mission.data || {};
+    const sourceId = data.sourceId || mission.sourceId || mission.targetId;
+    const source = sourceId ? getObjectByIdCached(memo, sourceId) : null;
+    if (!source) return null;
+
+    const mode = data.mode || 'mobile';
+    const resourceType = data.resourceType || RESOURCE_ENERGY;
+    const container = data.containerId ? getObjectByIdCached(memo, data.containerId) : null;
+
+    return { data, source, mode, resourceType, container };
+}
+
+function runHarvestMode(creep, modeCtx, memo) {
+    if (modeCtx.mode === 'static') {
+        if (!modeCtx.container) {
+            clearMinerAssignment(creep);
+            return;
+        }
+
+        const slotIndex = getHarvestSlotIndex(creep, memo);
+        const staticRoles = modeCtx.data.staticRolesBySlot || {};
+        const slotRole = staticRoles[String(slotIndex)] || 'container';
+        if (slotRole === 'container') {
+            runStaticContainer(creep, modeCtx.source, modeCtx.container, modeCtx.data, modeCtx.resourceType, memo);
+            return;
+        }
+        runStaticOverflow(creep, modeCtx.source, modeCtx.container, modeCtx.data, modeCtx.resourceType, memo);
+        return;
+    }
+
+    if (modeCtx.mode === 'static_drop') {
+        runStaticDrop(creep, modeCtx.source, modeCtx.data, modeCtx.resourceType, memo);
+        return;
+    }
+
+    runMobile(creep, modeCtx.source, modeCtx.data, modeCtx.resourceType, memo);
 }
 
 const roleMiner = {
@@ -223,43 +327,16 @@ const roleMiner = {
             return;
         }
 
-        delete creep.memory.task;
-        delete creep.memory.taskState;
-
-        const data = mission.data || {};
-        const sourceId = data.sourceId || mission.sourceId || mission.targetId;
-        const source = sourceId ? Game.getObjectById(sourceId) : null;
-        if (!source) {
+        clearTransientTaskMemory(creep);
+        const roomCache = getRoomCache(creep.room);
+        const memo = getMinerRoomMemo(creep.room, roomCache);
+        const modeCtx = getMissionRoleData(mission, memo);
+        if (!modeCtx) {
             clearMinerAssignment(creep);
             return;
         }
 
-        const resourceType = data.resourceType || RESOURCE_ENERGY;
-        const mode = data.mode || 'mobile';
-        if (mode === 'static') {
-            const container = data.containerId ? Game.getObjectById(data.containerId) : null;
-            if (!container) {
-                clearMinerAssignment(creep);
-                return;
-            }
-
-            const slotIndex = getHarvestSlotIndex(creep);
-            const staticRoles = data.staticRolesBySlot || {};
-            const slotRole = staticRoles[String(slotIndex)] || 'container';
-            if (slotRole === 'container') {
-                runStaticContainer(creep, source, container, data, resourceType);
-                return;
-            }
-            runStaticOverflow(creep, source, container, data, resourceType);
-            return;
-        }
-
-        if (mode === 'static_drop') {
-            runStaticDrop(creep, source, data, resourceType);
-            return;
-        }
-
-        runMobile(creep, source, data, resourceType);
+        runHarvestMode(creep, modeCtx, memo);
     }
 };
 

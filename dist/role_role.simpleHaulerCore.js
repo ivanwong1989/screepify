@@ -1,37 +1,83 @@
 const missionBoard = require('managers_overseer_missions_board_missionBoard');
 const movement = require('utils_movement');
+const heap = require('utils_heap');
 
 const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
 const TOWER_REFILL_MIN_FREE = 100;
+const SIMPLE_CORE_ROLE_STORE = 'roleSimpleHaulerCore';
 
 function logSimpleCoreRoleDebug(creep, message) {
     if (typeof debug !== 'function' || !creep) return;
     debug('mission.logistics', `[SimpleCoreRole] ${creep.name} ${message}`);
 }
 
-function getSimpleMission(homeRoomName) {
+function getRoleRoomMemo(homeRoomName) {
     if (!homeRoomName) return null;
+    const store = heap.getStore(SIMPLE_CORE_ROLE_STORE, { ttl: 50 });
+    const existing = store[homeRoomName];
+    if (existing && existing.time === Game.time) return existing;
+    const memo = {
+        time: Game.time,
+        mission: undefined,
+        idObj: Object.create(null),
+        anchorSpawn: null
+    };
+    store[homeRoomName] = memo;
+    return memo;
+}
+
+function getObjectByIdCached(id, memo) {
+    if (!id) return null;
+    if (!memo) return Game.getObjectById(id);
+    if (memo.idObj[id] === undefined) memo.idObj[id] = Game.getObjectById(id) || null;
+    return memo.idObj[id];
+}
+
+function getRoomCache(room) {
+    if (!room || typeof global.getRoomCache !== 'function') return null;
+    return global.getRoomCache(room);
+}
+
+function getAnchorSpawn(room, memo) {
+    if (!room) return null;
+    if (memo && memo.anchorSpawn !== null) return memo.anchorSpawn;
+    const roomCache = getRoomCache(room);
+    const spawns = (roomCache && roomCache.myStructuresByType && Array.isArray(roomCache.myStructuresByType[STRUCTURE_SPAWN]))
+        ? roomCache.myStructuresByType[STRUCTURE_SPAWN]
+        : room.find(FIND_MY_SPAWNS);
+    const anchor = spawns && spawns.length > 0 ? spawns[0] : null;
+    if (memo) memo.anchorSpawn = anchor || null;
+    return anchor;
+}
+
+function getSimpleMission(homeRoomName, memo) {
+    if (!homeRoomName) return null;
+    if (memo && memo.mission !== undefined) return memo.mission;
     const live = missionBoard.listLiveByRoom(homeRoomName) || [];
     for (let i = 0; i < live.length; i++) {
         const mission = live[i];
-        if (mission && mission.type === 'logisticsSimpleCore') return mission;
+        if (mission && mission.type === 'logisticsSimpleCore') {
+            if (memo) memo.mission = mission;
+            return mission;
+        }
     }
+    if (memo) memo.mission = null;
     return null;
 }
 
-function getObjectsByIds(ids) {
+function getObjectsByIds(ids, memo) {
     const out = [];
     if (!Array.isArray(ids)) return out;
     for (let i = 0; i < ids.length; i++) {
-        const obj = Game.getObjectById(ids[i]);
+        const obj = getObjectByIdCached(ids[i], memo);
         if (obj) out.push(obj);
     }
     return out;
 }
 
-function getRefillTargets(mission, room) {
-    const fromMission = getObjectsByIds(mission && mission.data ? mission.data.refillTargetIds : []);
+function getRefillTargets(mission, room, memo) {
+    const fromMission = getObjectsByIds(mission && mission.data ? mission.data.refillTargetIds : [], memo);
     const valid = fromMission.filter(s => {
         if (!s || !s.store || typeof s.store.getFreeCapacity !== 'function') return false;
         const free = s.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
@@ -41,29 +87,31 @@ function getRefillTargets(mission, room) {
     if (valid.length > 0) return valid;
 
     if (!room) return [];
-    return room.find(FIND_MY_STRUCTURES, {
-        filter: s => {
-            if (!s || !s.store || typeof s.store.getFreeCapacity !== 'function') return false;
-            if (
-                s.structureType !== STRUCTURE_SPAWN &&
-                s.structureType !== STRUCTURE_EXTENSION &&
-                s.structureType !== STRUCTURE_TOWER
-            ) return false;
-            const free = s.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
-            if (s.structureType === STRUCTURE_TOWER) return free >= TOWER_REFILL_MIN_FREE;
-            return free > 0;
-        }
+    const roomCache = getRoomCache(room);
+    const myStructures = roomCache && Array.isArray(roomCache.myStructures)
+        ? roomCache.myStructures
+        : room.find(FIND_MY_STRUCTURES);
+    return myStructures.filter(s => {
+        if (!s || !s.store || typeof s.store.getFreeCapacity !== 'function') return false;
+        if (
+            s.structureType !== STRUCTURE_SPAWN &&
+            s.structureType !== STRUCTURE_EXTENSION &&
+            s.structureType !== STRUCTURE_TOWER
+        ) return false;
+        const free = s.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+        if (s.structureType === STRUCTURE_TOWER) return free >= TOWER_REFILL_MIN_FREE;
+        return free > 0;
     });
 }
 
-function pickBestEnergySource(creep, mission, room, blockedSourceIds) {
+function pickBestEnergySource(creep, mission, room, blockedSourceIds, memo) {
     if (!creep || !room) return null;
     const blocked = blockedSourceIds instanceof Set ? blockedSourceIds : new Set();
 
     const preferredIds = mission && mission.data && Array.isArray(mission.data.sourceIds)
         ? mission.data.sourceIds
         : [];
-    const preferred = getObjectsByIds(preferredIds).filter(obj => {
+    const preferred = getObjectsByIds(preferredIds, memo).filter(obj => {
         if (!obj) return false;
         if (obj.id && blocked.has(obj.id)) return false;
         if (obj.store) return (obj.store[RESOURCE_ENERGY] || 0) > 0;
@@ -126,7 +174,8 @@ module.exports = {
         if (!creep || !creep.my || !creep.memory) return;
 
         const homeRoomName = creep.memory.room || (creep.room && creep.room.name);
-        const mission = getSimpleMission(homeRoomName);
+        const memo = getRoleRoomMemo(homeRoomName);
+        const mission = getSimpleMission(homeRoomName, memo);
         const assignedMissionName = creep.memory.missionName || null;
         const simpleMissionName = mission && mission.meta && mission.meta.missionName
             ? mission.meta.missionName
@@ -134,9 +183,9 @@ module.exports = {
 
         // Simple-core role must only run when explicitly assigned to simple-core mission.
         if (assignedMissionName !== simpleMissionName) {
-            delete creep.memory.simpleHaulerState;
-            delete creep.memory.task;
-            delete creep.memory._trafficMove;
+            if (creep.memory.simpleHaulerState !== undefined) delete creep.memory.simpleHaulerState;
+            if (creep.memory.task !== undefined) delete creep.memory.task;
+            if (creep.memory._trafficMove !== undefined) delete creep.memory._trafficMove;
             return;
         }
 
@@ -146,11 +195,11 @@ module.exports = {
                 `unassign noMission home=${homeRoomName || '-'} oldMissionName=${creep.memory.missionName || '-'} ` +
                 `state=${creep.memory.simpleHaulerState || '-'} carry=${creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0}`
             );
-            delete creep.memory.missionName;
-            delete creep.memory.task;
-            delete creep.memory.taskState;
-            delete creep.memory.simpleHaulerState;
-            delete creep.memory._trafficMove;
+            if (creep.memory.missionName !== undefined) delete creep.memory.missionName;
+            if (creep.memory.task !== undefined) delete creep.memory.task;
+            if (creep.memory.taskState !== undefined) delete creep.memory.taskState;
+            if (creep.memory.simpleHaulerState !== undefined) delete creep.memory.simpleHaulerState;
+            if (creep.memory._trafficMove !== undefined) delete creep.memory._trafficMove;
             return;
         }
         movement.enableTrafficForBuildWorker(creep);
@@ -162,7 +211,7 @@ module.exports = {
         if (!creep.memory.simpleHaulerState) creep.memory.simpleHaulerState = STATE_LOAD;
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) <= 0) creep.memory.simpleHaulerState = STATE_LOAD;
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) creep.memory.simpleHaulerState = STATE_DELIVER;
-        const refillTargets = getRefillTargets(mission, creep.room);
+        const refillTargets = getRefillTargets(mission, creep.room, memo);
         const blockedSourceIds = new Set();
 
         // Keep cargo clean; simple haulers should only carry energy.
@@ -179,9 +228,9 @@ module.exports = {
         }
 
         if (creep.memory.simpleHaulerState === STATE_LOAD) {
-            const source = pickBestEnergySource(creep, mission, creep.room, blockedSourceIds);
+            const source = pickBestEnergySource(creep, mission, creep.room, blockedSourceIds, memo);
             if (!source) {
-                const anchor = creep.room.find(FIND_MY_SPAWNS)[0];
+                const anchor = getAnchorSpawn(creep.room, memo);
                 if (anchor) moveToTarget(creep, anchor, 2);
                 return;
             }
@@ -201,7 +250,7 @@ module.exports = {
         }
 
         if (refillTargets.length <= 0) {
-            const anchor = creep.room.find(FIND_MY_SPAWNS)[0];
+            const anchor = getAnchorSpawn(creep.room, memo);
             if (anchor) moveToTarget(creep, anchor, 2);
             return;
         }

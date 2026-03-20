@@ -10,6 +10,107 @@ const HARVEST_PLAN_CACHE_TTL = 250;
 const HARVEST_PLAN_STORE = 'harvestPlan';
 const HARVEST_PLAN_REPLAN_INTERVAL = 101;
 
+function shallowArrayEqual(a, b) {
+    if (a === b) return true;
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
+function shallowObjectEqual(a, b) {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    for (let i = 0; i < aKeys.length; i++) {
+        const key = aKeys[i];
+        if (a[key] !== b[key]) return false;
+    }
+    return true;
+}
+
+function setIfChanged(obj, key, value) {
+    if (!obj) return false;
+    if (obj[key] === value) return false;
+    obj[key] = value;
+    return true;
+}
+
+function setArrayIfChanged(obj, key, value) {
+    if (!obj) return false;
+    const next = Array.isArray(value) ? value : [];
+    const prev = obj[key];
+    if (shallowArrayEqual(prev, next)) return false;
+    obj[key] = next.slice();
+    return true;
+}
+
+function setObjectIfChanged(obj, key, value) {
+    if (!obj) return false;
+    const next = value && typeof value === 'object' ? value : {};
+    const prev = obj[key];
+    if (shallowObjectEqual(prev, next)) return false;
+    obj[key] = Object.assign({}, next);
+    return true;
+}
+
+function getRoomCache(room) {
+    if (!room || typeof global.getRoomCache !== 'function') return null;
+    return global.getRoomCache(room);
+}
+
+function getSources(room, intel, roomCache) {
+    if (intel && Array.isArray(intel.sources)) return intel.sources;
+    if (roomCache && Array.isArray(roomCache.sources)) return roomCache.sources;
+    return room.find(FIND_SOURCES) || [];
+}
+
+function getSpawns(room, intel, roomCache) {
+    if (intel && intel.structures && Array.isArray(intel.structures[STRUCTURE_SPAWN])) {
+        return intel.structures[STRUCTURE_SPAWN];
+    }
+    if (roomCache && roomCache.myStructuresByType && Array.isArray(roomCache.myStructuresByType[STRUCTURE_SPAWN])) {
+        return roomCache.myStructuresByType[STRUCTURE_SPAWN];
+    }
+    return room.find(FIND_MY_SPAWNS) || [];
+}
+
+function getHarvestRoomMemo(room, intel, roomCache) {
+    if (!room) {
+        return {
+            sources: [],
+            spawns: [],
+            sourceInfoById: Object.create(null)
+        };
+    }
+
+    if (roomCache && roomCache._harvestMissionMemo && roomCache._harvestMissionMemo.time === Game.time) {
+        return roomCache._harvestMissionMemo;
+    }
+
+    const sources = getSources(room, intel, roomCache);
+    const spawns = getSpawns(room, intel, roomCache);
+    const sourceInfoById = Object.create(null);
+    for (let i = 0; i < sources.length; i++) {
+        const source = sources[i];
+        if (source && source.id) sourceInfoById[source.id] = source;
+    }
+
+    const memo = {
+        time: Game.time,
+        sources,
+        spawns,
+        sourceInfoById
+    };
+
+    if (roomCache) roomCache._harvestMissionMemo = memo;
+    return memo;
+}
+
 function getSourceAnchorPos(room, source) {
     if (!room || !source || !source.pos) return null;
 
@@ -138,7 +239,8 @@ function getHarvestTravelEstimate(room, spawns, source, archStats) {
     };
 }
 
-function getSourceInfo(intel, sourceId) {
+function getSourceInfo(intel, sourceId, sourceInfoById) {
+    if (sourceInfoById && sourceInfoById[sourceId]) return sourceInfoById[sourceId];
     const sources = intel && intel.sources ? intel.sources : null;
     if (!sources || !Array.isArray(sources)) return null;
     for (let i = 0; i < sources.length; i++) {
@@ -157,11 +259,13 @@ function getMiningContainerIdSet(intel) {
     return ids;
 }
 
-function hasNonMiningContainers(room, intel) {
+function hasNonMiningContainers(room, intel, roomCache) {
     if (!room) return false;
     const miningContainerIds = getMiningContainerIdSet(intel);
     const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
         ? intel.structures[STRUCTURE_CONTAINER]
+        : (roomCache && roomCache.structuresByType && roomCache.structuresByType[STRUCTURE_CONTAINER])
+            ? roomCache.structuresByType[STRUCTURE_CONTAINER]
         : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
 
     for (let i = 0; i < containers.length; i++) {
@@ -172,30 +276,36 @@ function hasNonMiningContainers(room, intel) {
     return false;
 }
 
-function shouldActivateHarvest(room, intel) {
+function shouldActivateHarvest(room, intel, roomCache, roomMemo) {
     if (!room || !room.controller || !room.controller.my) return false;
     if (room.storage) return true;
-    if (hasNonMiningContainers(room, intel)) return true;
+    if (hasNonMiningContainers(room, intel, roomCache)) return true;
 
-    const sources = intel && Array.isArray(intel.sources) ? intel.sources : room.find(FIND_SOURCES);
+    const sources = roomMemo && Array.isArray(roomMemo.sources)
+        ? roomMemo.sources
+        : getSources(room, intel, roomCache);
     return (sources && sources.length > 1) || false;
 }
 
-function shouldUseHybridEarlyHarvest(room, intel) {
+function shouldUseHybridEarlyHarvest(room, intel, roomCache, roomMemo) {
     if (!room || !room.controller || !room.controller.my) return false;
     if (room.storage) return false;
-    if (hasNonMiningContainers(room, intel)) return false;
-    const sources = intel && Array.isArray(intel.sources) ? intel.sources : room.find(FIND_SOURCES);
+    if (hasNonMiningContainers(room, intel, roomCache)) return false;
+    const sources = roomMemo && Array.isArray(roomMemo.sources)
+        ? roomMemo.sources
+        : getSources(room, intel, roomCache);
     return !!(sources && sources.length > 1);
 }
 
-function pickSimpleHarvestAnchorSourceId(room, intel) {
-    const sources = intel && Array.isArray(intel.sources)
-        ? intel.sources
-        : room.find(FIND_SOURCES).map(s => ({ id: s.id, pos: s.pos }));
+function pickSimpleHarvestAnchorSourceId(room, intel, roomCache, roomMemo) {
+    const sources = roomMemo && Array.isArray(roomMemo.sources)
+        ? roomMemo.sources
+        : getSources(room, intel, roomCache);
     if (!sources || sources.length <= 0) return null;
 
-    const spawns = (intel && intel.structures && intel.structures[STRUCTURE_SPAWN]) || room.find(FIND_MY_SPAWNS);
+    const spawns = roomMemo && Array.isArray(roomMemo.spawns)
+        ? roomMemo.spawns
+        : getSpawns(room, intel, roomCache);
     const anchorSpawn = spawns && spawns.length > 0 ? spawns[0] : null;
 
     let best = null;
@@ -239,9 +349,23 @@ function updateAssignmentState(mission) {
     if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
     if (!Array.isArray(mission.assigned.support)) mission.assigned.support = [];
 
-    const alive = mission.assigned.primary.filter(name => !!Game.creeps[name]);
-    mission.assigned.primary = alive;
-    if (alive.length > 0) mission.lastProgressTick = Game.time;
+    const primary = mission.assigned.primary;
+    let hasDead = false;
+    for (let i = 0; i < primary.length; i++) {
+        if (!Game.creeps[primary[i]]) {
+            hasDead = true;
+            break;
+        }
+    }
+    if (hasDead) {
+        const alive = [];
+        for (let i = 0; i < primary.length; i++) {
+            const name = primary[i];
+            if (Game.creeps[name]) alive.push(name);
+        }
+        mission.assigned.primary = alive;
+    }
+    if (mission.assigned.primary.length > 0) setIfChanged(mission, 'lastProgressTick', Game.time);
 }
 
 function buildSpawnSlots(roomName, sourceId, maxCount) {
@@ -338,21 +462,29 @@ function shouldReplanMission(mission, signature) {
 
 function updateProgressState(mission, planState) {
     mission.progress = mission.progress || {};
-    mission.progress.stage = 'running';
-    mission.progress.goalState = mission.assigned.primary.length > 0
-        ? 'sustaining'
-        : 'seeking_assignment';
-    mission.progress.planState = planState || 'cached';
-    mission.progress.assignedPrimary = mission.assigned.primary.length;
-    mission.progress.lastPlanTick = mission.meta && Number.isFinite(mission.meta.planTick)
+    setIfChanged(mission.progress, 'stage', 'running');
+    setIfChanged(
+        mission.progress,
+        'goalState',
+        mission.assigned.primary.length > 0 ? 'sustaining' : 'seeking_assignment'
+    );
+    setIfChanged(mission.progress, 'planState', planState || 'cached');
+    setIfChanged(mission.progress, 'assignedPrimary', mission.assigned.primary.length);
+    setIfChanged(
+        mission.progress,
+        'lastPlanTick',
+        mission.meta && Number.isFinite(mission.meta.planTick)
         ? mission.meta.planTick
-        : 0;
+        : 0
+    );
 }
 
 function buildFreshPlan(planCtx) {
     const dropoffIds = computeDropoffIds(planCtx.mode, planCtx.sourceInfo);
     const archStats = estimateMinerStatsForPlanning(planCtx.budget, planCtx.mode);
-    const spawns = (planCtx.intel && planCtx.intel.structures && planCtx.intel.structures[STRUCTURE_SPAWN]) || planCtx.room.find(FIND_MY_SPAWNS);
+    const spawns = Array.isArray(planCtx.spawns)
+        ? planCtx.spawns
+        : (planCtx.intel && planCtx.intel.structures && planCtx.intel.structures[STRUCTURE_SPAWN]) || planCtx.room.find(FIND_MY_SPAWNS);
     const travel = planCtx.source ? getHarvestTravelEstimate(planCtx.room, spawns, planCtx.source, archStats) : {
         sourceDistance: 0,
         travelTicks: 0,
@@ -381,9 +513,11 @@ function refreshMissionData(mission, runtimeCtx) {
     if (!room) return 'cached';
     const intel = runtimeCtx ? runtimeCtx.intel : null;
     const context = runtimeCtx ? runtimeCtx.context : null;
+    const roomCache = getRoomCache(room);
+    const roomMemo = getHarvestRoomMemo(room, intel, roomCache);
 
     const source = Game.getObjectById(mission.targetId);
-    const sourceInfo = getSourceInfo(intel, mission.targetId);
+    const sourceInfo = getSourceInfo(intel, mission.targetId, roomMemo.sourceInfoById);
     const mode = computeHarvestMode(sourceInfo || { id: mission.targetId });
     const containerId = sourceInfo && sourceInfo.containerId ? sourceInfo.containerId : null;
     const linkId = sourceInfo && sourceInfo.linkId ? sourceInfo.linkId : null;
@@ -402,6 +536,7 @@ function refreshMissionData(mission, runtimeCtx) {
             plan = buildFreshPlan({
                 room,
                 intel,
+                spawns: roomMemo.spawns,
                 source,
                 sourceInfo,
                 mode,
@@ -427,40 +562,49 @@ function refreshMissionData(mission, runtimeCtx) {
         };
     }
 
-    mission.requirements = {
+    const nextRequirements = {
         archetype: 'miner',
         requiredWork: plan.targetWork,
         minCount: 1,
         maxCount
     };
-    mission.spawnSlots = buildSpawnSlots(room.name, mission.targetId, maxCount);
+    setObjectIfChanged(mission, 'requirements', nextRequirements);
+
+    const nextSpawnSlots = buildSpawnSlots(room.name, mission.targetId, maxCount);
+    setArrayIfChanged(mission, 'spawnSlots', nextSpawnSlots);
+
     mission.meta = mission.meta || {};
-    mission.meta.containerId = containerId;
-    mission.meta.linkId = linkId;
-    mission.meta.mode = plan.mode;
-    mission.meta.dropoffIds = plan.dropoffIds;
-    mission.meta.fallback = plan.fallback;
-    mission.meta.dropoffRange = plan.dropoffRange;
-    mission.meta.sourceDistance = plan.sourceDistance;
-    mission.meta.travelTicks = plan.travelTicks;
-    mission.meta.preSpawnLeadTicks = plan.preSpawnLeadTicks;
-    mission.meta.travelFromSpawnId = plan.travelFromSpawnId;
-    mission.meta.maxCount = maxCount;
-    mission.meta.targetWork = plan.targetWork;
-    mission.meta.staticRolesBySlot = plan.staticRolesBySlot;
-    mission.meta.planSignature = planSignature;
-    if (planState !== 'cached') mission.meta.planTick = Game.time;
-    mission.meta.lastKnownRoom = room.name;
+    setIfChanged(mission.meta, 'containerId', containerId);
+    setIfChanged(mission.meta, 'linkId', linkId);
+    setIfChanged(mission.meta, 'mode', plan.mode);
+    setArrayIfChanged(mission.meta, 'dropoffIds', plan.dropoffIds);
+    setIfChanged(mission.meta, 'fallback', plan.fallback);
+    setIfChanged(mission.meta, 'dropoffRange', plan.dropoffRange);
+    setIfChanged(mission.meta, 'sourceDistance', plan.sourceDistance);
+    setIfChanged(mission.meta, 'travelTicks', plan.travelTicks);
+    setIfChanged(mission.meta, 'preSpawnLeadTicks', plan.preSpawnLeadTicks);
+    setIfChanged(mission.meta, 'travelFromSpawnId', plan.travelFromSpawnId);
+    setIfChanged(mission.meta, 'maxCount', maxCount);
+    setIfChanged(mission.meta, 'targetWork', plan.targetWork);
+    setObjectIfChanged(mission.meta, 'staticRolesBySlot', plan.staticRolesBySlot);
+    setIfChanged(mission.meta, 'planSignature', planSignature);
+    if (planState !== 'cached') setIfChanged(mission.meta, 'planTick', Game.time);
+    setIfChanged(mission.meta, 'lastKnownRoom', room.name);
     if (source && source.pos) {
-        mission.meta.sourcePos = { x: source.pos.x, y: source.pos.y, roomName: source.pos.roomName };
+        setObjectIfChanged(mission.meta, 'sourcePos', { x: source.pos.x, y: source.pos.y, roomName: source.pos.roomName });
     } else if (sourceInfo && sourceInfo.pos && sourceInfo.pos.roomName) {
-        mission.meta.sourcePos = { x: sourceInfo.pos.x, y: sourceInfo.pos.y, roomName: sourceInfo.pos.roomName };
+        setObjectIfChanged(mission.meta, 'sourcePos', {
+            x: sourceInfo.pos.x,
+            y: sourceInfo.pos.y,
+            roomName: sourceInfo.pos.roomName
+        });
     }
-    mission.demand = {
+    const nextDemand = {
         role: 'miner',
         count: Math.max(0, 1 - mission.assigned.primary.length),
         bodyProfile: 'miner_static'
     };
+    setObjectIfChanged(mission, 'demand', nextDemand);
     return planState;
 }
 
@@ -473,13 +617,13 @@ module.exports = {
     reconcileRoom({ room, intel, context, missionBoard }) {
         if (!room || !missionBoard) return;
         if (!missionThrottle.shouldRunReconcile('harvest', room.name, Game.time)) return;
-        if (!shouldActivateHarvest(room, intel)) return;
+        const roomCache = getRoomCache(room);
+        const roomMemo = getHarvestRoomMemo(room, intel, roomCache);
+        if (!shouldActivateHarvest(room, intel, roomCache, roomMemo)) return;
 
-        const sources = intel && Array.isArray(intel.sources)
-            ? intel.sources
-            : room.find(FIND_SOURCES).map(s => ({ id: s.id, availableSpaces: 1 }));
-        const simpleHarvestAnchorSourceId = shouldUseHybridEarlyHarvest(room, intel)
-            ? pickSimpleHarvestAnchorSourceId(room, intel)
+        const sources = roomMemo.sources;
+        const simpleHarvestAnchorSourceId = shouldUseHybridEarlyHarvest(room, intel, roomCache, roomMemo)
+            ? pickSimpleHarvestAnchorSourceId(room, intel, roomCache, roomMemo)
             : null;
 
         for (let i = 0; i < sources.length; i++) {
@@ -490,7 +634,7 @@ module.exports = {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
                 sourceId: source.id,
-                availableSpaces: source.availableSpaces,
+                availableSpaces: Number.isFinite(source.availableSpaces) ? source.availableSpaces : 1,
                 priority: context && context.opState === 'EMERGENCY' ? 1000 : 100
             }, { room, intel, context });
         }
@@ -552,7 +696,10 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
-        if (!shouldActivateHarvest(room, runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null)) return false;
+        const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+        const roomCache = getRoomCache(room);
+        const roomMemo = getHarvestRoomMemo(room, intel, roomCache);
+        if (!shouldActivateHarvest(room, intel, roomCache, roomMemo)) return false;
 
         const source = Game.getObjectById(mission.targetId);
         return !!source;

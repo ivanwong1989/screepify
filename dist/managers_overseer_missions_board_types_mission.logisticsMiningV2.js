@@ -12,7 +12,6 @@ const SOURCE_RING_BLOCK_COST = 255;
 const MIN_HAULERS = 1;
 const MAX_HAULERS = 3;
 const SOURCE_ENERGY_PER_TICK = 10;
-const LINK_OVERFLOW_ENERGY_PER_TICK = 2;
 
 function posKey(pos) {
     return pos ? `${pos.roomName}:${pos.x},${pos.y}` : '';
@@ -29,7 +28,67 @@ function cleanupAssigned(mission) {
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
 }
 
-function getSourceInfo(intel, sourceId) {
+function getRoomCache(room) {
+    if (!room || typeof global.getRoomCache !== 'function') return null;
+    return global.getRoomCache(room);
+}
+
+function getMiningV2RoomMemo(room, intel, roomCache) {
+    if (!room) {
+        return {
+            structures: [],
+            structuresByType: Object.create(null),
+            myStructuresByType: Object.create(null),
+            sourceById: Object.create(null),
+            objectById: Object.create(null)
+        };
+    }
+    if (roomCache && roomCache._logisticsMiningV2Memo && roomCache._logisticsMiningV2Memo.time === Game.time) {
+        return roomCache._logisticsMiningV2Memo;
+    }
+
+    const structures = roomCache && Array.isArray(roomCache.structures) ? roomCache.structures : room.find(FIND_STRUCTURES);
+    const structuresByType = roomCache && roomCache.structuresByType ? roomCache.structuresByType : Object.create(null);
+    const myStructuresByType = roomCache && roomCache.myStructuresByType ? roomCache.myStructuresByType : Object.create(null);
+    const objectById = Object.create(null);
+    for (let i = 0; i < structures.length; i++) {
+        const s = structures[i];
+        if (s && s.id) objectById[s.id] = s;
+    }
+
+    const sourceById = Object.create(null);
+    const sources = intel && Array.isArray(intel.sources) ? intel.sources : [];
+    for (let i = 0; i < sources.length; i++) {
+        const s = sources[i];
+        if (s && s.id) sourceById[s.id] = s;
+    }
+
+    const memo = {
+        time: Game.time,
+        structures,
+        structuresByType,
+        myStructuresByType,
+        sourceById,
+        objectById
+    };
+    if (roomCache) roomCache._logisticsMiningV2Memo = memo;
+    return memo;
+}
+
+function getObjectByIdCached(id, objectCache, roomMemo) {
+    if (!id) return null;
+    if (objectCache && objectCache[id] !== undefined) return objectCache[id];
+    if (roomMemo && roomMemo.objectById && roomMemo.objectById[id]) {
+        if (objectCache) objectCache[id] = roomMemo.objectById[id];
+        return roomMemo.objectById[id];
+    }
+    const obj = Game.getObjectById(id);
+    if (objectCache) objectCache[id] = obj || null;
+    return obj;
+}
+
+function getSourceInfo(intel, sourceId, sourceById) {
+    if (sourceById && sourceById[sourceId]) return sourceById[sourceId];
     const list = intel && Array.isArray(intel.sources) ? intel.sources : [];
     for (let i = 0; i < list.length; i++) {
         const s = list[i];
@@ -38,11 +97,12 @@ function getSourceInfo(intel, sourceId) {
     return null;
 }
 
-function hasStableSink(room, intel) {
+function hasStableSink(room, intel, roomMemo) {
     if (!room) return false;
     if (room.storage) return true;
     const miningContainerIds = new Set((intel && intel.sources ? intel.sources : []).map(s => s && s.containerId).filter(Boolean));
-    const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER]) || [];
+    const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER]) ||
+        (roomMemo && roomMemo.structuresByType && roomMemo.structuresByType[STRUCTURE_CONTAINER]) || [];
     for (let i = 0; i < containers.length; i++) {
         const c = containers[i];
         if (!c || !c.id || miningContainerIds.has(c.id)) continue;
@@ -60,10 +120,10 @@ function isWalkableStructure(structure) {
     return false;
 }
 
-function resolvePickupAnchor(sourceInfo) {
+function resolvePickupAnchor(sourceInfo, objectCache, roomMemo) {
     const containerId = sourceInfo && sourceInfo.containerId ? sourceInfo.containerId : null;
     if (!containerId) return null;
-    const container = Game.getObjectById(containerId);
+    const container = getObjectByIdCached(containerId, objectCache, roomMemo);
     if (!container || !container.pos) return null;
     return {
         pickupId: container.id,
@@ -71,19 +131,46 @@ function resolvePickupAnchor(sourceInfo) {
     };
 }
 
-function hasSourceContainer(sourceInfo) {
+function hasSourceContainer(sourceInfo, objectCache, roomMemo) {
     if (!sourceInfo || !sourceInfo.containerId) return false;
-    const container = Game.getObjectById(sourceInfo.containerId);
+    const container = getObjectByIdCached(sourceInfo.containerId, objectCache, roomMemo);
     return !!(container && container.structureType === STRUCTURE_CONTAINER && container.pos);
 }
 
-function resolveSink(room, intel, pickupPos) {
+function findLinkOverflowStandPos(room, containerPos, linkPos) {
+    if (!room || !containerPos || !linkPos) return null;
+    const terrain = room.getTerrain();
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            const x = containerPos.x + dx;
+            const y = containerPos.y + dy;
+            if (x < 1 || x > 48 || y < 1 || y > 48) continue;
+            if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+            const candidate = new RoomPosition(x, y, room.name);
+            if (!candidate.inRangeTo(linkPos, 1)) continue;
+            const structures = room.lookForAt(LOOK_STRUCTURES, x, y);
+            let blocked = false;
+            for (let i = 0; i < structures.length; i++) {
+                if (!isWalkableStructure(structures[i])) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (!blocked) return candidate;
+        }
+    }
+    return null;
+}
+
+function resolveSink(room, intel, pickupPos, roomMemo) {
     if (!room || !pickupPos) return null;
     const sinks = [];
     if (room.storage) sinks.push(room.storage);
 
     const miningContainerIds = new Set((intel && intel.sources ? intel.sources : []).map(s => s && s.containerId).filter(Boolean));
-    const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER]) || [];
+    const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER]) ||
+        (roomMemo && roomMemo.structuresByType && roomMemo.structuresByType[STRUCTURE_CONTAINER]) || [];
     for (let i = 0; i < containers.length; i++) {
         const c = containers[i];
         if (!c || !c.id || miningContainerIds.has(c.id)) continue;
@@ -157,7 +244,7 @@ function getMinerStandAvoidTiles(room, intel) {
     return avoid;
 }
 
-function buildRoomCostMatrix(room, startPos, endPos) {
+function buildRoomCostMatrix(room, startPos, endPos, roomMemo) {
     const matrix = new PathFinder.CostMatrix();
     if (!room) return matrix;
 
@@ -171,7 +258,7 @@ function buildRoomCostMatrix(room, startPos, endPos) {
         }
     }
 
-    const structures = room.find(FIND_STRUCTURES);
+    const structures = roomMemo && Array.isArray(roomMemo.structures) ? roomMemo.structures : room.find(FIND_STRUCTURES);
     for (let i = 0; i < structures.length; i++) {
         const s = structures[i];
         if (!s || !s.pos) continue;
@@ -207,10 +294,10 @@ function applyAvoidTiles(matrix, room, startPos, endPos, avoidTiles, avoidCost, 
     }
 }
 
-function buildPath(room, startPos, endPos, avoidTiles) {
+function buildPath(room, startPos, endPos, avoidTiles, roomMemo) {
     if (!room || !startPos || !endPos) return null;
     if (startPos.roomName !== room.name || endPos.roomName !== room.name) return null;
-    const costMatrix = buildRoomCostMatrix(room, startPos, endPos);
+    const costMatrix = buildRoomCostMatrix(room, startPos, endPos, roomMemo);
     const coreHeadTiles = [];
     const minerStandTiles = [];
     if (Array.isArray(avoidTiles) && avoidTiles.length > 0) {
@@ -290,9 +377,9 @@ function estimateRequiredCarryPartsForRate(pathLength, energyPerTick) {
     return Math.max(1, Math.ceil((rate * roundTripTicks) / 50));
 }
 
-function hasLinkAssistedSource(room, intel, sourceInfo) {
+function hasLinkAssistedSource(room, intel, sourceInfo, roomMemo, objectCache) {
     if (!room || !sourceInfo || !sourceInfo.id || !sourceInfo.pos || !sourceInfo.linkId) return false;
-    const sourceLink = Game.getObjectById(sourceInfo.linkId);
+    const sourceLink = getObjectByIdCached(sourceInfo.linkId, objectCache, roomMemo);
     if (!sourceLink || sourceLink.structureType !== STRUCTURE_LINK || !sourceLink.pos) return false;
     if (!sourceLink.pos.inRangeTo(sourceInfo.pos, 2)) return false;
 
@@ -304,9 +391,12 @@ function hasLinkAssistedSource(room, intel, sourceInfo) {
         sourcePosById[s.id] = s.pos;
     }
 
-    const links = room.find(FIND_MY_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_LINK && s.id !== sourceLink.id && !!s.pos
-    });
+    const myLinks = roomMemo && roomMemo.myStructuresByType && Array.isArray(roomMemo.myStructuresByType[STRUCTURE_LINK])
+        ? roomMemo.myStructuresByType[STRUCTURE_LINK]
+        : room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_LINK && !!s.pos
+        });
+    const links = myLinks.filter(s => s && s.id !== sourceLink.id && !!s.pos);
     if (!links || links.length <= 0) return false;
 
     for (let i = 0; i < links.length; i++) {
@@ -324,10 +414,10 @@ function hasLinkAssistedSource(room, intel, sourceInfo) {
     return false;
 }
 
-function shouldActivateSource(room, intel, sourceInfo) {
+function shouldActivateSource(room, intel, sourceInfo, roomMemo, objectCache) {
     if (!room || !sourceInfo || !sourceInfo.id) return false;
-    if (!hasStableSink(room, intel)) return false;
-    return hasSourceContainer(sourceInfo);
+    if (!hasStableSink(room, intel, roomMemo)) return false;
+    return hasSourceContainer(sourceInfo, objectCache, roomMemo);
 }
 
 module.exports = {
@@ -341,13 +431,15 @@ module.exports = {
 
     reconcileRoom({ room, intel, context, missionBoard }) {
         if (!room || !intel || !missionBoard) return;
-        if (!hasStableSink(room, intel)) return;
+        const roomMemo = getMiningV2RoomMemo(room, intel, getRoomCache(room));
+        const objectCache = Object.create(null);
+        if (!hasStableSink(room, intel, roomMemo)) return;
         if (!missionThrottle.shouldRunReconcile('logisticsMiningV2', room.name, Game.time)) return;
 
         const sources = Array.isArray(intel.sources) ? intel.sources : [];
         for (let i = 0; i < sources.length; i++) {
             const sourceInfo = sources[i];
-            if (!shouldActivateSource(room, intel, sourceInfo)) continue;
+            if (!shouldActivateSource(room, intel, sourceInfo, roomMemo, objectCache)) continue;
             missionBoard.createMission('logisticsMiningV2', {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
@@ -404,10 +496,12 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room || !room.controller || !room.controller.my) return false;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
-        if (!hasStableSink(room, intel)) return false;
-        const sourceInfo = getSourceInfo(intel, mission.targetId);
+        const roomMemo = getMiningV2RoomMemo(room, intel, getRoomCache(room));
+        const objectCache = Object.create(null);
+        if (!hasStableSink(room, intel, roomMemo)) return false;
+        const sourceInfo = getSourceInfo(intel, mission.targetId, roomMemo.sourceById);
         if (!sourceInfo) return false;
-        if (!hasSourceContainer(sourceInfo)) return false;
+        if (!hasSourceContainer(sourceInfo, objectCache, roomMemo)) return false;
         return true;
     },
 
@@ -418,11 +512,20 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+        const roomMemo = getMiningV2RoomMemo(room, intel, getRoomCache(room));
+        const objectCache = Object.create(null);
 
-        const sourceInfo = getSourceInfo(intel, mission.targetId) || null;
-        const pickup = resolvePickupAnchor(sourceInfo);
+        const sourceInfo = getSourceInfo(intel, mission.targetId, roomMemo.sourceById) || null;
+        const pickup = resolvePickupAnchor(sourceInfo, objectCache, roomMemo);
         if (!pickup || !pickup.pickupPos) return;
-        const sink = resolveSink(room, intel, pickup.pickupPos);
+        const linkAssistActive = hasLinkAssistedSource(room, intel, sourceInfo, roomMemo, objectCache);
+        const sourceLink = linkAssistActive && sourceInfo && sourceInfo.linkId
+            ? getObjectByIdCached(sourceInfo.linkId, objectCache, roomMemo)
+            : null;
+        const hasLinkSink = !!(sourceLink && sourceLink.structureType === STRUCTURE_LINK && sourceLink.pos);
+        const sink = hasLinkSink
+            ? sourceLink
+            : resolveSink(room, intel, pickup.pickupPos, roomMemo);
         if (!sink || !sink.pos) return;
         const runtime = missionRuntime.getMissionRuntime(mission);
         const coreHeadAvoidTiles = getCoreHeadAvoidTiles(room.name);
@@ -440,68 +543,92 @@ module.exports = {
 
         const pickupKey = posKey(pickup.pickupPos);
         const sinkKey = posKey(sink.pos);
-        const buildInputsChanged =
-            runtime.useLane !== true ||
-            runtime.pickupKey !== pickupKey ||
-            runtime.sinkKey !== sinkKey ||
-            runtime.avoidSignature !== avoidSignature;
-        const rebuildIntervalElapsed =
-            !Number.isFinite(runtime.lastBuiltTick) ||
-            (Game.time - runtime.lastBuiltTick) >= REBUILD_INTERVAL;
-        // Retry cadence is interval-based so failed builds do not trigger pathfinding every tick.
-        const shouldRebuild = buildInputsChanged || rebuildIntervalElapsed;
-
-        if (shouldRebuild) {
-            const built = buildPath(room, pickup.pickupPos, sink.pos, avoidTiles);
-            if (built) {
-                runtime.path = built.path;
-                runtime.indexByPos = built.indexByPos;
-                runtime.pathLength = built.pathLength;
-            } else {
-                runtime.path = null;
-                runtime.indexByPos = null;
-                runtime.pathLength = 0;
-            }
+        if (hasLinkSink) {
+            runtime.path = null;
+            runtime.indexByPos = null;
+            runtime.pathLength = 0;
+            runtime.lastBuiltTick = Game.time;
+            runtime.useLane = false;
             runtime.pickupKey = pickupKey;
             runtime.sinkKey = sinkKey;
-            runtime.avoidSignature = avoidSignature;
-            runtime.lastBuiltTick = Game.time;
+            runtime.avoidSignature = '';
+        } else {
+            const buildInputsChanged =
+                runtime.useLane !== true ||
+                runtime.pickupKey !== pickupKey ||
+                runtime.sinkKey !== sinkKey ||
+                runtime.avoidSignature !== avoidSignature;
+            const rebuildIntervalElapsed =
+                !Number.isFinite(runtime.lastBuiltTick) ||
+                (Game.time - runtime.lastBuiltTick) >= REBUILD_INTERVAL;
+            // Retry cadence is interval-based so failed builds do not trigger pathfinding every tick.
+            const shouldRebuild = buildInputsChanged || rebuildIntervalElapsed;
+
+            if (shouldRebuild) {
+                const built = buildPath(room, pickup.pickupPos, sink.pos, avoidTiles, roomMemo);
+                if (built) {
+                    runtime.path = built.path;
+                    runtime.indexByPos = built.indexByPos;
+                    runtime.pathLength = built.pathLength;
+                } else {
+                    runtime.path = null;
+                    runtime.indexByPos = null;
+                    runtime.pathLength = 0;
+                }
+                runtime.pickupKey = pickupKey;
+                runtime.sinkKey = sinkKey;
+                runtime.avoidSignature = avoidSignature;
+                runtime.lastBuiltTick = Game.time;
+            }
+            runtime.useLane = true;
         }
-        runtime.useLane = true;
         runtime.pickupPos = clonePos(pickup.pickupPos);
         runtime.sinkPos = clonePos(sink.pos);
         runtime.pickupId = pickup.pickupId || null;
         runtime.pickupType = 'container';
         runtime.sinkId = sink.id;
+        runtime.linkAssistActive = hasLinkSink;
+        runtime.sourceLinkId = hasLinkSink ? sourceLink.id : null;
+        runtime.stationPos = hasLinkSink
+            ? findLinkOverflowStandPos(room, pickup.pickupPos, sourceLink.pos)
+            : null;
 
         runtime.assignedCreeps = getAssignedMiningHaulers(mission.id, room.name, mission.meta && mission.meta.missionName);
         mission.assigned.primary = runtime.assignedCreeps.slice();
         const assignedCarryParts = getAssignedCarryParts(mission.assigned.primary);
-        const estimatedCarryPerHauler = getEstimatedCarryPerHauler(room);
         const laneReady = Array.isArray(runtime.path) && runtime.path.length > 0;
-        const effectivePathLength = laneReady
-            ? (runtime.pathLength || 0)
-            : Math.max(1, pickup.pickupPos.getRangeTo(sink.pos));
-        const linkAssistActive = hasLinkAssistedSource(room, intel, sourceInfo);
-        const targetEnergyPerTick = linkAssistActive ? LINK_OVERFLOW_ENERGY_PER_TICK : SOURCE_ENERGY_PER_TICK;
-        const neededCarryParts = estimateRequiredCarryPartsForRate(effectivePathLength, targetEnergyPerTick);
-        const desiredCount = Math.max(
-            MIN_HAULERS,
-            Math.min(MAX_HAULERS, Math.ceil(neededCarryParts / Math.max(1, estimatedCarryPerHauler)))
-        );
-        const maxCarryParts = Math.max(2, Math.ceil(neededCarryParts / Math.max(1, desiredCount)));
+        const effectivePathLength = hasLinkSink
+            ? 1
+            : (laneReady
+                ? (runtime.pathLength || 0)
+                : Math.max(1, pickup.pickupPos.getRangeTo(sink.pos)));
+        const targetEnergyPerTick = hasLinkSink ? 0 : SOURCE_ENERGY_PER_TICK;
+        const neededCarryParts = hasLinkSink
+            ? 1
+            : estimateRequiredCarryPartsForRate(effectivePathLength, SOURCE_ENERGY_PER_TICK);
+        const desiredCount = hasLinkSink
+            ? 1
+            : Math.max(
+                MIN_HAULERS,
+                Math.min(MAX_HAULERS, Math.ceil(neededCarryParts / Math.max(1, getEstimatedCarryPerHauler(room))))
+            );
+        const maxCarryParts = hasLinkSink
+            ? 1
+            : Math.max(2, Math.ceil(neededCarryParts / Math.max(1, desiredCount)));
 
         mission.meta = mission.meta || {};
         mission.meta.sourceId = mission.targetId;
         mission.meta.pickupId = runtime.pickupId || null;
         mission.meta.sinkId = runtime.sinkId || null;
         mission.meta.pathLength = effectivePathLength;
-        mission.meta.pathMode = laneReady ? 'lane_cached' : 'lane_fallback';
+        mission.meta.pathMode = hasLinkSink ? 'link_overflow' : (laneReady ? 'lane_cached' : 'lane_fallback');
         mission.meta.pickupType = 'container';
         mission.meta.desiredCount = desiredCount;
         mission.meta.neededCarryParts = neededCarryParts;
         mission.meta.maxCarryParts = maxCarryParts;
-        mission.meta.linkAssistActive = linkAssistActive;
+        mission.meta.linkAssistActive = hasLinkSink;
+        mission.meta.linkId = hasLinkSink ? sourceLink.id : null;
+        mission.meta.stationPos = runtime.stationPos ? clonePos(runtime.stationPos) : null;
         mission.meta.targetEnergyPerTick = targetEnergyPerTick;
         mission.meta.assignedCarryParts = assignedCarryParts;
         if (!mission.meta.missionName) mission.meta.missionName = `logistics:miningV2:${mission.targetId}`;
@@ -526,7 +653,7 @@ module.exports = {
         mission.progress.pathLength = effectivePathLength;
         mission.progress.neededCarryParts = neededCarryParts;
         mission.progress.maxCarryParts = maxCarryParts;
-        mission.progress.linkAssistActive = linkAssistActive ? 1 : 0;
+        mission.progress.linkAssistActive = hasLinkSink ? 1 : 0;
         mission.progress.assignedCarryParts = assignedCarryParts;
         mission.progress.desiredCount = desiredCount;
         mission.progress.assignedPrimary = mission.assigned.primary.length;

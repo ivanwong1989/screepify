@@ -330,7 +330,7 @@ function getBlockedGrid(room) {
   }
 
   const grid = new Uint8Array(2500)
-  const structures = room.find(FIND_STRUCTURES)
+  const structures = getRoomStructuresForTraffic(room)
 
   for (let i = 0; i < structures.length; i++) {
     const structure = structures[i]
@@ -344,6 +344,19 @@ function getBlockedGrid(room) {
   }
 
   return grid
+}
+
+function getRoomStructuresForTraffic(room) {
+  if (!room) return []
+
+  if (typeof global.getRoomCache === 'function') {
+    const cache = global.getRoomCache(room)
+    if (cache && Array.isArray(cache.structures)) {
+      return cache.structures
+    }
+  }
+
+  return room.find(FIND_STRUCTURES)
 }
 
 function isStructureBlocking(structure) {

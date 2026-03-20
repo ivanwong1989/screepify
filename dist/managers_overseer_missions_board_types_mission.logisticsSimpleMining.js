@@ -5,9 +5,128 @@ const missionThrottle = require('managers_overseer_missions_board_utils_missionT
 
 const MAX_SIMPLE_MINING_HAULERS = 4;
 
+function shallowArrayEqual(a, b) {
+    if (a === b) return true;
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
+function shallowObjectEqual(a, b) {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    for (let i = 0; i < aKeys.length; i++) {
+        const key = aKeys[i];
+        if (a[key] !== b[key]) return false;
+    }
+    return true;
+}
+
+function setIfChanged(obj, key, value) {
+    if (!obj) return false;
+    if (obj[key] === value) return false;
+    obj[key] = value;
+    return true;
+}
+
+function setArrayIfChanged(obj, key, value) {
+    if (!obj) return false;
+    const next = Array.isArray(value) ? value : [];
+    const prev = obj[key];
+    if (shallowArrayEqual(prev, next)) return false;
+    obj[key] = next.slice();
+    return true;
+}
+
+function setObjectIfChanged(obj, key, value) {
+    if (!obj) return false;
+    const next = value && typeof value === 'object' ? value : {};
+    const prev = obj[key];
+    if (shallowObjectEqual(prev, next)) return false;
+    obj[key] = Object.assign({}, next);
+    return true;
+}
+
+function getRoomCache(room) {
+    if (!room || typeof global.getRoomCache !== 'function') return null;
+    return global.getRoomCache(room);
+}
+
+function getSimpleMiningRoomMemo(room, roomCache) {
+    if (!room) {
+        return {
+            sources: [],
+            dropped: [],
+            structuresByType: Object.create(null),
+            objectById: Object.create(null)
+        };
+    }
+    if (roomCache && roomCache._logisticsSimpleMiningMemo && roomCache._logisticsSimpleMiningMemo.time === Game.time) {
+        return roomCache._logisticsSimpleMiningMemo;
+    }
+
+    const sources = roomCache && Array.isArray(roomCache.sources) ? roomCache.sources : room.find(FIND_SOURCES);
+    const dropped = roomCache && Array.isArray(roomCache.dropped) ? roomCache.dropped : room.find(FIND_DROPPED_RESOURCES);
+    const structuresByType = roomCache && roomCache.structuresByType ? roomCache.structuresByType : Object.create(null);
+    const objectById = Object.create(null);
+
+    const addObjects = list => {
+        if (!Array.isArray(list)) return;
+        for (let i = 0; i < list.length; i++) {
+            const obj = list[i];
+            if (obj && obj.id) objectById[obj.id] = obj;
+        }
+    };
+
+    addObjects(sources);
+    addObjects(dropped);
+    addObjects(structuresByType[STRUCTURE_CONTAINER]);
+    addObjects(structuresByType[STRUCTURE_STORAGE]);
+
+    const memo = {
+        time: Game.time,
+        sources,
+        dropped,
+        structuresByType,
+        objectById
+    };
+    if (roomCache) roomCache._logisticsSimpleMiningMemo = memo;
+    return memo;
+}
+
+function getObjectByIdCached(id, objectCache, roomMemo) {
+    if (!id) return null;
+    if (objectCache && objectCache[id] !== undefined) return objectCache[id];
+    if (roomMemo && roomMemo.objectById && roomMemo.objectById[id]) {
+        if (objectCache) objectCache[id] = roomMemo.objectById[id];
+        return roomMemo.objectById[id];
+    }
+    const obj = Game.getObjectById(id);
+    if (objectCache) objectCache[id] = obj || null;
+    return obj;
+}
+
 function shouldActivate(room) {
     if (!room || !room.controller || !room.controller.my) return false;
     return true;
+}
+
+function hasActiveMiningV2Mission(roomName, missionBoardRef) {
+    if (!roomName) return false;
+    const board = missionBoardRef || require('managers_overseer_missions_board_missionBoard');
+    if (!board || typeof board.listLiveByRoom !== 'function') return false;
+    const live = board.listLiveByRoom(roomName) || [];
+    for (let i = 0; i < live.length; i++) {
+        const mission = live[i];
+        if (mission && mission.type === 'logisticsMiningV2') return true;
+    }
+    return false;
 }
 
 function getMiningContainerIds(intel) {
@@ -40,7 +159,7 @@ function getSimpleMiningSourceInfos(intel, blockedSourceIds) {
     return sourceInfos.filter(s => s && s.id && !blockedSourceIds.has(s.id));
 }
 
-function getSinkTargets(room, intel) {
+function getSinkTargets(room, intel, roomMemo) {
     if (!room) return [];
     const miningContainerIdSet = new Set(getMiningContainerIds(intel));
     const sinks = [];
@@ -56,6 +175,8 @@ function getSinkTargets(room, intel) {
 
     const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
         ? intel.structures[STRUCTURE_CONTAINER]
+        : (roomMemo && roomMemo.structuresByType && Array.isArray(roomMemo.structuresByType[STRUCTURE_CONTAINER]))
+            ? roomMemo.structuresByType[STRUCTURE_CONTAINER]
         : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
     for (let i = 0; i < containers.length; i++) {
         const container = containers[i];
@@ -82,7 +203,7 @@ function isNearAnySource(pos, sourceInfos) {
     return false;
 }
 
-function getSourceIds(room, intel) {
+function getSourceIds(room, intel, roomMemo, objectCache) {
     if (!room) return [];
     const ids = [];
     const seen = Object.create(null);
@@ -100,28 +221,28 @@ function getSourceIds(room, intel) {
     }
 
     for (let i = 0; i < miningContainerIds.length; i++) {
-        const container = Game.getObjectById(miningContainerIds[i]);
+        const container = getObjectByIdCached(miningContainerIds[i], objectCache, roomMemo);
         if (!container || !container.store || (container.store[RESOURCE_ENERGY] || 0) <= 0) continue;
         addId(container.id);
     }
 
-    const dropped = room.find(FIND_DROPPED_RESOURCES, {
-        filter: r =>
-            r &&
-            r.resourceType === RESOURCE_ENERGY &&
-            r.amount > 0 &&
-            isNearAnySource(r.pos, sourceInfos)
-    });
+    const droppedAll = roomMemo && Array.isArray(roomMemo.dropped) ? roomMemo.dropped : room.find(FIND_DROPPED_RESOURCES);
+    const dropped = droppedAll.filter(r =>
+        r &&
+        r.resourceType === RESOURCE_ENERGY &&
+        r.amount > 0 &&
+        isNearAnySource(r.pos, sourceInfos)
+    );
     for (let i = 0; i < dropped.length; i++) addId(dropped[i].id);
 
     return ids;
 }
 
-function estimateSupply(sourceIds) {
+function estimateSupply(sourceIds, roomMemo, objectCache) {
     if (!Array.isArray(sourceIds) || sourceIds.length <= 0) return 0;
     let total = 0;
     for (let i = 0; i < sourceIds.length; i++) {
-        const src = Game.getObjectById(sourceIds[i]);
+        const src = getObjectByIdCached(sourceIds[i], objectCache, roomMemo);
         if (!src) continue;
         if (src.store) total += src.store[RESOURCE_ENERGY] || 0;
         else if (src.resourceType === RESOURCE_ENERGY && Number.isFinite(src.amount)) total += src.amount;
@@ -150,7 +271,9 @@ function getEnergySourceCount(room, intel, blockedSourceIds) {
         return getSimpleMiningSourceInfos(intel, blockedSourceIds).length;
     }
     if (!room) return 0;
-    const sources = room.find(FIND_SOURCES);
+    const cache = getRoomCache(room);
+    const memo = getSimpleMiningRoomMemo(room, cache);
+    const sources = memo.sources;
     return Array.isArray(sources) ? sources.length : 0;
 }
 
@@ -163,7 +286,21 @@ function estimateRequiredCarry(movableEnergy, desiredCount) {
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
     if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
-    mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
+    const primary = mission.assigned.primary;
+    let hasDead = false;
+    for (let i = 0; i < primary.length; i++) {
+        if (!Game.creeps[primary[i]]) {
+            hasDead = true;
+            break;
+        }
+    }
+    if (!hasDead) return;
+    const alive = [];
+    for (let i = 0; i < primary.length; i++) {
+        const name = primary[i];
+        if (Game.creeps[name]) alive.push(name);
+    }
+    mission.assigned.primary = alive;
 }
 
 module.exports = {
@@ -179,6 +316,11 @@ module.exports = {
         if (!room || !missionBoard) return;
         if (!missionThrottle.shouldRunReconcile('logisticsSimpleMining', room.name, Game.time)) return;
         if (!shouldActivate(room)) return;
+        if (hasActiveMiningV2Mission(room.name, missionBoard)) return;
+
+        const blockedSourceIds = getV2UngatedSourceIdSet(intel);
+        const simpleSourceCount = getEnergySourceCount(room, intel, blockedSourceIds);
+        if (simpleSourceCount <= 0) return;
 
         missionBoard.createMission('logisticsSimpleMining', {
             sponsorRoom: room.name,
@@ -234,6 +376,7 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!shouldActivate(room)) return false;
+        if (hasActiveMiningV2Mission(roomName, null)) return false;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         if (!intel || !Array.isArray(intel.sources)) return true;
         const blockedSourceIds = getV2UngatedSourceIdSet(intel);
@@ -247,28 +390,30 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room || !shouldActivate(room)) return;
+        const roomMemo = getSimpleMiningRoomMemo(room, getRoomCache(room));
+        const objectCache = Object.create(null);
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
 
         const blockedSourceIds = getV2UngatedSourceIdSet(intel);
         const simpleSourceInfos = getSimpleMiningSourceInfos(intel, blockedSourceIds);
-        const sinks = getSinkTargets(room, intel);
+        const sinks = getSinkTargets(room, intel, roomMemo);
         const sinkIds = sinks.map(s => s.id);
-        const sourceIds = getSourceIds(room, { sources: simpleSourceInfos });
+        const sourceIds = getSourceIds(room, { sources: simpleSourceInfos }, roomMemo, objectCache);
         const sourceCount = getEnergySourceCount(room, intel, blockedSourceIds);
-        const supply = estimateSupply(sourceIds);
+        const supply = estimateSupply(sourceIds, roomMemo, objectCache);
         const sinkFree = estimateSinkFree(sinks);
         const movableEnergy = Math.max(0, Math.min(supply, sinkFree));
         const desiredCount = Math.max(0, Math.min(sourceCount, estimateDesiredCount(movableEnergy)));
         const requiredCarry = estimateRequiredCarry(movableEnergy, desiredCount);
 
-        mission.targetId = sinkIds.length > 0 ? sinkIds[0] : null;
+        setIfChanged(mission, 'targetId', sinkIds.length > 0 ? sinkIds[0] : null);
         mission.meta = mission.meta || {};
-        mission.meta.desiredCount = desiredCount;
-        mission.meta.maxBySources = sourceCount;
-        mission.meta.requiredCarry = requiredCarry;
-        if (!mission.meta.missionName) mission.meta.missionName = `logistics:simpleMining:${roomName}`;
+        setIfChanged(mission.meta, 'desiredCount', desiredCount);
+        setIfChanged(mission.meta, 'maxBySources', sourceCount);
+        setIfChanged(mission.meta, 'requiredCarry', requiredCarry);
+        if (!mission.meta.missionName) setIfChanged(mission.meta, 'missionName', `logistics:simpleMining:${roomName}`);
 
-        mission.requirements = {
+        const nextRequirements = {
             archetype: 'simpleMiningHauler',
             minCount: desiredCount,
             maxCount: desiredCount,
@@ -276,27 +421,31 @@ module.exports = {
             spawn: true,
             spawnFromFleet: false
         };
-        mission.demand = {
+        setObjectIfChanged(mission, 'requirements', nextRequirements);
+
+        const nextDemand = {
             role: 'simpleMiningHauler',
             count: Math.max(0, desiredCount - mission.assigned.primary.length),
             bodyProfile: 'hauler'
         };
+        setObjectIfChanged(mission, 'demand', nextDemand);
+
         mission.data = mission.data || {};
-        mission.data.sourceIds = sourceIds;
-        mission.data.sinkIds = sinkIds;
+        setArrayIfChanged(mission.data, 'sourceIds', sourceIds);
+        setArrayIfChanged(mission.data, 'sinkIds', sinkIds);
 
         mission.progress = mission.progress || {};
-        mission.progress.stage = 'simple_mining_shift';
-        mission.progress.goalState = mission.assigned.primary.length > 0 ? 'sustaining' : 'seeking_assignment';
-        mission.progress.assignedPrimary = mission.assigned.primary.length;
-        mission.progress.sourceCount = sourceIds.length;
-        mission.progress.energySourceCount = sourceCount;
-        mission.progress.sinkCount = sinkIds.length;
-        mission.progress.sourceSupply = supply;
-        mission.progress.sinkFree = sinkFree;
-        mission.progress.movableEnergy = movableEnergy;
-        mission.progress.requiredCarry = requiredCarry;
-        if (mission.assigned.primary.length > 0) mission.lastProgressTick = Game.time;
+        setIfChanged(mission.progress, 'stage', 'simple_mining_shift');
+        setIfChanged(mission.progress, 'goalState', mission.assigned.primary.length > 0 ? 'sustaining' : 'seeking_assignment');
+        setIfChanged(mission.progress, 'assignedPrimary', mission.assigned.primary.length);
+        setIfChanged(mission.progress, 'sourceCount', sourceIds.length);
+        setIfChanged(mission.progress, 'energySourceCount', sourceCount);
+        setIfChanged(mission.progress, 'sinkCount', sinkIds.length);
+        setIfChanged(mission.progress, 'sourceSupply', supply);
+        setIfChanged(mission.progress, 'sinkFree', sinkFree);
+        setIfChanged(mission.progress, 'movableEnergy', movableEnergy);
+        setIfChanged(mission.progress, 'requiredCarry', requiredCarry);
+        if (mission.assigned.primary.length > 0) setIfChanged(mission, 'lastProgressTick', Game.time);
     },
 
     isComplete() {

@@ -1,5 +1,28 @@
 const movement = require('utils_movement');
 const roleUniversal = require('role_role.universal');
+const heap = require('utils_heap');
+
+const SIMPLE_HARVEST_HEAP_STORE = 'roleSimpleHarvest';
+
+function getSimpleHarvestRoomMemo(room) {
+    if (!room) return null;
+    const store = heap.getStore(SIMPLE_HARVEST_HEAP_STORE, { ttl: 50 });
+    const existing = store[room.name];
+    if (existing && existing.time === Game.time) return existing;
+    const memo = {
+        time: Game.time,
+        idObj: Object.create(null)
+    };
+    store[room.name] = memo;
+    return memo;
+}
+
+function getObjectByIdCached(memo, id) {
+    if (!id) return null;
+    if (!memo) return Game.getObjectById(id);
+    if (memo.idObj[id] === undefined) memo.idObj[id] = Game.getObjectById(id) || null;
+    return memo.idObj[id];
+}
 
 function clearAssignment(creep) {
     if (!creep || !creep.memory) return;
@@ -26,10 +49,10 @@ function getMissionByName(homeRoom, missionName) {
     return homeRoom._simpleHarvestMissionMap[missionName] || null;
 }
 
-function getFirstValidDropoff(dropoffIds, resourceType) {
+function getFirstValidDropoff(dropoffIds, resourceType, memo) {
     if (!Array.isArray(dropoffIds) || dropoffIds.length <= 0) return null;
     for (let i = 0; i < dropoffIds.length; i++) {
-        const target = Game.getObjectById(dropoffIds[i]);
+        const target = getObjectByIdCached(memo, dropoffIds[i]);
         if (!target || !target.store) continue;
         if ((target.store.getFreeCapacity(resourceType) || 0) > 0) return target;
     }
@@ -90,12 +113,13 @@ const roleSimpleHarvest = {
         }
 
         movement.enableTrafficForBuildWorker(creep);
-        delete creep.memory.task;
-        delete creep.memory.taskState;
+        if (creep.memory.task !== undefined) delete creep.memory.task;
+        if (creep.memory.taskState !== undefined) delete creep.memory.taskState;
 
         const data = mission.data || {};
+        const memo = getSimpleHarvestRoomMemo(creep.room);
         const sourceId = data.sourceId || mission.sourceId || mission.targetId;
-        const source = sourceId ? Game.getObjectById(sourceId) : null;
+        const source = sourceId ? getObjectByIdCached(memo, sourceId) : null;
         if (!source) {
             clearAssignment(creep);
             return;
@@ -110,7 +134,7 @@ const roleSimpleHarvest = {
             return;
         }
 
-        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType);
+        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType, memo);
         const sourceDepleted = Number.isFinite(source.energy) && source.energy <= 0;
         if (!isFull(creep, resourceType) && !sourceDepleted) {
             const harvestCode = creep.harvest(source);

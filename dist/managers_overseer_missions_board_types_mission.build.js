@@ -55,11 +55,13 @@ function getMiningContainerIdSet(intel) {
     return ids;
 }
 
-function getNonMiningContainerIds(room, intel) {
+function getNonMiningContainerIds(room, intel, roomCache) {
     if (!room) return [];
     const miningContainerIds = getMiningContainerIdSet(intel);
     const containers = (intel && intel.structures && intel.structures[STRUCTURE_CONTAINER])
         ? intel.structures[STRUCTURE_CONTAINER]
+        : (roomCache && roomCache.structuresByType && roomCache.structuresByType[STRUCTURE_CONTAINER])
+            ? roomCache.structuresByType[STRUCTURE_CONTAINER]
         : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
 
     const ids = [];
@@ -69,6 +71,55 @@ function getNonMiningContainerIds(room, intel) {
         ids.push(c.id);
     }
     return ids;
+}
+
+function getRoomCache(room) {
+    if (!room || typeof global.getRoomCache !== 'function') return null;
+    return global.getRoomCache(room);
+}
+
+function getBuildSites(room, intel, roomCache) {
+    const sites = intel && Array.isArray(intel.constructionSites)
+        ? intel.constructionSites
+        : (roomCache && Array.isArray(roomCache.constructionSites))
+            ? roomCache.constructionSites
+            : room.find(FIND_MY_CONSTRUCTION_SITES);
+    if (!sites || sites.length === 0) return [];
+
+    // roomCache/intel can include non-owned sites; build mission should only track ours.
+    const mine = [];
+    for (let i = 0; i < sites.length; i++) {
+        const site = sites[i];
+        if (site && site.my) mine.push(site);
+    }
+    return mine;
+}
+
+function getBuildRoomMemo(room, intel, roomCache) {
+    if (!roomCache) {
+        return {
+            sourceIds: intel && Array.isArray(intel.allEnergySources) ? intel.allEnergySources.map(s => s.id) : [],
+            nonMiningContainerIds: getNonMiningContainerIds(room, intel, null)
+        };
+    }
+
+    const existing = roomCache._buildMissionMemo;
+    if (existing && existing.time === Game.time) return existing;
+
+    const allEnergySources = (intel && Array.isArray(intel.allEnergySources)) ? intel.allEnergySources : [];
+    const sourceIds = [];
+    for (let i = 0; i < allEnergySources.length; i++) {
+        const source = allEnergySources[i];
+        if (source && source.id) sourceIds.push(source.id);
+    }
+
+    const memo = {
+        time: Game.time,
+        sourceIds,
+        nonMiningContainerIds: getNonMiningContainerIds(room, intel, roomCache)
+    };
+    roomCache._buildMissionMemo = memo;
+    return memo;
 }
 
 module.exports = {
@@ -81,9 +132,8 @@ module.exports = {
         if (context && context.opState === 'EMERGENCY') return;
         if (!missionThrottle.shouldRunReconcile('build', room.name, Game.time)) return;
 
-        const sites = intel && Array.isArray(intel.constructionSites)
-            ? intel.constructionSites
-            : room.find(FIND_MY_CONSTRUCTION_SITES);
+        const roomCache = getRoomCache(room);
+        const sites = getBuildSites(room, intel, roomCache);
         if (!sites || sites.length === 0) return;
 
         const rcl = (room.controller && room.controller.level) || 1;
@@ -153,6 +203,8 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+        const roomCache = getRoomCache(room);
+        const roomMemo = room ? getBuildRoomMemo(room, intel, roomCache) : null;
         const site = Game.getObjectById(mission.targetId);
         const rcl = (room && room.controller && room.controller.level) || 1;
         const requiredWork = getDesiredBuildWork(rcl);
@@ -182,8 +234,8 @@ module.exports = {
         };
 
         mission.data = {
-            sourceIds: intel && Array.isArray(intel.allEnergySources) ? intel.allEnergySources.map(s => s.id) : [],
-            nonMiningContainerIds: getNonMiningContainerIds(room, intel)
+            sourceIds: roomMemo ? roomMemo.sourceIds : [],
+            nonMiningContainerIds: roomMemo ? roomMemo.nonMiningContainerIds : []
         };
     },
 
