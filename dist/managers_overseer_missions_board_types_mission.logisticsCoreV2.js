@@ -8,7 +8,9 @@ const managerLabs = require('managers_structures_manager.labs');
 
 const CORE_END_FLAG = 'CORE_END';
 const CORE_LABS_FLAG = 'CORE_LABS';
-const REBUILD_INTERVAL = 100;
+const REBUILD_INTERVAL = 500;
+const AUTO_LANE_MAX_ENDPOINT_CANDIDATES = 24;
+const AUTO_LANE_MAX_BRIDGE_CANDIDATES = 18;
 const PLAIN_LANE_COST = 20;
 const SWAMP_LANE_COST = 45;
 const ROAD_BASE_COST = 4;
@@ -36,6 +38,23 @@ const CORE_SERVICE_JOB_PRIORITY = Object.freeze({
     [STRUCTURE_FACTORY]: 80,
     [STRUCTURE_NUKER]: 78
 });
+
+function scoreLaneTargetPriority(target) {
+    if (!target) return 1;
+    return CORE_SERVICE_JOB_PRIORITY[target.structureType] || 60;
+}
+
+function getLaneTargetSignature(targets) {
+    if (!Array.isArray(targets) || targets.length <= 0) return '';
+    const parts = [];
+    for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+        if (!target || !target.pos) continue;
+        parts.push(`${target.structureType || 'unknown'}:${target.id || i}:${target.pos.x},${target.pos.y}`);
+    }
+    parts.sort();
+    return parts.join('|');
+}
 
 function logLogisticsDebug(message) {
     if (typeof debug !== 'function') return;
@@ -430,20 +449,33 @@ function getRouteWaypointCandidates(room, coreTargets, headPos, endPos, limit, r
 
 function scorePathCoverage(path, coreTargets) {
     if (!Array.isArray(path) || path.length <= 0 || !Array.isArray(coreTargets) || coreTargets.length <= 0) {
-        return { coveredCount: 0, coveredIds: [] };
+        return { coveredCount: 0, coveredIds: [], weightedCoverage: 0 };
     }
     const covered = new Set();
+    let weightedCoverage = 0;
     for (let i = 0; i < coreTargets.length; i++) {
         const target = coreTargets[i];
         if (!target || !target.id || !target.pos) continue;
         for (let idx = 0; idx < path.length; idx++) {
             if (path[idx].getRangeTo(target.pos) <= 1) {
                 covered.add(target.id);
+                weightedCoverage += scoreLaneTargetPriority(target);
                 break;
             }
         }
     }
-    return { coveredCount: covered.size, coveredIds: Array.from(covered) };
+    return { coveredCount: covered.size, coveredIds: Array.from(covered), weightedCoverage };
+}
+
+function comparePathScores(candidatePath, candidateScore, bestPath, bestScore, candidateIsLoop, bestIsLoop) {
+    if (!candidateScore) return false;
+    if (!Array.isArray(bestPath) || bestPath.length <= 0 || !bestScore) return true;
+    const candidateWeighted = Number.isFinite(candidateScore.weightedCoverage) ? candidateScore.weightedCoverage : 0;
+    const bestWeighted = Number.isFinite(bestScore.weightedCoverage) ? bestScore.weightedCoverage : 0;
+    if (candidateWeighted !== bestWeighted) return candidateWeighted > bestWeighted;
+    if (candidateScore.coveredCount !== bestScore.coveredCount) return candidateScore.coveredCount > bestScore.coveredCount;
+    if (!!candidateIsLoop !== !!bestIsLoop) return !!candidateIsLoop;
+    return Array.isArray(candidatePath) && candidatePath.length < bestPath.length;
 }
 
 function pathHasRepeatedTiles(path) {
@@ -479,10 +511,8 @@ function tryPromotePath(candidatePath, coreTargets, bestPath, bestScore) {
             changed: true
         };
     }
-    const betterCoverage = score.coveredCount > bestScore.coveredCount;
-    const equalCoverageShorter = score.coveredCount === bestScore.coveredCount &&
-        candidatePath.length < bestPath.length;
-    if (!betterCoverage && !equalCoverageShorter) {
+    const better = comparePathScores(candidatePath, score, bestPath, bestScore, false, false);
+    if (!better) {
         return { bestPath, bestScore, changed: false };
     }
     return {
@@ -514,6 +544,151 @@ function buildLoopAugmentedPath(room, headPos, costMatrix, basePath, coreTargets
         score,
         tailRangeToHead
     };
+}
+
+function getAutoLaneEndpointCandidates(room, headPos, laneTargets, roomMemo) {
+    if (!room || !headPos || !Array.isArray(laneTargets) || laneTargets.length <= 0) return [];
+
+    const roads = roomMemo && Array.isArray(roomMemo.roads)
+        ? roomMemo.roads
+        : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_ROAD });
+    if (!Array.isArray(roads) || roads.length <= 0) return [];
+
+    const roadByKey = Object.create(null);
+    const serviceScoreByKey = Object.create(null);
+    const neighborScoreByKey = Object.create(null);
+    const distByKey = Object.create(null);
+
+    for (let i = 0; i < roads.length; i++) {
+        const road = roads[i];
+        if (!road || !road.pos) continue;
+        const key = posKey(road.pos);
+        roadByKey[key] = clonePos(road.pos);
+        distByKey[key] = road.pos.getRangeTo(headPos);
+    }
+
+    for (let i = 0; i < laneTargets.length; i++) {
+        const target = laneTargets[i];
+        if (!target || !target.pos) continue;
+        const weight = scoreLaneTargetPriority(target);
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const x = target.pos.x + dx;
+                const y = target.pos.y + dy;
+                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+                const key = `${room.name}:${x},${y}`;
+                if (roadByKey[key]) serviceScoreByKey[key] = (serviceScoreByKey[key] || 0) + weight;
+            }
+        }
+    }
+
+    const serviceCandidates = Object.keys(serviceScoreByKey).map(key => ({
+        pos: roadByKey[key],
+        key,
+        serviceScore: serviceScoreByKey[key] || 0,
+        dist: distByKey[key] || 0
+    }));
+
+    serviceCandidates.sort((a, b) => {
+        if (a.serviceScore !== b.serviceScore) return b.serviceScore - a.serviceScore;
+        return b.dist - a.dist;
+    });
+
+    const selected = [];
+    const seen = Object.create(null);
+    for (let i = 0; i < serviceCandidates.length && selected.length < AUTO_LANE_MAX_ENDPOINT_CANDIDATES; i++) {
+        const candidate = serviceCandidates[i];
+        if (!candidate || !candidate.pos) continue;
+        if (candidate.key === posKey(headPos)) continue;
+        if (seen[candidate.key]) continue;
+        seen[candidate.key] = true;
+        selected.push(candidate);
+    }
+
+    // Add a few bridge roads so the lane can extend beyond dense service tiles when that improves total coverage.
+    for (let i = 0; i < serviceCandidates.length; i++) {
+        const candidate = serviceCandidates[i];
+        if (!candidate || !candidate.pos) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const x = candidate.pos.x + dx;
+                const y = candidate.pos.y + dy;
+                if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+                const key = `${room.name}:${x},${y}`;
+                if (!roadByKey[key] || seen[key] || key === posKey(headPos)) continue;
+                neighborScoreByKey[key] = Math.max(neighborScoreByKey[key] || 0, candidate.serviceScore - 5);
+            }
+        }
+    }
+
+    const bridgeCandidates = Object.keys(neighborScoreByKey).map(key => ({
+        pos: roadByKey[key],
+        key,
+        serviceScore: neighborScoreByKey[key] || 0,
+        dist: distByKey[key] || 0
+    }));
+    bridgeCandidates.sort((a, b) => {
+        if (a.serviceScore !== b.serviceScore) return b.serviceScore - a.serviceScore;
+        return b.dist - a.dist;
+    });
+    for (let i = 0; i < bridgeCandidates.length && i < AUTO_LANE_MAX_BRIDGE_CANDIDATES; i++) {
+        const candidate = bridgeCandidates[i];
+        if (!candidate || !candidate.pos || seen[candidate.key]) continue;
+        seen[candidate.key] = true;
+        selected.push(candidate);
+    }
+
+    // Always keep the farthest road as a fallback so very linear bases still discover a trunk.
+    let farthestRoad = null;
+    for (let i = 0; i < roads.length; i++) {
+        const road = roads[i];
+        if (!road || !road.pos) continue;
+        const key = posKey(road.pos);
+        if (key === posKey(headPos)) continue;
+        const dist = road.pos.getRangeTo(headPos);
+        if (!farthestRoad || dist > farthestRoad.dist) {
+            farthestRoad = { pos: clonePos(road.pos), key, serviceScore: 0, dist };
+        }
+    }
+    if (farthestRoad && !seen[farthestRoad.key]) selected.push(farthestRoad);
+
+    return selected;
+}
+
+function buildAutoPath(room, headPos, laneTargets, roomMemo) {
+    if (!room || !headPos) return null;
+    const coreTargets = Array.isArray(laneTargets) ? laneTargets : getCoreRefillTargets(room, roomMemo);
+    const endpointCandidates = getAutoLaneEndpointCandidates(room, headPos, coreTargets, roomMemo);
+    if (!Array.isArray(endpointCandidates) || endpointCandidates.length <= 0) return null;
+
+    let bestBuilt = null;
+    let bestEndPos = null;
+    for (let i = 0; i < endpointCandidates.length; i++) {
+        const candidate = endpointCandidates[i];
+        if (!candidate || !candidate.pos) continue;
+        const built = buildPath(room, headPos, candidate.pos, coreTargets, roomMemo);
+        if (!built || !Array.isArray(built.path) || built.path.length <= 0) continue;
+        const builtScore = {
+            coveredCount: Number.isFinite(built.coveredTargetCount) ? built.coveredTargetCount : 0,
+            coveredIds: Array.isArray(built.coveredTargetIds) ? built.coveredTargetIds : [],
+            weightedCoverage: Number.isFinite(built.weightedCoverage) ? built.weightedCoverage : 0
+        };
+        const bestScore = bestBuilt ? {
+            coveredCount: Number.isFinite(bestBuilt.coveredTargetCount) ? bestBuilt.coveredTargetCount : 0,
+            coveredIds: Array.isArray(bestBuilt.coveredTargetIds) ? bestBuilt.coveredTargetIds : [],
+            weightedCoverage: Number.isFinite(bestBuilt.weightedCoverage) ? bestBuilt.weightedCoverage : 0
+        } : null;
+        if (comparePathScores(built.path, builtScore, bestBuilt && bestBuilt.path, bestScore, built.isLoop, bestBuilt && bestBuilt.isLoop)) {
+            bestBuilt = built;
+            bestEndPos = clonePos(candidate.pos);
+        }
+    }
+
+    if (!bestBuilt) return null;
+    bestBuilt.endPos = bestEndPos || clonePos(bestBuilt.path[bestBuilt.path.length - 1]);
+    return bestBuilt;
 }
 
 function buildPath(room, headPos, endPos, laneTargets, roomMemo) {
@@ -623,10 +798,11 @@ function buildPath(room, headPos, endPos, laneTargets, roomMemo) {
     if (!built) return null;
     built.coveredTargetCount = bestScore.coveredCount;
     built.coveredTargetIds = bestScore.coveredIds;
+    built.weightedCoverage = Number.isFinite(bestScore.weightedCoverage) ? bestScore.weightedCoverage : 0;
     built.isLoop = isLoop;
     logLogisticsDebug(
         `[LogisticsCoreV2] ${room.name} path built loop=${isLoop ? 1 : 0} len=${built.pathLength} ` +
-        `covered=${built.coveredTargetCount} evals=${evaluations} waypoints=${waypointCandidates.length}`
+        `covered=${built.coveredTargetCount} weighted=${built.weightedCoverage} evals=${evaluations} waypoints=${waypointCandidates.length}`
     );
     return built;
 }
@@ -926,7 +1102,6 @@ function shouldActivate(room, roomMemo) {
     const spawns = roomMemo && Array.isArray(roomMemo.mySpawns) ? roomMemo.mySpawns : room.find(FIND_MY_SPAWNS);
     if (!spawns || spawns.length <= 0) return false;
     if (!room.storage && spawns.length <= 0) return false;
-    if (!getCoreEndFlag(room)) return false;
     return true;
 }
 
@@ -1123,53 +1298,64 @@ module.exports = {
         if (!shouldActivate(room, roomMemo)) return;
         const objectCache = Object.create(null);
 
-        const flag = getCoreEndFlag(room);
-        const anchor = selectHeadAnchor(room, flag, roomMemo);
-        if (!flag || !anchor || !anchor.headPos) return;
+        const coreFlag = getCoreEndFlag(room);
+        const anchor = selectHeadAnchor(room, coreFlag, roomMemo);
+        if (!anchor || !anchor.headPos) return;
 
         const runtime = missionRuntime.getMissionRuntime(mission);
         const headPos = anchor.headPos;
-        const coreEndPos = clonePos(flag.pos);
         const labsFlag = getCoreLabsFlag(room);
         const labsEndPos = labsFlag ? clonePos(labsFlag.pos) : null;
         const hasLabsLane = !!labsEndPos;
         const coreLaneTargets = getCoreLaneTargets(room, hasLabsLane, roomMemo);
         const labsLaneTargets = hasLabsLane ? getLabsLaneTargets(room, roomMemo) : [];
         const headKey = posKey(headPos);
-        const coreEndKey = posKey(coreEndPos);
         const labsEndKey = posKey(labsEndPos);
+        const coreTargetSignature = getLaneTargetSignature(coreLaneTargets);
+        const roadsSignature = `${roomMemo && Array.isArray(roomMemo.roads) ? roomMemo.roads.length : 0}:${roomMemo && Array.isArray(roomMemo.constructionSites) ? roomMemo.constructionSites.length : 0}`;
+        const manualCoreEndKey = coreFlag ? posKey(coreFlag.pos) : '';
         if (!runtime.paths) runtime.paths = {};
         const buildInputsChanged =
             runtime.headKey !== headKey ||
-            runtime.coreEndKey !== coreEndKey ||
-            runtime.labsEndKey !== labsEndKey;
+            runtime.labsEndKey !== labsEndKey ||
+            runtime.coreManualEndKey !== manualCoreEndKey ||
+            runtime.coreTargetSignature !== coreTargetSignature ||
+            runtime.roadsSignature !== roadsSignature;
         const rebuildIntervalElapsed =
             !Number.isFinite(runtime.lastBuiltTick) ||
             (Game.time - runtime.lastBuiltTick) >= REBUILD_INTERVAL;
-        // Retry cadence is interval-based so failed builds do not trigger pathfinding every tick.
         const shouldRebuild = buildInputsChanged || rebuildIntervalElapsed;
 
         if (shouldRebuild) {
-            const builtCore = buildPath(room, headPos, coreEndPos, coreLaneTargets, roomMemo);
+            const builtCore = coreFlag
+                ? buildPath(room, headPos, clonePos(coreFlag.pos), coreLaneTargets, roomMemo)
+                : buildAutoPath(room, headPos, coreLaneTargets, roomMemo);
+            const resolvedCoreEndPos = builtCore && builtCore.endPos
+                ? clonePos(builtCore.endPos)
+                : (builtCore && Array.isArray(builtCore.path) && builtCore.path.length > 0
+                    ? clonePos(builtCore.path[builtCore.path.length - 1])
+                    : null);
+            const coreEndKey = posKey(resolvedCoreEndPos);
             if (builtCore) {
                 runtime.paths.core = {
                     path: builtCore.path,
                     indexByPos: builtCore.indexByPos,
                     pathLength: builtCore.pathLength,
                     coveredTargetCount: Number.isFinite(builtCore.coveredTargetCount) ? builtCore.coveredTargetCount : 0,
+                    weightedCoverage: Number.isFinite(builtCore.weightedCoverage) ? builtCore.weightedCoverage : 0,
                     isLoop: builtCore.isLoop === true,
                     headPos: clonePos(headPos),
-                    endPos: clonePos(coreEndPos),
+                    endPos: resolvedCoreEndPos,
                     stopsByIndex: buildStopsByIndex(room, builtCore.path, coreLaneTargets, roomMemo)
                 };
                 logLogisticsDebug(
-                    `[LogisticsCoreV2] ${room.name} rebuild core loop=${runtime.paths.core.isLoop ? 1 : 0} ` +
-                    `len=${runtime.paths.core.pathLength} covered=${runtime.paths.core.coveredTargetCount} ` +
+                    `[LogisticsCoreV2] ${room.name} rebuild core mode=${coreFlag ? 'flag' : 'auto'} loop=${runtime.paths.core.isLoop ? 1 : 0} ` +
+                    `len=${runtime.paths.core.pathLength} covered=${runtime.paths.core.coveredTargetCount} weighted=${runtime.paths.core.weightedCoverage} ` +
                     `head=${headKey} end=${coreEndKey}`
                 );
             } else {
                 logLogisticsDebug(
-                    `[LogisticsCoreV2] ${room.name} rebuild core failed head=${headKey} end=${coreEndKey} ` +
+                    `[LogisticsCoreV2] ${room.name} rebuild core failed mode=${coreFlag ? 'flag' : 'auto'} head=${headKey} ` +
                     `targets=${coreLaneTargets.length}`
                 );
             }
@@ -1194,7 +1380,10 @@ module.exports = {
 
             runtime.headSourceId = anchor.headSourceId || null;
             runtime.headKey = headKey;
-            runtime.coreEndKey = coreEndKey;
+            runtime.coreEndKey = runtime.paths && runtime.paths.core && runtime.paths.core.endPos ? posKey(runtime.paths.core.endPos) : '';
+            runtime.coreManualEndKey = manualCoreEndKey;
+            runtime.coreTargetSignature = coreTargetSignature;
+            runtime.roadsSignature = roadsSignature;
             runtime.labsEndKey = labsEndKey;
             runtime.lastBuiltTick = Game.time;
         }
