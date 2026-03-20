@@ -12,6 +12,7 @@ const SOURCE_RING_BLOCK_COST = 255;
 const MIN_HAULERS = 1;
 const MAX_HAULERS = 3;
 const SOURCE_ENERGY_PER_TICK = 10;
+const LINK_OVERFLOW_ENERGY_PER_TICK = 2;
 
 function posKey(pos) {
     return pos ? `${pos.roomName}:${pos.x},${pos.y}` : '';
@@ -283,9 +284,44 @@ function getEstimatedCarryPerHauler(room) {
     return Math.max(2, Math.min(25, Math.floor(cap / 100)));
 }
 
-function estimateRequiredCarryParts(pathLength) {
+function estimateRequiredCarryPartsForRate(pathLength, energyPerTick) {
     const roundTripTicks = Math.max(8, (Math.max(1, pathLength || 1) * 2) + 4);
-    return Math.max(1, Math.ceil((SOURCE_ENERGY_PER_TICK * roundTripTicks) / 50));
+    const rate = Number.isFinite(energyPerTick) ? Math.max(0, energyPerTick) : SOURCE_ENERGY_PER_TICK;
+    return Math.max(1, Math.ceil((rate * roundTripTicks) / 50));
+}
+
+function hasLinkAssistedSource(room, intel, sourceInfo) {
+    if (!room || !sourceInfo || !sourceInfo.id || !sourceInfo.pos || !sourceInfo.linkId) return false;
+    const sourceLink = Game.getObjectById(sourceInfo.linkId);
+    if (!sourceLink || sourceLink.structureType !== STRUCTURE_LINK || !sourceLink.pos) return false;
+    if (!sourceLink.pos.inRangeTo(sourceInfo.pos, 2)) return false;
+
+    const intelSources = intel && Array.isArray(intel.sources) ? intel.sources : [];
+    const sourcePosById = Object.create(null);
+    for (let i = 0; i < intelSources.length; i++) {
+        const s = intelSources[i];
+        if (!s || !s.id || !s.pos) continue;
+        sourcePosById[s.id] = s.pos;
+    }
+
+    const links = room.find(FIND_MY_STRUCTURES, {
+        filter: s => s.structureType === STRUCTURE_LINK && s.id !== sourceLink.id && !!s.pos
+    });
+    if (!links || links.length <= 0) return false;
+
+    for (let i = 0; i < links.length; i++) {
+        const link = links[i];
+        let nearAnySource = false;
+        for (const sid in sourcePosById) {
+            const spos = sourcePosById[sid];
+            if (spos && link.pos.inRangeTo(spos, 2)) {
+                nearAnySource = true;
+                break;
+            }
+        }
+        if (!nearAnySource) return true;
+    }
+    return false;
 }
 
 function shouldActivateSource(room, intel, sourceInfo) {
@@ -446,11 +482,14 @@ module.exports = {
         const effectivePathLength = laneReady
             ? (runtime.pathLength || 0)
             : Math.max(1, pickup.pickupPos.getRangeTo(sink.pos));
-        const neededCarryParts = estimateRequiredCarryParts(effectivePathLength);
+        const linkAssistActive = hasLinkAssistedSource(room, intel, sourceInfo);
+        const targetEnergyPerTick = linkAssistActive ? LINK_OVERFLOW_ENERGY_PER_TICK : SOURCE_ENERGY_PER_TICK;
+        const neededCarryParts = estimateRequiredCarryPartsForRate(effectivePathLength, targetEnergyPerTick);
         const desiredCount = Math.max(
             MIN_HAULERS,
             Math.min(MAX_HAULERS, Math.ceil(neededCarryParts / Math.max(1, estimatedCarryPerHauler)))
         );
+        const maxCarryParts = Math.max(2, Math.ceil(neededCarryParts / Math.max(1, desiredCount)));
 
         mission.meta = mission.meta || {};
         mission.meta.sourceId = mission.targetId;
@@ -461,6 +500,9 @@ module.exports = {
         mission.meta.pickupType = 'container';
         mission.meta.desiredCount = desiredCount;
         mission.meta.neededCarryParts = neededCarryParts;
+        mission.meta.maxCarryParts = maxCarryParts;
+        mission.meta.linkAssistActive = linkAssistActive;
+        mission.meta.targetEnergyPerTick = targetEnergyPerTick;
         mission.meta.assignedCarryParts = assignedCarryParts;
         if (!mission.meta.missionName) mission.meta.missionName = `logistics:miningV2:${mission.targetId}`;
 
@@ -469,6 +511,7 @@ module.exports = {
             minCount: desiredCount,
             maxCount: desiredCount,
             requiredCarry: neededCarryParts,
+            maxCarryParts: maxCarryParts,
             spawn: true,
             spawnFromFleet: false
         };
@@ -482,6 +525,8 @@ module.exports = {
         mission.progress.goalState = mission.assigned.primary.length > 0 ? 'sustaining' : 'seeking_assignment';
         mission.progress.pathLength = effectivePathLength;
         mission.progress.neededCarryParts = neededCarryParts;
+        mission.progress.maxCarryParts = maxCarryParts;
+        mission.progress.linkAssistActive = linkAssistActive ? 1 : 0;
         mission.progress.assignedCarryParts = assignedCarryParts;
         mission.progress.desiredCount = desiredCount;
         mission.progress.assignedPrimary = mission.assigned.primary.length;
@@ -499,6 +544,9 @@ module.exports = {
         const neededCarryParts = mission && mission.meta && Number.isFinite(mission.meta.neededCarryParts)
             ? Math.max(1, Math.floor(mission.meta.neededCarryParts))
             : desiredCount;
+        const maxCarryParts = mission && mission.meta && Number.isFinite(mission.meta.maxCarryParts)
+            ? Math.max(1, Math.floor(mission.meta.maxCarryParts))
+            : null;
         return {
             name: mission && mission.meta && mission.meta.missionName
                 ? mission.meta.missionName
@@ -511,6 +559,7 @@ module.exports = {
                 minCount: desiredCount,
                 maxCount: desiredCount,
                 requiredCarry: neededCarryParts,
+                maxCarryParts: maxCarryParts,
                 spawn: true,
                 spawnFromFleet: false
             },

@@ -69,6 +69,9 @@ var managerSpawner = {
             Number.isFinite(budget) ? budget : 0,
             data && data.mode ? data.mode : '',
             req && Number.isFinite(req.maxCarryParts) ? req.maxCarryParts : '',
+            req && Number.isFinite(req.requiredCarry) ? req.requiredCarry : '',
+            req && Number.isFinite(req.minCount) ? req.minCount : '',
+            req && Number.isFinite(req.maxCount) ? req.maxCount : '',
             req && Array.isArray(req.body) ? req.body.join('.') : '',
             req && req.bodyMode ? req.bodyMode : ''
         ].join('|');
@@ -97,6 +100,24 @@ var managerSpawner = {
         const stats = { body, cost, work, carry, move, claim };
         global._checkBodyCache.byKey[cacheKey] = stats;
         return stats;
+    },
+
+    resolveHaulerCarryCap: function(mission) {
+        const req = mission && mission.requirements ? mission.requirements : null;
+        if (!req) return null;
+
+        if (Number.isFinite(req.maxCarryParts) && req.maxCarryParts > 0) {
+            return Math.max(1, Math.floor(req.maxCarryParts));
+        }
+
+        const requiredCarry = Number.isFinite(req.requiredCarry) ? Math.max(0, req.requiredCarry) : 0;
+        if (requiredCarry <= 0) return null;
+
+        const minCount = Number.isFinite(req.minCount) ? Math.max(1, Math.floor(req.minCount)) : 1;
+        const maxCount = Number.isFinite(req.maxCount) ? Math.max(1, Math.floor(req.maxCount)) : null;
+        if (!Number.isFinite(maxCount) || maxCount !== minCount) return null;
+
+        return Math.max(1, Math.ceil(requiredCarry / minCount));
     },
 
     generateBody: function(mission, budget) {
@@ -156,7 +177,7 @@ var managerSpawner = {
             mission.archetype === 'simpleHaulerCore' ||
             mission.archetype === 'simpleMiningHauler'
         ) {
-            const maxCarryParts = mission.requirements ? mission.requirements.maxCarryParts : null;
+            const maxCarryParts = this.resolveHaulerCarryCap(mission);
             const includeRepairWorkPart = mission.archetype === 'remote_hauler';
             return this.generateHaulerBody(budget, maxCarryParts, includeRepairWorkPart);
         } else if (mission.archetype === 'upgrader') {

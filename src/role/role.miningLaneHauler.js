@@ -1,5 +1,6 @@
 const missionBoard = require('managers_overseer_missions_board_missionBoard');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
+const movement = require('utils_movement');
 
 const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
@@ -90,7 +91,7 @@ function moveToNearestPathTile(creep, runtime) {
             best = tile;
         }
     }
-    if (best) creep.moveTo(best, { range: 0, reusePath: 3 });
+    if (best) movement.planMoveTo(creep, best, { range: 0, maxRooms: 1 });
 }
 
 function stepTowardIndex(creep, runtime, targetIndex) {
@@ -107,7 +108,7 @@ function stepTowardIndex(creep, runtime, targetIndex) {
     const nextIndex = currentIndex < targetIndex ? currentIndex + 1 : currentIndex - 1;
     const nextPos = path[nextIndex];
     if (!nextPos) return;
-    creep.move(creep.pos.getDirectionTo(nextPos));
+    movement.planMoveTo(creep, nextPos, { range: 0, maxRooms: 1 });
 }
 
 function getSinkTarget(creep, runtime, mission) {
@@ -141,11 +142,14 @@ function clearAssignment(creep) {
     delete creep.memory.missionId;
     delete creep.memory.missionType;
     delete creep.memory.miningLaneState;
+    delete creep.memory._trafficMove;
 }
 
 module.exports = {
     run(creep) {
         if (!creep || !creep.my) return;
+        movement.enableTrafficForCoreLaneHauler(creep);
+
         const mission = getMissionForCreep(creep);
         if (!mission) {
             clearAssignment(creep);
@@ -170,9 +174,22 @@ module.exports = {
             }
 
             const carried = creep.store[RESOURCE_ENERGY] || 0;
-            if (carried > 0 && (pickup.store[RESOURCE_ENERGY] || 0) <= 0) {
+            const pickupEnergy = pickup.store[RESOURCE_ENERGY] || 0;
+            // Prefer full loads to reduce half trips; only force a partial return near end-of-life.
+            if (
+                carried > 0 &&
+                pickupEnergy <= 0 &&
+                Number.isFinite(creep.ticksToLive) &&
+                creep.ticksToLive <= 80
+            ) {
                 creep.memory.miningLaneState = STATE_DELIVER;
-                debugLog(creep, mission, runtime, 'LOAD_CONTAINER_EMPTY_SWITCH_TO_DELIVER', `carried=${carried}`);
+                debugLog(
+                    creep,
+                    mission,
+                    runtime,
+                    'LOAD_CONTAINER_EMPTY_EOL_SWITCH_TO_DELIVER',
+                    `carried=${carried} ttl=${creep.ticksToLive}`
+                );
                 return;
             }
 
@@ -192,7 +209,7 @@ module.exports = {
             }
 
             if (!creep.pos.inRangeTo(pickup, 1)) {
-                const moveCode = creep.moveTo(pickup, { range: 1, reusePath: laneMode ? 3 : 8 });
+                const moveCode = movement.planMoveTo(creep, pickup, { range: 1, maxRooms: 1 });
                 debugLog(
                     creep,
                     mission,
@@ -236,7 +253,7 @@ module.exports = {
             const endIndex = Math.max(0, (runtime.path.length || 1) - 1);
             const idx = getCurrentIndex(creep, runtime);
             if (idx < 0) {
-                const moveCode = creep.moveTo(sink, { range: 1, reusePath: 3 });
+                const moveCode = movement.planMoveTo(creep, sink, { range: 1, maxRooms: 1 });
                 debugLog(creep, mission, runtime, 'OFFLANE_DELIVER_DIRECT_TO_SINK', `sink=${sink.id || '-'} code=${moveCode}`);
                 return;
             }
@@ -248,7 +265,7 @@ module.exports = {
             }
         }
 
-        const moveCode = creep.moveTo(sink, { range: 1, reusePath: laneMode ? 3 : 8 });
+        const moveCode = movement.planMoveTo(creep, sink, { range: 1, maxRooms: 1 });
         debugLog(creep, mission, runtime, 'ON_END_MOVE_TO_SINK', `sink=${sink.id || '-'} code=${moveCode}`);
     }
 };

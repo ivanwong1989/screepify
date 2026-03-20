@@ -1,7 +1,31 @@
 const borderNav = require('utils_creepBorderNav');
 const roleUniversal = require('role_role.universal');
+const movement = require('utils_movement');
 
 const WORKER_MISSION_TYPES = new Set(['build', 'repair']);
+
+function roomHasCoreLaneMission(room) {
+    if (!room) return false;
+    const missions = Array.isArray(room._missions) ? room._missions : [];
+    for (let i = 0; i < missions.length; i++) {
+        const mission = missions[i];
+        if (mission && mission.type === 'logisticsCoreV2') return true;
+    }
+    return false;
+}
+
+function roomHasActiveCoreLaneHauler(room) {
+    if (!room) return false;
+    const creeps = room.find(FIND_MY_CREEPS);
+    for (let i = 0; i < creeps.length; i++) {
+        const c = creeps[i];
+        if (!c || !c.memory) continue;
+        if (c.memory.role !== 'coreLaneHauler') continue;
+        if (c.memory.missionType && c.memory.missionType !== 'logisticsCoreV2') continue;
+        return true;
+    }
+    return false;
+}
 
 function clearWorkerAssignment(creep) {
     if (!creep || !creep.memory) return;
@@ -9,6 +33,7 @@ function clearWorkerAssignment(creep) {
     delete creep.memory.task;
     delete creep.memory.taskState;
     delete creep.memory.workerState;
+    delete creep.memory._trafficMove;
 }
 
 function getMissionByName(homeRoom, missionName) {
@@ -178,7 +203,19 @@ function getRelevantSources(creep, mission) {
     return creep.room.find(FIND_SOURCES);
 }
 
-function vacateSourceRingIfNeeded(creep, mission, allowSourceRing) {
+function moveWorkerTo(creep, target, range, useTraffic) {
+    if (!creep || !target) return;
+    if (useTraffic) {
+        movement.planMoveTo(creep, target, {
+            range: Number.isFinite(range) ? range : 1,
+            maxRooms: 1
+        });
+        return;
+    }
+    borderNav.moveToTarget(creep, target, range);
+}
+
+function vacateSourceRingIfNeeded(creep, mission, allowSourceRing, useTraffic) {
     if (!creep || allowSourceRing) return false;
 
     const sources = getRelevantSources(creep, mission);
@@ -197,14 +234,14 @@ function vacateSourceRingIfNeeded(creep, mission, allowSourceRing) {
     }
 
     if (!nearest || nearestRange > 1) return false;
-    borderNav.moveToTarget(creep, nearest, 2);
+    moveWorkerTo(creep, nearest, 2, useTraffic);
     return true;
 }
 
-function runGather(creep, mission) {
+function runGather(creep, mission, useTraffic) {
     const intent = getEnergyIntent(creep, mission);
     const allowSourceRing = !!(intent && intent.type === 'harvest' && intent.target instanceof Source);
-    if (vacateSourceRingIfNeeded(creep, mission, allowSourceRing)) return;
+    if (vacateSourceRingIfNeeded(creep, mission, allowSourceRing, useTraffic)) return;
     if (!intent || !intent.target) {
         if ((creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0) > 0) {
             creep.memory.workerState = 'work';
@@ -215,7 +252,7 @@ function runGather(creep, mission) {
     if (intent.type === 'pickup') {
         const result = creep.pickup(intent.target);
         if (result === ERR_NOT_IN_RANGE) {
-            borderNav.moveToTarget(creep, intent.target, 1);
+            moveWorkerTo(creep, intent.target, 1, useTraffic);
         } else if (result === ERR_FULL || result === ERR_INVALID_TARGET) {
             creep.memory.workerState = 'work';
         }
@@ -224,7 +261,7 @@ function runGather(creep, mission) {
     if (intent.type === 'harvest') {
         const result = creep.harvest(intent.target);
         if (result === ERR_NOT_IN_RANGE) {
-            borderNav.moveToTarget(creep, intent.target, 1);
+            moveWorkerTo(creep, intent.target, 1, useTraffic);
         } else if (result === ERR_FULL || result === ERR_NOT_ENOUGH_RESOURCES) {
             creep.memory.workerState = 'work';
         }
@@ -232,7 +269,7 @@ function runGather(creep, mission) {
     }
     const result = creep.withdraw(intent.target, RESOURCE_ENERGY);
     if (result === ERR_NOT_IN_RANGE) {
-        borderNav.moveToTarget(creep, intent.target, 1);
+        moveWorkerTo(creep, intent.target, 1, useTraffic);
     } else if (result === ERR_FULL || result === ERR_NOT_ENOUGH_RESOURCES || result === ERR_INVALID_TARGET) {
         creep.memory.workerState = 'work';
     }
@@ -246,7 +283,7 @@ function runBuild(creep, mission) {
     }
     const result = creep.build(target);
     if (result === ERR_NOT_IN_RANGE) {
-        borderNav.moveToTarget(creep, target, 3);
+        movement.planMoveTo(creep, target, { range: 3, maxRooms: 1 });
     } else if (result === ERR_NOT_ENOUGH_RESOURCES) {
         creep.memory.workerState = 'gather';
     } else if (result === ERR_INVALID_TARGET) {
@@ -256,7 +293,7 @@ function runBuild(creep, mission) {
     }
 }
 
-function runRepair(creep, mission) {
+function runRepair(creep, mission, useTraffic) {
     const target = mission && mission.targetId ? Game.getObjectById(mission.targetId) : null;
     if (!target) {
         clearWorkerAssignment(creep);
@@ -273,7 +310,7 @@ function runRepair(creep, mission) {
 
     const result = creep.repair(target);
     if (result === ERR_NOT_IN_RANGE) {
-        borderNav.moveToTarget(creep, target, 3);
+        moveWorkerTo(creep, target, 3, useTraffic);
     } else if (result === ERR_INVALID_TARGET) {
         clearWorkerAssignment(creep);
     }
@@ -285,6 +322,26 @@ const roleWorker = {
 
         const missionName = creep.memory.missionName;
         if (!missionName) {
+            const hasCoreLaneScope = roomHasCoreLaneMission(creep.room) || roomHasActiveCoreLaneHauler(creep.room);
+            if (hasCoreLaneScope) {
+                movement.enableTrafficBlockerOnly(creep, {
+                    anchorPos: creep.pos,
+                    range: 1
+                });
+                if (Memory.debugTraffic && typeof debug === 'function') {
+                    debug(
+                        'traffic',
+                        `[BuildTraffic] blocker_only creep=${creep.name} room=${creep.room.name} mission=none reason=core_lane_active`
+                    );
+                }
+                return;
+            }
+            if (Memory.debugTraffic && typeof debug === 'function') {
+                debug(
+                    'traffic',
+                    `[BuildTraffic] skip blocker_only creep=${creep.name} room=${creep.room.name} mission=none reason=no_core_lane_scope`
+                );
+            }
             roleUniversal.run(creep);
             return;
         }
@@ -302,6 +359,17 @@ const roleWorker = {
             return;
         }
 
+        const useTraffic = true;
+        if (useTraffic) {
+            movement.enableTrafficForBuildWorker(creep);
+            if (Memory.debugTraffic && typeof debug === 'function') {
+                debug(
+                    'traffic',
+                    `[WorkerTraffic] enroll creep=${creep.name} mission=${missionName} type=${mission.type} target=${mission.targetId || '-'} blockerMovable=1`
+                );
+            }
+        }
+
         delete creep.memory.task;
         delete creep.memory.taskState;
 
@@ -316,7 +384,7 @@ const roleWorker = {
         }
 
         if (creep.memory.workerState === 'gather') {
-            runGather(creep, mission);
+            runGather(creep, mission, useTraffic);
             return;
         }
 
@@ -325,7 +393,7 @@ const roleWorker = {
             return;
         }
 
-        runRepair(creep, mission);
+        runRepair(creep, mission, useTraffic);
     }
 };
 

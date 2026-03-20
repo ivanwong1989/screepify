@@ -1,5 +1,6 @@
 const missionBoard = require('managers_overseer_missions_board_missionBoard');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
+const movement = require('utils_movement');
 
 const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
@@ -10,6 +11,15 @@ const RENEW_STOP_TTL = 1450;
 function logCoreLaneDebug(creep, mission, message) {
     if (typeof debug !== 'function' || !creep || !mission) return;
     debug('mission.logistics', `[CoreLaneExec] ${creep.name} ${mission.targetRoom || mission.sponsorRoom} ${message}`);
+}
+
+function logTrafficIntent(creep, missionId, nextPos, label) {
+    if (!Memory.debugTraffic || typeof debug !== 'function' || !creep || !nextPos) return;
+    debug(
+        'traffic',
+        `[CoreLaneTraffic] ${label} creep=${creep.name} mission=${missionId || '-'} ` +
+        `pos=${creep.pos.x},${creep.pos.y} next=${nextPos.x},${nextPos.y} managed=1`
+    );
 }
 
 function posKey(pos) {
@@ -68,7 +78,8 @@ function moveToNearestPathTile(creep, lane, missionId, options) {
             }
         }
         if (best) {
-            creep.moveTo(best, { range: 0, reusePath: 3 });
+            logTrafficIntent(creep, missionId, best, 'rejoin');
+            movement.planMoveTo(creep, best, { range: 0, maxRooms: 1 });
             return true;
         }
         return false;
@@ -87,7 +98,10 @@ function moveToNearestPathTile(creep, lane, missionId, options) {
             best = tile;
         }
     }
-    if (best) creep.moveTo(best, { range: 0, reusePath: 3 });
+    if (best) {
+        logTrafficIntent(creep, missionId, best, 'rejoin');
+        movement.planMoveTo(creep, best, { range: 0, maxRooms: 1 });
+    }
 }
 
 function buildLoopPreferredIndices(targetIndex, length) {
@@ -375,10 +389,9 @@ function stepTowardIndex(creep, lane, targetIndex, missionId, runtime) {
     const nextPos = path[nextIndex];
     if (!nextPos) return 'missing_next_pos';
 
-    const moveCode = creep.move(creep.pos.getDirectionTo(nextPos));
+    logTrafficIntent(creep, missionId, nextPos, 'lane_step');
+    const moveCode = movement.planLaneStep(creep, nextPos);
     if (moveCode === OK) return 'step';
-
-    creep.moveTo(nextPos, { range: 0, reusePath: 0 });
     return `move_err:${moveCode}`;
 }
 
@@ -510,13 +523,13 @@ function stepTowardLoopIndex(creep, lane, targetIndex, missionId, runtime) {
     const nextPos = lane.path[nextIndex];
     if (!nextPos) return 'missing_next_pos';
 
-    const moveCode = creep.move(creep.pos.getDirectionTo(nextPos));
+    logTrafficIntent(creep, missionId, nextPos, 'loop_step');
+    const moveCode = movement.planLaneStep(creep, nextPos);
     if (moveCode === OK) {
         creep.memory._coreLaneLoopDir = dir;
         return 'step';
     }
 
-    creep.moveTo(nextPos, { range: 0, reusePath: 0 });
     return `move_err:${moveCode}`;
 }
 
@@ -688,6 +701,61 @@ function getHeadSource(creep, mission, runtime) {
     return spawns && spawns.length > 0 ? spawns[0] : null;
 }
 
+function getHeadStorageDrainLink(creep, lane) {
+    if (!creep || !creep.room || !lane || !lane.headPos) return null;
+    const storage = creep.room.storage;
+    if (!storage || !storage.store || storage.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) return null;
+
+    const links = creep.room.find(FIND_MY_STRUCTURES, {
+        filter: s =>
+            s.structureType === STRUCTURE_LINK &&
+            s.store &&
+            (s.store[RESOURCE_ENERGY] || 0) > 0 &&
+            s.pos.getRangeTo(storage.pos) <= 2 &&
+            s.pos.getRangeTo(lane.headPos) <= 1
+    });
+    if (!links || links.length <= 0) return null;
+
+    let best = null;
+    let bestAmount = -1;
+    for (let i = 0; i < links.length; i++) {
+        const link = links[i];
+        const amount = link.store[RESOURCE_ENERGY] || 0;
+        if (amount > bestAmount) {
+            best = link;
+            bestAmount = amount;
+        }
+    }
+    return best;
+}
+
+function tryDrainHeadLinkToStorage(creep, lane) {
+    if (!creep || !lane || !lane.headPos) return false;
+    const storage = creep.room && creep.room.storage;
+    if (!storage || !storage.store || storage.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) return false;
+
+    if (!creep.pos.inRangeTo(lane.headPos, 0)) return false;
+
+    const carried = creep.store[RESOURCE_ENERGY] || 0;
+    if (carried > 0) {
+        if (!creep.pos.inRangeTo(storage, 1)) {
+            movement.planMoveTo(creep, storage, { range: 1, maxRooms: 1 });
+            return true;
+        }
+        creep.transfer(storage, RESOURCE_ENERGY);
+        return true;
+    }
+
+    const link = getHeadStorageDrainLink(creep, lane);
+    if (!link) return false;
+    if (!creep.pos.inRangeTo(link, 1)) {
+        movement.planMoveTo(creep, link, { range: 1, maxRooms: 1 });
+        return true;
+    }
+    creep.withdraw(link, RESOURCE_ENERGY);
+    return true;
+}
+
 function getPrimaryDumpTarget(creep, mission, runtime, resourceType) {
     if (!creep || !resourceType) return null;
     if (creep.room.storage && creep.room.storage.store && creep.room.storage.store.getFreeCapacity(resourceType) > 0) {
@@ -711,7 +779,7 @@ function dumpNonJobCargo(creep, mission, runtime, keepResourceType) {
         const target = getPrimaryDumpTarget(creep, mission, runtime, rt);
         if (!target) continue;
         if (!creep.pos.inRangeTo(target, 1)) {
-            creep.moveTo(target, { range: 1, reusePath: 3 });
+            movement.planMoveTo(creep, target, { range: 1, maxRooms: 1 });
             return true;
         }
         creep.transfer(target, rt);
@@ -784,6 +852,29 @@ function getLaneJobById(runtime, id) {
     return runtime.laneJobsById[id] || null;
 }
 
+function getJobHintAmount(job) {
+    if (!job || !Number.isFinite(job.amountHint)) return null;
+    return Math.max(0, Math.floor(job.amountHint));
+}
+
+function getJobRemainingAmount(creep, job) {
+    const hinted = getJobHintAmount(job);
+    if (!creep || !creep.memory) return Number.isFinite(hinted) ? hinted : Infinity;
+    if (Number.isFinite(creep.memory.coreLaneJobRemaining)) {
+        return Math.max(0, Math.floor(creep.memory.coreLaneJobRemaining));
+    }
+    return Number.isFinite(hinted) ? hinted : Infinity;
+}
+
+function setJobRemainingAmount(creep, amount) {
+    if (!creep || !creep.memory) return;
+    if (Number.isFinite(amount)) {
+        creep.memory.coreLaneJobRemaining = Math.max(0, Math.floor(amount));
+        return;
+    }
+    delete creep.memory.coreLaneJobRemaining;
+}
+
 function getJobClaimStore(missionId) {
     if (!missionId) return null;
     if (!global.__coreLaneJobClaims || typeof global.__coreLaneJobClaims !== 'object') {
@@ -811,8 +902,10 @@ function isJobClaimedByOther(missionId, jobId, creepName) {
     return !!(holder && holder !== creepName);
 }
 
-function isJobRunnable(job, carriedAmount) {
+function isJobRunnable(job, carriedAmount, remainingAmount) {
     if (!job || !job.resourceType) return false;
+    const remaining = Number.isFinite(remainingAmount) ? Math.max(0, Math.floor(remainingAmount)) : Infinity;
+    if (remaining <= 0) return false;
     const target = job.targetId ? Game.getObjectById(job.targetId) : null;
     if (!target || !target.store || typeof target.store.getFreeCapacity !== 'function') return false;
     if (target.store.getFreeCapacity(job.resourceType) <= 0) return false;
@@ -832,7 +925,7 @@ function pickLaneJob(runtime, creep, missionId) {
         if (!job) continue;
         if (isJobClaimedByOther(missionId, job.id, creep && creep.name)) continue;
         const carried = creep && creep.store ? (creep.store[job.resourceType] || 0) : 0;
-        if (isJobRunnable(job, carried)) return job;
+        if (isJobRunnable(job, carried, getJobHintAmount(job))) return job;
     }
     return null;
 }
@@ -850,6 +943,7 @@ function clearJobMemory(creep) {
     delete creep.memory.coreLaneJobId;
     delete creep.memory.coreLaneMode;
     delete creep.memory.coreLaneResourceType;
+    delete creep.memory.coreLaneJobRemaining;
 }
 
 function unassignCreep(creep) {
@@ -862,6 +956,7 @@ function unassignCreep(creep) {
     delete creep.memory.missionId;
     delete creep.memory.coreLaneState;
     delete creep.memory.coreLanePrevRole;
+    delete creep.memory._trafficMove;
     clearJobMemory(creep);
 }
 
@@ -873,13 +968,14 @@ module.exports = {
             unassignCreep(creep);
             return;
         }
+        movement.enableTrafficForCoreLaneHauler(creep);
 
         const runtime = getRuntimeForCreep(creep, mission);
         const coreLane = runtime ? getLaneRuntime(runtime, 'core') : null;
         if (!runtime || !coreLane || !coreLane.headPos) {
             if (creep.room.name === mission.targetRoom && mission.meta && mission.meta.headSourceId) {
                 const headSource = Game.getObjectById(mission.meta.headSourceId);
-                if (headSource) creep.moveTo(headSource, { range: 1, reusePath: 3 });
+                if (headSource) movement.planMoveTo(creep, headSource, { range: 1, maxRooms: 1 });
             }
             return;
         }
@@ -893,9 +989,13 @@ module.exports = {
         let activeJob = creep.memory.coreLaneJobId ? getLaneJobById(runtime, creep.memory.coreLaneJobId) : null;
         if (activeJob) {
             const carried = creep.store[activeJob.resourceType] || 0;
-            if (!isJobRunnable(activeJob, carried)) {
+            const remaining = getJobRemainingAmount(creep, activeJob);
+            if (!isJobRunnable(activeJob, carried, remaining)) {
                 activeJob = null;
                 clearJobMemory(creep);
+            } else if (!Number.isFinite(creep.memory.coreLaneJobRemaining)) {
+                const hinted = getJobHintAmount(activeJob);
+                if (Number.isFinite(hinted)) setJobRemainingAmount(creep, hinted);
             }
         }
 
@@ -904,6 +1004,7 @@ module.exports = {
             if (activeJob) {
                 creep.memory.coreLaneJobId = activeJob.id;
                 creep.memory.coreLaneResourceType = activeJob.resourceType;
+                setJobRemainingAmount(creep, getJobHintAmount(activeJob));
             }
         }
         if (activeJob) claimJob(mission.id, activeJob.id, creep.name);
@@ -1005,34 +1106,8 @@ module.exports = {
                 return;
             }
 
-            // True idle behavior: when parked at head with no core demand, do not churn stock jobs.
-            if (
-                activeJob &&
-                activeJob.kind === 'stock' &&
-                creep.store.getUsedCapacity() <= 0
-            ) {
-                const idleIdx = 0;
-                const idx = getCurrentIndex(creep, coreLane);
-                if (idx === idleIdx) return;
-                if (idx < 0) {
-                    if (coreLaneIsLoop) {
-                        moveToNearestPathTile(creep, coreLane, mission.id, {
-                            preferredIndices: buildLoopPreferredIndices(idleIdx, coreLane.path.length)
-                        });
-                    } else {
-                        moveToNearestPathTile(creep, coreLane, mission.id, { preferredIndices: [idleIdx] });
-                    }
-                    return;
-                }
-                if (coreLaneIsLoop) {
-                    stepTowardLoopIndex(creep, coreLane, idleIdx, mission.id, runtime);
-                } else {
-                    stepTowardIndex(creep, coreLane, idleIdx, mission.id, runtime);
-                }
-                return;
-            }
-
             if (!activeJob) {
+                if (tryDrainHeadLinkToStorage(creep, coreLane)) return;
                 // Idle at head with energy buffered to avoid withdraw->dump thrash on demand flaps.
                 if (dumpNonJobCargo(creep, mission, runtime, RESOURCE_ENERGY)) return;
                 const idleIdx = 0;
@@ -1061,8 +1136,14 @@ module.exports = {
 
             const resourceType = activeJob.resourceType;
             const lane = getLaneRuntime(runtime, activeJob.pathKey) || coreLane;
+            const remaining = getJobRemainingAmount(creep, activeJob);
             creep.memory.coreLaneMode = 'labs';
             creep.memory.coreLaneResourceType = resourceType;
+
+            if (remaining <= 0) {
+                clearJobMemory(creep);
+                return;
+            }
 
             if (dumpNonJobCargo(creep, mission, runtime, resourceType)) return;
             if ((creep.store[resourceType] || 0) > 0) {
@@ -1092,20 +1173,28 @@ module.exports = {
                     }
                     const idx = getCurrentIndex(creep, lane);
                     if (idx === activeJob.sourceIndex) {
-                        creep.moveTo(source, { range: 1, reusePath: 3 });
+                        movement.planMoveTo(creep, source, { range: 1, maxRooms: 1 });
                     }
                 } else {
-                    creep.moveTo(source, { range: 1, reusePath: 3 });
+                    movement.planMoveTo(creep, source, { range: 1, maxRooms: 1 });
                 }
                 return;
             }
 
-            const withdrawCode = creep.withdraw(source, resourceType);
+            const sourceAmount = getStoreAmount(source, resourceType);
+            const freeCapacity = creep.store.getFreeCapacity(resourceType) || 0;
+            const withdrawAmount = Math.min(sourceAmount, freeCapacity, remaining);
+            if (withdrawAmount <= 0) {
+                clearJobMemory(creep);
+                return;
+            }
+
+            const withdrawCode = creep.withdraw(source, resourceType, withdrawAmount);
             logCoreLaneDebug(
                 creep,
                 mission,
-                `LOAD withdraw job source=${source.id} res=${resourceType} code=${withdrawCode} ` +
-                `srcAmt=${getStoreAmount(source, resourceType)}`
+                `LOAD withdraw job source=${source.id} res=${resourceType} amt=${withdrawAmount} code=${withdrawCode} ` +
+                `srcAmt=${sourceAmount} remain=${remaining}`
             );
             if ((creep.store[resourceType] || 0) > 0) {
                 creep.memory.coreLaneState = STATE_DELIVER;
@@ -1185,6 +1274,12 @@ module.exports = {
             const lane = getLaneRuntime(runtime, activeJob.pathKey) || coreLane;
             const target = Game.getObjectById(activeJob.targetId);
             const carried = creep.store[resourceType] || 0;
+            const remaining = getJobRemainingAmount(creep, activeJob);
+            if (remaining <= 0) {
+                clearJobMemory(creep);
+                creep.memory.coreLaneState = STATE_RETURN;
+                return;
+            }
             if (!target || !target.store || target.store.getFreeCapacity(resourceType) <= 0 || carried <= 0) {
                 creep.memory.coreLaneState = STATE_RETURN;
                 return;
@@ -1206,23 +1301,39 @@ module.exports = {
                     }
                     const idx = getCurrentIndex(creep, lane);
                     if (idx === activeJob.targetIndex) {
-                        creep.moveTo(target, { range: 1, reusePath: 3 });
+                        movement.planMoveTo(creep, target, { range: 1, maxRooms: 1 });
                     }
                 } else {
-                    creep.moveTo(target, { range: 1, reusePath: 3 });
+                    movement.planMoveTo(creep, target, { range: 1, maxRooms: 1 });
                 }
                 return;
             }
 
-            const transferCode = creep.transfer(target, resourceType);
+            const targetFree = target.store.getFreeCapacity(resourceType) || 0;
+            const transferAmount = Math.min(carried, targetFree, remaining);
+            if (transferAmount <= 0) {
+                clearJobMemory(creep);
+                creep.memory.coreLaneState = STATE_RETURN;
+                return;
+            }
+
+            const transferCode = creep.transfer(target, resourceType, transferAmount);
+            if (transferCode === OK && Number.isFinite(remaining)) {
+                setJobRemainingAmount(creep, Math.max(0, remaining - transferAmount));
+            }
             logCoreLaneDebug(
                 creep,
                 mission,
-                `DELIVER transfer target=${target.id} res=${resourceType} code=${transferCode} ` +
-                `targetFree=${target.store.getFreeCapacity(resourceType) || 0} carry=${creep.store[resourceType] || 0}`
+                `DELIVER transfer target=${target.id} res=${resourceType} amt=${transferAmount} code=${transferCode} ` +
+                `targetFree=${targetFree} carry=${creep.store[resourceType] || 0} remain=${getJobRemainingAmount(creep, activeJob)}`
             );
+            if (getJobRemainingAmount(creep, activeJob) <= 0) {
+                clearJobMemory(creep);
+                creep.memory.coreLaneState = STATE_RETURN;
+                return;
+            }
             if ((creep.store[resourceType] || 0) <= 0) {
-                const stillRunnable = isJobRunnable(activeJob, 0);
+                const stillRunnable = isJobRunnable(activeJob, 0, getJobRemainingAmount(creep, activeJob));
                 creep.memory.coreLaneState = stillRunnable ? STATE_LOAD : STATE_RETURN;
                 if (!stillRunnable) clearJobMemory(creep);
             }

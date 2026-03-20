@@ -1,12 +1,13 @@
-const borderNav = require('utils_creepBorderNav');
 const roleUniversal = require('role_role.universal');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
+const movement = require('utils_movement');
 
 function clearAssignment(creep) {
     if (!creep || !creep.memory) return;
     delete creep.memory.missionName;
     delete creep.memory.task;
     delete creep.memory.taskState;
+    delete creep.memory._trafficMove;
 }
 
 function getMissionByName(homeRoom, missionName) {
@@ -50,12 +51,16 @@ function updateTaskState(creep, resourceType) {
 
 function moveToPos(creep, pos, range) {
     if (!creep || !pos) return;
-    borderNav.moveToTarget(creep, pos, Number.isFinite(range) ? range : 1);
+    movement.planMoveTo(creep, pos, {
+        range: Number.isFinite(range) ? range : 1,
+        maxRooms: (pos.roomName && creep.room && pos.roomName !== creep.room.name) ? 16 : 1
+    });
 }
 
 const roleRemoteHarvest = {
     run: function(creep) {
         if (!creep || !creep.memory) return;
+        movement.enableTrafficForBuildWorker(creep);
 
         if (creep.memory._travellingToHome) {
             roleUniversal.run(creep);

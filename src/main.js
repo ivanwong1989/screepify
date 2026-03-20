@@ -25,6 +25,7 @@ var roleRemoteWorker = require('role_role.remoteWorker');
 var roleMineralMiner = require('role_role.mineralMiner');
 var roleScout = require('role_role.scout');
 var runColony = require('runColony');
+var movement = require('utils_movement');
 var telemetry = require('telemetry_index');
 var managerGlobalSpawner = require('managers_spawner_manager.global.spawner');
 var safemodeManager = require('managers_safemode_safemodeManager');
@@ -226,6 +227,10 @@ module.exports.loop = function() {
                     roleUniversal.run(creep);
                 }
             }
+        }
+
+        for (const roomName in Game.rooms) {
+            movement.finalizeRoomTraffic(Game.rooms[roomName]);
         }
 
         // Telemetry collection and printing

@@ -1,14 +1,15 @@
-const borderNav = require('utils_creepBorderNav');
 const laneMovement = require('utils_creepLaneMovement');
 const roleUniversal = require('role_role.universal');
 const heap = require('utils_heap');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
+const movement = require('utils_movement');
 
 function clearAssignment(creep) {
     if (!creep || !creep.memory) return;
     delete creep.memory.missionName;
     delete creep.memory.task;
     delete creep.memory.taskState;
+    delete creep.memory._trafficMove;
 }
 
 function getMissionByName(homeRoom, missionName) {
@@ -78,26 +79,77 @@ function tryLaneMove(creep, targetPos, range, laneKey, homeRoomName) {
     if (!laneKey || !homeRoomName) return false;
     const lane = laneMovement.getOwnedLane(laneKey, homeRoomName);
     if (!lane) return false;
+    const moveRange = Number.isFinite(range) ? range : 1;
+    if (creep.pos.inRangeTo(targetPos, moveRange)) return true;
 
-    const prevTask = creep.memory.task;
-    creep.memory.task = {
-        action: 'move',
-        meta: {
-            moveMode: 'lane',
-            laneKey,
-            homeRoom: homeRoomName
+    let path = null;
+    if (Array.isArray(lane.p) && lane.p.length > 0) {
+        try {
+            path = lane.p.map(pt => new RoomPosition(pt.x, pt.y, pt.r || pt.roomName));
+        } catch (e) {
+            path = null;
         }
-    };
-    const moved = laneMovement.tryMoveByLane(creep, lane, targetPos, range);
-    if (prevTask) creep.memory.task = prevTask;
-    else delete creep.memory.task;
-    return moved;
+    } else if (lane.s) {
+        try {
+            path = Room.deserializePath(lane.s);
+        } catch (e) {
+            path = null;
+        }
+    }
+    if (!Array.isArray(path) || path.length <= 0) return false;
+
+    let idx = -1;
+    for (let i = 0; i < path.length; i++) {
+        const p = path[i];
+        if (!p) continue;
+        if (p.roomName !== creep.pos.roomName || p.x !== creep.pos.x || p.y !== creep.pos.y) continue;
+        idx = i;
+        break;
+    }
+
+    const isExitTile = (p) => !!p && (p.x === 0 || p.x === 49 || p.y === 0 || p.y === 49);
+
+    if (idx < 0) {
+        let nearest = null;
+        let nearestRange = Infinity;
+        for (let i = 0; i < path.length; i++) {
+            const p = path[i];
+            if (!p || p.roomName !== creep.room.name || isExitTile(p)) continue;
+            const r = creep.pos.getRangeTo(p);
+            if (r < nearestRange) {
+                nearest = p;
+                nearestRange = r;
+            }
+        }
+        if (!nearest) return false;
+        movement.planMoveTo(creep, nearest, { range: 0, maxRooms: 1 });
+        return true;
+    }
+
+    if (idx + 1 >= path.length) return true;
+    const nextPos = path[idx + 1];
+    if (!nextPos) return true;
+
+    if (nextPos.roomName === creep.room.name) {
+        movement.planLaneStep(creep, nextPos);
+        return true;
+    }
+
+    if (creep.pos.x === 0) return movement.planMove(creep, LEFT) === OK;
+    if (creep.pos.x === 49) return movement.planMove(creep, RIGHT) === OK;
+    if (creep.pos.y === 0) return movement.planMove(creep, TOP) === OK;
+    if (creep.pos.y === 49) return movement.planMove(creep, BOTTOM) === OK;
+
+    return false;
 }
 
 function moveToPos(creep, targetPos, range, laneKey, homeRoomName) {
     if (!creep || !targetPos) return;
     if (tryLaneMove(creep, targetPos, range, laneKey, homeRoomName)) return;
-    borderNav.moveToTarget(creep, targetPos, Number.isFinite(range) ? range : 1);
+    movement.planMoveTo(creep, targetPos, {
+        range: Number.isFinite(range) ? range : 1,
+        maxRooms: 16
+    });
 }
 
 function findFallbackDropoff(creep, resourceType) {
@@ -216,6 +268,7 @@ function tryOpportunisticPickup(creep, resourceType) {
 const roleRemoteHaul = {
     run: function(creep) {
         if (!creep || !creep.memory) return;
+        movement.enableTrafficForCoreLaneHauler(creep);
 
         if (creep.memory._travellingToHome) {
             roleUniversal.run(creep);
