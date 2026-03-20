@@ -1,12 +1,23 @@
-const borderNav = require('utils_creepBorderNav');
 const execGatherTask = require('managers_overseer_tasks_exec_gather');
 const vacateSource = require('managers_overseer_tasks_exec__policy_vacate_source');
+const movement = require('utils_movement');
 
 function clearUpgraderAssignment(creep) {
     if (!creep || !creep.memory) return;
     delete creep.memory.missionName;
     delete creep.memory.task;
     delete creep.memory.taskState;
+    delete creep.memory._trafficMove;
+}
+
+function moveToTarget(creep, target, range) {
+    if (!creep || !target) return;
+    const pos = target.pos || target;
+    const targetRoomName = pos && pos.roomName ? pos.roomName : null;
+    movement.planMoveTo(creep, target, {
+        range: Number.isFinite(range) ? range : 1,
+        maxRooms: (targetRoomName && creep.room && targetRoomName !== creep.room.name) ? 16 : 1
+    });
 }
 
 function getMissionByName(homeRoom, missionName) {
@@ -52,7 +63,7 @@ function executeIntent(creep, intent) {
         if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !pos.roomName) return false;
         const targetPos = new RoomPosition(pos.x, pos.y, pos.roomName);
         if (!creep.pos.inRangeTo(targetPos, Number.isFinite(intent.range) ? intent.range : 1)) {
-            borderNav.moveToTarget(creep, targetPos, Number.isFinite(intent.range) ? intent.range : 1);
+            moveToTarget(creep, targetPos, Number.isFinite(intent.range) ? intent.range : 1);
         }
         return true;
     }
@@ -63,22 +74,22 @@ function executeIntent(creep, intent) {
     switch (intent.type) {
         case 'upgrade': {
             const result = creep.upgradeController(target);
-            if (result === ERR_NOT_IN_RANGE) borderNav.moveToTarget(creep, target, 3);
+            if (result === ERR_NOT_IN_RANGE) moveToTarget(creep, target, 3);
             return true;
         }
         case 'harvest': {
             const result = creep.harvest(target);
-            if (result === ERR_NOT_IN_RANGE) borderNav.moveToTarget(creep, target, 1);
+            if (result === ERR_NOT_IN_RANGE) moveToTarget(creep, target, 1);
             return true;
         }
         case 'withdraw': {
             const result = creep.withdraw(target, intent.resourceType || RESOURCE_ENERGY);
-            if (result === ERR_NOT_IN_RANGE) borderNav.moveToTarget(creep, target, 1);
+            if (result === ERR_NOT_IN_RANGE) moveToTarget(creep, target, 1);
             return true;
         }
         case 'pickup': {
             const result = creep.pickup(target);
-            if (result === ERR_NOT_IN_RANGE) borderNav.moveToTarget(creep, target, 1);
+            if (result === ERR_NOT_IN_RANGE) moveToTarget(creep, target, 1);
             return true;
         }
         default:
@@ -145,6 +156,7 @@ const roleUpgrader = {
             return;
         }
 
+        movement.enableTrafficForBuildWorker(creep);
         delete creep.memory.task;
         const intent = getUpgradeIntent(creep, mission, homeRoom || creep.room);
         if (!intent) {

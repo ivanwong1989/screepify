@@ -1,4 +1,4 @@
-const borderNav = require('utils_creepBorderNav');
+const movement = require('utils_movement');
 const roleUniversal = require('role_role.universal');
 
 function clearAssignment(creep) {
@@ -7,6 +7,7 @@ function clearAssignment(creep) {
     delete creep.memory.task;
     delete creep.memory.taskState;
     delete creep.memory.minerState;
+    delete creep.memory._trafficMove;
 }
 
 function getMissionByName(homeRoom, missionName) {
@@ -37,7 +38,12 @@ function getFirstValidDropoff(dropoffIds, resourceType) {
 
 function moveToTarget(creep, target, range) {
     if (!creep || !target) return;
-    borderNav.moveToTarget(creep, target, Number.isFinite(range) ? range : 1);
+    const targetPos = target.pos || target;
+    const targetRoomName = targetPos && targetPos.roomName ? targetPos.roomName : null;
+    movement.planMoveTo(creep, target, {
+        range: Number.isFinite(range) ? range : 1,
+        maxRooms: (targetRoomName && creep.room && targetRoomName !== creep.room.name) ? 16 : 1
+    });
 }
 
 function tryUpgradeFallback(creep) {
@@ -83,6 +89,7 @@ const roleSimpleHarvest = {
             return;
         }
 
+        movement.enableTrafficForBuildWorker(creep);
         delete creep.memory.task;
         delete creep.memory.taskState;
 

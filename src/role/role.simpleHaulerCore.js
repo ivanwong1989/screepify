@@ -1,4 +1,5 @@
 const missionBoard = require('managers_overseer_missions_board_missionBoard');
+const movement = require('utils_movement');
 
 const STATE_LOAD = 'LOAD';
 const STATE_DELIVER = 'DELIVER';
@@ -107,7 +108,17 @@ function moveHome(creep) {
     if (!creep || !creep.memory || !creep.memory.room) return;
     const homeRoom = creep.memory.room;
     if (creep.room.name === homeRoom) return;
-    creep.moveTo(new RoomPosition(25, 25, homeRoom), { range: 20, reusePath: 10 });
+    movement.planMoveTo(creep, new RoomPosition(25, 25, homeRoom), { range: 20, maxRooms: 16 });
+}
+
+function moveToTarget(creep, target, range) {
+    if (!creep || !target) return;
+    const pos = target.pos || target;
+    const targetRoomName = pos && pos.roomName ? pos.roomName : null;
+    movement.planMoveTo(creep, target, {
+        range: Number.isFinite(range) ? range : 1,
+        maxRooms: (targetRoomName && creep.room && targetRoomName !== creep.room.name) ? 16 : 1
+    });
 }
 
 module.exports = {
@@ -125,6 +136,7 @@ module.exports = {
         if (assignedMissionName !== simpleMissionName) {
             delete creep.memory.simpleHaulerState;
             delete creep.memory.task;
+            delete creep.memory._trafficMove;
             return;
         }
 
@@ -138,8 +150,10 @@ module.exports = {
             delete creep.memory.task;
             delete creep.memory.taskState;
             delete creep.memory.simpleHaulerState;
+            delete creep.memory._trafficMove;
             return;
         }
+        movement.enableTrafficForBuildWorker(creep);
         if (creep.room.name !== homeRoomName) {
             moveHome(creep);
             return;
@@ -158,7 +172,7 @@ module.exports = {
             const storage = creep.room.storage;
             if (storage && storage.store && storage.store.getFreeCapacity(type) > 0) {
                 if (creep.transfer(storage, type) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(storage, { range: 1, reusePath: 5 });
+                    moveToTarget(creep, storage, 1);
                 }
                 return;
             }
@@ -168,19 +182,19 @@ module.exports = {
             const source = pickBestEnergySource(creep, mission, creep.room, blockedSourceIds);
             if (!source) {
                 const anchor = creep.room.find(FIND_MY_SPAWNS)[0];
-                if (anchor) creep.moveTo(anchor, { range: 2, reusePath: 7 });
+                if (anchor) moveToTarget(creep, anchor, 2);
                 return;
             }
 
             if (source.resourceType === RESOURCE_ENERGY && Number.isFinite(source.amount)) {
                 const code = creep.pickup(source);
-                if (code === ERR_NOT_IN_RANGE) creep.moveTo(source, { range: 1, reusePath: 5 });
+                if (code === ERR_NOT_IN_RANGE) moveToTarget(creep, source, 1);
                 return;
             }
 
             if (source.store && (source.store[RESOURCE_ENERGY] || 0) > 0) {
                 const code = creep.withdraw(source, RESOURCE_ENERGY);
-                if (code === ERR_NOT_IN_RANGE) creep.moveTo(source, { range: 1, reusePath: 5 });
+                if (code === ERR_NOT_IN_RANGE) moveToTarget(creep, source, 1);
                 return;
             }
             return;
@@ -188,13 +202,13 @@ module.exports = {
 
         if (refillTargets.length <= 0) {
             const anchor = creep.room.find(FIND_MY_SPAWNS)[0];
-            if (anchor) creep.moveTo(anchor, { range: 2, reusePath: 7 });
+            if (anchor) moveToTarget(creep, anchor, 2);
             return;
         }
 
         const target = creep.pos.findClosestByPath(refillTargets) || creep.pos.findClosestByRange(refillTargets);
         if (!target) return;
         const code = creep.transfer(target, RESOURCE_ENERGY);
-        if (code === ERR_NOT_IN_RANGE) creep.moveTo(target, { range: 1, reusePath: 5 });
+        if (code === ERR_NOT_IN_RANGE) moveToTarget(creep, target, 1);
     }
 };
