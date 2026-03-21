@@ -41,6 +41,7 @@ const SAFE_MODE_ROOMS = new Set([
 
 function handleTravelToHome(creep) {
     if (!creep || !creep.memory || !creep.memory._travellingToHome) return false;
+    if (borderNav.handleBorderNudgeTick(creep)) return true;
     const homeRoomName = creep.memory.room;
     if (!homeRoomName) {
         delete creep.memory._travellingToHome;

@@ -482,7 +482,7 @@ const overseerUtils = {
                 if (m.type === 'harvest' || m.type === 'simple_harvest' || m.type === 'mineral') {
                     room.visual.circle(m.pos, {fill: 'transparent', radius: 0.7, stroke: color, strokeWidth: 0.1, lineStyle: 'dashed'});
                 } 
-            } else if (m.type === 'build' || m.type === 'repair') {
+            } else if (m.type === 'build' || m.type === 'repair' || m.type === 'fortify') {
                 const targetIds = m.targetId ? [m.targetId] : (m.targetIds || []);
                 targetIds.forEach(id => {
                     const target = Game.getObjectById(id);

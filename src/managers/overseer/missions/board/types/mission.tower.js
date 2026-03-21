@@ -441,11 +441,17 @@ module.exports = {
 
         // --- Priority 4.5: Repair ---
         // Reuse opportunistic repair scan and apply tower-specific targeting policy:
-        // - walls/ramparts only during active defense (following fortify targets)
-        // - other structures only when critically low (<= 5% hits)
+        // - keep defense-time fortify behavior
+        // - always allow truly critical repairs (including critical ramparts/walls)
         {
-            const CRITICAL_TOWER_REPAIR_RATIO = 0.05;
+            const CRITICAL_GENERAL_RATIO = 0.8;
+            const CRITICAL_DECAYABLE_RATIO = 0.7;
+            const CRITICAL_FORT_HITS = 5000;
             const inDefense = intel.hostiles && intel.hostiles.length > 0;
+            const repairScan = overseerOpportunisticRepair.getRoomScan(room.name);
+            const repairIds = (repairScan && Array.isArray(repairScan.repairIds)) ? repairScan.repairIds : [];
+            const fortifyIds = (repairScan && Array.isArray(repairScan.fortifyIds)) ? repairScan.fortifyIds : [];
+            const hasCriticalScan = !!(repairScan && repairScan.critical);
             const economyState = (context && context.economyState)
                 ? context.economyState
                 : ((intel && intel.economyState) ? intel.economyState : 'STOCKPILING');
@@ -453,23 +459,30 @@ module.exports = {
             const storageEnergy = (intel && Number.isFinite(intel.storageEnergy)) ? intel.storageEnergy : 0;
             const noStorageEnergyGate = intel.energyAvailable > (intel.energyCapacityAvailable * 0.8);
             const storageEnergyGate = storageEnergy >= 10000;
-            const allowRepairEconomy = inDefense || (hasStorage
+            const allowRepairEconomy = inDefense || hasCriticalScan || (hasStorage
                 ? (economyState === 'UPGRADING' && storageEnergyGate)
                 : noStorageEnergyGate);
             if (!allowRepairEconomy) {
                 towerDebug(() =>
                     `[Tower] ${room.name} skip-repair economy=${economyState} ` +
-                    `storage=${storageEnergy} inDefense=${inDefense ? 1 : 0}`
+                    `storage=${storageEnergy} inDefense=${inDefense ? 1 : 0} critical=${hasCriticalScan ? 1 : 0}`
                 );
                 return;
             }
 
-            const repairScan = overseerOpportunisticRepair.getRoomScan(room.name);
-            const repairIds = (repairScan && Array.isArray(repairScan.repairIds)) ? repairScan.repairIds : [];
-            const fortifyIds = (repairScan && Array.isArray(repairScan.fortifyIds)) ? repairScan.fortifyIds : [];
+            const isCriticalTowerRepairTarget = (st) => {
+                if (!st || !st.hitsMax) return false;
+                if (st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART) {
+                    return st.hits < CRITICAL_FORT_HITS;
+                }
+                if (st.structureType === STRUCTURE_ROAD || st.structureType === STRUCTURE_CONTAINER) {
+                    return st.hits < (st.hitsMax * CRITICAL_DECAYABLE_RATIO);
+                }
+                return st.hits < (st.hitsMax * CRITICAL_GENERAL_RATIO);
+            };
 
             const targetSet = new Set();
-            let criticalNonFortCount = 0;
+            let criticalCount = 0;
             let defenseFortifyCount = 0;
 
             // Non-fortify repairs: only emergency catch-up repairs for towers.
@@ -477,13 +490,9 @@ module.exports = {
                 const st = Game.getObjectById(id);
                 if (!st || !st.hitsMax) continue;
                 const isFort = st.structureType === STRUCTURE_WALL || st.structureType === STRUCTURE_RAMPART;
-                if (isFort) {
-                    if (inDefense) targetSet.add(id);
-                    continue;
-                }
-                if (st.hits <= (st.hitsMax * CRITICAL_TOWER_REPAIR_RATIO)) {
+                if (inDefense || isCriticalTowerRepairTarget(st)) {
                     targetSet.add(id);
-                    criticalNonFortCount++;
+                    if (!inDefense || !isFort) criticalCount++;
                 }
             }
 
@@ -494,7 +503,7 @@ module.exports = {
                     if (!st) continue;
                     targetSet.add(id);
                 }
-                defenseFortifyCount = targetSet.size - criticalNonFortCount;
+                defenseFortifyCount = Math.max(0, targetSet.size - criticalCount);
             }
 
             if (targetSet.size > 0) {
@@ -507,7 +516,7 @@ module.exports = {
                 });
                 towerDebug(() =>
                     `[Tower] ${room.name} repair targets=${targetIds.length} ` +
-                    `critical=${criticalNonFortCount} defenseFortify=${defenseFortifyCount} inDefense=${inDefense ? 1 : 0}`
+                    `critical=${criticalCount} defenseFortify=${defenseFortifyCount} inDefense=${inDefense ? 1 : 0}`
                 );
             }
         }

@@ -80,6 +80,7 @@ const overseerMissions = {
             'harvest',
             'build',
             'repair',
+            'fortify',
             'upgrade',
             'logisticsSimpleCore',
             'logisticsSimpleMining',

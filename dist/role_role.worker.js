@@ -3,7 +3,7 @@ const roleUniversal = require('role_role.universal');
 const movement = require('utils_movement');
 const heap = require('utils_heap');
 
-const WORKER_MISSION_TYPES = new Set(['build', 'repair']);
+const WORKER_MISSION_TYPES = new Set(['build', 'repair', 'fortify']);
 const WORKER_STATE_GATHER = 'g';
 const WORKER_STATE_WORK = 'w';
 const WORKER_HEAP_STORE = 'roleWorker';
@@ -168,8 +168,8 @@ function getActiveSources(room, roomCache, memo) {
 function getEnergyIntent(creep, mission, memo, roomCache) {
     const room = creep.room;
     const roomStorage = room && room.storage ? room.storage : null;
-    const isBuildOrRepairMission = !!(mission && (mission.type === 'build' || mission.type === 'repair'));
-    const disallowSourceHarvestMission = mission && (mission.type === 'build' || mission.type === 'repair');
+    const isBuildOrRepairMission = !!(mission && (mission.type === 'build' || mission.type === 'repair' || mission.type === 'fortify'));
+    const disallowSourceHarvestMission = mission && (mission.type === 'build' || mission.type === 'repair' || mission.type === 'fortify');
     const allowSourceHarvest = !disallowSourceHarvestMission;
 
     if (isBuildOrRepairMission) {
@@ -370,18 +370,57 @@ function runBuild(creep, mission) {
     }
 }
 
+function isFortifyStructure(structure) {
+    if (!structure) return false;
+    return structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_RAMPART;
+}
+
+function getMissionQueueTarget(mission) {
+    const data = mission && mission.data ? mission.data : null;
+    const queueStoreName = data && data.queueStore ? data.queueStore : null;
+    const queueKey = data && data.queueKey ? data.queueKey : null;
+    if (!queueStoreName || !queueKey) return null;
+
+    const store = heap.getStore(queueStoreName, { ttl: null });
+    const entry = store[queueKey];
+    const ids = entry && Array.isArray(entry.ids) ? entry.ids : [];
+    if (ids.length <= 0) return null;
+
+    const fortify = !!(data && data.fortify);
+    const fallbackTargetHits = Number.isFinite(data && data.targetHits) ? data.targetHits : null;
+    for (let i = 0; i < ids.length; i++) {
+        const target = Game.getObjectById(ids[i]);
+        if (!target || !Number.isFinite(target.hits) || !Number.isFinite(target.hitsMax)) continue;
+        const isFort = isFortifyStructure(target);
+        if (fortify && !isFort) continue;
+        if (!fortify && isFort) continue;
+        const targetHits = fortify
+            ? Math.min(fallbackTargetHits || target.hitsMax, target.hitsMax)
+            : Math.floor(target.hitsMax * 0.9);
+        if (target.hits < targetHits) return { target, targetHits };
+    }
+    return null;
+}
+
 function runRepair(creep, mission, useTraffic) {
-    const target = mission && mission.targetId ? Game.getObjectById(mission.targetId) : null;
+    const queued = getMissionQueueTarget(mission);
+    let target = queued ? queued.target : null;
+    let targetHits = queued ? queued.targetHits : null;
+
+    if (!target && mission && mission.targetId) {
+        target = Game.getObjectById(mission.targetId);
+        targetHits = mission && mission.data && Number.isFinite(mission.data.targetHits)
+            ? mission.data.targetHits
+            : (target ? target.hitsMax : null);
+    }
+
     if (!target) {
         clearWorkerAssignment(creep);
         return;
     }
 
-    const targetHits = mission && mission.data && Number.isFinite(mission.data.targetHits)
-        ? mission.data.targetHits
-        : target.hitsMax;
     if (Number.isFinite(target.hits) && Number.isFinite(targetHits) && target.hits >= targetHits) {
-        clearWorkerAssignment(creep);
+        if (!queued) clearWorkerAssignment(creep);
         return;
     }
 
@@ -389,7 +428,7 @@ function runRepair(creep, mission, useTraffic) {
     if (result === ERR_NOT_IN_RANGE) {
         moveWorkerTo(creep, target, 3, useTraffic);
     } else if (result === ERR_INVALID_TARGET) {
-        clearWorkerAssignment(creep);
+        if (!queued) clearWorkerAssignment(creep);
     }
 }
 

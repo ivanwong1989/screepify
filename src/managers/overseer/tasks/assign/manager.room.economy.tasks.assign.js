@@ -49,7 +49,7 @@ var managerTasks = {
         if (type === 'harvest' || type === 'simple_harvest' || type === 'remote_harvest' || type === 'mineral') {
             needs.work = true;
         } else if (
-            type === 'upgrade' || type === 'build' || type === 'repair' ||
+            type === 'upgrade' || type === 'build' || type === 'repair' || type === 'fortify' ||
             type === 'remote_build'
         ) {
             needs.work = true;
@@ -712,6 +712,9 @@ var managerTasks = {
             case 'repair':
                 // Repair/fortify workers execute directly in role.worker from mission contract data.
                 break;
+            case 'fortify':
+                // Repair/fortify workers execute directly in role.worker from mission contract data.
+                break;
             case 'scout':
                 // Scout executes directly in role.scout.
                 break;
@@ -1152,7 +1155,7 @@ var managerTasks = {
             const hint =
                 (m === 'upgrade') ? 'U' :
                 (m === 'build' || m === 'remote_build') ? 'B' :
-                (m === 'repair') ? 'R' :
+                (m === 'repair' || m === 'fortify') ? 'R' :
                 (m === 'transfer' || m === 'remote_haul') ? 'T' :
                 (m === 'harvest' || m === 'simple_harvest' || m === 'remote_harvest' || m === 'mineral') ? 'H' :
                 null;

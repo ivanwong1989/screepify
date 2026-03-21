@@ -3,6 +3,7 @@ const missionHarvest = require('managers_overseer_missions_board_types_mission.h
 const missionSimpleHarvest = require('managers_overseer_missions_board_types_mission.simpleHarvest');
 const missionBuild = require('managers_overseer_missions_board_types_mission.build');
 const missionRepair = require('managers_overseer_missions_board_types_mission.repair');
+const missionFortify = require('managers_overseer_missions_board_types_mission.fortify');
 const missionUpgrade = require('managers_overseer_missions_board_types_mission.upgrade');
 const missionLogisticsCoreV2 = require('managers_overseer_missions_board_types_mission.logisticsCoreV2');
 const missionLogisticsSimpleCore = require('managers_overseer_missions_board_types_mission.logisticsSimpleCore');
@@ -24,6 +25,7 @@ function ensureRegistered() {
     missionRegistry.register('simpleHarvest', missionSimpleHarvest);
     missionRegistry.register('build', missionBuild);
     missionRegistry.register('repair', missionRepair);
+    missionRegistry.register('fortify', missionFortify);
     missionRegistry.register('upgrade', missionUpgrade);
     missionRegistry.register('logisticsCoreV2', missionLogisticsCoreV2);
     missionRegistry.register('logisticsSimpleCore', missionLogisticsSimpleCore);

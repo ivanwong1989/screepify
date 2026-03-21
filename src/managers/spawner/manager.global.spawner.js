@@ -176,9 +176,9 @@ module.exports = {
         memory.spawnRoom = spawn.room.name;
         memory.room = candidate.homeRoom || memory.room;
         memory.contractId = candidate.contractId;
-        memory.homeSpawnPos = getHomeSpawnPosition(memory.room);
 
         if (spawn.room.name !== candidate.homeRoom) {
+            memory.homeSpawnPos = getHomeSpawnPosition(memory.room);
             if (candidate.bindMode === 'pool') {
                 memory._travellingToHome = true;
             } else if (candidate.travelTargetRoom) {
@@ -186,6 +186,8 @@ module.exports = {
             } else if (candidate.targetRoom) {
                 memory.travelTargetRoom = candidate.targetRoom;
             }
+        } else if (memory.homeSpawnPos) {
+            delete memory.homeSpawnPos;
         }
 
         const result = spawn.spawnCreep(candidate.body, name, { memory });

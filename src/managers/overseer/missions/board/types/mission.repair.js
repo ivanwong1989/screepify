@@ -2,45 +2,22 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
+const heap = require('utils_heap');
 
-const CRITICAL_WALL_HITS = 5000;
 const REPAIR_MIN_RATIO = 0.9;
-const DEFAULT_FORTIFY_TARGET = 500000;
-const FORTIFY_TARGET_CAP = 3;
-const FORTIFY_SETTINGS = {
-    0: { start: 0, target: 0 },
-    1: { start: 0, target: 0 },
-    2: { start: 10000, target: 20000 },
-    3: { start: 20000, target: 150000 },
-    4: { start: 150000, target: 300000 },
-    5: { start: 300000, target: 500000 },
-    6: { start: 900000, target: 1300000 },
-    7: { start: 3000000, target: 3500000 },
-    8: { start: 3500000, target: 5000000 }
-};
+const WORKER_SET_COST = 200;
+const MIN_REPAIR_BACKLOG_TICKS = 120;
+const MIN_REPAIR_BACKLOG_HITS_FLOOR = 25000;
+const REPAIR_QUEUE_HEAP_STORE = 'missionRepairQueue';
+
 const REPAIR_WORKER_TUNING = Object.freeze({
-    desiredWorkRepair: 1,
-    desiredWorkFortify: 1,
-    minCountRepair: 1,
-    maxCountRepair: 1,
-    minCountFortify: 1,
-    maxCountFortify: 1,
-    maxWorkParts: 5,
-    maxCarryParts: 5,
-    maxMoveParts: 5
+    desiredWork: 12,
+    minCount: 1,
+    maxCount: 1,
+    maxWorkParts: 12,
+    maxCarryParts: 12,
+    maxMoveParts: 12
 });
-
-function getDesiredRepairWork(fortify) {
-    return fortify ? REPAIR_WORKER_TUNING.desiredWorkFortify : REPAIR_WORKER_TUNING.desiredWorkRepair;
-}
-
-function getRepairMinCount(fortify) {
-    return fortify ? REPAIR_WORKER_TUNING.minCountFortify : REPAIR_WORKER_TUNING.minCountRepair;
-}
-
-function getRepairMaxCount(fortify) {
-    return fortify ? REPAIR_WORKER_TUNING.maxCountFortify : REPAIR_WORKER_TUNING.maxCountRepair;
-}
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -55,29 +32,77 @@ function isFortifyTarget(structure) {
 
 function getRepairThreshold(structure) {
     if (!structure || !structure.hitsMax) return 0;
-    if (isFortifyTarget(structure)) return structure.hitsMax;
     return Math.floor(structure.hitsMax * REPAIR_MIN_RATIO);
 }
 
-function getFortifyPolicyTarget(room) {
-    const policyTarget = room && room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy
-        ? room.memory.overseer.fortifyPolicy.target
-        : null;
-    if (Number.isFinite(policyTarget)) return policyTarget;
-    const rcl = room && room.controller ? room.controller.level : 0;
-    const defaults = FORTIFY_SETTINGS[rcl] || FORTIFY_SETTINGS[0];
-    if (Number.isFinite(defaults && defaults.target)) return defaults.target;
-    return DEFAULT_FORTIFY_TARGET;
+function getMaxWorkPartsForRoom(room) {
+    if (!room) return 1;
+    const capacity = Number.isFinite(room.energyCapacityAvailable) ? room.energyCapacityAvailable : 0;
+    if (capacity <= 0) return 1;
+    return Math.max(1, Math.min(REPAIR_WORKER_TUNING.maxWorkParts, Math.floor(capacity / WORKER_SET_COST)));
 }
 
-function getMissionFortifyTargetHits(room, structure, existingTarget) {
-    const base = getFortifyPolicyTarget(room);
-    const target = Number.isFinite(base) ? base : existingTarget;
-    if (!Number.isFinite(target) || target <= 0) return 0;
-    if (structure && Number.isFinite(structure.hitsMax) && structure.hitsMax > 0) {
-        return Math.min(target, structure.hitsMax);
+function getMinRepairBacklogHits(room) {
+    const workParts = getMaxWorkPartsForRoom(room);
+    const projected = workParts * REPAIR_POWER * MIN_REPAIR_BACKLOG_TICKS;
+    return Math.max(MIN_REPAIR_BACKLOG_HITS_FLOOR, projected);
+}
+
+function getRepairQueueStore() {
+    return heap.getStore(REPAIR_QUEUE_HEAP_STORE, { ttl: null });
+}
+
+function getRepairQueueKey(roomName) {
+    return `repair:${roomName || ''}`;
+}
+
+function writeRepairQueue(roomName, ids) {
+    if (!roomName) return;
+    const store = getRepairQueueStore();
+    store[getRepairQueueKey(roomName)] = {
+        time: Game.time,
+        ids: Array.isArray(ids) ? ids.slice() : []
+    };
+}
+
+function readRepairQueue(roomName) {
+    if (!roomName) return [];
+    const store = getRepairQueueStore();
+    const entry = store[getRepairQueueKey(roomName)];
+    return entry && Array.isArray(entry.ids) ? entry.ids : [];
+}
+
+function getRepairBacklogSummary(room, scan, structureById) {
+    const repairIds = scan && Array.isArray(scan.repairIds) ? scan.repairIds : [];
+    const entries = [];
+    let totalDeficitHits = 0;
+
+    for (let i = 0; i < repairIds.length; i++) {
+        const id = repairIds[i];
+        const structure = (structureById && structureById[id]) || Game.getObjectById(id);
+        if (!structure) continue;
+        if (isFortifyTarget(structure)) continue;
+        const targetHits = getRepairThreshold(structure);
+        const deficitHits = targetHits - structure.hits;
+        if (deficitHits <= 0) continue;
+
+        totalDeficitHits += deficitHits;
+        const ratio = targetHits > 0 ? (structure.hits / targetHits) : 1;
+        entries.push({ id, ratio, deficitHits });
     }
-    return target;
+
+    entries.sort((a, b) => {
+        if (a.ratio !== b.ratio) return a.ratio - b.ratio;
+        if (a.deficitHits !== b.deficitHits) return b.deficitHits - a.deficitHits;
+        return a.id < b.id ? -1 : 1;
+    });
+    const orderedIds = entries.map(e => e.id);
+    const best = orderedIds.length > 0 ? { id: orderedIds[0], deficitHits: entries[0].deficitHits } : null;
+
+    const minBacklogHits = getMinRepairBacklogHits(room);
+    const critical = !!(scan && scan.critical);
+    const gatePassed = critical || totalDeficitHits >= minBacklogHits;
+    return { best, orderedIds, totalDeficitHits, minBacklogHits, critical, gatePassed };
 }
 
 function getMiningContainerIdSet(intel) {
@@ -102,7 +127,7 @@ function getNonMiningContainerIds(room, intel, roomCache) {
         ? intel.structures[STRUCTURE_CONTAINER]
         : (roomCache && roomCache.structuresByType && roomCache.structuresByType[STRUCTURE_CONTAINER])
             ? roomCache.structuresByType[STRUCTURE_CONTAINER]
-        : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
+            : room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
 
     const ids = [];
     for (let i = 0; i < containers.length; i++) {
@@ -115,6 +140,7 @@ function getNonMiningContainerIds(room, intel, roomCache) {
 
 function buildStructureByIdIndex(intel, roomCache) {
     const byId = Object.create(null);
+
     if (intel && intel.structures) {
         const byType = intel.structures;
         const keys = Object.keys(byType);
@@ -172,10 +198,12 @@ function getTargetStructure(mission, runtimeCtx) {
     const roomName = mission.targetRoom || mission.sponsorRoom;
     const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
     if (!room) return { room: null, structure: null, memo: null };
+
     const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
     const roomCache = getRoomCache(room);
     const memo = getRepairRoomMemo(room, intel, roomCache);
     const structure = (memo.structureById && memo.structureById[mission.targetId]) || Game.getObjectById(mission.targetId);
+
     return { room, structure, memo };
 }
 
@@ -184,76 +212,47 @@ module.exports = {
         return missionKeys.makeRepairTargetKey(
             context.targetRoom || context.sponsorRoom,
             context.targetId,
-            context.fortify ? 'fortify' : 'repair'
+            'repair'
         );
     },
 
-    discover({ room, intel, context }) {
+    discover({ room, intel }) {
         if (!room) return [];
-        if (context && context.opState === 'EMERGENCY') return [];
 
         const scan = overseerOpportunisticRepair.getRoomScan(room.name);
         if (!scan) return [];
 
-        const repairIds = Array.isArray(scan.repairIds) ? scan.repairIds : [];
-        const out = [];
-        for (let i = 0; i < repairIds.length; i++) {
-            const id = repairIds[i];
-            const createContext = {
-                sponsorRoom: room.name,
-                targetRoom: room.name,
-                targetId: id,
-                fortify: false,
-                priority: 65
-            };
-            out.push({
-                key: this.makeKey(createContext),
-                createContext,
-                discoveredMeta: {
-                    targetId: id,
-                    fortify: false
-                }
-            });
-        }
+        const structureById = buildStructureByIdIndex(intel, getRoomCache(room));
+        const backlog = getRepairBacklogSummary(room, scan, structureById);
+        const best = backlog.best;
 
-        const fortifyPolicy = room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy
-            ? room.memory.overseer.fortifyPolicy
-            : null;
-        const targetHits = Number.isFinite(fortifyPolicy && fortifyPolicy.target)
-            ? fortifyPolicy.target
-            : getFortifyPolicyTarget(room);
-        const economyState = context && context.economyState ? context.economyState : 'STOCKPILING';
-        const allowFortifySpawn = economyState === 'UPGRADING' || !!scan.critical;
+        writeRepairQueue(room.name, backlog.orderedIds);
 
-        const fortifyIds = Array.isArray(scan.fortifyIds) ? scan.fortifyIds : [];
-        const cap = Math.max(1, FORTIFY_TARGET_CAP);
-        for (let i = 0; i < Math.min(cap, fortifyIds.length); i++) {
-            const id = fortifyIds[i];
-            const createContext = {
-                sponsorRoom: room.name,
-                targetRoom: room.name,
-                targetId: id,
-                fortify: true,
-                targetHits,
-                spawnAllowed: allowFortifySpawn,
-                priority: allowFortifySpawn ? 55 : 35
-            };
-            out.push({
-                key: this.makeKey(createContext),
-                createContext,
-                discoveredMeta: {
-                    targetId: id,
-                    fortify: true
-                }
-            });
-        }
+        if (!best) return [];
+        if (!backlog.gatePassed) return [];
 
-        return out;
+        const createContext = {
+            sponsorRoom: room.name,
+            targetRoom: room.name,
+            targetId: best.id,
+            priority: 65
+        };
+
+        return [{
+            key: this.makeKey(createContext),
+            createContext,
+            discoveredMeta: {
+                targetId: best.id,
+                totalDeficitHits: backlog.totalDeficitHits,
+                minBacklogHits: backlog.minBacklogHits,
+                critical: backlog.critical,
+                queueLength: backlog.orderedIds.length
+            }
+        }];
     },
 
     create(context) {
         const now = Game.time;
-        const fortify = !!context.fortify;
         return {
             id: this.makeKey(context),
             key: this.makeKey(context),
@@ -262,7 +261,7 @@ module.exports = {
             state: missionStates.ACTIVE,
             sponsorRoom: context.sponsorRoom,
             targetRoom: context.targetRoom || context.sponsorRoom,
-            priority: Number.isFinite(context.priority) ? context.priority : (fortify ? 55 : 65),
+            priority: Number.isFinite(context.priority) ? context.priority : 65,
             createdTick: now,
             updatedTick: now,
             lastCheckedTick: 0,
@@ -271,63 +270,65 @@ module.exports = {
             assigned: { primary: [], support: [] },
             demand: { role: 'repairer', count: 1, bodyProfile: 'worker' },
             progress: {
-                stage: fortify ? 'fortify' : 'repair',
+                stage: 'repair',
                 lastHits: 0
             },
             meta: {
-                missionName: `${fortify ? 'fortify' : 'repair'}:${context.targetId}`,
-                fortify,
-                spawnAllowed: context.spawnAllowed !== false,
-                targetHits: Number.isFinite(context.targetHits) ? context.targetHits : null,
-                desiredWork: Number.isFinite(context.requiredWork) ? context.requiredWork : getDesiredRepairWork(fortify),
-                minCount: getRepairMinCount(fortify),
-                maxCount: getRepairMaxCount(fortify)
+                missionName: `repair:${context.targetId}`,
+                targetHits: null,
+                desiredWork: REPAIR_WORKER_TUNING.desiredWork,
+                minCount: REPAIR_WORKER_TUNING.minCount,
+                maxCount: REPAIR_WORKER_TUNING.maxCount
             },
             statusReason: null
         };
     },
 
     validate(mission, runtimeCtx) {
-        const resolved = getTargetStructure(mission, runtimeCtx);
-        const room = resolved.room;
+        const roomName = mission.targetRoom || mission.sponsorRoom;
+        const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
-        const structure = resolved.structure;
-        return !!structure;
+        const ids = readRepairQueue(roomName);
+        if (!ids || ids.length <= 0) return false;
+        return true;
     },
 
     refresh(mission, runtimeCtx) {
         cleanupAssigned(mission);
+
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const resolved = getTargetStructure(mission, runtimeCtx);
         const room = resolved.room;
         const structure = resolved.structure;
         const roomMemo = resolved.memo;
-        const fortify = !!(mission.meta && mission.meta.fortify);
+        const scan = room ? overseerOpportunisticRepair.getRoomScan(room.name) : null;
 
         mission.progress = mission.progress || {};
         mission.meta = mission.meta || {};
-        mission.meta.missionName = mission.meta.missionName || `${fortify ? 'fortify' : 'repair'}:${mission.targetId}`;
-        mission.meta.desiredWork = getDesiredRepairWork(fortify);
-        mission.meta.minCount = getRepairMinCount(fortify);
-        mission.meta.maxCount = getRepairMaxCount(fortify);
+        mission.meta.missionName = mission.meta.missionName || `repair:${mission.targetId}`;
+        mission.meta.desiredWork = REPAIR_WORKER_TUNING.desiredWork;
+        mission.meta.minCount = REPAIR_WORKER_TUNING.minCount;
+        mission.meta.maxCount = REPAIR_WORKER_TUNING.maxCount;
 
-        if (structure) {
-            const prev = Number.isFinite(mission.progress.lastHits) ? mission.progress.lastHits : structure.hits;
-            if (structure.hits > prev) mission.lastProgressTick = Game.time;
-            mission.progress.lastHits = structure.hits;
-            mission.progress.hitsMax = structure.hitsMax || 0;
-            mission.meta.structureType = structure.structureType;
-            if (fortify) {
-                mission.meta.targetHits = getMissionFortifyTargetHits(room, structure, mission.meta.targetHits || DEFAULT_FORTIFY_TARGET);
-            } else {
-                mission.meta.targetHits = getRepairThreshold(structure);
-            }
+        let currentTarget = structure;
+        if (room && scan) {
+            const backlog = getRepairBacklogSummary(room, scan, roomMemo ? roomMemo.structureById : null);
+            writeRepairQueue(room.name, backlog.orderedIds);
+            if (backlog.best && mission.targetId !== backlog.best.id) mission.targetId = backlog.best.id;
+            currentTarget = backlog.best ? ((roomMemo && roomMemo.structureById && roomMemo.structureById[backlog.best.id]) || Game.getObjectById(backlog.best.id)) : null;
+        }
 
-            if (!fortify) {
-                const critical = (isFortifyTarget(structure) && structure.hits < CRITICAL_WALL_HITS) ||
-                    (!isFortifyTarget(structure) && structure.hitsMax > 0 && (structure.hits / structure.hitsMax) < 0.7);
-                mission.priority = critical ? 85 : 65;
-            }
+        if (currentTarget) {
+            const prev = Number.isFinite(mission.progress.lastHits) ? mission.progress.lastHits : currentTarget.hits;
+            if (currentTarget.hits > prev) mission.lastProgressTick = Game.time;
+
+            mission.progress.lastHits = currentTarget.hits;
+            mission.progress.hitsMax = currentTarget.hitsMax || 0;
+            mission.meta.structureType = currentTarget.structureType;
+            mission.meta.targetHits = getRepairThreshold(currentTarget);
+
+            const critical = currentTarget.hitsMax > 0 && (currentTarget.hits / currentTarget.hitsMax) < 0.7;
+            mission.priority = critical ? 85 : 65;
         }
 
         mission.demand = {
@@ -335,33 +336,36 @@ module.exports = {
             count: Math.max(0, mission.meta.minCount - mission.assigned.primary.length),
             bodyProfile: 'worker'
         };
+
         mission.data = {
             sourceIds: roomMemo ? roomMemo.sourceIds : [],
             nonMiningContainerIds: roomMemo ? roomMemo.nonMiningContainerIds : getNonMiningContainerIds(room, intel, null),
             allowPartial: true,
-            fortify,
-            targetHits: Number.isFinite(mission.meta.targetHits) ? mission.meta.targetHits : null
+            fortify: false,
+            targetHits: Number.isFinite(mission.meta.targetHits) ? mission.meta.targetHits : null,
+            queueStore: REPAIR_QUEUE_HEAP_STORE,
+            queueKey: getRepairQueueKey(room ? room.name : (mission.targetRoom || mission.sponsorRoom))
         };
     },
 
     isComplete(mission, runtimeCtx) {
-        const resolved = getTargetStructure(mission, runtimeCtx);
-        const room = resolved.room;
-        const structure = resolved.structure;
-        if (!structure) return !!room;
-
-        const fortify = !!(mission.meta && mission.meta.fortify);
-        const targetHits = fortify
-            ? getMissionFortifyTargetHits(room, structure, mission.meta && mission.meta.targetHits)
-            : getRepairThreshold(structure);
-        return structure.hits >= targetHits;
+        const roomName = mission.targetRoom || mission.sponsorRoom;
+        const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
+        if (!room) return false;
+        const structureById = buildStructureByIdIndex(runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null, getRoomCache(room));
+        const ids = readRepairQueue(roomName);
+        if (!ids || ids.length <= 0) return true;
+        for (let i = 0; i < ids.length; i++) {
+            const structure = (structureById && structureById[ids[i]]) || Game.getObjectById(ids[i]);
+            if (!structure || isFortifyTarget(structure)) continue;
+            if (structure.hits < getRepairThreshold(structure)) return false;
+        }
+        return true;
     },
 
     toContractMission(mission) {
-        const fortify = !!(mission.meta && mission.meta.fortify);
-        const spawnAllowed = mission.meta && mission.meta.spawnAllowed !== false;
         return {
-            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `${fortify ? 'fortify' : 'repair'}:${mission.targetId}`,
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `repair:${mission.targetId}`,
             type: 'repair',
             archetype: 'repairer',
             targetId: mission.targetId,
@@ -370,24 +374,22 @@ module.exports = {
                 nonMiningContainerIds: mission.data && Array.isArray(mission.data.nonMiningContainerIds)
                     ? mission.data.nonMiningContainerIds
                     : [],
-                fortify,
+                fortify: false,
                 allowPartial: true,
                 targetHits: mission.data && Number.isFinite(mission.data.targetHits) ? mission.data.targetHits : null
             },
             requirements: {
                 archetype: 'repairer',
-                requiredWork: mission.meta && Number.isFinite(mission.meta.desiredWork) ? mission.meta.desiredWork : getDesiredRepairWork(fortify),
-                minCount: mission.meta && Number.isFinite(mission.meta.minCount) ? mission.meta.minCount : getRepairMinCount(fortify),
-                maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : getRepairMaxCount(fortify),
+                requiredWork: REPAIR_WORKER_TUNING.desiredWork,
+                minCount: REPAIR_WORKER_TUNING.minCount,
+                maxCount: REPAIR_WORKER_TUNING.maxCount,
                 maxWorkParts: REPAIR_WORKER_TUNING.maxWorkParts,
                 maxCarryParts: REPAIR_WORKER_TUNING.maxCarryParts,
                 maxMoveParts: REPAIR_WORKER_TUNING.maxMoveParts,
                 spawnFromFleet: true,
-                spawn: spawnAllowed
+                spawn: true
             },
-            priority: mission.priority || (fortify ? 55 : 65)
+            priority: mission.priority || 65
         };
     }
 };
-
-

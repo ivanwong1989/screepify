@@ -10,7 +10,8 @@ const missionClasses = require('managers_overseer_missions_board_missionClassifi
 
 const DEFAULT_LIVE_TYPE_CAPS = {
     build: 1,
-    repair: 2
+    repair: 1,
+    fortify: 1
 };
 
 function ensureStatsStore() {
