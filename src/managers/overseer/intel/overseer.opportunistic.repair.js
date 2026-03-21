@@ -21,6 +21,11 @@ const FORTIFY_SETTINGS = {
     8: { start: 3500000, target: 5000000 }
 };
 
+function logRepairScan(message) {
+    if (typeof debug !== 'function') return;
+    debug('mission.repair', `[RepairScan] ${message}`);
+}
+
 function getRoomSlot(roomName, interval) {
     if (interval <= 1) return 0;
     let hash = 0;
@@ -204,6 +209,12 @@ module.exports = {
         // Critical means at least one urgent repair-class target exists.
         roomStore.critical = criticalFound;
         roomStore.lastScan = Game.time;
+        logRepairScan(
+            `tick=${Game.time} room=${room.name} mode=full interval=${scanInterval} force=${forceScan ? 1 : 0} ` +
+            `targets=${roomStore.targets.length} repairIds=${roomStore.repairIds.length} fortifyIds=${roomStore.fortifyIds.length} ` +
+            `critical=${roomStore.critical ? 1 : 0} topRepair=${roomStore.repairIds.slice(0, 5).join(',') || '-'} ` +
+            `topFortify=${roomStore.fortifyIds.slice(0, 5).join(',') || '-'}`
+        );
         return roomStore;
     },
 
@@ -259,6 +270,11 @@ module.exports = {
         roomStore.targetIds = roomStore.repairIds;
         roomStore.critical = criticalFound;
         roomStore.lastScan = Game.time;
+        logRepairScan(
+            `tick=${Game.time} room=${room.name} mode=roads interval=${scanInterval} force=${forceScan ? 1 : 0} ` +
+            `targets=${roomStore.targets.length} repairIds=${roomStore.repairIds.length} critical=${roomStore.critical ? 1 : 0} ` +
+            `topRepair=${roomStore.repairIds.slice(0, 5).join(',') || '-'}`
+        );
         return roomStore;
     },
 

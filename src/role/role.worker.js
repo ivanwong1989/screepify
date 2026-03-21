@@ -8,6 +8,16 @@ const WORKER_STATE_GATHER = 'g';
 const WORKER_STATE_WORK = 'w';
 const WORKER_HEAP_STORE = 'roleWorker';
 
+function logWorkerRepair(message) {
+    if (typeof debug !== 'function') return;
+    debug('mission.repair', `[WorkerRepair] ${message}`);
+}
+
+function isRepairMissionName(name) {
+    if (!name || typeof name !== 'string') return false;
+    return name.indexOf('repair:') === 0 || name.indexOf('fortify:') === 0;
+}
+
 function getWorkerRoomMemo(room) {
     if (!room) return null;
     const store = heap.getStore(WORKER_HEAP_STORE, { ttl: 50 });
@@ -60,8 +70,16 @@ function roomHasActiveCoreLaneHauler(room, memo, roomCache) {
     return false;
 }
 
-function clearWorkerAssignment(creep) {
+function clearWorkerAssignment(creep, reason, extra) {
     if (!creep || !creep.memory) return;
+    const missionName = creep.memory.missionName;
+    if (missionName && isRepairMissionName(missionName)) {
+        logWorkerRepair(
+            `tick=${Game.time} clear_assignment reason=${reason || 'unknown'} creep=${creep.name} role=${creep.memory.role || '-'} ` +
+            `mission=${missionName} room=${creep.room && creep.room.name ? creep.room.name : '-'} ` +
+            `extra=${extra || '-'}`
+        );
+    }
     delete creep.memory.missionName;
     delete creep.memory.task;
     delete creep.memory.taskState;
@@ -355,7 +373,7 @@ function runGather(creep, mission, useTraffic) {
 function runBuild(creep, mission) {
     const target = mission && mission.targetId ? Game.getObjectById(mission.targetId) : null;
     if (!target) {
-        clearWorkerAssignment(creep);
+        clearWorkerAssignment(creep, 'build_target_missing');
         return;
     }
     const result = creep.build(target);
@@ -364,9 +382,9 @@ function runBuild(creep, mission) {
     } else if (result === ERR_NOT_ENOUGH_RESOURCES) {
         creep.memory.workerState = WORKER_STATE_GATHER;
     } else if (result === ERR_INVALID_TARGET) {
-        clearWorkerAssignment(creep);
+        clearWorkerAssignment(creep, 'build_invalid_target', `target=${target.id}`);
     } else if (result === ERR_NO_BODYPART) {
-        clearWorkerAssignment(creep);
+        clearWorkerAssignment(creep, 'build_no_work_parts');
     }
 }
 
@@ -415,20 +433,54 @@ function runRepair(creep, mission, useTraffic) {
     }
 
     if (!target) {
-        clearWorkerAssignment(creep);
+        logWorkerRepair(
+            `tick=${Game.time} repair_target_none creep=${creep.name} mission=${creep.memory.missionName || '-'} ` +
+            `queueKey=${mission && mission.data && mission.data.queueKey ? mission.data.queueKey : '-'} ` +
+            `fallbackTarget=${mission && mission.targetId ? mission.targetId : '-'}`
+        );
+        clearWorkerAssignment(creep, 'repair_target_missing');
         return;
     }
 
+    logWorkerRepair(
+        `tick=${Game.time} repair_target_selected creep=${creep.name} mission=${creep.memory.missionName || '-'} ` +
+        `source=${queued ? 'queue' : 'fallback'} target=${target.id} type=${target.structureType} ` +
+        `hits=${target.hits}/${target.hitsMax} targetHits=${Number.isFinite(targetHits) ? targetHits : '-'}`
+    );
+
     if (Number.isFinite(target.hits) && Number.isFinite(targetHits) && target.hits >= targetHits) {
-        if (!queued) clearWorkerAssignment(creep);
+        logWorkerRepair(
+            `tick=${Game.time} repair_target_complete creep=${creep.name} mission=${creep.memory.missionName || '-'} ` +
+            `target=${target.id} source=${queued ? 'queue' : 'fallback'}`
+        );
+        if (!queued) clearWorkerAssignment(creep, 'repair_target_complete_fallback', `target=${target.id}`);
         return;
     }
 
     const result = creep.repair(target);
     if (result === ERR_NOT_IN_RANGE) {
         moveWorkerTo(creep, target, 3, useTraffic);
+        logWorkerRepair(
+            `tick=${Game.time} repair_move creep=${creep.name} mission=${creep.memory.missionName || '-'} target=${target.id} range=3`
+        );
     } else if (result === ERR_INVALID_TARGET) {
-        if (!queued) clearWorkerAssignment(creep);
+        logWorkerRepair(
+            `tick=${Game.time} repair_invalid_target creep=${creep.name} mission=${creep.memory.missionName || '-'} ` +
+            `target=${target.id} source=${queued ? 'queue' : 'fallback'}`
+        );
+        if (!queued) clearWorkerAssignment(creep, 'repair_invalid_fallback_target', `target=${target.id}`);
+    } else if (result === OK) {
+        logWorkerRepair(
+            `tick=${Game.time} repair_ok creep=${creep.name} mission=${creep.memory.missionName || '-'} ` +
+            `target=${target.id} postHits=${target.hits}/${target.hitsMax}`
+        );
+    } else if (result === ERR_NOT_ENOUGH_RESOURCES) {
+        creep.memory.workerState = WORKER_STATE_GATHER;
+        logWorkerRepair(
+            `tick=${Game.time} repair_no_energy creep=${creep.name} mission=${creep.memory.missionName || '-'} target=${target.id}`
+        );
+    } else if (result === ERR_NO_BODYPART) {
+        clearWorkerAssignment(creep, 'repair_no_work_parts', `target=${target.id}`);
     }
 }
 
@@ -445,6 +497,15 @@ const roleWorker = {
 
         const missionName = creep.memory.missionName;
         if (!missionName) {
+            if ((creep.memory.role === 'worker' || creep.memory.role === 'repairer') &&
+                (!creep.memory._repairDbgNoMissionTick || (Game.time - creep.memory._repairDbgNoMissionTick) >= 10)
+            ) {
+                creep.memory._repairDbgNoMissionTick = Game.time;
+                logWorkerRepair(
+                    `tick=${Game.time} no_mission creep=${creep.name} role=${creep.memory.role || '-'} ` +
+                    `workerState=${creep.memory.workerState || '-'} room=${creep.room && creep.room.name ? creep.room.name : '-'}`
+                );
+            }
             const roomMemo = getWorkerRoomMemo(creep.room);
             const roomCache = getRoomCache(creep.room);
             const hasCoreLaneScope = roomHasCoreLaneMission(creep.room, roomMemo) || roomHasActiveCoreLaneHauler(creep.room, roomMemo, roomCache);
@@ -475,11 +536,17 @@ const roleWorker = {
         const homeRoom = homeRoomName ? Game.rooms[homeRoomName] : null;
         const mission = getMissionByName(homeRoom, missionName);
         if (!mission) {
-            clearWorkerAssignment(creep);
+            clearWorkerAssignment(creep, 'mission_not_found_in_home_room', `home=${homeRoomName || '-'}`);
             return;
         }
 
         if (!WORKER_MISSION_TYPES.has(mission.type)) {
+            if (isRepairMissionName(missionName)) {
+                logWorkerRepair(
+                    `tick=${Game.time} mission_type_mismatch creep=${creep.name} mission=${missionName} ` +
+                    `type=${mission.type || '-'} fallback=roleUniversal`
+                );
+            }
             roleUniversal.run(creep);
             return;
         }
@@ -509,6 +576,12 @@ const roleWorker = {
             workerState = used > 0 ? WORKER_STATE_WORK : WORKER_STATE_GATHER;
         }
         if (creep.memory.workerState !== workerState) creep.memory.workerState = workerState;
+        if (mission.type === 'repair' || mission.type === 'fortify') {
+            logWorkerRepair(
+                `tick=${Game.time} run creep=${creep.name} mission=${missionName} type=${mission.type} ` +
+                `state=${workerState} energy=${used}/${creep.store.getCapacity(RESOURCE_ENERGY)} targetId=${mission.targetId || '-'}`
+            );
+        }
 
         if (workerState === WORKER_STATE_GATHER) {
             runGather(creep, mission, useTraffic);

@@ -19,10 +19,23 @@ const REPAIR_WORKER_TUNING = Object.freeze({
     maxMoveParts: 12
 });
 
+function logRepair(message) {
+    if (typeof debug !== 'function') return;
+    debug('mission.repair', `[MissionRepair] ${message}`);
+}
+
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
     if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
+    const before = mission.assigned.primary.slice();
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
+    if (before.length !== mission.assigned.primary.length) {
+        const removed = before.filter(name => !Game.creeps[name]);
+        logRepair(
+            `tick=${Game.time} cleanup_assigned mission=${mission.id || mission.key || '-'} ` +
+            `before=${before.length} after=${mission.assigned.primary.length} removed=${removed.join(',') || '-'}`
+        );
+    }
 }
 
 function isFortifyTarget(structure) {
@@ -220,16 +233,31 @@ module.exports = {
         if (!room) return [];
 
         const scan = overseerOpportunisticRepair.getRoomScan(room.name);
-        if (!scan) return [];
+        if (!scan) {
+            logRepair(`tick=${Game.time} discover room=${room.name} scan=missing`);
+            return [];
+        }
 
         const structureById = buildStructureByIdIndex(intel, getRoomCache(room));
         const backlog = getRepairBacklogSummary(room, scan, structureById);
         const best = backlog.best;
 
         writeRepairQueue(room.name, backlog.orderedIds);
+        const topIds = backlog.orderedIds.slice(0, 5).join(',') || '-';
+        logRepair(
+            `tick=${Game.time} discover room=${room.name} queue=${backlog.orderedIds.length} best=${best ? best.id : '-'} ` +
+            `deficit=${backlog.totalDeficitHits} minBacklog=${backlog.minBacklogHits} critical=${backlog.critical ? 1 : 0} ` +
+            `gatePassed=${backlog.gatePassed ? 1 : 0} top=${topIds}`
+        );
 
-        if (!best) return [];
-        if (!backlog.gatePassed) return [];
+        if (!best) {
+            logRepair(`tick=${Game.time} discover_skip room=${room.name} reason=no_best_target`);
+            return [];
+        }
+        if (!backlog.gatePassed) {
+            logRepair(`tick=${Game.time} discover_skip room=${room.name} reason=gate_not_passed`);
+            return [];
+        }
 
         const createContext = {
             sponsorRoom: room.name,
@@ -268,7 +296,7 @@ module.exports = {
             lastProgressTick: now,
             targetId: context.targetId,
             assigned: { primary: [], support: [] },
-            demand: { role: 'repairer', count: 1, bodyProfile: 'worker' },
+            demand: { role: 'worker', count: 1, bodyProfile: 'worker' },
             progress: {
                 stage: 'repair',
                 lastHits: 0
@@ -289,7 +317,13 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
         const ids = readRepairQueue(roomName);
-        if (!ids || ids.length <= 0) return false;
+        if (!ids || ids.length <= 0) {
+            logRepair(
+                `tick=${Game.time} validate_fail mission=${mission.id || mission.key || '-'} room=${roomName} ` +
+                `reason=empty_queue`
+            );
+            return false;
+        }
         return true;
     },
 
@@ -314,8 +348,20 @@ module.exports = {
         if (room && scan) {
             const backlog = getRepairBacklogSummary(room, scan, roomMemo ? roomMemo.structureById : null);
             writeRepairQueue(room.name, backlog.orderedIds);
-            if (backlog.best && mission.targetId !== backlog.best.id) mission.targetId = backlog.best.id;
+            if (backlog.best && mission.targetId !== backlog.best.id) {
+                logRepair(
+                    `tick=${Game.time} refresh_retarget mission=${mission.id || mission.key || '-'} room=${room.name} ` +
+                    `from=${mission.targetId || '-'} to=${backlog.best.id}`
+                );
+                mission.targetId = backlog.best.id;
+            }
             currentTarget = backlog.best ? ((roomMemo && roomMemo.structureById && roomMemo.structureById[backlog.best.id]) || Game.getObjectById(backlog.best.id)) : null;
+            const queueTop = backlog.orderedIds.slice(0, 5).join(',') || '-';
+            logRepair(
+                `tick=${Game.time} refresh_backlog mission=${mission.id || mission.key || '-'} room=${room.name} ` +
+                `queue=${backlog.orderedIds.length} best=${backlog.best ? backlog.best.id : '-'} ` +
+                `deficit=${backlog.totalDeficitHits} gatePassed=${backlog.gatePassed ? 1 : 0} top=${queueTop}`
+            );
         }
 
         if (currentTarget) {
@@ -329,10 +375,20 @@ module.exports = {
 
             const critical = currentTarget.hitsMax > 0 && (currentTarget.hits / currentTarget.hitsMax) < 0.7;
             mission.priority = critical ? 85 : 65;
+            logRepair(
+                `tick=${Game.time} refresh_target mission=${mission.id || mission.key || '-'} ` +
+                `target=${currentTarget.id} type=${currentTarget.structureType} hits=${currentTarget.hits}/${currentTarget.hitsMax} ` +
+                `targetHits=${mission.meta.targetHits || '-'} assigned=${mission.assigned.primary.length} priority=${mission.priority}`
+            );
+        } else {
+            logRepair(
+                `tick=${Game.time} refresh_target_missing mission=${mission.id || mission.key || '-'} ` +
+                `room=${room ? room.name : roomName} targetId=${mission.targetId || '-'}`
+            );
         }
 
         mission.demand = {
-            role: 'repairer',
+            role: 'worker',
             count: Math.max(0, mission.meta.minCount - mission.assigned.primary.length),
             bodyProfile: 'worker'
         };
@@ -346,6 +402,11 @@ module.exports = {
             queueStore: REPAIR_QUEUE_HEAP_STORE,
             queueKey: getRepairQueueKey(room ? room.name : (mission.targetRoom || mission.sponsorRoom))
         };
+        logRepair(
+            `tick=${Game.time} refresh_demand mission=${mission.id || mission.key || '-'} contract=${mission.meta.missionName} ` +
+            `assigned=${mission.assigned.primary.length} demand=${mission.demand.count} role=${mission.demand.role} ` +
+            `bodyProfile=${mission.demand.bodyProfile}`
+        );
     },
 
     isComplete(mission, runtimeCtx) {
@@ -354,12 +415,20 @@ module.exports = {
         if (!room) return false;
         const structureById = buildStructureByIdIndex(runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null, getRoomCache(room));
         const ids = readRepairQueue(roomName);
-        if (!ids || ids.length <= 0) return true;
+        if (!ids || ids.length <= 0) {
+            logRepair(
+                `tick=${Game.time} complete_true mission=${mission.id || mission.key || '-'} room=${roomName} reason=empty_queue`
+            );
+            return true;
+        }
         for (let i = 0; i < ids.length; i++) {
             const structure = (structureById && structureById[ids[i]]) || Game.getObjectById(ids[i]);
             if (!structure || isFortifyTarget(structure)) continue;
             if (structure.hits < getRepairThreshold(structure)) return false;
         }
+        logRepair(
+            `tick=${Game.time} complete_true mission=${mission.id || mission.key || '-'} room=${roomName} reason=all_targets_healthy`
+        );
         return true;
     },
 
@@ -367,7 +436,7 @@ module.exports = {
         return {
             name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `repair:${mission.targetId}`,
             type: 'repair',
-            archetype: 'repairer',
+            archetype: 'worker',
             targetId: mission.targetId,
             data: {
                 sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [],
@@ -376,10 +445,12 @@ module.exports = {
                     : [],
                 fortify: false,
                 allowPartial: true,
-                targetHits: mission.data && Number.isFinite(mission.data.targetHits) ? mission.data.targetHits : null
+                targetHits: mission.data && Number.isFinite(mission.data.targetHits) ? mission.data.targetHits : null,
+                queueStore: mission.data && mission.data.queueStore ? mission.data.queueStore : null,
+                queueKey: mission.data && mission.data.queueKey ? mission.data.queueKey : null
             },
             requirements: {
-                archetype: 'repairer',
+                archetype: 'worker',
                 requiredWork: REPAIR_WORKER_TUNING.desiredWork,
                 minCount: REPAIR_WORKER_TUNING.minCount,
                 maxCount: REPAIR_WORKER_TUNING.maxCount,

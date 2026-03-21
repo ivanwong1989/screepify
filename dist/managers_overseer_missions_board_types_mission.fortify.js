@@ -314,7 +314,7 @@ module.exports = {
             lastProgressTick: now,
             targetId: context.targetId,
             assigned: { primary: [], support: [] },
-            demand: { role: 'repairer', count: 1, bodyProfile: 'worker' },
+            demand: { role: 'worker', count: 1, bodyProfile: 'worker' },
             progress: {
                 stage: 'fortify',
                 lastHits: 0
@@ -379,7 +379,7 @@ module.exports = {
         }
 
         mission.demand = {
-            role: 'repairer',
+            role: 'worker',
             count: Math.max(0, mission.meta.minCount - mission.assigned.primary.length),
             bodyProfile: 'worker'
         };
@@ -418,7 +418,7 @@ module.exports = {
         return {
             name: mission.meta && mission.meta.missionName ? mission.meta.missionName : `fortify:${mission.targetId}`,
             type: 'fortify',
-            archetype: 'repairer',
+            archetype: 'worker',
             targetId: mission.targetId,
             data: {
                 sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : [],
@@ -427,10 +427,12 @@ module.exports = {
                     : [],
                 fortify: true,
                 allowPartial: true,
-                targetHits: mission.data && Number.isFinite(mission.data.targetHits) ? mission.data.targetHits : null
+                targetHits: mission.data && Number.isFinite(mission.data.targetHits) ? mission.data.targetHits : null,
+                queueStore: mission.data && mission.data.queueStore ? mission.data.queueStore : null,
+                queueKey: mission.data && mission.data.queueKey ? mission.data.queueKey : null
             },
             requirements: {
-                archetype: 'repairer',
+                archetype: 'worker',
                 requiredWork: FORTIFY_WORKER_TUNING.desiredWork,
                 minCount: FORTIFY_WORKER_TUNING.minCount,
                 maxCount: FORTIFY_WORKER_TUNING.maxCount,

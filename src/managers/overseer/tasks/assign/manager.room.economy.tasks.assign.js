@@ -39,6 +39,34 @@ var managerTasks = {
         debug('mission.logistics', `[SimpleCoreAssign] ${message}`);
     },
 
+    isRepairMissionShape: function(missionType, missionName) {
+        if (missionType === 'repair' || missionType === 'fortify') return true;
+        if (!missionName || typeof missionName !== 'string') return false;
+        return missionName.indexOf('repair:') === 0 || missionName.indexOf('fortify:') === 0;
+    },
+
+    logRepairAssign: function(message) {
+        if (typeof debug !== 'function') return;
+        debug('mission.repair', `[RepairAssign] ${message}`);
+    },
+
+    unassignCreepMission: function(creep, reason, mission) {
+        if (!creep || !creep.memory) return;
+        const missionName = creep.memory.missionName || '-';
+        const missionType = mission && mission.type ? mission.type : null;
+        if (this.isRepairMissionShape(missionType, missionName)) {
+            this.logRepairAssign(
+                `tick=${Game.time} unassign reason=${reason || 'unknown'} creep=${creep.name} role=${creep.memory.role || '-'} ` +
+                `mission=${missionName} missionType=${missionType || '-'} room=${creep.room && creep.room.name ? creep.room.name : '-'} ` +
+                `home=${creep.memory.room || '-'}`
+            );
+        }
+        delete creep.memory.missionName;
+        delete creep.memory.taskState;
+        delete creep.memory.scout;
+        delete creep.memory.task;
+    },
+
     getMissionNeeds: function(mission) {
         // Cache on the mission object for this tick only.
         if (mission && mission._needsTick === Game.time && mission._needs) return mission._needs;
@@ -230,6 +258,16 @@ var managerTasks = {
         const remoteByHome = this.getRemoteCreepsByHomeRoom();
         const remote = remoteByHome[room.name] || { assigned: [], idle: [] };
         const allOwnedCreeps = localCreeps.concat(remote.assigned || [], remote.idle || []);
+        for (let i = 0; i < allOwnedCreeps.length; i++) {
+            const creep = allOwnedCreeps[i];
+            if (!creep || !creep.memory) continue;
+            if (creep.memory.role === 'repairer') {
+                creep.memory.role = 'worker';
+                this.logRepairAssign(
+                    `tick=${Game.time} migrate_role creep=${creep.name} from=repairer to=worker room=${room.name}`
+                );
+            }
+        }
         this.assignCoreLaneMission(room, allOwnedCreeps);
 
         const managedLocalCreeps = localCreeps.filter(c => !this.isCoreLaneAssigned(c) && !this.isMiningLaneAssigned(c));
@@ -287,10 +325,7 @@ var managerTasks = {
                                     `room=${creep.room && creep.room.name ? creep.room.name : '-'} home=${home || '-'}`
                                 );
                             }
-                            delete creep.memory.missionName;
-                            delete creep.memory.taskState;
-                            delete creep.memory.scout;
-                            delete creep.memory.task;
+                            this.unassignCreepMission(creep, 'away_from_home', missionStatus[missionName].mission);
                             //creep.say('home');
                             return;
                         }
@@ -314,10 +349,7 @@ var managerTasks = {
                                 `mission=${missionName} role=${creep.memory.role || '-'} req=${req.archetype || '-'}`
                             );
                         }
-                        delete creep.memory.missionName;
-                        delete creep.memory.taskState;
-                        delete creep.memory.scout;
-                        delete creep.memory.task;
+                        this.unassignCreepMission(creep, 'role_mismatch', missionStatus[missionName].mission);
                         //creep.say('role');
                         return;
                     }
@@ -342,6 +374,13 @@ var managerTasks = {
                     missionStatus[missionName].assignedCarryParts += p.carry;
                     missionStatus[missionName].assignedClaimParts += p.claim;
                     missionStatus[missionName].assignedCreeps.push(creep);
+                    if (this.isRepairMissionShape(missionStatus[missionName].mission.type, missionName)) {
+                        this.logRepairAssign(
+                            `tick=${Game.time} keep_assigned creep=${creep.name} mission=${missionName} ` +
+                            `type=${missionStatus[missionName].mission.type} role=${creep.memory.role || '-'} ` +
+                            `assignedCount=${missionStatus[missionName].assignedCount}`
+                        );
+                    }
                 } else {
                     // Mission was removed by Overseer (completed or strategy changed)
                     // Release the creep
@@ -351,10 +390,7 @@ var managerTasks = {
                             `mission=${missionName} role=${creep.memory.role || '-'}`
                         );
                     }
-                    delete creep.memory.missionName;
-                    delete creep.memory.taskState;
-                    delete creep.memory.scout;
-                    delete creep.memory.task;
+                    this.unassignCreepMission(creep, 'mission_missing', null);
                     creep.say('?');
                 }
             }
@@ -385,6 +421,16 @@ var managerTasks = {
                 }
                 creep.memory.missionName = bestMission.name;
                 creep.memory.taskState = 'init'; // Initialize state
+                if (this.isRepairMissionShape(bestMission.type, bestMission.name)) {
+                    const req = bestMission.requirements || {};
+                    const status = missionStatus[bestMission.name];
+                    this.logRepairAssign(
+                        `tick=${Game.time} assign creep=${creep.name} role=${creep.memory.role || '-'} mission=${bestMission.name} ` +
+                        `type=${bestMission.type} prio=${bestMission.priority || 0} ` +
+                        `assignedBefore=${status ? status.assignedCount : 0} min=${Number.isFinite(req.minCount) ? req.minCount : 0} ` +
+                        `max=${Number.isFinite(req.maxCount) ? req.maxCount : '-'} reqArchetype=${req.archetype || '-'}`
+                    );
+                }
                 if (bestMission.type === 'remote_haul' && creep.memory.role === 'remote_hauler') {
                     const missionContractId = this.getMissionContractId(
                         creep.memory.room,
@@ -667,23 +713,19 @@ var managerTasks = {
         switch (mission.type) {
             case 'hauler_fleet':
                 // Release creep from fleet mission so it can pick up real work
-                delete creep.memory.missionName;
-                delete creep.memory.taskState;
+                this.unassignCreepMission(creep, 'fleet_release_hauler', mission);
                 break;
             case 'remote_hauler_fleet':
                 // Release creep from fleet mission so it can pick up real work
-                delete creep.memory.missionName;
-                delete creep.memory.taskState;
+                this.unassignCreepMission(creep, 'fleet_release_remote_hauler', mission);
                 break;
             case 'worker_fleet':
                 // Release creep from fleet mission so it can pick up real work
-                delete creep.memory.missionName;
-                delete creep.memory.taskState;
+                this.unassignCreepMission(creep, 'fleet_release_worker', mission);
                 break;
             case 'remote_worker_fleet':
                 // Release creep from fleet mission so it can pick up real work
-                delete creep.memory.missionName;
-                delete creep.memory.taskState;
+                this.unassignCreepMission(creep, 'fleet_release_remote_worker', mission);
                 break;
             case 'harvest':
                 // Harvest miners execute directly in role.miner.

@@ -1004,6 +1004,59 @@ function getStoreAmount(obj, resourceType) {
     return 0;
 }
 
+function addTransitAmount(store, id, resourceType, amount) {
+    if (!store || !id || !resourceType || amount <= 0) return;
+    if (!store[id]) store[id] = Object.create(null);
+    store[id][resourceType] = (store[id][resourceType] || 0) + amount;
+}
+
+function getTransitAmount(store, id, resourceType) {
+    if (!store || !id || !resourceType) return 0;
+    const byResource = store[id];
+    if (!byResource) return 0;
+    return byResource[resourceType] || 0;
+}
+
+function parseStockJobId(jobId) {
+    if (typeof jobId !== 'string' || !jobId.startsWith('stock:')) return null;
+    const parts = jobId.split(':');
+    if (parts.length < 4) return null;
+    return {
+        sourceId: parts[1] || null,
+        targetId: parts[2] || null,
+        resourceType: parts.slice(3).join(':') || null
+    };
+}
+
+function getTerminalStockTransitState(room) {
+    const state = {
+        committedToTerminal: Object.create(null),
+        targetReservations: Object.create(null)
+    };
+    if (!room || !room.storage || !room.terminal) return state;
+
+    const roomName = room.name;
+    for (const name in Game.creeps) {
+        const creep = Game.creeps[name];
+        if (!creep || !creep.my || !creep.memory) continue;
+        if (creep.memory.missionType !== 'logisticsCoreV2') continue;
+        const creepRoomName = (creep.room && creep.room.name) || creep.memory.room || null;
+        if (creepRoomName !== roomName) continue;
+
+        const parsed = parseStockJobId(creep.memory.coreLaneJobId);
+        if (!parsed || !parsed.resourceType) continue;
+        const carried = creep.store ? (creep.store[parsed.resourceType] || 0) : 0;
+        if (carried <= 0) continue;
+
+        if (parsed.sourceId === room.terminal.id || parsed.targetId === room.terminal.id) {
+            state.committedToTerminal[parsed.resourceType] = (state.committedToTerminal[parsed.resourceType] || 0) + carried;
+        }
+        addTransitAmount(state.targetReservations, parsed.targetId, parsed.resourceType, carried);
+    }
+
+    return state;
+}
+
 function getTerminalStockJobs(room) {
     if (!room || !room.storage || !room.terminal) return [];
     const storage = room.storage;
@@ -1015,14 +1068,15 @@ function getTerminalStockJobs(room) {
         : {};
     const jobs = [];
     const seen = new Set();
+    const transit = getTerminalStockTransitState(room);
 
     const terminalEnergyTarget = (managerTerminal && typeof managerTerminal.getTerminalEnergyTarget === 'function')
         ? Math.max(0, Math.floor(managerTerminal.getTerminalEnergyTarget(room.name) || 0))
         : null;
     if (Number.isFinite(terminalEnergyTarget)) {
-        const terminalEnergy = terminal.store[RESOURCE_ENERGY] || 0;
+        const terminalEnergy = (terminal.store[RESOURCE_ENERGY] || 0) + (transit.committedToTerminal[RESOURCE_ENERGY] || 0);
         const storageEnergy = storage.store[RESOURCE_ENERGY] || 0;
-        const storageEnergyFree = storage.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+        const storageEnergyFree = Math.max(0, (storage.store.getFreeCapacity(RESOURCE_ENERGY) || 0) - getTransitAmount(transit.targetReservations, storage.id, RESOURCE_ENERGY));
 
         if (terminalEnergy > terminalEnergyTarget) {
             const excess = Math.min(terminalEnergy - terminalEnergyTarget, storageEnergyFree);
@@ -1066,11 +1120,12 @@ function getTerminalStockJobs(room) {
     const keys = new Set();
     Object.keys(targets).forEach(k => keys.add(k));
     Object.keys(terminal.store || {}).forEach(k => keys.add(k));
+    Object.keys(transit.committedToTerminal || {}).forEach(k => keys.add(k));
 
     keys.forEach(resourceType => {
         if (!resourceType || resourceType === RESOURCE_ENERGY) return;
         const target = Number(targets[resourceType] || 0);
-        const termAmt = terminal.store[resourceType] || 0;
+        const termAmt = (terminal.store[resourceType] || 0) + (transit.committedToTerminal[resourceType] || 0);
 
         if (target > 0) {
             const deadband = clampNumber(Math.ceil(target * 0.05), 50, 50, 2000);
@@ -1079,7 +1134,7 @@ function getTerminalStockJobs(room) {
 
             if (termAmt < lo) {
                 const storageAmt = storage.store[resourceType] || 0;
-                const need = Math.min(target - termAmt, storageAmt);
+                const need = Math.min(lo - termAmt, storageAmt);
                 if (need > 0) {
                     const id = `stock:${storage.id}:${terminal.id}:${resourceType}`;
                     if (!seen.has(id)) {
@@ -1100,8 +1155,8 @@ function getTerminalStockJobs(room) {
             }
 
             if (termAmt > hi) {
-                const storageFree = storage.store.getFreeCapacity(resourceType) || 0;
-                const excess = Math.min(termAmt - target, storageFree);
+                const storageFree = Math.max(0, (storage.store.getFreeCapacity(resourceType) || 0) - getTransitAmount(transit.targetReservations, storage.id, resourceType));
+                const excess = Math.min(termAmt - hi, storageFree);
                 if (excess > 0) {
                     const id = `stock:${terminal.id}:${storage.id}:${resourceType}`;
                     if (!seen.has(id)) {
@@ -1123,7 +1178,7 @@ function getTerminalStockJobs(room) {
         }
 
         if (termAmt > 0) {
-            const storageFree = storage.store.getFreeCapacity(resourceType) || 0;
+            const storageFree = Math.max(0, (storage.store.getFreeCapacity(resourceType) || 0) - getTransitAmount(transit.targetReservations, storage.id, resourceType));
             const flushAll = Math.min(termAmt, storageFree);
             if (flushAll > 0) {
                 const id = `stock:${terminal.id}:${storage.id}:${resourceType}`;
@@ -1529,7 +1584,9 @@ module.exports = {
                     isLoop: builtCore.isLoop === true,
                     headPos: clonePos(headPos),
                     endPos: resolvedCoreEndPos,
-                    stopsByIndex: buildStopsByIndex(room, builtCore.path, coreLaneTargets, roomMemo)
+                    stopsByIndex: null,
+                    stopsTargetSignature: '',
+                    stopsBuiltTick: 0
                 };
                 logLogisticsDebug(
                     `[LogisticsCoreV2] ${room.name} rebuild core mode=${coreFlag ? 'flag' : 'auto'} loop=${runtime.paths.core.isLoop ? 1 : 0} ` +
@@ -1571,9 +1628,15 @@ module.exports = {
             runtime.lastBuiltTick = Game.time;
         }
 
-        // Keep lane stops current even when path does not rebuild.
         if (runtime.paths && runtime.paths.core && Array.isArray(runtime.paths.core.path)) {
-            runtime.paths.core.stopsByIndex = buildStopsByIndex(room, runtime.paths.core.path, coreLaneTargets, roomMemo);
+            const stopsNeedRebuild =
+                !runtime.paths.core.stopsByIndex ||
+                runtime.paths.core.stopsTargetSignature !== coreTargetSignature;
+            if (stopsNeedRebuild) {
+                runtime.paths.core.stopsByIndex = buildStopsByIndex(room, runtime.paths.core.path, coreLaneTargets, roomMemo);
+                runtime.paths.core.stopsTargetSignature = coreTargetSignature;
+                runtime.paths.core.stopsBuiltTick = Game.time;
+            }
         }
 
         const labsPath = runtime.paths && runtime.paths.labs ? runtime.paths.labs.path : null;
