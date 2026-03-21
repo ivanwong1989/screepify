@@ -1,21 +1,23 @@
 const missionRegistry = require('managers_overseer_missions_board_missionRegistry');
-const missionHarvest = require('managers_overseer_missions_board_types_mission.harvest');
-const missionSimpleHarvest = require('managers_overseer_missions_board_types_mission.simpleHarvest');
-const missionBuild = require('managers_overseer_missions_board_types_mission.build');
-const missionRepair = require('managers_overseer_missions_board_types_mission.repair');
-const missionFortify = require('managers_overseer_missions_board_types_mission.fortify');
-const missionUpgrade = require('managers_overseer_missions_board_types_mission.upgrade');
-const missionLogisticsCoreV2 = require('managers_overseer_missions_board_types_mission.logisticsCoreV2');
-const missionLogisticsSimpleCore = require('managers_overseer_missions_board_types_mission.logisticsSimpleCore');
-const missionLogisticsSimpleMining = require('managers_overseer_missions_board_types_mission.logisticsSimpleMining');
-const missionLogisticsMiningV2 = require('managers_overseer_missions_board_types_mission.logisticsMiningV2');
-const missionRemoteHarvest = require('managers_overseer_missions_board_types_mission.remoteHarvest');
-const missionRemoteHaul = require('managers_overseer_missions_board_types_mission.remoteHaul');
-const missionScout = require('managers_overseer_missions_board_types_mission.scout');
-const missionMineral = require('managers_overseer_missions_board_types_mission.mineral');
-const missionUserRemoteMove2Flag = require('managers_overseer_missions_board_types_mission.userRemoteMove2Flag');
-const missionTower = require('managers_overseer_missions_board_types_mission.tower');
-const missionRemoteBuild = require('managers_overseer_missions_board_types_mission.remoteBuild');
+const { profRequire } = require('utils_profRequire');
+
+const missionHarvest = profRequire('managers_overseer_missions_board_types_mission.harvest', 'mission.harvest');
+const missionSimpleHarvest = profRequire('managers_overseer_missions_board_types_mission.simpleHarvest', 'mission.simpleHarvest');
+const missionBuild = profRequire('managers_overseer_missions_board_types_mission.build', 'mission.build');
+const missionRepair = profRequire('managers_overseer_missions_board_types_mission.repair', 'mission.repair');
+const missionFortify = profRequire('managers_overseer_missions_board_types_mission.fortify', 'mission.fortify');
+const missionUpgrade = profRequire('managers_overseer_missions_board_types_mission.upgrade', 'mission.upgrade');
+const missionLogisticsCoreV2 = profRequire('managers_overseer_missions_board_types_mission.logisticsCoreV2', 'mission.logisticsCoreV2');
+const missionLogisticsSimpleCore = profRequire('managers_overseer_missions_board_types_mission.logisticsSimpleCore', 'mission.logisticsSimpleCore');
+const missionLogisticsSimpleMining = profRequire('managers_overseer_missions_board_types_mission.logisticsSimpleMining', 'mission.logisticsSimpleMining');
+const missionLogisticsMiningV2 = profRequire('managers_overseer_missions_board_types_mission.logisticsMiningV2', 'mission.logisticsMiningV2');
+const missionRemoteHarvest = profRequire('managers_overseer_missions_board_types_mission.remoteHarvest', 'mission.remoteHarvest');
+const missionRemoteHaul = profRequire('managers_overseer_missions_board_types_mission.remoteHaul', 'mission.remoteHaul');
+const missionScout = profRequire('managers_overseer_missions_board_types_mission.scout', 'mission.scout');
+const missionMineral = profRequire('managers_overseer_missions_board_types_mission.mineral', 'mission.mineral');
+const missionUserRemoteMove2Flag = profRequire('managers_overseer_missions_board_types_mission.userRemoteMove2Flag', 'mission.userRemoteMove2Flag');
+const missionTower = profRequire('managers_overseer_missions_board_types_mission.tower', 'mission.tower');
+const missionRemoteBuild = profRequire('managers_overseer_missions_board_types_mission.remoteBuild', 'mission.remoteBuild');
 
 let registeredTick = -1;
 

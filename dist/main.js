@@ -1,29 +1,31 @@
 var registerGlobals = require('bootstrap_globals');
 var registerConsole = require('console_index');
 var MemoryHack = require('utils_memoryHack');
+const profiler = require('screeps-profiler');
+const { profRequire } = require('utils_profRequire');
 
 MemoryHack.register();
 registerGlobals();
 registerConsole();
 
-var roleUniversal = require('role_role.universal');
-var roleEmpireUniversal = require('role_role.empire.universal');
-var roleDefender = require('role_role.defender');
-var roleAssault = require('role_role.assault');
-var roleTower = require('role_role.tower');
-var roleCoreLaneHauler = require('role_role.coreLaneHauler');
-var roleMiningLaneHauler = require('role_role.miningLaneHauler');
-var roleSimpleHaulerCore = require('role_role.simpleHaulerCore');
-var roleSimpleMiningHauler = require('role_role.simpleMiningHauler');
-var roleWorker = require('role_role.worker');
-var roleUpgrader = require('role_role.upgrader');
-var roleMiner = require('role_role.miner');
-var roleSimpleHarvest = require('role_role.simpleHarvest');
-var roleRemoteHarvest = require('role_role.remoteHarvest');
-var roleRemoteHaul = require('role_role.remoteHaul');
-var roleRemoteWorker = require('role_role.remoteWorker');
-var roleMineralMiner = require('role_role.mineralMiner');
-var roleScout = require('role_role.scout');
+var roleUniversal = profRequire('role_role.universal', 'role.universal');
+var roleEmpireUniversal = profRequire('role_role.empire.universal', 'role.empire.universal');
+var roleDefender = profRequire('role_role.defender', 'role.defender');
+var roleAssault = profRequire('role_role.assault', 'role.assault');
+var roleTower = profRequire('role_role.tower', 'role.tower');
+var roleCoreLaneHauler = profRequire('role_role.coreLaneHauler', 'role.coreLaneHauler');
+var roleMiningLaneHauler = profRequire('role_role.miningLaneHauler', 'role.miningLaneHauler');
+var roleSimpleHaulerCore = profRequire('role_role.simpleHaulerCore', 'role.simpleHaulerCore');
+var roleSimpleMiningHauler = profRequire('role_role.simpleMiningHauler', 'role.simpleMiningHauler');
+var roleWorker = profRequire('role_role.worker', 'role.worker');
+var roleUpgrader = profRequire('role_role.upgrader', 'role.upgrader');
+var roleMiner = profRequire('role_role.miner', 'role.miner');
+var roleSimpleHarvest = profRequire('role_role.simpleHarvest', 'role.simpleHarvest');
+var roleRemoteHarvest = profRequire('role_role.remoteHarvest', 'role.remoteHarvest');
+var roleRemoteHaul = profRequire('role_role.remoteHaul', 'role.remoteHaul');
+var roleRemoteWorker = profRequire('role_role.remoteWorker', 'role.remoteWorker');
+var roleMineralMiner = profRequire('role_role.mineralMiner', 'role.mineralMiner');
+var roleScout = profRequire('role_role.scout', 'role.scout');
 var runColony = require('runColony');
 var movement = require('utils_movement');
 var borderNav = require('utils_creepBorderNav');
@@ -72,11 +74,9 @@ function handleTravelToHome(creep) {
 }
 
 
-/*
+
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
-const profiler = require('screeps-profiler');
-
 profiler.registerFN(global.getRoomCache, 'utils.getRoomCache');
 profiler.registerObject(require('runColony'), 'runColony');
 profiler.registerObject(require('managers_overseer_manager.room.economy.overseer'), 'overseer');
@@ -107,14 +107,13 @@ profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'over
     ['managers_overseer_missions_board_types_mission.tower', 'mission.tower'],
     ['managers_overseer_missions_board_types_mission.remoteBuild', 'mission.remoteBuild']
 ].forEach(([moduleId, label]) => profiler.registerObject(require(moduleId), label));
-*/
 
 
 
-// This line monkey patches the global prototypes.
-//profiler.enable();
-module.exports.loop = function() {
-    //profiler.wrap(function() {
+
+if (Memory.profilerEnabled === true) profiler.enable();
+
+function runMainLoop() {
         // Main.js logic should go here.
 
         // --- Memhack ---
@@ -269,8 +268,12 @@ module.exports.loop = function() {
         // Telemetry collection and printing
         telemetry.tick();
         telemetry.print();
+}
 
-
-    //});
+module.exports.loop = function() {
+    if (Memory.profilerEnabled === true) {
+        return profiler.wrap(runMainLoop);
+    }
+    return runMainLoop();
 };
 
