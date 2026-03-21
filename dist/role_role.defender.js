@@ -90,6 +90,10 @@ function getNudgePosition(creep) {
 
 function getHomeSpawnTarget(creep) {
     if (!creep || !creep.memory || !creep.memory.room) return null;
+    const cachedPos = creep.memory.homeSpawnPos;
+    if (cachedPos && Number.isFinite(cachedPos.x) && Number.isFinite(cachedPos.y) && cachedPos.roomName) {
+        return new RoomPosition(cachedPos.x, cachedPos.y, cachedPos.roomName);
+    }
     const homeRoom = Game.rooms[creep.memory.room];
     if (!homeRoom) return null;
     let spawns;
@@ -101,6 +105,9 @@ function getHomeSpawnTarget(creep) {
         spawns = homeRoom.find(FIND_MY_SPAWNS);
     }
     if (!spawns || spawns.length === 0) return null;
+    if (spawns[0] && spawns[0].pos) {
+        creep.memory.homeSpawnPos = { x: spawns[0].pos.x, y: spawns[0].pos.y, roomName: spawns[0].pos.roomName };
+    }
     return spawns[0];
 }
 
@@ -171,8 +178,13 @@ var roleDefender = {
         // --- Global Deployment Logic ---
         // If spawned remotely, travel to home room before doing anything else.
         if (creep.memory._travellingToHome) {
-            if (creep.room.name === creep.memory.room) {
+            const homeRoomName = creep.memory.room;
+            const isInHomeRoom = homeRoomName && creep.room && creep.room.name === homeRoomName;
+            const isOnBorder = creep.pos && (creep.pos.x === 0 || creep.pos.x === 49 || creep.pos.y === 0 || creep.pos.y === 49);
+            if (isInHomeRoom && !isOnBorder) {
                 delete creep.memory._travellingToHome;
+                if (creep.memory.spawnRoom) delete creep.memory.spawnRoom;
+                if (creep.memory.homeSpawnPos) delete creep.memory.homeSpawnPos;
             } else {
                 if (!didBorderNudge) {
                     const homeSpawn = getHomeSpawnTarget(creep);

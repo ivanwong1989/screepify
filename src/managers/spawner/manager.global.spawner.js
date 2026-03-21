@@ -20,6 +20,24 @@ function getCandidateSpawnTier(candidate) {
     return 1;
 }
 
+function getHomeSpawnPosition(homeRoomName) {
+    if (!homeRoomName) return null;
+    const homeRoom = Game.rooms[homeRoomName];
+    if (!homeRoom) return null;
+    let spawns = null;
+    if (global.getRoomCache) {
+        const cache = global.getRoomCache(homeRoom);
+        spawns = cache && cache.myStructuresByType && cache.myStructuresByType[STRUCTURE_SPAWN];
+    }
+    if (!spawns || spawns.length === 0) {
+        spawns = homeRoom.find(FIND_MY_SPAWNS);
+    }
+    if (!spawns || spawns.length === 0) return null;
+    const anchor = spawns[0];
+    if (!anchor || !anchor.pos) return null;
+    return { x: anchor.pos.x, y: anchor.pos.y, roomName: anchor.pos.roomName };
+}
+
 module.exports = {
     run: function(allCandidates) {
         if (!allCandidates || allCandidates.length === 0) return;
@@ -158,6 +176,7 @@ module.exports = {
         memory.spawnRoom = spawn.room.name;
         memory.room = candidate.homeRoom || memory.room;
         memory.contractId = candidate.contractId;
+        memory.homeSpawnPos = getHomeSpawnPosition(memory.room);
 
         if (spawn.room.name !== candidate.homeRoom) {
             if (candidate.bindMode === 'pool') {

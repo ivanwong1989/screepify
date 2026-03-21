@@ -1,5 +1,3 @@
-const missionStates = require('managers_overseer_missions_board_missionStates');
-
 function hashString(str) {
     const text = String(str || '');
     let h = 0;
@@ -16,90 +14,41 @@ function shouldRunEvery(interval, offset, tick) {
     return (t + (offset || 0)) % runInterval === 0;
 }
 
-function getReconcileInterval(type) {
-    switch (type) {
-        case 'harvest': return 61;
-        case 'build': return 17;
-        case 'repair': return 17;
-        case 'pickup': return 11;
-        case 'logistics': return 9;
-        case 'logisticsCoreV2': return 7;
-        case 'logisticsSimpleCore': return 7;
-        case 'logisticsSimpleMining': return 11;
-        case 'logisticsMiningV2': return 11;
-        case 'remoteHarvest': return 47;
-        case 'remoteHaul': return 37;
-        case 'scout': return 41;
-        case 'mineral': return 61;
-        case 'tower': return 1;
-        case 'towerPassive': return 7;
-        case 'remoteBuild': return 100;
-        case 'userRemoteMove2Flag': return 7;
-        case 'labs': return 5;
-        case 'reserve': return 73;
-        case 'upgrade': return 13;
-        default: return 31;
-    }
+const MISSION_REFRESH_POLICY = Object.freeze({
+    harvest: { interval: 21 },
+    simpleHarvest: { interval: 31 },
+    build: { interval: 17 },
+    repair: { interval: 17 },
+    logisticsCoreV2: { interval: 7 },
+    logisticsSimpleCore: { interval: 7 },
+    logisticsSimpleMining: { interval: 11 },
+    logisticsMiningV2: { interval: 11 },
+    remoteHarvest: { interval: 47 },
+    remoteHaul: { interval: 31 },
+    scout: { interval: 37 },
+    mineral: { interval: 61 },
+    tower: { interval: 1 },
+    towerPassive: { interval: 7 },
+    remoteBuild: { interval: 100 },
+    userRemoteMove2Flag: { interval: 7 },
+    upgrade: { interval: 11 },
+    default: { interval: 31 }
+});
+
+function getMissionRefreshInterval(type) {
+    const policy = MISSION_REFRESH_POLICY[type] || MISSION_REFRESH_POLICY.default;
+    return Math.max(1, Number(policy && policy.interval) || 1);
 }
 
-function shouldRunReconcile(type, roomName, tick) {
-    const interval = getReconcileInterval(type);
+function shouldRunMissionRefresh(type, roomName, tick) {
+    const interval = getMissionRefreshInterval(type);
     const offset = hashString(`${type}:${roomName}`) % interval;
     return shouldRunEvery(interval, offset, tick);
 }
 
-function shouldRunScoped(scopeKey, roomName, interval, tick) {
-    const runInterval = Math.max(1, Number(interval) || 1);
-    const offset = hashString(`${scopeKey}:${roomName}`) % runInterval;
-    return shouldRunEvery(runInterval, offset, tick);
-}
-
-function shouldRunDetector(type, roomName, tick) {
-    return shouldRunReconcile(type, roomName, tick);
-}
-
-function getMissionUpdateInterval(mission) {
-    if (!mission) return 11;
-    if ((mission.priority || 0) >= 150) return 1;
-    if (mission.class === 'service') {
-        if (mission.type === 'harvest') return 21;
-        if (mission.type === 'reserve') return 47;
-        if (mission.type === 'upgrade') return 11;
-        if (mission.type === 'tower') return 3;
-        if (mission.type === 'logisticsCoreV2') return 7;
-        if (mission.type === 'logisticsSimpleCore') return 7;
-        if (mission.type === 'logisticsSimpleMining') return 11;
-        if (mission.type === 'logisticsMiningV2') return 11;
-        if (mission.type === 'remoteHarvest') return 53;
-        if (mission.type === 'remoteHaul') return 31;
-        if (mission.type === 'scout') return 37;
-        if (mission.type === 'mineral') return 61;
-        return 31;
-    }
-    if (mission.class === 'finite') {
-        return 9;
-    }
-    return 15;
-}
-
-function shouldCheckMission(mission, tick) {
-    if (!mission || missionStates.TERMINAL_STATES.has(mission.state)) return false;
-    // Finite missions represent short-lived contracts and should reconcile every tick
-    // so completion/cancellation is reflected immediately.
-    if (mission.class === 'finite') return true;
-    const now = Number.isFinite(tick) ? tick : Game.time;
-    const interval = getMissionUpdateInterval(mission);
-    if (!Number.isFinite(mission.lastCheckedTick) || mission.lastCheckedTick <= 0) return true;
-    return (now - mission.lastCheckedTick) >= interval;
-}
-
 module.exports = {
+    MISSION_REFRESH_POLICY,
     shouldRunEvery,
-    shouldRunScoped,
-    getMissionUpdateInterval,
-    shouldCheckMission,
-    getReconcileInterval,
-    shouldRunReconcile,
-    shouldRunDetector,
+    getMissionRefreshInterval,
+    shouldRunMissionRefresh,
 };
-

@@ -1,7 +1,6 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const MAX_SIMPLE_MINING_HAULERS = 4;
 
@@ -312,21 +311,28 @@ module.exports = {
         );
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (!missionThrottle.shouldRunReconcile('logisticsSimpleMining', room.name, Game.time)) return;
-        if (!shouldActivate(room)) return;
-        if (hasActiveMiningV2Mission(room.name, missionBoard)) return;
+    discover({ room, intel, context, missionBoard }) {
+        if (!room) return [];
+        if (!shouldActivate(room)) return [];
+        if (hasActiveMiningV2Mission(room.name, missionBoard)) return [];
 
         const blockedSourceIds = getV2UngatedSourceIdSet(intel);
         const simpleSourceCount = getEnergySourceCount(room, intel, blockedSourceIds);
-        if (simpleSourceCount <= 0) return;
+        if (simpleSourceCount <= 0) return [];
 
-        missionBoard.createMission('logisticsSimpleMining', {
+        const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
             priority: context && context.opState === 'EMERGENCY' ? 980 : 87
-        }, { room, intel, context });
+        };
+        return [{
+            key: this.makeKey(createContext),
+            createContext,
+            discoveredMeta: {
+                roomName: room.name,
+                sourceCount: simpleSourceCount
+            }
+        }];
     },
 
     create(context) {

@@ -1,7 +1,6 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 const heap = require('utils_heap');
 
 const CORE_END_FLAG = 'CORE_END';
@@ -185,6 +184,8 @@ function shouldActivate(room, roomMemo) {
     if (!room || !room.controller || !room.controller.my) return false;
     const spawns = roomMemo && Array.isArray(roomMemo.mySpawns) ? roomMemo.mySpawns : room.find(FIND_MY_SPAWNS);
     if (!spawns || spawns.length <= 0) return false;
+    // Simple core logistics is a pre-storage fallback; storage rooms should use logisticsCoreV2.
+    if (room.storage) return false;
     if (hasCoreLaneFlag(room)) return false;
     return true;
 }
@@ -390,17 +391,23 @@ module.exports = {
         );
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (!missionThrottle.shouldRunReconcile('logisticsSimpleCore', room.name, Game.time)) return;
+    discover({ room, intel, context }) {
+        if (!room) return [];
         const roomMemo = getSimpleCoreRoomMemo(room, getRoomCache(room));
-        if (!shouldActivate(room, roomMemo)) return;
+        if (!shouldActivate(room, roomMemo)) return [];
 
-        missionBoard.createMission('logisticsSimpleCore', {
+        const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
             priority: context && context.opState === 'EMERGENCY' ? 1000 : 100
-        }, { room, intel, context });
+        };
+        return [{
+            key: this.makeKey(createContext),
+            createContext,
+            discoveredMeta: {
+                roomName: room.name
+            }
+        }];
     },
 
     create(context) {

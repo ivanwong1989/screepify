@@ -74,6 +74,16 @@ function getNudgePosition(creep) {
 
 function getHomeSpawnTarget(creep) {
     if (!creep || !creep.memory || !creep.memory.room) return null;
+    const cachedPos = creep.memory.homeSpawnPos;
+    if (
+        cachedPos &&
+        Number.isFinite(cachedPos.x) &&
+        Number.isFinite(cachedPos.y) &&
+        cachedPos.roomName
+    ) {
+        return new RoomPosition(cachedPos.x, cachedPos.y, cachedPos.roomName);
+    }
+
     const homeRoom = Game.rooms[creep.memory.room];
     if (!homeRoom) return null;
     let spawns;
@@ -85,6 +95,12 @@ function getHomeSpawnTarget(creep) {
         spawns = homeRoom.find(FIND_MY_SPAWNS);
     }
     if (!spawns || spawns.length === 0) return null;
+    if (creep.memory) {
+        const spawn = spawns[0];
+        if (spawn && spawn.pos) {
+            creep.memory.homeSpawnPos = { x: spawn.pos.x, y: spawn.pos.y, roomName: spawn.pos.roomName };
+        }
+    }
     return spawns[0];
 }
 

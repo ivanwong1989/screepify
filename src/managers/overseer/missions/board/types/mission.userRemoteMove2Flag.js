@@ -1,8 +1,6 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
-const missionGeneratorBridge = require('managers_overseer_missions_board_utils_missionGeneratorBridge');
 const userMissions = require('userMissions');
 
 function cloneContract(contract) {
@@ -108,23 +106,31 @@ module.exports = {
         return missionKeys.makeUserMissionKey(roomName, 'userRemoteMove2Flag', userMissionId, fallback);
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !intel || !missionBoard) return;
-        if (!missionThrottle.shouldRunReconcile('userRemoteMove2Flag', room.name, Game.time)) return;
-        missionGeneratorBridge.runGeneratorAsTyped({
-            room,
-            intel,
-            context,
-            missionBoard,
-            namespace: 'userRemoteMove2Flag',
-            type: 'userRemoteMove2Flag',
-            generate: (scanRoom, scanIntel, scanContext, missions) => generateMove2FlagContracts(scanRoom, missions),
-            mapContract: (contract) => ({
+    discover({ room, intel, context }) {
+        if (!room) return [];
+        const contracts = [];
+        generateMove2FlagContracts(room, contracts);
+
+        const out = [];
+        for (let i = 0; i < contracts.length; i++) {
+            const contract = contracts[i];
+            if (!contract) continue;
+            const createContext = {
                 sponsorRoom: room.name,
-                targetRoom: (contract && contract.data && contract.data.targetPos && contract.data.targetPos.roomName) || room.name,
-                userMissionId: contract && contract.data ? contract.data.userMissionId : null
-            })
-        });
+                targetRoom: (contract.data && contract.data.targetPos && contract.data.targetPos.roomName) || room.name,
+                userMissionId: contract.data ? contract.data.userMissionId : null,
+                contract,
+                namespace: 'userRemoteMove2Flag'
+            };
+            out.push({
+                key: this.makeKey(createContext),
+                createContext,
+                discoveredMeta: {
+                    contractName: contract.name || null
+                }
+            });
+        }
+        return out;
     },
 
     create(context) {
@@ -168,8 +174,16 @@ module.exports = {
         return !!getContract(mission);
     },
 
-    refresh(mission) {
+    refresh(mission, runtimeCtx, discovered) {
         cleanupAssigned(mission);
+        const discoveredContract = discovered && discovered.createContext
+            ? discovered.createContext.contract
+            : null;
+        if (discoveredContract) {
+            mission.data = mission.data || {};
+            mission.data.contract = cloneContract(discoveredContract);
+        }
+
         const contract = getContract(mission);
         if (!contract) return;
         mission.priority = Number.isFinite(contract.priority) ? contract.priority : (mission.priority || 50);

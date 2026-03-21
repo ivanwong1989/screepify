@@ -12,10 +12,8 @@ const missionRemoteHarvest = require('managers_overseer_missions_board_types_mis
 const missionRemoteHaul = require('managers_overseer_missions_board_types_mission.remoteHaul');
 const missionScout = require('managers_overseer_missions_board_types_mission.scout');
 const missionMineral = require('managers_overseer_missions_board_types_mission.mineral');
-const missionContract = require('managers_overseer_missions_board_types_mission.contract');
 const missionUserRemoteMove2Flag = require('managers_overseer_missions_board_types_mission.userRemoteMove2Flag');
 const missionTower = require('managers_overseer_missions_board_types_mission.tower');
-const missionLabs = require('managers_overseer_missions_board_types_mission.labs');
 const missionRemoteBuild = require('managers_overseer_missions_board_types_mission.remoteBuild');
 
 let registeredTick = -1;
@@ -35,10 +33,8 @@ function ensureRegistered() {
     missionRegistry.register('remoteHaul', missionRemoteHaul);
     missionRegistry.register('scout', missionScout);
     missionRegistry.register('mineral', missionMineral);
-    missionRegistry.register('contract', missionContract);
     missionRegistry.register('userRemoteMove2Flag', missionUserRemoteMove2Flag);
     missionRegistry.register('tower', missionTower);
-    missionRegistry.register('labs', missionLabs);
     missionRegistry.register('remoteBuild', missionRemoteBuild);
     registeredTick = Game.time;
 }

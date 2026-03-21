@@ -518,7 +518,6 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const TOWER_PLAN_STORE = 'towerPlanByRoom';
 const TOWER_POLICY_NAMES = [
@@ -583,26 +582,32 @@ module.exports = {
         );
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !intel || !missionBoard) return;
-        if (!missionThrottle.shouldRunReconcile('tower', room.name, Game.time)) return;
+    discover({ room, intel, context }) {
+        if (!room || !intel) return [];
 
-        const hasHostiles = Array.isArray(intel.hostiles) && intel.hostiles.length > 0;
-        const live = missionBoard.listLiveByRoom(room.name);
-        const existingTower = live.some(m => m && m.type === 'tower');
-        if (!hasHostiles && existingTower && !missionThrottle.shouldRunReconcile('towerPassive', room.name, Game.time)) {
-            return;
-        }
-
+        const contractsByName = getRoomContracts(room, intel, context);
+        const out = [];
         for (let i = 0; i < TOWER_POLICY_NAMES.length; i++) {
             const policyName = TOWER_POLICY_NAMES[i];
-            missionBoard.createMission('tower', {
+            const contract = contractsByName[policyName] || null;
+            if (!contract) continue;
+
+            const createContext = {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
                 namespace: 'tower',
-                policyName
-            }, { room, intel, context });
+                policyName,
+                contract
+            };
+            out.push({
+                key: this.makeKey(createContext),
+                createContext,
+                discoveredMeta: {
+                    policyName
+                }
+            });
         }
+        return out;
     },
 
     create(context) {

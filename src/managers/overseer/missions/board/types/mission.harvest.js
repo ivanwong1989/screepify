@@ -2,7 +2,6 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const HARVEST_TRAVEL_CACHE_TTL = 200;
 const HARVEST_TRAVEL_STORE = 'harvestTravel';
@@ -614,30 +613,39 @@ module.exports = {
         return missionKeys.makeHarvestKey(roomName, context.sourceId);
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (!missionThrottle.shouldRunReconcile('harvest', room.name, Game.time)) return;
+    discover({ room, intel, context }) {
+        if (!room) return [];
         const roomCache = getRoomCache(room);
         const roomMemo = getHarvestRoomMemo(room, intel, roomCache);
-        if (!shouldActivateHarvest(room, intel, roomCache, roomMemo)) return;
+        if (!shouldActivateHarvest(room, intel, roomCache, roomMemo)) return [];
 
         const sources = roomMemo.sources;
         const simpleHarvestAnchorSourceId = shouldUseHybridEarlyHarvest(room, intel, roomCache, roomMemo)
             ? pickSimpleHarvestAnchorSourceId(room, intel, roomCache, roomMemo)
             : null;
+        const out = [];
 
         for (let i = 0; i < sources.length; i++) {
             const source = sources[i];
             if (!source || !source.id) continue;
             if (simpleHarvestAnchorSourceId && source.id === simpleHarvestAnchorSourceId) continue;
-            missionBoard.createMission('harvest', {
+            const createContext = {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
                 sourceId: source.id,
                 availableSpaces: Number.isFinite(source.availableSpaces) ? source.availableSpaces : 1,
                 priority: context && context.opState === 'EMERGENCY' ? 1000 : 100
-            }, { room, intel, context });
+            };
+            out.push({
+                key: this.makeKey(createContext),
+                createContext,
+                discoveredMeta: {
+                    sourceId: source.id
+                }
+            });
         }
+
+        return out;
     },
 
     create(context) {

@@ -1,5 +1,13 @@
 const trafficManager = require('traffic_screeps-traffic-manager');
 
+function unpackPackedCoord(packed) {
+    if (!Number.isFinite(packed)) return null;
+    const x = packed % 50;
+    const y = (packed - x) / 50;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+}
+
 function getRoomTrafficState(room) {
     if (!room) return null;
 
@@ -54,6 +62,7 @@ function clearTrafficTemp(creep) {
     if (!creep) return;
     delete creep._trafficManaged;
     delete creep._trafficBlockerMovable;
+    delete creep._trafficStrict;
     delete creep._intendedPackedCoord;
     delete creep._matchedPackedCoord;
     delete creep._possibleMoves;
@@ -86,6 +95,7 @@ function finalizeRoom(room, costs) {
         posBefore[creep.name] = `${creep.pos.x},${creep.pos.y}`;
         creep._trafficManaged = state.managed.has(creep.name);
         creep._trafficBlockerMovable = state.blockerMovable.has(creep.name);
+        creep._trafficStrict = state.strict.has(creep.name);
     }
 
     if (managedCount > 0) {
@@ -94,6 +104,7 @@ function finalizeRoom(room, costs) {
 
     let movedCount = 0;
     if (Memory.debugTraffic) {
+        const stallLines = [];
         for (let i = 0; i < allCreepsInRoom.length; i++) {
             const creep = allCreepsInRoom[i];
             const before = posBefore[creep.name];
@@ -111,6 +122,22 @@ function finalizeRoom(room, costs) {
                     debug('traffic', `[TrafficBuild] displaced ${creep.name} ${room.name} ${before}->${after}`);
                 }
             }
+
+            if (
+                before === after &&
+                creep._trafficManaged === true &&
+                Number.isFinite(creep._intendedPackedCoord)
+            ) {
+                const intended = unpackPackedCoord(creep._intendedPackedCoord);
+                const matched = unpackPackedCoord(creep._matchedPackedCoord);
+                const moveParts = creep.body ? creep.body.filter(p => p.type === MOVE && p.hits > 0).length : 0;
+                stallLines.push(
+                    `${creep.name} pos=${creep.pos.x},${creep.pos.y} ` +
+                    `intended=${intended ? `${intended.x},${intended.y}` : '-'} ` +
+                    `matched=${matched ? `${matched.x},${matched.y}` : '-'} ` +
+                    `fatigue=${creep.fatigue || 0} moveParts=${moveParts}`
+                );
+            }
         }
 
         if (typeof debug === 'function') {
@@ -118,6 +145,9 @@ function finalizeRoom(room, costs) {
                 'traffic',
                 `[TrafficFinalize] room=${room.name} managed=${managedCount} blockerMovable=${blockerCount} moved=${movedCount}`
             );
+            if (movedCount === 0 && stallLines.length > 0) {
+                debug('traffic', `[TrafficStall] room=${room.name} ${stallLines.slice(0, 8).join(' | ')}`);
+            }
         }
     }
 

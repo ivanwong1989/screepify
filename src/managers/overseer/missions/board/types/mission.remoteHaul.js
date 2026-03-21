@@ -6,7 +6,6 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const REMOTE_HAUL_LANE_LAYOUT_VERSION = 4;
 const TARGET_WORK = 7;
@@ -268,33 +267,15 @@ module.exports = {
         );
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !intel || !missionBoard) return;
-        if (context && context.opState === 'EMERGENCY') return;
-        if (!getDropoffTarget(room, intel)) return;
-        const live = missionBoard.listLiveByRoom(room.name);
-        const liveRemoteHaul = [];
-        for (let i = 0; i < live.length; i++) {
-            const mission = live[i];
-            if (mission && mission.type === 'remoteHaul') liveRemoteHaul.push(mission);
-        }
-        if (liveRemoteHaul.length > 0 && !missionThrottle.shouldRunReconcile('remoteHaul', room.name, Game.time)) {
-            return;
-        }
+    discover({ room, intel, context }) {
+        if (!room || !intel) return [];
+        if (context && context.opState === 'EMERGENCY') return [];
+        if (!getDropoffTarget(room, intel)) return [];
 
         const opState = context && context.opState ? context.opState : null;
         const remoteCtx = getRemoteContextIndex(room, opState);
         const entries = remoteCtx.entries;
-
-        for (let i = 0; i < liveRemoteHaul.length; i++) {
-            const mission = liveRemoteHaul[i];
-            if (!mission) continue;
-            const remoteRoom = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
-            const enabledRemote = remoteRoom ? remoteCtx.byName[remoteRoom] : null;
-            if (remoteRoom && !(enabledRemote && enabledRemote.enabled)) {
-                missionBoard.markCancelled(mission.id, 'remote_room_not_enabled');
-            }
-        }
+        const out = [];
 
         for (let i = 0; i < entries.length; i++) {
             const wrapped = entries[i];
@@ -306,14 +287,24 @@ module.exports = {
             for (let j = 0; j < entry.sourcesInfo.length; j++) {
                 const source = entry.sourcesInfo[j];
                 if (!source || !source.id) continue;
-                missionBoard.createMission('remoteHaul', {
+                const createContext = {
                     sponsorRoom: room.name,
                     remoteRoom,
                     sourceId: source.id,
                     priority: 70
-                }, { room, intel, context });
+                };
+                out.push({
+                    key: this.makeKey(createContext),
+                    createContext,
+                    discoveredMeta: {
+                        remoteRoom,
+                        sourceId: source.id
+                    }
+                });
             }
         }
+
+        return out;
     },
 
     create(context) {

@@ -1,7 +1,6 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const BUILD_WORKER_TUNING = Object.freeze({
     desiredWorkBase: 1,
@@ -127,23 +126,23 @@ module.exports = {
         return missionKeys.makeBuildKey(context.targetRoom || context.sponsorRoom, context.siteId);
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (context && context.opState === 'EMERGENCY') return;
-        if (!missionThrottle.shouldRunReconcile('build', room.name, Game.time)) return;
+    discover({ room, intel, context }) {
+        if (!room) return [];
+        if (context && context.opState === 'EMERGENCY') return [];
 
         const roomCache = getRoomCache(room);
         const sites = getBuildSites(room, intel, roomCache);
-        if (!sites || sites.length === 0) return;
+        if (!sites || sites.length === 0) return [];
 
         const rcl = (room.controller && room.controller.level) || 1;
         const requiredWork = getDesiredBuildWork(rcl);
         const countBounds = getBuildCountBounds(room, null);
+        const out = [];
 
         for (let i = 0; i < sites.length; i++) {
             const site = sites[i];
             if (!site || !site.id) continue;
-            missionBoard.createMission('build', {
+            const createContext = {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
                 siteId: site.id,
@@ -152,8 +151,17 @@ module.exports = {
                 maxCount: countBounds.maxCount,
                 hasStorage: hasRoomStorage(room),
                 priority: 60
-            }, { room, intel, context });
+            };
+            out.push({
+                key: this.makeKey(createContext),
+                createContext,
+                discoveredMeta: {
+                    siteId: site.id
+                }
+            });
         }
+
+        return out;
     },
 
     create(context) {

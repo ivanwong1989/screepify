@@ -1,7 +1,6 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -30,12 +29,12 @@ module.exports = {
         return missionKeys.makeMineralKey(context.sponsorRoom, context.mineralId);
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !intel || !missionBoard) return;
-        if (context && context.opState === 'EMERGENCY') return;
-        if (!missionThrottle.shouldRunReconcile('mineral', room.name, Game.time)) return;
+    discover({ room, intel, context }) {
+        if (!room || !intel) return [];
+        if (context && context.opState === 'EMERGENCY') return [];
 
         const minerals = Array.isArray(intel.minerals) ? intel.minerals : [];
+        const out = [];
         for (let i = 0; i < minerals.length; i++) {
             const mineral = minerals[i];
             if (!mineral || !mineral.id) continue;
@@ -44,12 +43,20 @@ module.exports = {
             if (mineral.ticksToRegeneration && mineral.ticksToRegeneration > 0) continue;
             if ((mineral.availableSpaces || 0) <= 0) continue;
 
-            missionBoard.createMission('mineral', {
+            const createContext = {
                 sponsorRoom: room.name,
                 mineralId: mineral.id,
                 priority: 40
-            }, { room, intel, context });
+            };
+            out.push({
+                key: this.makeKey(createContext),
+                createContext,
+                discoveredMeta: {
+                    mineralId: mineral.id
+                }
+            });
         }
+        return out;
     },
 
     create(context) {

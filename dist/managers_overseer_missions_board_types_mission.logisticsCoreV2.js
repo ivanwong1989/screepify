@@ -1,7 +1,6 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
 const managerTerminal = require('managers_structures_manager.terminal');
 const managerLabs = require('managers_structures_manager.labs');
@@ -26,7 +25,6 @@ const CORE_LANE_DIRECT_TYPES = new Set([
     STRUCTURE_TOWER,
     STRUCTURE_LAB,
     STRUCTURE_POWER_SPAWN,
-    STRUCTURE_FACTORY,
     STRUCTURE_NUKER
 ]);
 const CORE_SERVICE_JOB_PRIORITY = Object.freeze({
@@ -35,7 +33,6 @@ const CORE_SERVICE_JOB_PRIORITY = Object.freeze({
     [STRUCTURE_EXTENSION]: 95,
     [STRUCTURE_LAB]: 86,
     [STRUCTURE_POWER_SPAWN]: 83,
-    [STRUCTURE_FACTORY]: 80,
     [STRUCTURE_NUKER]: 78
 });
 
@@ -202,12 +199,112 @@ function getAdjacentRoadTiles(room, originPos) {
     return result;
 }
 
+function isWalkableTile(room, x, y) {
+    if (!room || x < 0 || x > 49 || y < 0 || y > 49) return false;
+    const terrain = room.getTerrain();
+    if (terrain.get(x, y) === TERRAIN_MASK_WALL) return false;
+
+    const structures = room.lookForAt(LOOK_STRUCTURES, x, y);
+    for (let i = 0; i < structures.length; i++) {
+        const s = structures[i];
+        if (!s || isWalkableStructure(s)) continue;
+        return false;
+    }
+    const sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y);
+    for (let i = 0; i < sites.length; i++) {
+        const site = sites[i];
+        if (!site) continue;
+        if (site.structureType === STRUCTURE_ROAD || site.structureType === STRUCTURE_CONTAINER) continue;
+        return false;
+    }
+    return true;
+}
+
+function tileHasRoad(room, x, y) {
+    if (!room) return false;
+    const structures = room.lookForAt(LOOK_STRUCTURES, x, y);
+    for (let i = 0; i < structures.length; i++) {
+        const s = structures[i];
+        if (s && s.structureType === STRUCTURE_ROAD) return true;
+    }
+    return false;
+}
+
+function findSharedHeadTile(room, storage, terminal, spawns, links, flag) {
+    if (!room || !storage || !Array.isArray(spawns) || spawns.length <= 0) return null;
+    const requireTerminal = !!terminal;
+    const requireLink = Array.isArray(links) && links.length > 0;
+    let best = null;
+    let bestScore = null;
+
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            const x = storage.pos.x + dx;
+            const y = storage.pos.y + dy;
+            if (!isWalkableTile(room, x, y)) continue;
+            const pos = new RoomPosition(x, y, room.name);
+            if (pos.getRangeTo(storage.pos) > 1) continue;
+            const nearSpawn = spawns.some(spawn => spawn && spawn.pos && pos.getRangeTo(spawn.pos) <= 1);
+            if (!nearSpawn) continue;
+            if (requireTerminal && pos.getRangeTo(terminal.pos) > 1) continue;
+            if (requireLink) {
+                const nearLink = links.some(link => link && link.pos && pos.getRangeTo(link.pos) <= 1);
+                if (!nearLink) continue;
+            }
+
+            const rangeToEnd = flag ? pos.getRangeTo(flag.pos) : 0;
+            const roadBias = tileHasRoad(room, x, y) ? 1 : 0;
+            const spawnMin = spawns.reduce((min, spawn) => {
+                if (!spawn || !spawn.pos) return min;
+                return Math.min(min, pos.getRangeTo(spawn.pos));
+            }, Infinity);
+            const linkMin = requireLink
+                ? links.reduce((min, link) => {
+                    if (!link || !link.pos) return min;
+                    return Math.min(min, pos.getRangeTo(link.pos));
+                }, Infinity)
+                : 0;
+            const terminalRange = requireTerminal ? pos.getRangeTo(terminal.pos) : 0;
+            const score = [
+                -roadBias,
+                rangeToEnd,
+                spawnMin + linkMin + terminalRange
+            ];
+
+            if (!best || score[0] < bestScore[0] || (score[0] === bestScore[0] && (
+                score[1] < bestScore[1] || (score[1] === bestScore[1] && score[2] < bestScore[2])
+            ))) {
+                best = pos;
+                bestScore = score;
+            }
+        }
+    }
+
+    return best;
+}
+
 function selectHeadAnchor(room, flag, roomMemo) {
     if (!room) return null;
     const spawns = roomMemo && Array.isArray(roomMemo.mySpawns) ? roomMemo.mySpawns : room.find(FIND_MY_SPAWNS);
     if (!spawns || spawns.length <= 0) return null;
 
     if (room.storage) {
+        const terminal = room.terminal || null;
+        const myStructuresByType = roomMemo && roomMemo.myStructuresByType
+            ? roomMemo.myStructuresByType
+            : Object.create(null);
+        const links = Array.isArray(myStructuresByType[STRUCTURE_LINK])
+            ? myStructuresByType[STRUCTURE_LINK]
+            : room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LINK });
+
+        const sharedTile = findSharedHeadTile(room, room.storage, terminal, spawns, links, flag);
+        if (sharedTile) {
+            return {
+                headPos: sharedTile,
+                headSourceId: room.storage.id
+            };
+        }
+
         // Priority: shared road tile adjacent to BOTH storage and at least one spawn.
         const storageRoads = getAdjacentRoadTiles(room, room.storage.pos);
         let bestSharedRoad = null;
@@ -277,13 +374,13 @@ function getCoreRefillTargets(room, roomMemo) {
 
 function getCoreLaneTargets(room, hasLabsLane, roomMemo) {
     if (!room) return [];
-    const excludeLabs = hasLabsLane === true;
     const myStructures = roomMemo && Array.isArray(roomMemo.myStructures) ? roomMemo.myStructures : room.find(FIND_MY_STRUCTURES);
     const out = [];
     for (let i = 0; i < myStructures.length; i++) {
         const s = myStructures[i];
         if (!s || !CORE_LANE_DIRECT_TYPES.has(s.structureType)) continue;
-        if (excludeLabs && s.structureType === STRUCTURE_LAB) continue;
+        // Core lane pathing should not include labs; labs are served by a dedicated labs lane.
+        if (s.structureType === STRUCTURE_LAB) continue;
         out.push(s);
     }
     return out;
@@ -918,6 +1015,54 @@ function getTerminalStockJobs(room) {
         : {};
     const jobs = [];
     const seen = new Set();
+
+    const terminalEnergyTarget = (managerTerminal && typeof managerTerminal.getTerminalEnergyTarget === 'function')
+        ? Math.max(0, Math.floor(managerTerminal.getTerminalEnergyTarget(room.name) || 0))
+        : null;
+    if (Number.isFinite(terminalEnergyTarget)) {
+        const terminalEnergy = terminal.store[RESOURCE_ENERGY] || 0;
+        const storageEnergy = storage.store[RESOURCE_ENERGY] || 0;
+        const storageEnergyFree = storage.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+
+        if (terminalEnergy > terminalEnergyTarget) {
+            const excess = Math.min(terminalEnergy - terminalEnergyTarget, storageEnergyFree);
+            if (excess > 0) {
+                const id = `stock:${terminal.id}:${storage.id}:${RESOURCE_ENERGY}`;
+                if (!seen.has(id)) {
+                    seen.add(id);
+                    jobs.push({
+                        id,
+                        kind: 'stock',
+                        sourceId: terminal.id,
+                        targetId: storage.id,
+                        resourceType: RESOURCE_ENERGY,
+                        amountHint: excess,
+                        pathKey: 'core',
+                        priority: 97
+                    });
+                }
+            }
+        } else if (terminalEnergy < terminalEnergyTarget) {
+            const need = Math.min(terminalEnergyTarget - terminalEnergy, storageEnergy);
+            if (need > 0) {
+                const id = `stock:${storage.id}:${terminal.id}:${RESOURCE_ENERGY}`;
+                if (!seen.has(id)) {
+                    seen.add(id);
+                    jobs.push({
+                        id,
+                        kind: 'stock',
+                        sourceId: storage.id,
+                        targetId: terminal.id,
+                        resourceType: RESOURCE_ENERGY,
+                        amountHint: need,
+                        pathKey: 'core',
+                        priority: 97
+                    });
+                }
+            }
+        }
+    }
+
     const keys = new Set();
     Object.keys(targets).forEach(k => keys.add(k));
     Object.keys(terminal.store || {}).forEach(k => keys.add(k));
@@ -947,7 +1092,7 @@ function getTerminalStockJobs(room) {
                             resourceType,
                             amountHint: need,
                             pathKey: 'core',
-                            priority: 60
+                            priority: 97
                         });
                     }
                 }
@@ -969,7 +1114,7 @@ function getTerminalStockJobs(room) {
                             resourceType,
                             amountHint: excess,
                             pathKey: 'core',
-                            priority: 60
+                            priority: 97
                         });
                     }
                 }
@@ -992,7 +1137,7 @@ function getTerminalStockJobs(room) {
                         resourceType,
                         amountHint: flushAll,
                         pathKey: 'core',
-                        priority: 60
+                        priority: 97
                     });
                 }
             }
@@ -1097,11 +1242,20 @@ function getCoreServiceEnergyJobs(room, runtime, sourceId, includeLabs, roomMemo
     return jobs;
 }
 
+
+function isHeadLocalJob(job, runtime, source, target) {
+    if (!job || !runtime || !runtime.paths || !runtime.paths.core) return false;
+    if (job.pathKey && job.pathKey !== 'core') return false;
+    const headPos = runtime.paths.core.headPos;
+    if (!headPos || !source || !source.pos || !target || !target.pos) return false;
+    return headPos.getRangeTo(source.pos) <= 1 && headPos.getRangeTo(target.pos) <= 1;
+}
+
 function shouldActivate(room, roomMemo) {
     if (!room || !room.controller || !room.controller.my) return false;
     const spawns = roomMemo && Array.isArray(roomMemo.mySpawns) ? roomMemo.mySpawns : room.find(FIND_MY_SPAWNS);
     if (!spawns || spawns.length <= 0) return false;
-    if (!room.storage && spawns.length <= 0) return false;
+    if (!room.storage) return false;
     return true;
 }
 
@@ -1118,10 +1272,33 @@ function getAssignedCoreLaneCreeps(missionId, roomName) {
     return assigned;
 }
 
+function clampAssignedCoreLaneCreeps(names, maxCount) {
+    if (!Array.isArray(names) || names.length <= 0) return [];
+    const cap = Math.max(0, Math.floor(maxCount || 0));
+    if (cap <= 0) return [];
+
+    const ranked = names
+        .map(name => Game.creeps[name])
+        .filter(creep => !!creep)
+        .sort((a, b) => {
+            const at = Number.isFinite(a.ticksToLive) ? a.ticksToLive : -1;
+            const bt = Number.isFinite(b.ticksToLive) ? b.ticksToLive : -1;
+            if (at !== bt) return bt - at;
+            return a.name.localeCompare(b.name);
+        });
+
+    const out = [];
+    for (let i = 0; i < ranked.length && out.length < cap; i++) {
+        out.push(ranked[i].name);
+    }
+    return out;
+}
+
 function getEstimatedCarryPartsPerHauler(room) {
     if (!room) return 3;
-    const cap = Math.max(300, room.energyCapacityAvailable || 300);
-    return Math.max(2, Math.min(25, Math.floor(cap / 100)));
+    const cap = Math.max(0, room.energyCapacityAvailable || 0);
+    // Max MOVE,CARRY body (1:1) is limited by room capacity and 50-part hard cap (25 pairs).
+    return Math.max(1, Math.min(25, Math.floor(cap / 100)));
 }
 
 function getAssignedCarryParts(names) {
@@ -1170,10 +1347,10 @@ function countServicePoints(room, laneJobs, roomMemo) {
 }
 
 function estimateCarryPartsNeeded(corePathLength, coreStopCount, labsPathLength, servicePointCount) {
-    const coreTravelWeight = Math.ceil(Math.max(1, corePathLength || 0) / 3);
+    const coreTravelWeight = Math.ceil(Math.max(1, corePathLength || 0) / 2);
     const coreStopWeight = Math.ceil(Math.max(1, coreStopCount || 0) / 8);
     const labsTravelWeight = labsPathLength > 0 ? Math.ceil(labsPathLength / 14) : 0;
-    const serviceWeight = Math.ceil(Math.max(0, servicePointCount || 0) / 3);
+    const serviceWeight = Math.ceil(Math.max(0, servicePointCount || 0) / 2);
     return Math.max(1, coreTravelWeight + coreStopWeight + labsTravelWeight + serviceWeight);
 }
 
@@ -1226,17 +1403,23 @@ module.exports = {
         );
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !intel || !missionBoard) return;
-        if (!missionThrottle.shouldRunReconcile('logisticsCoreV2', room.name, Game.time)) return;
+    discover({ room, intel, context }) {
+        if (!room || !intel) return [];
         const roomMemo = getLogisticsRoomMemo(room, getRoomCache(room));
-        if (!shouldActivate(room, roomMemo)) return;
+        if (!shouldActivate(room, roomMemo)) return [];
 
-        missionBoard.createMission('logisticsCoreV2', {
+        const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
             priority: 92
-        }, { room, intel, context });
+        };
+        return [{
+            key: this.makeKey(createContext),
+            createContext,
+            discoveredMeta: {
+                roomName: room.name
+            }
+        }];
     },
 
     create(context) {
@@ -1425,37 +1608,46 @@ module.exports = {
             }
             if (!Array.isArray(path) || path.length <= 0) continue;
 
-            let sourceIndex = Number.isInteger(job.sourceIndex)
-                ? job.sourceIndex
-                : findNearestPathIndex(path, source.pos, true);
-            let targetIndex = Number.isInteger(job.targetIndex)
-                ? job.targetIndex
-                : findNearestPathIndex(path, target.pos, true);
-            if (sourceIndex < 0 || targetIndex < 0) continue;
+            const jobClass = isHeadLocalJob(job, runtime, source, target)
+                ? 'head'
+                : (pathKey === 'labs' ? 'lab' : 'lane');
 
-            if (sourceIndex === targetIndex && path.length > 1) {
-                const targetAlt = findNearestPathIndexExcluding(path, target.pos, sourceIndex);
-                if (targetAlt >= 0) {
-                    targetIndex = targetAlt;
-                } else {
-                    const sourceAlt = findNearestPathIndexExcluding(path, source.pos, targetIndex);
-                    if (sourceAlt >= 0) sourceIndex = sourceAlt;
-                }
-                if (sourceIndex === targetIndex) {
+            let sourceIndex = null;
+            let targetIndex = null;
+            if (jobClass !== 'head') {
+                sourceIndex = Number.isInteger(job.sourceIndex)
+                    ? job.sourceIndex
+                    : findNearestPathIndex(path, source.pos, true);
+                targetIndex = Number.isInteger(job.targetIndex)
+                    ? job.targetIndex
+                    : findNearestPathIndex(path, target.pos, true);
+                if (sourceIndex < 0 || targetIndex < 0) continue;
+
+                if (sourceIndex === targetIndex && path.length > 1) {
+                    const targetAlt = findNearestPathIndexExcluding(path, target.pos, sourceIndex);
+                    if (targetAlt >= 0) {
+                        targetIndex = targetAlt;
+                    } else {
+                        const sourceAlt = findNearestPathIndexExcluding(path, source.pos, targetIndex);
+                        if (sourceAlt >= 0) sourceIndex = sourceAlt;
+                    }
+                    if (sourceIndex === targetIndex) {
+                        logLogisticsDebug(
+                            `[LogisticsCoreV2] ${room.name} drop degenerate job id=${job.id} path=${pathKey} idx=${sourceIndex}`
+                        );
+                        continue;
+                    }
                     logLogisticsDebug(
-                        `[LogisticsCoreV2] ${room.name} drop degenerate job id=${job.id} path=${pathKey} idx=${sourceIndex}`
+                        `[LogisticsCoreV2] ${room.name} adjust job indices id=${job.id} path=${pathKey} ` +
+                        `source=${sourceIndex} target=${targetIndex}`
                     );
-                    continue;
                 }
-                logLogisticsDebug(
-                    `[LogisticsCoreV2] ${room.name} adjust job indices id=${job.id} path=${pathKey} ` +
-                    `source=${sourceIndex} target=${targetIndex}`
-                );
             }
 
             const item = {
                 id: job.id,
                 kind: job.kind || 'stock',
+                jobClass,
                 sourceId: job.sourceId,
                 targetId: job.targetId,
                 resourceType: job.resourceType || RESOURCE_ENERGY,
@@ -1478,12 +1670,12 @@ module.exports = {
         runtime.laneJobs = laneJobs;
         runtime.laneJobsById = jobsById;
 
+        const desiredCount = 1;
         runtime.assignedCreeps = getAssignedCoreLaneCreeps(mission.id, room.name);
-        mission.assigned.primary = runtime.assignedCreeps.slice();
+        mission.assigned.primary = clampAssignedCoreLaneCreeps(runtime.assignedCreeps, desiredCount);
         const assignedCarryParts = getAssignedCarryParts(mission.assigned.primary);
         const basePlan = computeBaselineFleetPlan(room, runtime, laneJobs, roomMemo);
         const neededCarryParts = basePlan.neededCarryParts;
-        const desiredCount = 1;
         mission.meta.headSourceId = runtime.headSourceId || anchor.headSourceId || null;
         if (!mission.meta.missionName) {
             mission.meta.missionName = `logistics:coreV2:${mission.targetRoom || mission.sponsorRoom}`;
@@ -1492,11 +1684,12 @@ module.exports = {
         mission.meta.intendedCarryParts = getEstimatedCarryPartsPerHauler(room);
         mission.meta.neededCarryParts = neededCarryParts;
         mission.meta.assignedCarryParts = assignedCarryParts;
+        const requestCarryParts = Math.max(1, mission.meta.intendedCarryParts || 1);
         mission.requirements = {
             archetype: 'coreLaneHauler',
             minCount: desiredCount,
             maxCount: desiredCount,
-            requiredCarry: neededCarryParts,
+            requiredCarry: requestCarryParts,
             spawn: true,
             spawnFromFleet: false
         };
@@ -1559,11 +1752,9 @@ module.exports = {
     },
 
     toContractMission(mission) {
-        const desiredCount = mission && mission.meta && Number.isFinite(mission.meta.desiredCount)
-            ? Math.max(1, Math.floor(mission.meta.desiredCount))
-            : 1;
-        const neededCarryParts = mission && mission.meta && Number.isFinite(mission.meta.neededCarryParts)
-            ? Math.max(1, Math.floor(mission.meta.neededCarryParts))
+        const desiredCount = 1;
+        const intendedCarryParts = mission && mission.meta && Number.isFinite(mission.meta.intendedCarryParts)
+            ? Math.max(1, Math.floor(mission.meta.intendedCarryParts))
             : desiredCount;
         return {
             name: mission && mission.meta && mission.meta.missionName
@@ -1576,7 +1767,7 @@ module.exports = {
                 archetype: 'coreLaneHauler',
                 minCount: 1,
                 maxCount: 1,
-                requiredCarry: neededCarryParts,
+                requiredCarry: intendedCarryParts,
                 spawn: true,
                 spawnFromFleet: false
             },

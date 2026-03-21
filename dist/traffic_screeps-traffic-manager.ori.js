@@ -15,15 +15,6 @@ const DIRECTION_DELTA = {
   [TOP_LEFT]: { x: -1, y: -1 },
 }
 
-const TRAFFIC_BLOCK_CACHE_TTL = 25
-
-const NON_BLOCKING_STRUCTURES = new Set([
-  STRUCTURE_ROAD,
-  STRUCTURE_CONTAINER,
-  STRUCTURE_PORTAL,
-  STRUCTURE_EXTRACTOR,
-])
-
 /**
  * Registers the intended move for a creep.
  *
@@ -57,14 +48,12 @@ function setWorkingArea(creep, pos, range) {
  */
 function run(room, costs, movementCostThreshold = 255) {
   const movementMap = new Map()
-  const blockedGrid = getBlockedGrid(room)
 
   const terrain = Game.map.getRoomTerrain(room.name)
 
-  const allCreepsInRoom = [...room.find(FIND_MY_CREEPS), ...room.find(FIND_MY_POWER_CREEPS)]
-  const creepsInRoom = allCreepsInRoom.filter((creep) => creep._trafficManaged === true)
+  const creepsInRoom = [...room.find(FIND_MY_CREEPS), ...room.find(FIND_MY_POWER_CREEPS)]
 
-  allCreepsInRoom.forEach((creep) => assignCreepToCoordinate(creep, creep.pos, movementMap))
+  creepsInRoom.forEach((creep) => assignCreepToCoordinate(creep, creep.pos, movementMap))
 
   for (const creep of creepsInRoom) {
     const intendedPackedCoord = getIntendedPackedCoord(creep)
@@ -83,23 +72,12 @@ function run(room, costs, movementCostThreshold = 255) {
 
     deleteMatchedPackedCoord(creep)
 
-    if (
-      depthFirstSearch(
-        creep,
-        0,
-        terrain,
-        costs,
-        movementCostThreshold,
-        movementMap,
-        visitedCreeps,
-        blockedGrid,
-      ) > 0
-    ) continue
+    if (depthFirstSearch(creep, 0, terrain, costs, movementCostThreshold, movementMap, visitedCreeps) > 0) continue
 
     assignCreepToCoordinate(creep, creep.pos, movementMap)
   }
 
-  allCreepsInRoom.forEach((creep) => resolveMovement(creep))
+  creepsInRoom.forEach((creep) => resolveMovement(creep))
 }
 
 /**
@@ -114,23 +92,10 @@ function run(room, costs, movementCostThreshold = 255) {
  * @param {Set} visitedCreeps - Set of visited creeps to prevent loops.
  * @returns {number} - A score indicating movement success.
  */
-function depthFirstSearch(
-  creep,
-  score = 0,
-  terrain,
-  costs,
-  movementCostThreshold,
-  movementMap,
-  visitedCreeps,
-  blockedGrid,
-) {
+function depthFirstSearch(creep, score = 0, terrain, costs, movementCostThreshold, movementMap, visitedCreeps) {
   visitedCreeps.add(creep.name)
 
   if (!creep.my) {
-    return -Infinity
-  }
-
-  if (creep._trafficManaged !== true && creep._trafficBlockerMovable !== true) {
     return -Infinity
   }
 
@@ -138,7 +103,7 @@ function depthFirstSearch(
 
   const occupiedTiles = []
 
-  for (const coord of getPossibleMoves(creep, terrain, costs, movementCostThreshold, blockedGrid)) {
+  for (const coord of getPossibleMoves(creep, terrain, costs, movementCostThreshold)) {
     const occupied = movementMap.get(packCoordinates(coord))
 
     if (occupied) {
@@ -177,7 +142,6 @@ function depthFirstSearch(
         movementCostThreshold,
         movementMap,
         visitedCreeps,
-        blockedGrid,
       )
 
       if (result > 0) {
@@ -196,14 +160,7 @@ function depthFirstSearch(
  * @param {Creep} creep - The creep to move.
  */
 function resolveMovement(creep) {
-  const matchedPackedCoord = getMatchedPackedCoord(creep)
-  if (!Number.isFinite(matchedPackedCoord)) return
-
-  const matchedPos = unpackCoordinates(matchedPackedCoord)
-
-  if (creep._trafficManaged !== true && creep._trafficBlockerMovable !== true) {
-    return
-  }
+  const matchedPos = unpackCoordinates(getMatchedPackedCoord(creep))
 
   if (!creep.pos.isEqualTo(matchedPos.x, matchedPos.y)) {
     creep.move(creep.pos.getDirectionTo(matchedPos.x, matchedPos.y))
@@ -219,7 +176,7 @@ function resolveMovement(creep) {
  * @param {number} movementCostThreshold - Creeps will not move to tiles with cost greater than or equal to this value.
  * @returns {Array<{x: number, y: number}>} - An array of possible movement coordinates.
  */
-function getPossibleMoves(creep, terrain, costs, movementCostThreshold, blockedGrid) {
+function getPossibleMoves(creep, terrain, costs, movementCostThreshold) {
   if (creep._possibleMoves) {
     return creep._possibleMoves
   }
@@ -244,7 +201,8 @@ function getPossibleMoves(creep, terrain, costs, movementCostThreshold, blockedG
   for (const delta of Object.values(DIRECTION_DELTA).sort((a, b) => Math.random() - 0.5)) {
     const coord = { x: creep.pos.x + delta.x, y: creep.pos.y + delta.y }
 
-    if (!isValidMove(coord, terrain, costs, movementCostThreshold, blockedGrid)) continue
+    if (!isValidMove(coord, terrain, costs, movementCostThreshold)) continue
+
     const workingArea = getWorkingArea(creep)
 
     if (workingArea && workingArea.pos.getRangeTo(coord.x, coord.y) > workingArea.range) {
@@ -295,7 +253,7 @@ function canMove(creep) {
  * @param {number} movementCostThreshold - Creeps will not move to tiles with cost greater than or equal to this value.
  * @returns {boolean} - True if the move is valid, false otherwise.
  */
-function isValidMove(coord, terrain, costs, movementCostThreshold, blockedGrid) {
+function isValidMove(coord, terrain, costs, movementCostThreshold) {
   if (terrain.get(coord.x, coord.y) === TERRAIN_MASK_WALL) {
     return false
   }
@@ -308,64 +266,7 @@ function isValidMove(coord, terrain, costs, movementCostThreshold, blockedGrid) 
     return false
   }
 
-  if (blockedGrid && blockedGrid[packCoordinates(coord)] === 1) {
-    return false
-  }
-
   return true
-}
-
-function getBlockedGrid(room) {
-  if (!room) return null
-
-  const cache = room._trafficBlockedGridCache
-  if (
-    cache &&
-    cache.grid &&
-    Number.isInteger(cache.expiresAt) &&
-    cache.expiresAt >= Game.time
-  ) {
-    return cache.grid
-  }
-
-  const grid = new Uint8Array(2500)
-  const structures = getRoomStructuresForTraffic(room)
-
-  for (let i = 0; i < structures.length; i++) {
-    const structure = structures[i]
-    if (!structure || !structure.pos || !isStructureBlocking(structure)) continue
-    grid[packCoordinates(structure.pos)] = 1
-  }
-
-  room._trafficBlockedGridCache = {
-    grid,
-    expiresAt: Game.time + TRAFFIC_BLOCK_CACHE_TTL,
-  }
-
-  return grid
-}
-
-function getRoomStructuresForTraffic(room) {
-  if (!room) return []
-
-  if (typeof global.getRoomCache === 'function') {
-    const cache = global.getRoomCache(room)
-    if (cache && Array.isArray(cache.structures)) {
-      return cache.structures
-    }
-  }
-
-  return room.find(FIND_STRUCTURES)
-}
-
-function isStructureBlocking(structure) {
-  if (!structure || !structure.structureType) return false
-
-  if (structure.structureType === STRUCTURE_RAMPART) {
-    return !structure.my && !structure.isPublic
-  }
-
-  return !NON_BLOCKING_STRUCTURES.has(structure.structureType)
 }
 
 /**

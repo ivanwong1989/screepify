@@ -8,6 +8,27 @@ const DEFAULT_ALLOW_ROLES = [
 
 const DEFAULT_ALLOWED_INFRA = [STRUCTURE_CONTAINER, STRUCTURE_ROAD, STRUCTURE_LINK];
 
+function isVacateDebugEnabled(creep) {
+    if (!Memory || !Memory.debugUpgrader) return false;
+    if (Memory.debugUpgrader === true) return true;
+    if (!creep) return false;
+    if (creep.name && Memory.debugUpgrader === creep.name) return true;
+    if (creep.memory && creep.memory.room && Memory.debugUpgrader === creep.memory.room) return true;
+    if (creep.room && Memory.debugUpgrader === creep.room.name) return true;
+    return false;
+}
+
+function debugVacate(creep, event, extra) {
+    if (!isVacateDebugEnabled(creep)) return;
+    const pos = creep && creep.pos ? `${creep.pos.roomName}:${creep.pos.x},${creep.pos.y}` : '?';
+    const line = `[VacateSource] ${event} creep=${creep ? creep.name : '?'} pos=${pos}${extra ? ` ${extra}` : ''}`;
+    if (typeof debug === 'function') {
+        debug('mission.upgrade', line);
+        return;
+    }
+    console.log(line);
+}
+
 function getSources(room) {
     if (!room) return [];
     return room.find(FIND_SOURCES) || [];
@@ -120,6 +141,11 @@ function getVacateSourceMoveIntent(creep, workKind, workTarget, workRange, opts 
         : 1;
 
     if (!isNearSource(creep.pos, sources, forbidRangeFromSource)) return null;
+    debugVacate(
+        creep,
+        'TRIGGERED',
+        `workKind=${workKind || '-'} workTarget=${workTarget.id || '-'} range=${workRange} forbid=${forbidRangeFromSource}`
+    );
 
     if (workKind === 'repair') {
         const allowedRoles = Array.isArray(opts.allowRolesNearSource)
@@ -134,6 +160,7 @@ function getVacateSourceMoveIntent(creep, workKind, workTarget, workRange, opts 
         if (allowedRoles.includes(role) &&
             isSourceInfra(workTarget.structureType, allowedTypes) &&
             (!requireTargetNearSource || isTargetNearSource(workTarget.pos, sources, forbidRangeFromSource))) {
+            debugVacate(creep, 'SKIP_ALLOWED_REPAIR_INFRA', `role=${role || '-'} target=${workTarget.id || '-'} type=${workTarget.structureType || '-'}`);
             return null;
         }
     }
@@ -150,7 +177,10 @@ function getVacateSourceMoveIntent(creep, workKind, workTarget, workRange, opts 
     }
 
     const best = pickClosest(creep.pos, valid);
-    if (best) return buildMoveIntent(best, 'near_source');
+    if (best) {
+        debugVacate(creep, 'MOVE_BEST_CANDIDATE', `target=${best.roomName}:${best.x},${best.y} candidates=${valid.length}`);
+        return buildMoveIntent(best, 'near_source');
+    }
 
     const nearestSource = creep.pos.findClosestByRange(sources);
     if (nearestSource) {
@@ -171,9 +201,13 @@ function getVacateSourceMoveIntent(creep, workKind, workTarget, workRange, opts 
                 }
             }
         }
-        if (fallback) return buildMoveIntent(fallback, 'near_source');
+        if (fallback) {
+            debugVacate(creep, 'MOVE_FALLBACK', `target=${fallback.roomName}:${fallback.x},${fallback.y}`);
+            return buildMoveIntent(fallback, 'near_source');
+        }
     }
 
+    debugVacate(creep, 'NO_MOVE_FOUND', `workTarget=${workTarget.id || '-'} useOccupancy=${useOccupancyCheck}`);
     return null;
 }
 

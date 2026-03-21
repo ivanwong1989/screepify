@@ -2,7 +2,6 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const CRITICAL_WALL_HITS = 5000;
 const REPAIR_MIN_RATIO = 0.9;
@@ -25,7 +24,10 @@ const REPAIR_WORKER_TUNING = Object.freeze({
     minCountRepair: 1,
     maxCountRepair: 1,
     minCountFortify: 1,
-    maxCountFortify: 1
+    maxCountFortify: 1,
+    maxWorkParts: 5,
+    maxCarryParts: 5,
+    maxMoveParts: 5
 });
 
 function getDesiredRepairWork(fortify) {
@@ -186,24 +188,32 @@ module.exports = {
         );
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (context && context.opState === 'EMERGENCY') return;
-        if (!missionThrottle.shouldRunReconcile('repair', room.name, Game.time)) return;
+    discover({ room, intel, context }) {
+        if (!room) return [];
+        if (context && context.opState === 'EMERGENCY') return [];
 
         const scan = overseerOpportunisticRepair.getRoomScan(room.name);
-        if (!scan) return;
+        if (!scan) return [];
 
         const repairIds = Array.isArray(scan.repairIds) ? scan.repairIds : [];
+        const out = [];
         for (let i = 0; i < repairIds.length; i++) {
             const id = repairIds[i];
-            missionBoard.createMission('repair', {
+            const createContext = {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
                 targetId: id,
                 fortify: false,
                 priority: 65
-            }, { room, intel, context });
+            };
+            out.push({
+                key: this.makeKey(createContext),
+                createContext,
+                discoveredMeta: {
+                    targetId: id,
+                    fortify: false
+                }
+            });
         }
 
         const fortifyPolicy = room.memory && room.memory.overseer && room.memory.overseer.fortifyPolicy
@@ -219,7 +229,7 @@ module.exports = {
         const cap = Math.max(1, FORTIFY_TARGET_CAP);
         for (let i = 0; i < Math.min(cap, fortifyIds.length); i++) {
             const id = fortifyIds[i];
-            missionBoard.createMission('repair', {
+            const createContext = {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
                 targetId: id,
@@ -227,8 +237,18 @@ module.exports = {
                 targetHits,
                 spawnAllowed: allowFortifySpawn,
                 priority: allowFortifySpawn ? 55 : 35
-            }, { room, intel, context });
+            };
+            out.push({
+                key: this.makeKey(createContext),
+                createContext,
+                discoveredMeta: {
+                    targetId: id,
+                    fortify: true
+                }
+            });
         }
+
+        return out;
     },
 
     create(context) {
@@ -359,6 +379,9 @@ module.exports = {
                 requiredWork: mission.meta && Number.isFinite(mission.meta.desiredWork) ? mission.meta.desiredWork : getDesiredRepairWork(fortify),
                 minCount: mission.meta && Number.isFinite(mission.meta.minCount) ? mission.meta.minCount : getRepairMinCount(fortify),
                 maxCount: mission.meta && Number.isFinite(mission.meta.maxCount) ? mission.meta.maxCount : getRepairMaxCount(fortify),
+                maxWorkParts: REPAIR_WORKER_TUNING.maxWorkParts,
+                maxCarryParts: REPAIR_WORKER_TUNING.maxCarryParts,
+                maxMoveParts: REPAIR_WORKER_TUNING.maxMoveParts,
                 spawnFromFleet: true,
                 spawn: spawnAllowed
             },

@@ -3,7 +3,6 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const MAX_REMOTE_BUILD_SITES_PER_ROOM = 3;
 const MAX_REMOTE_ROAD_SITES_PER_TICK = 3;
@@ -168,55 +167,13 @@ module.exports = {
         );
     },
 
-    reconcileRoom({ room, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (context && context.opState === 'EMERGENCY') return;
-        const shouldRunBuildReconcile = missionThrottle.shouldRunReconcile('remoteBuild', room.name, Game.time);
-        const shouldRunRoadPlanner = missionThrottle.shouldRunScoped(
-            'remoteBuild:roads',
-            room.name,
-            REMOTE_ROAD_PLANNER_INTERVAL,
-            Game.time
-        );
-        if (!shouldRunBuildReconcile && !shouldRunRoadPlanner) return;
+    discover({ room, context }) {
+        if (!room) return [];
+        if (context && context.opState === 'EMERGENCY') return [];
         const opState = context && context.opState ? context.opState : null;
         const remoteCtx = getRemoteContextIndex(room, opState);
         const entries = remoteCtx.entries;
-
-        if (shouldRunBuildReconcile) {
-            const live = missionBoard.listLiveByRoom(room.name);
-            const liveRemoteBuild = [];
-            for (let i = 0; i < live.length; i++) {
-                const mission = live[i];
-                if (mission && mission.type === 'remoteBuild') liveRemoteBuild.push(mission);
-            }
-
-            for (let i = 0; i < liveRemoteBuild.length; i++) {
-                const mission = liveRemoteBuild[i];
-                if (!mission) continue;
-                if (mission.targetId && mission.targetRoom && mission.sponsorRoom) {
-                    const expectedKey = missionKeys.makeRemoteBuildKey(
-                        mission.sponsorRoom,
-                        mission.targetRoom,
-                        mission.targetId
-                    );
-                    if (mission.id !== expectedKey) {
-                        missionBoard.markCancelled(mission.id, 'legacy_key_migration');
-                        continue;
-                    }
-                }
-                const remoteRoom = mission.targetRoom || (mission.meta && mission.meta.remoteRoom) || null;
-                const enabledRemote = remoteRoom ? remoteCtx.byName[remoteRoom] : null;
-                if (remoteRoom && !(enabledRemote && enabledRemote.enabled)) {
-                    missionBoard.markCancelled(mission.id, 'remote_room_not_enabled');
-                }
-            }
-        }
-
-        if (shouldRunRoadPlanner) {
-            seedRoadSitesFromCachedRemoteHaulLanes(room, entries);
-        }
-        if (!shouldRunBuildReconcile) return;
+        const out = [];
 
         for (let i = 0; i < entries.length; i++) {
             const wrapped = entries[i];
@@ -237,7 +194,7 @@ module.exports = {
             for (let j = 0; j < capped.length; j++) {
                 const site = capped[j];
                 if (!site || !site.id || !site.pos) continue;
-                missionBoard.createMission('remoteBuild', {
+                const createContext = {
                     sponsorRoom: room.name,
                     targetRoom: remoteRoom,
                     siteId: site.id,
@@ -246,9 +203,19 @@ module.exports = {
                     containerIds,
                     requiredWork: 4,
                     priority: 55
-                }, { room, context });
+                };
+                out.push({
+                    key: this.makeKey(createContext),
+                    createContext,
+                    discoveredMeta: {
+                        remoteRoom,
+                        siteId: site.id
+                    }
+                });
             }
         }
+
+        return out;
     },
 
     create(context) {
@@ -298,7 +265,13 @@ module.exports = {
         const context = runtimeCtx && runtimeCtx.context ? runtimeCtx.context : null;
         if (!sponsor || !sponsor.controller || !sponsor.controller.my) return false;
         const entry = getRemoteEntry(sponsor, mission.targetRoom, context && context.opState);
-        return !!(entry && entry.enabled);
+        if (!(entry && entry.enabled)) return false;
+        const expectedKey = missionKeys.makeRemoteBuildKey(
+            mission.sponsorRoom,
+            mission.targetRoom,
+            mission.targetId
+        );
+        return mission.id === expectedKey;
     },
 
     refresh(mission, runtimeCtx) {

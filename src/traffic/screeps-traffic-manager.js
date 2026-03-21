@@ -245,7 +245,6 @@ function getPossibleMoves(creep, terrain, costs, movementCostThreshold, blockedG
     const coord = { x: creep.pos.x + delta.x, y: creep.pos.y + delta.y }
 
     if (!isValidMove(coord, terrain, costs, movementCostThreshold, blockedGrid)) continue
-
     const workingArea = getWorkingArea(creep)
 
     if (workingArea && workingArea.pos.getRangeTo(coord.x, coord.y) > workingArea.range) {

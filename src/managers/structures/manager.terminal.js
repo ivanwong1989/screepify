@@ -1139,6 +1139,12 @@ summarize: function() {
         return normalizeStockTargets(getRoomStockTargetsFromConfig(merged));
     },
 
+    getTerminalEnergyTarget: function(roomName) {
+        const cfg = ensureMarketConfig();
+        const merged = getRoomConfig(cfg, roomName);
+        return clampNumber(merged && merged.terminalEnergyTarget, DEFAULTS.terminalEnergyTarget, 0);
+    },
+
     getTrackedResources: function(roomName) {
         const cfg = ensureMarketConfig();
         const merged = getRoomConfig(cfg, roomName);

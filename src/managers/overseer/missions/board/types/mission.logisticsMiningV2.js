@@ -1,7 +1,6 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
 
 const REBUILD_INTERVAL = 100;
@@ -137,9 +136,35 @@ function hasSourceContainer(sourceInfo, objectCache, roomMemo) {
     return !!(container && container.structureType === STRUCTURE_CONTAINER && container.pos);
 }
 
-function findLinkOverflowStandPos(room, containerPos, linkPos) {
+function findLinkOverflowStandPos(room, containerPos, linkPos, preferredApproachPos) {
     if (!room || !containerPos || !linkPos) return null;
     const terrain = room.getTerrain();
+    let best = null;
+    let bestScore = Infinity;
+
+    const hasIngressTile = (candidate) => {
+        for (let ix = -1; ix <= 1; ix++) {
+            for (let iy = -1; iy <= 1; iy++) {
+                if (ix === 0 && iy === 0) continue;
+                const nx = candidate.x + ix;
+                const ny = candidate.y + iy;
+                if (nx < 1 || nx > 48 || ny < 1 || ny > 48) continue;
+                if ((nx === containerPos.x && ny === containerPos.y) || (nx === linkPos.x && ny === linkPos.y)) continue;
+                if (terrain.get(nx, ny) === TERRAIN_MASK_WALL) continue;
+                const structures = room.lookForAt(LOOK_STRUCTURES, nx, ny);
+                let blocked = false;
+                for (let si = 0; si < structures.length; si++) {
+                    if (!isWalkableStructure(structures[si])) {
+                        blocked = true;
+                        break;
+                    }
+                }
+                if (!blocked) return true;
+            }
+        }
+        return false;
+    };
+
     for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
             if (dx === 0 && dy === 0) continue;
@@ -157,10 +182,19 @@ function findLinkOverflowStandPos(room, containerPos, linkPos) {
                     break;
                 }
             }
-            if (!blocked) return candidate;
+            if (blocked) continue;
+            if (!hasIngressTile(candidate)) continue;
+
+            const score = preferredApproachPos && preferredApproachPos.roomName === room.name
+                ? candidate.getRangeTo(preferredApproachPos)
+                : candidate.getRangeTo(new RoomPosition(25, 25, room.name));
+            if (score < bestScore) {
+                best = candidate;
+                bestScore = score;
+            }
         }
     }
-    return null;
+    return best;
 }
 
 function resolveSink(room, intel, pickupPos, roomMemo) {
@@ -429,24 +463,32 @@ module.exports = {
         );
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !intel || !missionBoard) return;
+    discover({ room, intel, context }) {
+        if (!room || !intel) return [];
         const roomMemo = getMiningV2RoomMemo(room, intel, getRoomCache(room));
         const objectCache = Object.create(null);
-        if (!hasStableSink(room, intel, roomMemo)) return;
-        if (!missionThrottle.shouldRunReconcile('logisticsMiningV2', room.name, Game.time)) return;
+        if (!hasStableSink(room, intel, roomMemo)) return [];
 
         const sources = Array.isArray(intel.sources) ? intel.sources : [];
+        const out = [];
         for (let i = 0; i < sources.length; i++) {
             const sourceInfo = sources[i];
             if (!shouldActivateSource(room, intel, sourceInfo, roomMemo, objectCache)) continue;
-            missionBoard.createMission('logisticsMiningV2', {
+            const createContext = {
                 sponsorRoom: room.name,
                 targetRoom: room.name,
                 sourceId: sourceInfo.id,
                 priority: 88
-            }, { room, intel, context });
+            };
+            out.push({
+                key: this.makeKey(createContext),
+                createContext,
+                discoveredMeta: {
+                    sourceId: sourceInfo.id
+                }
+            });
         }
+        return out;
     },
 
     create(context) {
@@ -589,8 +631,11 @@ module.exports = {
         runtime.sinkId = sink.id;
         runtime.linkAssistActive = hasLinkSink;
         runtime.sourceLinkId = hasLinkSink ? sourceLink.id : null;
+        const preferredApproachPos = room.storage
+            ? room.storage.pos
+            : (room.controller ? room.controller.pos : new RoomPosition(25, 25, room.name));
         runtime.stationPos = hasLinkSink
-            ? findLinkOverflowStandPos(room, pickup.pickupPos, sourceLink.pos)
+            ? findLinkOverflowStandPos(room, pickup.pickupPos, sourceLink.pos, preferredApproachPos)
             : null;
 
         runtime.assignedCreeps = getAssignedMiningHaulers(mission.id, room.name, mission.meta && mission.meta.missionName);

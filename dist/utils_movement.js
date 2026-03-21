@@ -173,12 +173,23 @@ function shouldRepath(creep, mem, targetPos, range, maxRooms, targetKey) {
 }
 
 function repath(creep, mem, targetPos, range, maxRooms, targetKey) {
-    const path = creep.pos.findPathTo(targetPos, {
+    const stale = mem && Number.isFinite(mem.stale) ? mem.stale : 0;
+    const avoidCreeps = stale >= TRAFFIC_STALE_REPATH_TICKS;
+    let path = creep.pos.findPathTo(targetPos, {
         range,
-        ignoreCreeps: true,
+        ignoreCreeps: !avoidCreeps,
         maxRooms,
         reusePath: 0
     });
+    // If dynamic-avoid path search fails, retry permissive so movement can still make progress.
+    if ((!Array.isArray(path) || path.length <= 0) && avoidCreeps) {
+        path = creep.pos.findPathTo(targetPos, {
+            range,
+            ignoreCreeps: true,
+            maxRooms,
+            reusePath: 0
+        });
+    }
 
     if (!Array.isArray(path) || path.length <= 0) {
         if (creep.pos.inRangeTo(targetPos, range)) {
@@ -208,6 +219,7 @@ function repath(creep, mem, targetPos, range, maxRooms, targetKey) {
     mem.lastPlan = Game.time;
     mem.lastPosKey = `${creep.pos.roomName}:${creep.pos.x}:${creep.pos.y}`;
     mem.roomName = creep.room.name;
+    mem.lastRepathAvoidCreeps = avoidCreeps ? 1 : 0;
 
     return OK;
 }
@@ -271,6 +283,12 @@ function planMoveTo(creep, target, opts) {
 
     if (creep.pos.roomName === targetPos.roomName && creep.pos.inRangeTo(targetPos, range)) {
         clearMoveMem(creep);
+        if (Memory.debugTraffic && typeof debug === 'function') {
+            debug(
+                'traffic',
+                `[TrafficPlan] moveTo creep=${creep.name} target=${targetPos.roomName}:${targetPos.x},${targetPos.y} range=${range} action=already_in_range`
+            );
+        }
         return OK;
     }
 
@@ -284,9 +302,21 @@ function planMoveTo(creep, target, opts) {
     if (!creep.memory._trafficMove) {
         const newMem = ensureMoveMem(creep);
         const repathCode = repath(creep, newMem, targetPos, range, maxRooms, targetKey);
+        if (Memory.debugTraffic && typeof debug === 'function') {
+            debug(
+                'traffic',
+                `[TrafficPlan] repath creep=${creep.name} mode=init code=${repathCode} target=${targetPos.roomName}:${targetPos.x},${targetPos.y} range=${range}`
+            );
+        }
         if (repathCode !== OK) return repathCode;
     } else if (shouldRepath(creep, mem, targetPos, range, maxRooms, targetKey)) {
         const repathCode = repath(creep, mem, targetPos, range, maxRooms, targetKey);
+        if (Memory.debugTraffic && typeof debug === 'function') {
+            debug(
+                'traffic',
+                `[TrafficPlan] repath creep=${creep.name} mode=refresh code=${repathCode} stale=${mem ? (mem.stale || 0) : 0} idx=${mem && Number.isInteger(mem.idx) ? mem.idx : '-'} target=${targetPos.roomName}:${targetPos.x},${targetPos.y}`
+            );
+        }
         if (repathCode !== OK) return repathCode;
     }
 
@@ -315,7 +345,15 @@ function planMoveTo(creep, target, opts) {
         );
     }
 
-    return trafficAdapter.registerMove(creep, new RoomPosition(next.x, next.y, next.roomName));
+    const code = trafficAdapter.registerMove(creep, new RoomPosition(next.x, next.y, next.roomName));
+    if (Memory.debugTraffic && typeof debug === 'function') {
+        debug(
+            'traffic',
+            `[TrafficPlan] register creep=${creep.name} code=${code} next=${next.roomName}:${next.x},${next.y} idx=${activeMem.idx}/${len}`
+        );
+    }
+
+    return code;
 }
 
 function finalizeRoomTraffic(room, costs) {

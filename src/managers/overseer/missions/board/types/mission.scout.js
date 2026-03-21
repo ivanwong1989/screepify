@@ -1,7 +1,6 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const DEFAULT_SCOUT_INTERVAL = 500;
 const MIN_SCOUT_INTERVAL = 25;
@@ -28,17 +27,23 @@ module.exports = {
         return missionKeys.makeScoutKey(context.sponsorRoom);
     },
 
-    reconcileRoom({ room, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (context && context.opState === 'EMERGENCY') return;
-        if (!room.controller || !room.controller.my || room.controller.level < 3) return;
-        if (Memory.remoteMissionsEnabled === false) return;
-        if (!missionThrottle.shouldRunReconcile('scout', room.name, Game.time)) return;
+    discover({ room, context }) {
+        if (!room) return [];
+        if (context && context.opState === 'EMERGENCY') return [];
+        if (!room.controller || !room.controller.my || room.controller.level < 3) return [];
+        if (Memory.remoteMissionsEnabled === false) return [];
 
-        missionBoard.createMission('scout', {
+        const createContext = {
             sponsorRoom: room.name,
             priority: 20
-        }, { room, intel: null, context });
+        };
+        return [{
+            key: this.makeKey(createContext),
+            createContext,
+            discoveredMeta: {
+                roomName: room.name
+            }
+        }];
     },
 
     create(context) {

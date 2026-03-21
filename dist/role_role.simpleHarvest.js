@@ -79,11 +79,6 @@ function tryUpgradeFallback(creep) {
     return code === OK;
 }
 
-function isFull(creep, resourceType) {
-    if (!creep || !creep.store) return false;
-    return (creep.store.getFreeCapacity(resourceType) || 0) <= 0;
-}
-
 const roleSimpleHarvest = {
     run: function(creep) {
         if (!creep || !creep.memory) return;
@@ -127,33 +122,54 @@ const roleSimpleHarvest = {
 
         const resourceType = data.resourceType || RESOURCE_ENERGY;
         const carried = creep.store[resourceType] || 0;
-
-        if (carried <= 0) {
-            const harvestCode = creep.harvest(source);
-            if (harvestCode === ERR_NOT_IN_RANGE) moveToTarget(creep, source, 1);
-            return;
-        }
-
-        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType, memo);
+        const free = creep.store.getFreeCapacity(resourceType) || 0;
+        const full = free <= 0;
+        const empty = carried <= 0;
         const sourceDepleted = Number.isFinite(source.energy) && source.energy <= 0;
-        if (!isFull(creep, resourceType) && !sourceDepleted) {
-            const harvestCode = creep.harvest(source);
-            if (harvestCode === ERR_NOT_IN_RANGE) moveToTarget(creep, source, 1);
-            return;
+
+        let state = creep.memory.minerState;
+        if (state !== 'harvest' && state !== 'work') {
+            state = empty ? 'harvest' : 'work';
         }
 
-        if (transferTarget) {
-            const transferCode = creep.transfer(
-                transferTarget,
-                resourceType
-            );
-            if (transferCode === ERR_NOT_IN_RANGE) {
-                moveToTarget(creep, transferTarget, Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1);
+        if (state === 'harvest') {
+            if (full || (carried > 0 && sourceDepleted)) {
+                state = 'work';
+            }
+        } else {
+            if (empty) {
+                state = 'harvest';
+            }
+        }
+
+        creep.memory.minerState = state;
+
+        if (state === 'harvest') {
+            const harvestCode = creep.harvest(source);
+            if (harvestCode === ERR_NOT_IN_RANGE) {
+                moveToTarget(creep, source, 1);
             }
             return;
         }
 
-        if (data.fallback === 'upgrade' && tryUpgradeFallback(creep)) return;
+        const transferTarget = getFirstValidDropoff(data.dropoffIds, resourceType, memo);
+        if (transferTarget) {
+            const transferCode = creep.transfer(transferTarget, resourceType);
+            if (transferCode === ERR_NOT_IN_RANGE) {
+                moveToTarget(
+                    creep,
+                    transferTarget,
+                    Number.isFinite(data.dropoffRange) ? data.dropoffRange : 1
+                );
+            }
+            return;
+        }
+
+        if (data.fallback === 'upgrade') {
+            const upgraded = tryUpgradeFallback(creep);
+            if (upgraded) return;
+        }
+
         moveToTarget(creep, source, 1);
     }
 };

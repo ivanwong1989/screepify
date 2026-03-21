@@ -2,7 +2,6 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const SIMPLE_HARVEST_TRAVEL_CACHE_TTL = 200;
 const SIMPLE_HARVEST_TRAVEL_STORE = 'simpleHarvestTravel';
@@ -586,23 +585,30 @@ module.exports = {
         return missionKeys.makeUserMissionKey(roomName, 'simpleHarvest', context.sourceId, 'source');
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (!missionThrottle.shouldRunReconcile('simpleHarvest', room.name, Game.time)) return;
+    discover({ room, intel, context }) {
+        if (!room) return [];
         const roomCache = getRoomCache(room);
         const roomMemo = getSimpleHarvestRoomMemo(room, intel, roomCache);
-        if (!shouldActivateSimpleHarvest(room, intel, roomCache)) return;
+        if (!shouldActivateSimpleHarvest(room, intel, roomCache)) return [];
 
         const source = pickSimpleHarvestSource(room, intel, roomCache, roomMemo);
-        if (!source || !source.id) return;
+        if (!source || !source.id) return [];
 
-        missionBoard.createMission('simpleHarvest', {
+        const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
             sourceId: source.id,
             availableSpaces: Number.isFinite(source.availableSpaces) ? source.availableSpaces : 1,
             priority: context && context.opState === 'EMERGENCY' ? 1000 : 120
-        }, { room, intel, context });
+        };
+
+        return [{
+            key: this.makeKey(createContext),
+            createContext,
+            discoveredMeta: {
+                sourceId: source.id
+            }
+        }];
     },
 
     create(context) {

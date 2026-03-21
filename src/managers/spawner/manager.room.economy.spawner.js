@@ -68,7 +68,9 @@ var managerSpawner = {
             archetype || '',
             Number.isFinite(budget) ? budget : 0,
             data && data.mode ? data.mode : '',
+            req && Number.isFinite(req.maxWorkParts) ? req.maxWorkParts : '',
             req && Number.isFinite(req.maxCarryParts) ? req.maxCarryParts : '',
+            req && Number.isFinite(req.maxMoveParts) ? req.maxMoveParts : '',
             req && Number.isFinite(req.requiredCarry) ? req.requiredCarry : '',
             req && Number.isFinite(req.minCount) ? req.minCount : '',
             req && Number.isFinite(req.maxCount) ? req.maxCount : '',
@@ -118,6 +120,19 @@ var managerSpawner = {
         if (!Number.isFinite(maxCount) || maxCount !== minCount) return null;
 
         return Math.max(1, Math.ceil(requiredCarry / minCount));
+    },
+
+    resolveWorkerTripletCap: function(mission) {
+        const req = mission && mission.requirements ? mission.requirements : null;
+        if (!req) return null;
+
+        const maxWork = Number.isFinite(req.maxWorkParts) ? Math.max(0, Math.floor(req.maxWorkParts)) : Infinity;
+        const maxCarry = Number.isFinite(req.maxCarryParts) ? Math.max(0, Math.floor(req.maxCarryParts)) : Infinity;
+        const maxMove = Number.isFinite(req.maxMoveParts) ? Math.max(0, Math.floor(req.maxMoveParts)) : Infinity;
+        const tripletCap = Math.min(maxWork, maxCarry, maxMove);
+
+        if (!Number.isFinite(tripletCap)) return null;
+        return Math.max(0, Math.min(tripletCap, Math.floor(50 / 3)));
     },
 
     generateBody: function(mission, budget) {
@@ -181,13 +196,13 @@ var managerSpawner = {
             const includeRepairWorkPart = mission.archetype === 'remote_hauler';
             return this.generateHaulerBody(budget, maxCarryParts, includeRepairWorkPart);
         } else if (mission.archetype === 'upgrader') {
-            return this.generateWorkerBody(budget);
+            return this.generateWorkerBody(budget, this.resolveWorkerTripletCap(mission));
         } else if (mission.archetype === 'worker' || mission.archetype === 'builder' || mission.archetype === 'repairer') {
-            return this.generateWorkerBody(budget);
+            return this.generateWorkerBody(budget, this.resolveWorkerTripletCap(mission));
         } else if (mission.archetype == 'remote_worker') {
             return this.generateRemoteWorkerBody(budget);
         } else {
-            return this.generateWorkerBody(budget);
+            return this.generateWorkerBody(budget, this.resolveWorkerTripletCap(mission));
         }
     },
 
@@ -374,16 +389,19 @@ var managerSpawner = {
         return this.sortBody(body);
     },
 
-    generateWorkerBody: function(budget) {
+    generateWorkerBody: function(budget, maxTriplets) {
         // WORK, CARRY, MOVE (200)
         let body = [];
         let cost = 0;
+        const tripletCap = Number.isFinite(maxTriplets) ? Math.max(0, Math.floor(maxTriplets)) : Infinity;
+        let triplets = 0;
         
-        while (cost + 200 <= budget && body.length + 3 <= 50) {
+        while (cost + 200 <= budget && body.length + 3 <= 50 && triplets < tripletCap) {
             body.push(WORK);
             body.push(CARRY);
             body.push(MOVE);
             cost += 200;
+            triplets++;
         }
         
         if (body.length === 0) return [WORK, CARRY, MOVE];

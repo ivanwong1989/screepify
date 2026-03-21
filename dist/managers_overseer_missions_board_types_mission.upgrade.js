@@ -1,9 +1,14 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
 
 const CRITICAL_DOWNGRADE_TICKS = 5000;
+const DEFAULT_DESIRED_WORK = 15;
+const STOCKPILING_DESIRED_WORK = 1;
+const CONSTRUCTION_DESIRED_WORK = 1;
+const MIN_COUNT_WITH_WORK = 1;
+const LOW_RCL_LEVEL_THRESHOLD = 3;
+const LOW_RCL_MAX_UPGRADER_COUNT = 4;
 
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
@@ -19,38 +24,30 @@ function getMaxSpaces(intel) {
 module.exports = {
     makeKey(context) {
         const roomName = context.targetRoom || context.sponsorRoom;
-        const variant = context.idle ? 'idle' : 'primary';
-        return missionKeys.makeUpgradeKey(roomName, variant);
+        return missionKeys.makeUpgradeKey(roomName, 'primary');
     },
 
-    reconcileRoom({ room, intel, context, missionBoard }) {
-        if (!room || !missionBoard) return;
-        if (!intel || !intel.controller || !intel.controller.my) return;
-        if (context && context.opState === 'EMERGENCY') return;
-        if (missionThrottle.shouldRunReconcile('upgrade', room.name, Game.time)) {
-            missionBoard.createMission('upgrade', {
-                sponsorRoom: room.name,
-                targetRoom: room.name,
-                controllerId: intel.controller.id,
-                idle: false,
-                priority: 50
-            }, { room, intel, context });
-        }
-
-        if (missionThrottle.shouldRunReconcile('upgrade', `${room.name}:idle`, Game.time)) {
-            missionBoard.createMission('upgrade', {
-                sponsorRoom: room.name,
-                targetRoom: room.name,
-                controllerId: intel.controller.id,
-                idle: true,
-                priority: -100
-            }, { room, intel, context });
-        }
+    discover({ room, intel, context }) {
+        if (!room) return [];
+        if (!intel || !intel.controller || !intel.controller.my) return [];
+        if (context && context.opState === 'EMERGENCY') return [];
+        const createContext = {
+            sponsorRoom: room.name,
+            targetRoom: room.name,
+            controllerId: intel.controller.id,
+            priority: 50
+        };
+        return [{
+            key: this.makeKey(createContext),
+            createContext,
+            discoveredMeta: {
+                controllerId: intel.controller.id
+            }
+        }];
     },
 
     create(context) {
         const now = Game.time;
-        const idle = !!context.idle;
         return {
             id: this.makeKey(context),
             key: this.makeKey(context),
@@ -59,7 +56,7 @@ module.exports = {
             state: missionStates.ACTIVE,
             sponsorRoom: context.sponsorRoom,
             targetRoom: context.targetRoom || context.sponsorRoom,
-            priority: Number.isFinite(context.priority) ? context.priority : (idle ? -100 : 50),
+            priority: Number.isFinite(context.priority) ? context.priority : 50,
             createdTick: now,
             updatedTick: now,
             lastCheckedTick: 0,
@@ -69,15 +66,15 @@ module.exports = {
             demand: { role: 'upgrader', count: 0, bodyProfile: 'upgrader' },
             progress: { stage: 'upgrading', lastProgress: 0 },
             meta: {
-                idle,
-                missionName: idle ? 'idle:upgrade' : 'upgrade:controller',
-                spawnAllowed: !idle
+                missionName: 'upgrade:controller',
+                spawnAllowed: true
             },
             statusReason: null
         };
     },
 
     validate(mission, runtimeCtx) {
+        if (mission.meta && mission.meta.idle) return false;
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
@@ -90,7 +87,6 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const context = runtimeCtx && runtimeCtx.context ? runtimeCtx.context : {};
-        const idle = !!(mission.meta && mission.meta.idle);
         const controller = room && room.controller ? room.controller : null;
 
         if (controller) mission.targetId = controller.id;
@@ -98,21 +94,6 @@ module.exports = {
         mission.data = {
             sourceIds: intel && Array.isArray(intel.allEnergySources) ? intel.allEnergySources.map(s => s.id) : []
         };
-
-        if (idle) {
-            const maxSpaces = getMaxSpaces(intel);
-            mission.priority = -100;
-            mission.meta.spawnAllowed = false;
-            mission.requirements = {
-                archetype: 'upgrader',
-                minCount: 0,
-                maxCount: maxSpaces,
-                spawn: false,
-                spawnFromFleet: false
-            };
-            mission.demand = { role: 'upgrader', count: 0, bodyProfile: 'upgrader' };
-            return;
-        }
 
         const opState = context.opState || 'NORMAL';
         const economyState = context.economyState || (intel && intel.economyState) || 'STOCKPILING';
@@ -122,25 +103,28 @@ module.exports = {
         const isCritical = ticksToDowngrade < CRITICAL_DOWNGRADE_TICKS;
 
         let upgradePriority = 50;
-        let desiredWork = 15;
-        if (controller && controller.level < 3) desiredWork = 15;
+        let desiredWork = DEFAULT_DESIRED_WORK;
+        if (controller && controller.level < LOW_RCL_LEVEL_THRESHOLD) desiredWork = DEFAULT_DESIRED_WORK;
         let spawnAllowed = true;
 
         if (economyState === 'STOCKPILING') {
-            desiredWork = 1;
+            desiredWork = STOCKPILING_DESIRED_WORK;
             upgradePriority = 10;
             spawnAllowed = isCritical;
             if (isCritical) upgradePriority = 100;
         }
 
         if (intel && Array.isArray(intel.constructionSites) && intel.constructionSites.length > 0) {
-            desiredWork = 1;
+            desiredWork = CONSTRUCTION_DESIRED_WORK;
             upgradePriority = 20;
         }
 
         let requiredWork = desiredWork;
-        let minCount = desiredWork > 0 ? 1 : 0;
+        let minCount = desiredWork > 0 ? MIN_COUNT_WITH_WORK : 0;
         let maxCount = Math.max(1, Math.min(getMaxSpaces(intel), Number.isFinite(budget) ? getMaxSpaces(intel) : 1));
+        if (controller && controller.level <= LOW_RCL_LEVEL_THRESHOLD) {
+            maxCount = Math.min(maxCount, LOW_RCL_MAX_UPGRADER_COUNT);
+        }
         if (economyState === 'STOCKPILING' && !isCritical) {
             requiredWork = 0;
             minCount = Math.min(assignedCount, maxCount);
@@ -175,23 +159,16 @@ module.exports = {
     },
 
     toContractMission(mission) {
-        const idle = !!(mission.meta && mission.meta.idle);
         const req = mission.requirements || {};
         return {
-            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : (idle ? 'idle:upgrade' : 'upgrade:controller'),
+            name: mission.meta && mission.meta.missionName ? mission.meta.missionName : 'upgrade:controller',
             type: 'upgrade',
             archetype: 'upgrader',
             targetId: mission.targetId,
             data: {
                 sourceIds: mission.data && Array.isArray(mission.data.sourceIds) ? mission.data.sourceIds : []
             },
-            requirements: idle ? {
-                archetype: 'upgrader',
-                minCount: Number.isFinite(req.minCount) ? req.minCount : 0,
-                maxCount: Number.isFinite(req.maxCount) ? req.maxCount : 1,
-                spawn: false,
-                spawnFromFleet: false
-            } : {
+            requirements: {
                 archetype: 'upgrader',
                 requiredWork: Number.isFinite(req.requiredWork) ? req.requiredWork : 1,
                 minCount: Number.isFinite(req.minCount) ? req.minCount : 1,
@@ -199,7 +176,7 @@ module.exports = {
                 spawn: req.spawn !== false,
                 spawnFromFleet: true
             },
-            priority: Number.isFinite(mission.priority) ? mission.priority : (idle ? -100 : 50)
+            priority: Number.isFinite(mission.priority) ? mission.priority : 50
         };
     }
 };

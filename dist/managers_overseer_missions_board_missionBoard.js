@@ -12,9 +12,6 @@ const DEFAULT_LIVE_TYPE_CAPS = {
     build: 1,
     repair: 2
 };
-const ALWAYS_CHECK_TYPES = new Set([
-    'tower'
-]);
 
 function ensureStatsStore() {
     if (!global.__missionBoardStats || typeof global.__missionBoardStats !== 'object') {
@@ -50,11 +47,14 @@ function beginRoomStats(roomName) {
             refreshError: 0,
             completed: 0
         },
-        reconcile: {
+        refresh: {
             total: 0,
             ran: 0,
             skipped: 0,
             errors: 0,
+            discovered: 0,
+            created: 0,
+            stale: 0,
             byType: Object.create(null)
         }
     };
@@ -300,7 +300,7 @@ function isTypeAtCap(roomName, type) {
     return false;
 }
 
-function createMission(type, context, runtimeCtx) {
+function createMission(type, context, runtimeCtx, options) {
     const board = ensureMemory();
     const roomName = (context && (context.targetRoom || context.sponsorRoom)) || null;
     if (roomName) bumpCreateStat(roomName, 'attempted');
@@ -336,7 +336,8 @@ function createMission(type, context, runtimeCtx) {
     boardIndexing.addIndexes(board, mission);
     invalidateMissionCaches(board, mission, null);
 
-    if (handler.refresh) {
+    const skipInitialRefresh = !!(options && options.skipInitialRefresh === true);
+    if (!skipInitialRefresh && handler.refresh) {
         try {
             handler.refresh(mission, runtimeCtx || null);
             mission.updatedTick = Game.time;
@@ -376,161 +377,269 @@ function getDemandForRoom(roomName) {
     return demand;
 }
 
-function getTickSlice(roomName, missions) {
-    const board = ensureMemory();
-    const total = missions.length;
-    if (total <= 4) return missions;
-    const cursor = Number.isFinite(board.cursors[roomName]) ? board.cursors[roomName] : 0;
-    const size = Math.max(3, Math.ceil(total / 3));
-    const slice = [];
-    for (let i = 0; i < size; i++) {
-        const idx = (cursor + i) % total;
-        slice.push(missions[idx]);
+function indexDesiredByKey(desiredList) {
+    const index = Object.create(null);
+    if (!Array.isArray(desiredList)) return index;
+    for (let i = 0; i < desiredList.length; i++) {
+        const desired = desiredList[i];
+        if (!desired || !desired.key) continue;
+        index[desired.key] = desired;
     }
-    board.cursors[roomName] = (cursor + size) % total;
-    return slice;
+    return index;
 }
 
-function runMissionUpdates(roomName, stats) {
-    ensureMemory();
-    const roomCtx = missionRuntime.getRoomContext(roomName) || {};
-    const live = listLiveByRoom(roomName);
-    const finite = [];
-    const slicedCandidates = [];
+function indexMissionsByKey(missions) {
+    const index = Object.create(null);
+    if (!Array.isArray(missions)) return index;
+    for (let i = 0; i < missions.length; i++) {
+        const mission = missions[i];
+        if (!mission || !mission.key) continue;
+        index[mission.key] = mission;
+    }
+    return index;
+}
+
+function safeDiscover(handler, runtimeCtx) {
+    if (!handler || typeof handler.discover !== 'function') return [];
+    try {
+        const desired = handler.discover({
+            room: runtimeCtx.room || null,
+            intel: runtimeCtx.intel || null,
+            context: runtimeCtx.context || null,
+            runtime: runtimeCtx,
+            missionBoard: module.exports
+        });
+        if (!Array.isArray(desired) || desired.length <= 0) return [];
+        const out = [];
+        for (let i = 0; i < desired.length; i++) {
+            const descriptor = desired[i];
+            if (!descriptor || !descriptor.key || !descriptor.createContext) continue;
+            out.push(descriptor);
+        }
+        return out;
+    } catch (err) {
+        if (typeof debug === 'function') {
+            debug('missions', `[MissionBoard] discover error type=${handler && handler.type ? handler.type : 'unknown'} err=${err && err.message}`);
+        }
+        return [];
+    }
+}
+
+function safeValidate(handler, mission, runtimeCtx, stats) {
+    if (!handler || typeof handler.validate !== 'function') return true;
+    try {
+        return !!handler.validate(mission, runtimeCtx);
+    } catch (err) {
+        if (stats && stats.refresh) stats.refresh.errors = (stats.refresh.errors || 0) + 1;
+        if (typeof debug === 'function') {
+            debug('missions', `[MissionBoard] validate error id=${mission && mission.id} err=${err && err.message}`);
+        }
+        return false;
+    }
+}
+
+function safeRefresh(handler, mission, runtimeCtx, discovered, stats) {
+    if (!handler || typeof handler.refresh !== 'function') return true;
+    try {
+        handler.refresh(mission, runtimeCtx, discovered || null);
+        return true;
+    } catch (err) {
+        if (stats && stats.refresh) stats.refresh.errors = (stats.refresh.errors || 0) + 1;
+        if (typeof debug === 'function') {
+            debug('missions', `[MissionBoard] refresh error id=${mission && mission.id} err=${err && err.message}`);
+        }
+        return false;
+    }
+}
+
+function safeIsComplete(handler, mission, runtimeCtx, stats) {
+    if (!handler || typeof handler.isComplete !== 'function') return false;
+    try {
+        return !!handler.isComplete(mission, runtimeCtx);
+    } catch (err) {
+        if (stats && stats.refresh) stats.refresh.errors = (stats.refresh.errors || 0) + 1;
+        if (typeof debug === 'function') {
+            debug('missions', `[MissionBoard] complete check error id=${mission && mission.id} err=${err && err.message}`);
+        }
+        return false;
+    }
+}
+
+function safeOnInvalid(handler, mission, runtimeCtx) {
+    if (!handler || typeof handler.onInvalid !== 'function') return;
+    try { handler.onInvalid(mission, runtimeCtx); } catch (err) {}
+}
+
+function safeOnComplete(handler, mission, runtimeCtx) {
+    if (!handler || typeof handler.onComplete !== 'function') return;
+    try { handler.onComplete(mission, runtimeCtx); } catch (err) {}
+}
+
+function safeOnMissing(handler, mission, runtimeCtx) {
+    if (!handler || typeof handler.onMissing !== 'function') return;
+    try { handler.onMissing(mission, runtimeCtx); } catch (err) {}
+}
+
+function safeOnCreate(handler, mission, runtimeCtx, discovered) {
+    if (!handler || typeof handler.onCreate !== 'function') return;
+    try { handler.onCreate(mission, runtimeCtx, discovered || null); } catch (err) {}
+}
+
+function safeCompleteCheck(handler, mission, runtimeCtx, stats) {
+    const complete = safeIsComplete(handler, mission, runtimeCtx, stats);
+    if (!complete) return false;
+    markDone(mission.id, 'complete');
+    safeOnComplete(handler, mission, runtimeCtx);
+    return true;
+}
+
+function createDiscoveredMission(type, handler, desired, runtimeCtx, stats) {
+    if (!desired || !desired.createContext) return null;
+    const created = createMission(type, desired.createContext, runtimeCtx, { skipInitialRefresh: true });
+    if (!created) return null;
+    if (stats && stats.refresh) stats.refresh.created = (stats.refresh.created || 0) + 1;
+    safeOnCreate(handler, created, runtimeCtx, desired);
+    return created;
+}
+
+function runMissionTypeRefresh({
+    type,
+    handler,
+    roomName,
+    roomCtx,
+    stats
+}) {
+    const runtimeCtx = {
+        room: roomCtx.room || Game.rooms[roomName] || null,
+        intel: roomCtx.intel || null,
+        context: roomCtx.context || null
+    };
+
+    const desiredList = safeDiscover(handler, runtimeCtx);
+    const desiredByKey = indexDesiredByKey(desiredList);
+    const live = listLiveByRoom(roomName).filter(m => m.type === type);
+    const liveByKey = indexMissionsByKey(live);
+
+    if (stats && stats.refresh) {
+        stats.refresh.discovered = (stats.refresh.discovered || 0) + desiredList.length;
+        if (!stats.refresh.byType[type]) {
+            stats.refresh.byType[type] = { runs: 0, discovered: 0, created: 0, stale: 0, errors: 0 };
+        }
+        stats.refresh.byType[type].runs += 1;
+        stats.refresh.byType[type].discovered += desiredList.length;
+    }
+
+    for (let i = 0; i < desiredList.length; i++) {
+        const desired = desiredList[i];
+        const existing = liveByKey[desired.key];
+
+        if (!existing) {
+            const created = createDiscoveredMission(type, handler, desired, runtimeCtx, stats);
+            if (created) {
+                if (stats && stats.refresh && stats.refresh.byType[type]) stats.refresh.byType[type].created += 1;
+                const refreshed = safeRefresh(handler, created, runtimeCtx, desired, stats);
+                if (refreshed) safeCompleteCheck(handler, created, runtimeCtx, stats);
+            }
+            continue;
+        }
+
+        const valid = safeValidate(handler, existing, runtimeCtx, stats);
+        if (!valid) {
+            markCancelled(existing.id, 'invalid');
+            safeOnInvalid(handler, existing, runtimeCtx);
+
+            const recreated = createDiscoveredMission(type, handler, desired, runtimeCtx, stats);
+            if (recreated) {
+                if (stats && stats.refresh && stats.refresh.byType[type]) stats.refresh.byType[type].created += 1;
+                const refreshed = safeRefresh(handler, recreated, runtimeCtx, desired, stats);
+                if (refreshed) safeCompleteCheck(handler, recreated, runtimeCtx, stats);
+            }
+            continue;
+        }
+
+        const refreshed = safeRefresh(handler, existing, runtimeCtx, desired, stats);
+        if (refreshed) {
+            safeCompleteCheck(handler, existing, runtimeCtx, stats);
+            existing.lastCheckedTick = Game.time;
+            existing.updatedTick = Game.time;
+        }
+    }
+
     for (let i = 0; i < live.length; i++) {
         const mission = live[i];
-        if (!mission) continue;
-        if (ALWAYS_CHECK_TYPES.has(mission.type)) {
-            finite.push(mission);
-            continue;
-        }
-        if (mission.class === missionClasses.FINITE) finite.push(mission);
-        else slicedCandidates.push(mission);
-    }
-    const selected = finite.concat(getTickSlice(roomName, slicedCandidates));
-    if (stats && stats.updates) {
-        stats.updates.live = live.length;
-        stats.updates.selected = selected.length;
-    }
+        if (desiredByKey[mission.key]) continue;
 
-    for (let i = 0; i < selected.length; i++) {
-        const mission = selected[i];
-        if (!missionThrottle.shouldCheckMission(mission, Game.time)) {
-            if (stats && stats.updates) stats.updates.throttleFiltered += 1;
-            continue;
-        }
-        if (stats && stats.updates) stats.updates.checked += 1;
-
-        const handler = missionRegistry.get(mission.type);
-        if (!handler) {
-            markCancelled(mission.id, 'missing_handler');
-            if (stats && stats.updates) stats.updates.missingHandler += 1;
-            continue;
+        if (stats && stats.refresh) {
+            stats.refresh.stale = (stats.refresh.stale || 0) + 1;
+            if (stats.refresh.byType[type]) stats.refresh.byType[type].stale += 1;
         }
 
-        const runtime = missionRuntime.getMissionRuntime(mission);
-        runtime.room = roomCtx.room || Game.rooms[roomName] || null;
-        runtime.intel = roomCtx.intel || null;
-        runtime.context = roomCtx.context || null;
-
-        let valid = true;
-        if (handler.validate) {
-            try {
-                valid = !!handler.validate(mission, runtime);
-            } catch (err) {
-                valid = false;
-                if (typeof debug === 'function') {
-                    debug('missions', `[MissionBoard] validate error id=${mission.id} err=${err && err.message}`);
-                }
-            }
-        }
-
-        if (!valid) {
-            markCancelled(mission.id, 'invalid');
-            if (stats && stats.updates) stats.updates.invalid += 1;
-            if (handler.onInvalid) {
-                try { handler.onInvalid(mission, runtime); } catch (err) {}
-            }
-            continue;
-        }
-
-        if (handler.refresh) {
-            try { handler.refresh(mission, runtime); } catch (err) {
-                markBlocked(mission.id, 'refresh_error');
-                if (stats && stats.updates) stats.updates.refreshError += 1;
-                continue;
-            }
-        }
-
-        const complete = handler.isComplete ? !!handler.isComplete(mission, runtime) : false;
+        const complete = safeIsComplete(handler, mission, runtimeCtx, stats);
         if (complete) {
             markDone(mission.id, 'complete');
-            if (stats && stats.updates) stats.updates.completed += 1;
-            if (handler.onComplete) {
-                try { handler.onComplete(mission, runtime); } catch (err) {}
-            }
+            safeOnComplete(handler, mission, runtimeCtx);
             continue;
         }
 
-        mission.lastCheckedTick = Game.time;
-        mission.updatedTick = Game.time;
+        const valid = safeValidate(handler, mission, runtimeCtx, stats);
+        if (!valid || mission.class === missionClasses.SERVICE) {
+            markCancelled(mission.id, 'missing_from_discovery');
+            safeOnMissing(handler, mission, runtimeCtx);
+            continue;
+        }
+
+        const refreshed = safeRefresh(handler, mission, runtimeCtx, null, stats);
+        if (refreshed) {
+            mission.lastCheckedTick = Game.time;
+            mission.updatedTick = Game.time;
+        }
     }
 }
 
-function markBlocked(id, reason) {
-    return setState(id, missionStates.BLOCKED, reason || 'blocked');
-}
+function runMissionRefresh(roomName, stats) {
+    ensureMemory();
 
-function runMissionReconciliation(roomName, stats) {
     const roomCtx = missionRuntime.getRoomContext(roomName);
     if (!roomCtx || !roomCtx.room) return;
+
     const handlers = missionRegistry.getAll();
-    const types = Object.keys(handlers);
-    for (let i = 0; i < types.length; i++) {
-        const type = types[i];
+    for (const type in handlers) {
+        if (!Object.prototype.hasOwnProperty.call(handlers, type)) continue;
         const handler = handlers[type];
-        if (stats && stats.reconcile) {
-            stats.reconcile.total = (stats.reconcile.total || 0) + 1;
-            if (!stats.reconcile.byType) stats.reconcile.byType = Object.create(null);
-            if (!stats.reconcile.byType[type]) {
-                stats.reconcile.byType[type] = { runs: 0, created: 0, skipped: 0, errors: 0 };
+
+        if (stats && stats.refresh) {
+            stats.refresh.total = (stats.refresh.total || 0) + 1;
+            if (!stats.refresh.byType[type]) {
+                stats.refresh.byType[type] = { runs: 0, discovered: 0, created: 0, stale: 0, errors: 0 };
             }
         }
-        if (!handler || typeof handler.reconcileRoom !== 'function') {
-            if (stats && stats.reconcile) {
-                stats.reconcile.skipped = (stats.reconcile.skipped || 0) + 1;
-                stats.reconcile.byType[type].skipped = (stats.reconcile.byType[type].skipped || 0) + 1;
-            }
+
+        if (!handler || typeof handler.discover !== 'function') {
+            if (stats && stats.refresh) stats.refresh.skipped = (stats.refresh.skipped || 0) + 1;
             continue;
         }
 
-        const createdBefore = stats && stats.create ? (stats.create.created || 0) : 0;
+        if (!missionThrottle.shouldRunMissionRefresh(type, roomName, Game.time)) {
+            if (stats && stats.refresh) stats.refresh.skipped = (stats.refresh.skipped || 0) + 1;
+            continue;
+        }
+
         try {
-            handler.reconcileRoom({
-                room: roomCtx.room,
-                intel: roomCtx.intel,
-                context: roomCtx.context,
-                missionBoard: module.exports,
-                stats: stats || null
+            runMissionTypeRefresh({
+                type,
+                handler,
+                roomName,
+                roomCtx,
+                stats
             });
-            if (stats && stats.reconcile) {
-                stats.reconcile.ran = (stats.reconcile.ran || 0) + 1;
-                stats.reconcile.byType[type].runs += 1;
-                const createdAfter = stats.create ? (stats.create.created || 0) : createdBefore;
-                const delta = Math.max(0, createdAfter - createdBefore);
-                stats.reconcile.byType[type].created += delta;
-                if (delta <= 0) {
-                    stats.reconcile.skipped = (stats.reconcile.skipped || 0) + 1;
-                    stats.reconcile.byType[type].skipped = (stats.reconcile.byType[type].skipped || 0) + 1;
-                }
-            }
+            if (stats && stats.refresh) stats.refresh.ran = (stats.refresh.ran || 0) + 1;
         } catch (err) {
-            if (stats && stats.reconcile) {
-                stats.reconcile.errors = (stats.reconcile.errors || 0) + 1;
-                stats.reconcile.byType[type].errors += 1;
+            if (stats && stats.refresh) {
+                stats.refresh.errors = (stats.refresh.errors || 0) + 1;
+                if (stats.refresh.byType[type]) stats.refresh.byType[type].errors += 1;
             }
             if (typeof debug === 'function') {
-                debug('missions', `[MissionBoard] reconcile error type=${type} err=${err && err.message}`);
+                debug('missions', `[MissionBoard] refresh error type=${type} err=${err && err.message}`);
             }
         }
     }
@@ -551,8 +660,7 @@ function runRoom(room, data) {
         context: data && data.context ? data.context : null
     });
     const stats = beginRoomStats(room.name);
-    runMissionUpdates(room.name, stats);
-    runMissionReconciliation(room.name, stats);
+    runMissionRefresh(room.name, stats);
     cleanup();
 }
 
@@ -634,8 +742,7 @@ module.exports = {
     listActive,
     listLiveByRoom,
     listLiveByNamespace,
-    runMissionUpdates,
-    runMissionReconciliation,
+    runMissionRefresh,
     cleanup,
     runRoom,
     getMissionContractsForRoom,
