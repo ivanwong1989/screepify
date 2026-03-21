@@ -111,7 +111,7 @@ profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'over
 
 
 
-if (Memory.profilerEnabled === true) profiler.enable();
+
 
 function runMainLoop() {
         // Main.js logic should go here.
@@ -272,6 +272,7 @@ function runMainLoop() {
 
 module.exports.loop = function() {
     if (Memory.profilerEnabled === true) {
+        profiler.enable();
         return profiler.wrap(runMainLoop);
     }
     return runMainLoop();

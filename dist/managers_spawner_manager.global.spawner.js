@@ -20,6 +20,78 @@ function getCandidateSpawnTier(candidate) {
     return 1;
 }
 
+const ROOM_NAME_REGEX = /^([WE])(\d+)([NS])(\d+)$/;
+const REMOTE_ASSIST_CACHE_RESET_TICKS = 1000;
+
+function getRemoteAssistCache() {
+    if (!global.__remoteAssistRoomPairCache || global.__remoteAssistRoomPairCacheTick + REMOTE_ASSIST_CACHE_RESET_TICKS < Game.time) {
+        global.__remoteAssistRoomPairCache = Object.create(null);
+        global.__remoteAssistRoomPairCacheTick = Game.time;
+    }
+    return global.__remoteAssistRoomPairCache;
+}
+
+function getRoomPairCacheKey(roomA, roomB) {
+    if (!roomA || !roomB) return '';
+    return roomA < roomB ? `${roomA}|${roomB}` : `${roomB}|${roomA}`;
+}
+
+function roomAxisToSigned(axis, value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return axis === 'W' || axis === 'N' ? -parsed - 1 : parsed;
+}
+
+function parseRoomName(roomName) {
+    if (!roomName || typeof roomName !== 'string') return null;
+    const match = ROOM_NAME_REGEX.exec(roomName);
+    if (!match) return null;
+
+    const x = roomAxisToSigned(match[1], match[2]);
+    const y = roomAxisToSigned(match[3], match[4]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+}
+
+function isCardinalAdjacentRoom(roomA, roomB) {
+    const a = parseRoomName(roomA);
+    const b = parseRoomName(roomB);
+    if (!a || !b) return false;
+
+    const dx = Math.abs(a.x - b.x);
+    const dy = Math.abs(a.y - b.y);
+    return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
+}
+
+function hasDirectExitBetweenRooms(roomA, roomB) {
+    if (!roomA || !roomB || roomA === roomB) return false;
+    const exitsA = Game.map.describeExits(roomA);
+    if (!exitsA) return false;
+
+    const roomBInA = Object.values(exitsA).some(name => name === roomB);
+    if (!roomBInA) return false;
+
+    const exitsB = Game.map.describeExits(roomB);
+    if (!exitsB) return false;
+    return Object.values(exitsB).some(name => name === roomA);
+}
+
+function isValidRemoteAssistRoom(homeRoomName, helperRoomName) {
+    if (!homeRoomName || !helperRoomName) return false;
+    const key = getRoomPairCacheKey(homeRoomName, helperRoomName);
+    if (!key) return false;
+
+    const cache = getRemoteAssistCache();
+    if (cache[key] !== undefined) {
+        return cache[key] === true;
+    }
+
+    const isValid = isCardinalAdjacentRoom(homeRoomName, helperRoomName) &&
+        hasDirectExitBetweenRooms(homeRoomName, helperRoomName);
+    cache[key] = isValid;
+    return isValid;
+}
+
 function getHomeSpawnPosition(homeRoomName) {
     if (!homeRoomName) return null;
     const homeRoom = Game.rooms[homeRoomName];
@@ -106,23 +178,7 @@ module.exports = {
             if (candidate.role === 'miner' || candidate.role === 'simple_miner') return false;
             if (s.room.energyAvailable < candidate.cost) return false;
             if (s.room._opState === 'EMERGENCY') return false;
-
-            if (homeSpawns.length === 0) {
-                const distFallback = Game.map.getRoomLinearDistance(candidate.homeRoom, s.room.name);
-                return distFallback <= 2;
-            }
-
-            let best = null;
-            for (const homeSpawn of homeSpawns) {
-                const dist = spawnDistanceCache.getDistance(homeSpawn.id, s.id);
-                if (dist === undefined || dist === null) continue;
-                if (!best || dist.rooms < best.rooms || (dist.rooms === best.rooms && dist.stepsApprox < best.stepsApprox)) {
-                    best = dist;
-                }
-            }
-
-            if (!best) return false;
-            return best.rooms <= 2;
+            return isValidRemoteAssistRoom(candidate.homeRoom, s.room.name);
         });
 
         if (remoteCandidates.length > 0) {
