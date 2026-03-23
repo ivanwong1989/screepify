@@ -1,4 +1,5 @@
 const constants = require('managers_overseer_policy_room.policy.constants');
+const STOCKPILE_HYSTERESIS_RATIO = 0.10;
 
 function derivePhase(room, intel) {
     const controller = room && room.controller ? room.controller : null;
@@ -68,8 +69,11 @@ function deriveState(room, intel, phase, reasons) {
     const controller = room && room.controller ? room.controller : null;
     const rcl = controller && Number.isFinite(controller.level) ? controller.level : 0;
     const stockpileTarget = getStockpileTargetByRcl(rcl);
+    const stockpileLowerBound = Math.floor(stockpileTarget * (1 - STOCKPILE_HYSTERESIS_RATIO));
+    const stockpileUpperBound = Math.ceil(stockpileTarget * (1 + STOCKPILE_HYSTERESIS_RATIO));
     const hostiles = intel && Array.isArray(intel.hostiles) ? intel.hostiles : [];
     const combatState = room && room.memory && room.memory.admiral ? room.memory.admiral.state : null;
+    const previousState = room && room.memory && room.memory.overseer ? room.memory.overseer.state : null;
 
     if (combatState === 'SIEGE') {
         reasons.push('combat=SIEGE -> state SIEGE');
@@ -104,9 +108,26 @@ function deriveState(room, intel, phase, reasons) {
         return constants.STATE.RECOVER;
     }
 
-    if (room && room.storage && storageEnergy < stockpileTarget) {
-        reasons.push(`storage below stockpile target (${storageEnergy}/${stockpileTarget}) -> state STOCKPILE`);
-        return constants.STATE.STOCKPILE;
+    if (room && room.storage && stockpileTarget > 0) {
+        const wasStockpiling = previousState === constants.STATE.STOCKPILE;
+        if (wasStockpiling) {
+            if (storageEnergy >= stockpileUpperBound) {
+                reasons.push(
+                    `stockpile hysteresis release (${storageEnergy} >= ${stockpileUpperBound}, target=${stockpileTarget}) -> state GROW`
+                );
+                return constants.STATE.GROW;
+            }
+            reasons.push(
+                `stockpile hysteresis hold (${storageEnergy} < ${stockpileUpperBound}, target=${stockpileTarget}) -> state STOCKPILE`
+            );
+            return constants.STATE.STOCKPILE;
+        }
+        if (storageEnergy <= stockpileLowerBound) {
+            reasons.push(
+                `stockpile hysteresis enter (${storageEnergy} <= ${stockpileLowerBound}, target=${stockpileTarget}) -> state STOCKPILE`
+            );
+            return constants.STATE.STOCKPILE;
+        }
     }
 
     reasons.push('default healthy -> state GROW');

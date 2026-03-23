@@ -261,6 +261,7 @@ function shouldActivateFortify(policy) {
         || state === policyConstants.STATE.DEFENSIVE
         || state === policyConstants.STATE.SIEGE
     ) return true;
+    if (state === policyConstants.STATE.STOCKPILE) return false;
     return phaseRank >= storagePhaseRank;
 }
 
@@ -385,7 +386,11 @@ module.exports = {
         if (roomState === policyConstants.STATE.SIEGE || underAttack) {
             mission.meta.minCount = 2;
             mission.meta.maxCount = 2;
-        } else if (roomState === policyConstants.STATE.CRITICAL || roomState === policyConstants.STATE.RECOVER) {
+        } else if (
+            roomState === policyConstants.STATE.CRITICAL
+            || roomState === policyConstants.STATE.RECOVER
+            || roomState === policyConstants.STATE.STOCKPILE
+        ) {
             mission.meta.minCount = 0;
             mission.meta.maxCount = 0;
         } else {
@@ -481,7 +486,11 @@ module.exports = {
                 maxCarryParts: FORTIFY_WORKER_TUNING.maxCarryParts,
                 maxMoveParts: FORTIFY_WORKER_TUNING.maxMoveParts,
                 spawnFromFleet: true,
-                spawn: true
+                spawn: !!(
+                    mission.meta
+                    && Number.isFinite(mission.meta.maxCount)
+                    && mission.meta.maxCount > 0
+                )
             },
             priority: mission.priority || 55
         };

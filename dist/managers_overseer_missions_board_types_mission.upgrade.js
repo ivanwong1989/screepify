@@ -36,6 +36,8 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room) return [];
         if (!intel || !intel.controller || !intel.controller.my) return [];
+        const policy = context && context.policy ? context.policy : null;
+        if (policy && policy.state === policyConstants.STATE.STOCKPILE) return [];
         const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
@@ -80,6 +82,8 @@ module.exports = {
 
     validate(mission, runtimeCtx) {
         if (mission.meta && mission.meta.idle) return false;
+        const policy = runtimeCtx && runtimeCtx.context ? runtimeCtx.context.policy : null;
+        if (policy && policy.state === policyConstants.STATE.STOCKPILE) return false;
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
@@ -108,21 +112,27 @@ module.exports = {
         const assignedCount = mission.assigned.primary.length;
         const ticksToDowngrade = controller && Number.isFinite(controller.ticksToDowngrade) ? controller.ticksToDowngrade : 999999;
         const isCritical = ticksToDowngrade < CRITICAL_DOWNGRADE_TICKS;
+        const criticalUpgradeGated = roomState === policyConstants.STATE.CRITICAL && !isCritical;
 
         let upgradePriority = 50;
         let desiredWork = DEFAULT_DESIRED_WORK;
         if (controller && controller.level < LOW_RCL_LEVEL_THRESHOLD) desiredWork = DEFAULT_DESIRED_WORK;
         let spawnAllowed = true;
 
-        if (roomState === policyConstants.STATE.CRITICAL) {
+        if (criticalUpgradeGated) {
+            desiredWork = 0;
+            upgradePriority = 30;
+            spawnAllowed = false;
+        } else if (roomState === policyConstants.STATE.CRITICAL) {
             desiredWork = STOCKPILING_DESIRED_WORK;
             upgradePriority = 90;
         } else if (roomState === policyConstants.STATE.RECOVER) {
             desiredWork = STOCKPILING_DESIRED_WORK;
             upgradePriority = 20;
         } else if (roomState === policyConstants.STATE.STOCKPILE) {
-            desiredWork = STOCKPILING_DESIRED_WORK;
-            upgradePriority = 10;
+            desiredWork = 0;
+            upgradePriority = 5;
+            spawnAllowed = false;
         } else if (roomState === policyConstants.STATE.DEFENSIVE || roomState === policyConstants.STATE.SIEGE) {
             desiredWork = STOCKPILING_DESIRED_WORK;
             upgradePriority = 25;
@@ -145,10 +155,15 @@ module.exports = {
             maxCount = Math.min(maxCount, 1);
             upgradePriority = Math.min(upgradePriority, 40);
         }
-        if (
+        if (roomState === policyConstants.STATE.STOCKPILE) {
+            minCount = 0;
+            maxCount = 0;
+        } else if (criticalUpgradeGated) {
+            minCount = 0;
+            maxCount = 0;
+        } else if (
             roomState === policyConstants.STATE.CRITICAL
             || roomState === policyConstants.STATE.RECOVER
-            || roomState === policyConstants.STATE.STOCKPILE
             || roomState === policyConstants.STATE.DEFENSIVE
             || roomState === policyConstants.STATE.SIEGE
         ) {
