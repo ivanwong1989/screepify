@@ -58,6 +58,20 @@ function logLogisticsDebug(message) {
     debug('mission.logistics', message);
 }
 
+function isCoreLaneStockDebugEnabled(roomName) {
+    if (!Memory || !Memory.debugCoreLaneStock) return false;
+    if (Memory.debugCoreLaneStock === true) return true;
+    if (typeof Memory.debugCoreLaneStock === 'string') return Memory.debugCoreLaneStock === roomName;
+    if (Array.isArray(Memory.debugCoreLaneStock)) return Memory.debugCoreLaneStock.indexOf(roomName) >= 0;
+    return false;
+}
+
+function logCoreLaneStockDebug(room, message) {
+    if (typeof debug !== 'function' || !room) return;
+    if (!isCoreLaneStockDebugEnabled(room.name)) return;
+    debug('mission.logistics', `[CoreLaneStock] ${room.name} ${message}`);
+}
+
 function posKey(pos) {
     return pos ? `${pos.roomName}:${pos.x},${pos.y}` : '';
 }
@@ -1082,6 +1096,11 @@ function getTerminalStockJobs(room) {
         const terminalEnergy = (terminal.store[RESOURCE_ENERGY] || 0) + (transit.committedToTerminal[RESOURCE_ENERGY] || 0);
         const storageEnergy = storage.store[RESOURCE_ENERGY] || 0;
         const storageEnergyFree = Math.max(0, (storage.store.getFreeCapacity(RESOURCE_ENERGY) || 0) - getTransitAmount(transit.targetReservations, storage.id, RESOURCE_ENERGY));
+        logCoreLaneStockDebug(
+            room,
+            `energy target=${terminalEnergyTarget} terminal=${terminalEnergy} storage=${storageEnergy} storageFree=${storageEnergyFree} ` +
+            `transitTerminal=${transit.committedToTerminal[RESOURCE_ENERGY] || 0}`
+        );
 
         if (terminalEnergy > terminalEnergyTarget) {
             const excess = Math.min(terminalEnergy - terminalEnergyTarget, storageEnergyFree);
@@ -1099,6 +1118,7 @@ function getTerminalStockJobs(room) {
                         pathKey: 'core',
                         priority: 97
                     });
+                    logCoreLaneStockDebug(room, `job add id=${id} mode=drainTerminal amount=${excess}`);
                 }
             }
         } else if (terminalEnergy < terminalEnergyTarget) {
@@ -1117,8 +1137,11 @@ function getTerminalStockJobs(room) {
                         pathKey: 'core',
                         priority: 97
                     });
+                    logCoreLaneStockDebug(room, `job add id=${id} mode=fillTerminal amount=${need}`);
                 }
             }
+        } else {
+            logCoreLaneStockDebug(room, 'energy at target (no energy stock job)');
         }
     }
 
@@ -1154,6 +1177,10 @@ function getTerminalStockJobs(room) {
                             pathKey: 'core',
                             priority: 97
                         });
+                        logCoreLaneStockDebug(
+                            room,
+                            `job add id=${id} mode=fillTerminal res=${resourceType} target=${target} lo=${lo} hi=${hi} term=${termAmt} amount=${need}`
+                        );
                     }
                 }
                 return;
@@ -1176,9 +1203,18 @@ function getTerminalStockJobs(room) {
                             pathKey: 'core',
                             priority: 97
                         });
+                        logCoreLaneStockDebug(
+                            room,
+                            `job add id=${id} mode=drainTerminal res=${resourceType} target=${target} lo=${lo} hi=${hi} term=${termAmt} amount=${excess}`
+                        );
                     }
                 }
+                return;
             }
+            logCoreLaneStockDebug(
+                room,
+                `deadband hold res=${resourceType} target=${target} lo=${lo} hi=${hi} term=${termAmt}`
+            );
             return;
         }
 
@@ -1199,11 +1235,21 @@ function getTerminalStockJobs(room) {
                         pathKey: 'core',
                         priority: 97
                     });
+                    logCoreLaneStockDebug(
+                        room,
+                        `job add id=${id} mode=flushTerminal res=${resourceType} term=${termAmt} amount=${flushAll}`
+                    );
                 }
             }
         }
     });
 
+    if (jobs.length <= 0) {
+        logCoreLaneStockDebug(room, 'no stock jobs generated');
+    } else {
+        const summary = jobs.map(j => `${j.resourceType}:${j.amountHint || 0}:${j.sourceId}->${j.targetId}`).join(',');
+        logCoreLaneStockDebug(room, `stock jobs=${jobs.length} ${summary}`);
+    }
     return jobs;
 }
 
@@ -1357,8 +1403,10 @@ function clampAssignedCoreLaneCreeps(names, maxCount) {
 function getEstimatedCarryPartsPerHauler(room) {
     if (!room) return 3;
     const cap = Math.max(0, room.energyCapacityAvailable || 0);
-    // Max MOVE,CARRY body (1:1) is limited by room capacity and 50-part hard cap (25 pairs).
-    return Math.max(1, Math.min(25, Math.floor(cap / 100)));
+    // Core lane haulers are road-optimized: require CARRY <= 2 * MOVE.
+    // Max CARRY with 50-part cap is 33 (33 CARRY + 17 MOVE).
+    const maxCarryByEnergy = Math.floor((cap * 2) / 150);
+    return Math.max(1, Math.min(33, maxCarryByEnergy));
 }
 
 function getAssignedCarryParts(names) {

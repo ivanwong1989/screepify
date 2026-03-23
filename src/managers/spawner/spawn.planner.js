@@ -12,9 +12,44 @@ function isRemoteContract(entry) {
     return false;
 }
 
+function normalizeRoleName(role) {
+    const raw = role ? String(role) : '';
+    const lower = raw.toLowerCase();
+    if (!lower) return '';
+
+    if (lower === 'simpleharvest') return 'simple_miner';
+    if (lower === 'mininglanehauler') return 'miningLaneHauler';
+    if (lower === 'logisticscorehaulerv2') return 'coreLaneHauler';
+    return raw;
+}
+
+function getRolePriorityRank(role) {
+    const normalized = normalizeRoleName(role);
+    switch (normalized) {
+        case 'simple_miner':
+            return 0; // simpleHarvest
+        case 'simpleHaulerCore':
+            return 1;
+        case 'simpleMiningHauler':
+            return 2;
+        case 'miner':
+            return 3;
+        case 'coreLaneHauler':
+            return 4;
+        case 'miningLaneHauler':
+            return 5; // MiningLaneHauler alias is normalized above
+        case 'upgrader':
+            return 6;
+        case 'worker':
+            return 7;
+        default:
+            return 99;
+    }
+}
+
 function getContractSpawnTier(entry) {
     const contract = entry && entry.contract ? entry.contract : null;
-    const role = contract && contract.role ? String(contract.role) : '';
+    const role = normalizeRoleName(contract && contract.role ? contract.role : '');
     if (
         role === 'simple_miner' ||
         role === 'miner' ||
@@ -29,18 +64,20 @@ function getContractSpawnTier(entry) {
 }
 
 function isMiningRole(role) {
-    return role === 'simple_miner' || role === 'miner' || role === 'remote_miner' || role === 'mineral_miner';
+    const normalized = normalizeRoleName(role);
+    return normalized === 'simple_miner' || normalized === 'miner' || normalized === 'remote_miner' || normalized === 'mineral_miner';
 }
 
 function isHaulingRole(role) {
+    const normalized = normalizeRoleName(role);
     return (
-        role === 'hauler' ||
-        role === 'remote_hauler' ||
-        role === 'user_hauler' ||
-        role === 'coreLaneHauler' ||
-        role === 'miningLaneHauler' ||
-        role === 'simpleHaulerCore' ||
-        role === 'simpleMiningHauler'
+        normalized === 'hauler' ||
+        normalized === 'remote_hauler' ||
+        normalized === 'user_hauler' ||
+        normalized === 'coreLaneHauler' ||
+        normalized === 'miningLaneHauler' ||
+        normalized === 'simpleHaulerCore' ||
+        normalized === 'simpleMiningHauler'
     );
 }
 
@@ -70,6 +107,10 @@ const spawnPlanner = {
         }
 
         unmet.sort((a, b) => {
+            const roleRankA = getRolePriorityRank(a.entry && a.entry.contract ? a.entry.contract.role : '');
+            const roleRankB = getRolePriorityRank(b.entry && b.entry.contract ? b.entry.contract.role : '');
+            if (roleRankA !== roleRankB) return roleRankA - roleRankB;
+
             const tierA = getContractSpawnTier(a.entry);
             const tierB = getContractSpawnTier(b.entry);
             if (tierA !== tierB) return tierA - tierB;
@@ -101,6 +142,7 @@ const spawnPlanner = {
         const mission = entry && entry.mission;
         const contract = entry && entry.contract;
         if (!contract) return null;
+        const role = normalizeRoleName(contract.role);
 
         const budget = this.computeBudget(room, contract);
         const buildBody = options && options.buildBody;
@@ -112,7 +154,7 @@ const spawnPlanner = {
         const cost = calculateBodyCost(body);
 
         const memory = {
-            role: contract.role,
+            role,
             room: room.name,
             taskState: 'init',
             contractId: contract.contractId,
@@ -136,8 +178,8 @@ const spawnPlanner = {
         return {
             contractId: contract.contractId,
             missionName: mission && mission.name ? mission.name : null,
-            role: contract.role,
-            archetype: mission && mission.archetype ? mission.archetype : contract.role,
+            role,
+            archetype: mission && mission.archetype ? normalizeRoleName(mission.archetype) : role,
             priority: Number.isFinite(contract.priority) ? contract.priority : 0,
             bindMode: contract.bindMode,
             bindId: contract.bindId,
@@ -153,7 +195,7 @@ const spawnPlanner = {
     computeBudget: function(room, contract) {
         const opState = room._opState;
         let budget = room.energyCapacityAvailable;
-        const role = contract && contract.role ? String(contract.role) : '';
+        const role = normalizeRoleName(contract && contract.role ? contract.role : '');
 
         const cache = global.getRoomCache(room);
         const myCreeps = cache.myCreeps || [];
@@ -177,6 +219,7 @@ const spawnPlanner = {
                 c.memory.role === 'remote_hauler' ||
                 c.memory.role === 'user_hauler' ||
                 c.memory.role === 'coreLaneHauler' ||
+                c.memory.role === 'logisticscorehaulerv2' ||
                 c.memory.role === 'miningLaneHauler' ||
                 c.memory.role === 'simpleHaulerCore' ||
                 c.memory.role === 'simpleMiningHauler'
@@ -186,7 +229,7 @@ const spawnPlanner = {
         const hasCoreLaneHaulers = myCreeps.some(c =>
             c &&
             c.memory &&
-            c.memory.role === 'coreLaneHauler' &&
+            (c.memory.role === 'coreLaneHauler' || c.memory.role === 'logisticscorehaulerv2') &&
             !c.spawning
         );
 

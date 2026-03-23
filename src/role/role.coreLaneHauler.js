@@ -1,5 +1,6 @@
 const missionBoard = require('managers_overseer_missions_board_missionBoard');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
+const managerTerminal = require('managers_structures_manager.terminal');
 const movement = require('utils_movement');
 
 const STATE_LOAD = 'LOAD';
@@ -11,6 +12,26 @@ const RENEW_STOP_TTL = 1450;
 function logCoreLaneDebug(creep, mission, message) {
     if (typeof debug !== 'function' || !creep || !mission) return;
     debug('mission.logistics', `[CoreLaneExec] ${creep.name} ${mission.targetRoom || mission.sponsorRoom} ${message}`);
+}
+
+function formatCoreLaneJob(job) {
+    if (!job) return '-';
+    const hint = Number.isFinite(job.amountHint) ? job.amountHint : '-';
+    return `${job.id || '-'} kind=${job.kind || '-'} res=${job.resourceType || '-'} hint=${hint}`;
+}
+
+function setCoreLaneState(creep, mission, nextState, reason) {
+    if (!creep || !creep.memory || !nextState) return;
+    const prevState = creep.memory.coreLaneState || '-';
+    if (prevState !== nextState) {
+        logCoreLaneDebug(
+            creep,
+            mission,
+            `state ${prevState}->${nextState} reason=${reason || '-'} ` +
+            `job=${creep.memory.coreLaneJobId || '-'} carryE=${creep.store ? (creep.store[RESOURCE_ENERGY] || 0) : 0}`
+        );
+    }
+    creep.memory.coreLaneState = nextState;
 }
 
 function logTrafficIntent(creep, missionId, nextPos, label) {
@@ -584,6 +605,73 @@ function getStoreAmount(obj, resourceType) {
     return 0;
 }
 
+function parseStockJobId(jobId) {
+    if (typeof jobId !== 'string' || !jobId.startsWith('stock:')) return null;
+    const parts = jobId.split(':');
+    if (parts.length < 4) return null;
+    return {
+        sourceId: parts[1] || null,
+        targetId: parts[2] || null,
+        resourceType: parts.slice(3).join(':') || null
+    };
+}
+
+function clampNumber(value, fallback, min, max) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    if (Number.isFinite(min) && num < min) return min;
+    if (Number.isFinite(max) && num > max) return max;
+    return num;
+}
+
+function isStockJobDirectionStillNeeded(job) {
+    if (!job || !job.id || job.id.indexOf('stock:') !== 0 || !job.resourceType) return true;
+    const parsed = parseStockJobId(job.id);
+    if (!parsed || !parsed.sourceId || !parsed.targetId || !parsed.resourceType) return true;
+
+    const source = Game.getObjectById(parsed.sourceId);
+    const target = Game.getObjectById(parsed.targetId);
+    if (!source || !target || !source.store || !target.store) return false;
+
+    const terminal = source.structureType === STRUCTURE_TERMINAL
+        ? source
+        : (target.structureType === STRUCTURE_TERMINAL ? target : null);
+    const storage = source.structureType === STRUCTURE_STORAGE
+        ? source
+        : (target.structureType === STRUCTURE_STORAGE ? target : null);
+    if (!terminal || !storage || !terminal.room || !terminal.room.name) return true;
+
+    const roomName = terminal.room.name;
+    const resourceType = parsed.resourceType;
+    const terminalAmount = terminal.store[resourceType] || 0;
+    const movingToTerminal = parsed.targetId === terminal.id;
+    const movingFromTerminal = parsed.sourceId === terminal.id;
+    if (!movingToTerminal && !movingFromTerminal) return true;
+
+    if (resourceType === RESOURCE_ENERGY) {
+        if (!managerTerminal || typeof managerTerminal.getTerminalEnergyTarget !== 'function') return true;
+        const targetAmount = Math.max(0, Math.floor(managerTerminal.getTerminalEnergyTarget(roomName) || 0));
+        if (terminalAmount > targetAmount) return movingFromTerminal;
+        if (terminalAmount < targetAmount) return movingToTerminal;
+        return false;
+    }
+
+    if (!managerTerminal || typeof managerTerminal.getTerminalStockTargets !== 'function') return true;
+    const targets = managerTerminal.getTerminalStockTargets(roomName) || {};
+    const targetAmount = Number(targets[resourceType] || 0);
+    if (targetAmount > 0) {
+        const deadband = clampNumber(Math.ceil(targetAmount * 0.05), 50, 50, 2000);
+        const lo = Math.max(0, targetAmount - deadband);
+        const hi = targetAmount + deadband;
+        if (terminalAmount < lo) return movingToTerminal;
+        if (terminalAmount > hi) return movingFromTerminal;
+        return false;
+    }
+
+    if (terminalAmount > 0) return movingFromTerminal;
+    return false;
+}
+
 function countBodyParts(creep, partType) {
     if (!creep || !Array.isArray(creep.body)) return 0;
     let total = 0;
@@ -929,6 +1017,7 @@ function isJobRunnable(job, carriedAmount, remainingAmount) {
     if (!job || !job.resourceType) return false;
     const remaining = Number.isFinite(remainingAmount) ? Math.max(0, Math.floor(remainingAmount)) : Infinity;
     if (remaining <= 0) return false;
+    if (!isStockJobDirectionStillNeeded(job)) return false;
     const target = job.targetId ? Game.getObjectById(job.targetId) : null;
     if (!target || !target.store || typeof target.store.getFreeCapacity !== 'function') return false;
     if (job.resourceType === RESOURCE_ENERGY && target.structureType === STRUCTURE_FACTORY) return false;
@@ -942,15 +1031,33 @@ function isJobRunnable(job, carriedAmount, remainingAmount) {
     return getStoreAmount(source, job.resourceType) > 0;
 }
 
-function pickLaneJob(runtime, creep, missionId) {
+function pickLaneJob(runtime, creep, missionId, mission) {
     if (!runtime || !Array.isArray(runtime.laneJobs) || runtime.laneJobs.length <= 0) return null;
+    let skippedClaimed = 0;
+    let skippedUnrunnable = 0;
     for (let i = 0; i < runtime.laneJobs.length; i++) {
         const job = runtime.laneJobs[i];
         if (!job) continue;
-        if (isJobClaimedByOther(missionId, job.id, creep && creep.name)) continue;
+        if (isJobClaimedByOther(missionId, job.id, creep && creep.name)) {
+            skippedClaimed++;
+            continue;
+        }
         const carried = creep && creep.store ? (creep.store[job.resourceType] || 0) : 0;
-        if (isJobRunnable(job, carried, getJobHintAmount(job))) return job;
+        if (isJobRunnable(job, carried, getJobHintAmount(job))) {
+            logCoreLaneDebug(
+                creep,
+                mission,
+                `pick job ${formatCoreLaneJob(job)} lane=${job.pathKey || 'core'} sIdx=${job.sourceIndex} tIdx=${job.targetIndex}`
+            );
+            return job;
+        }
+        skippedUnrunnable++;
     }
+    logCoreLaneDebug(
+        creep,
+        mission,
+        `pick none jobs=${runtime.laneJobs.length} skippedClaimed=${skippedClaimed} skippedUnrunnable=${skippedUnrunnable}`
+    );
     return null;
 }
 
@@ -984,8 +1091,16 @@ function moveToCoreHead(creep, coreLane, mission, runtime) {
     }
 }
 
-function clearJobMemory(creep) {
+function clearJobMemory(creep, mission, reason) {
     if (!creep || !creep.memory) return;
+    if (creep.memory.coreLaneJobId) {
+        logCoreLaneDebug(
+            creep,
+            mission,
+            `clear job id=${creep.memory.coreLaneJobId} reason=${reason || '-'} ` +
+            `state=${creep.memory.coreLaneState || '-'} mode=${creep.memory.coreLaneMode || '-'}`
+        );
+    }
     delete creep.memory.coreLaneJobId;
     delete creep.memory.coreLaneMode;
     delete creep.memory.coreLaneResourceType;
@@ -1003,7 +1118,7 @@ function unassignCreep(creep) {
     delete creep.memory.coreLaneState;
     delete creep.memory.coreLanePrevRole;
     delete creep.memory._trafficMove;
-    clearJobMemory(creep);
+    clearJobMemory(creep, null, 'unassign');
 }
 
 module.exports = {
@@ -1026,9 +1141,9 @@ module.exports = {
             return;
         }
 
-        if (!creep.memory.coreLaneState) creep.memory.coreLaneState = STATE_LOAD;
+        if (!creep.memory.coreLaneState) setCoreLaneState(creep, mission, STATE_LOAD, 'init');
         if (creep.store.getUsedCapacity() <= 0 && creep.memory.coreLaneState !== STATE_RETURN) {
-            creep.memory.coreLaneState = STATE_LOAD;
+            setCoreLaneState(creep, mission, STATE_LOAD, 'empty_store');
         }
         const coreLaneIsLoop = coreLane.isLoop === true;
 
@@ -1038,7 +1153,7 @@ module.exports = {
             const remaining = getJobRemainingAmount(creep, activeJob);
             if (!isJobRunnable(activeJob, carried, remaining)) {
                 activeJob = null;
-                clearJobMemory(creep);
+                clearJobMemory(creep, mission, `active_unrunnable carried=${carried} remain=${remaining}`);
             } else if (!Number.isFinite(creep.memory.coreLaneJobRemaining)) {
                 const hinted = getJobHintAmount(activeJob);
                 if (Number.isFinite(hinted)) setJobRemainingAmount(creep, hinted);
@@ -1046,7 +1161,7 @@ module.exports = {
         }
 
         if (!activeJob && shouldPickNewSideJob(creep, coreLane)) {
-            activeJob = pickLaneJob(runtime, creep, mission.id);
+            activeJob = pickLaneJob(runtime, creep, mission.id, mission);
             if (activeJob) {
                 creep.memory.coreLaneJobId = activeJob.id;
                 creep.memory.coreLaneResourceType = activeJob.resourceType;
@@ -1121,19 +1236,19 @@ module.exports = {
                 creep.memory.coreLaneResourceType = resourceType;
 
                 if (remaining <= 0) {
-                    clearJobMemory(creep);
+                    clearJobMemory(creep, mission, 'job_remaining_zero');
                     return;
                 }
 
                 if (dumpNonJobCargo(creep, mission, runtime, resourceType)) return;
                 if ((creep.store[resourceType] || 0) > 0) {
-                    creep.memory.coreLaneState = STATE_DELIVER;
+                    setCoreLaneState(creep, mission, STATE_DELIVER, `job_cargo_ready:${resourceType}`);
                     return;
                 }
 
                 const source = Game.getObjectById(activeJob.sourceId);
                 if (!source || !source.store || getStoreAmount(source, resourceType) <= 0) {
-                    clearJobMemory(creep);
+                    clearJobMemory(creep, mission, `source_empty_or_missing:${activeJob.sourceId || '-'}`);
                     return;
                 }
 
@@ -1174,7 +1289,7 @@ module.exports = {
                 const freeCapacity = creep.store.getFreeCapacity(resourceType) || 0;
                 const withdrawAmount = Math.min(sourceAmount, freeCapacity, remaining);
                 if (withdrawAmount <= 0) {
-                    clearJobMemory(creep);
+                    clearJobMemory(creep, mission, `withdraw_amount_zero src=${source.id}`);
                     return;
                 }
 
@@ -1186,7 +1301,7 @@ module.exports = {
                     `srcAmt=${sourceAmount} remain=${remaining}`
                 );
                 if (withdrawCode === OK && withdrawAmount > 0) {
-                    creep.memory.coreLaneState = STATE_DELIVER;
+                    setCoreLaneState(creep, mission, STATE_DELIVER, `withdraw_job_ok:${resourceType}`);
                 }
                 return;
             }
@@ -1195,7 +1310,7 @@ module.exports = {
                 creep.memory.coreLaneMode = 'core';
                 if (dumpNonJobCargo(creep, mission, runtime, RESOURCE_ENERGY)) return;
                 if ((creep.store[RESOURCE_ENERGY] || 0) > 0) {
-                    creep.memory.coreLaneState = STATE_DELIVER;
+                    setCoreLaneState(creep, mission, STATE_DELIVER, 'core_carry_ready');
                     return;
                 }
 
@@ -1226,7 +1341,7 @@ module.exports = {
                     `free=${creep.store.getFreeCapacity(RESOURCE_ENERGY) || 0} src=${source.store[RESOURCE_ENERGY] || 0}`
                 );
                 if (withdrawCode === OK) {
-                    creep.memory.coreLaneState = STATE_DELIVER;
+                    setCoreLaneState(creep, mission, STATE_DELIVER, 'withdraw_head_ok');
                 }
                 return;
             }
@@ -1261,7 +1376,12 @@ module.exports = {
         if (creep.memory.coreLaneState === STATE_DELIVER) {
             if (creep.memory.coreLaneMode === 'core') {
                 if (!hasCoreDemand || (creep.store[RESOURCE_ENERGY] || 0) <= 0) {
-                    creep.memory.coreLaneState = STATE_RETURN;
+                    setCoreLaneState(
+                        creep,
+                        mission,
+                        STATE_RETURN,
+                        !hasCoreDemand ? 'core_demand_cleared' : 'core_carry_empty'
+                    );
                     return;
                 }
 
@@ -1293,12 +1413,12 @@ module.exports = {
                 }
 
                 if (!laneHasEnergyDemand(coreLane, { ignoreSpawn: ignoreSpawnDemand })) {
-                    creep.memory.coreLaneState = STATE_RETURN;
+                    setCoreLaneState(creep, mission, STATE_RETURN, 'core_demand_cleared_post_index');
                     return;
                 }
 
                 if (idx >= endIndex && !coreLaneIsLoop) {
-                    creep.memory.coreLaneState = STATE_RETURN;
+                    setCoreLaneState(creep, mission, STATE_RETURN, 'core_reached_end');
                     return;
                 }
 
@@ -1322,7 +1442,7 @@ module.exports = {
             }
 
             if (!activeJob) {
-                creep.memory.coreLaneState = STATE_RETURN;
+                setCoreLaneState(creep, mission, STATE_RETURN, 'deliver_no_active_job');
                 return;
             }
 
@@ -1332,12 +1452,12 @@ module.exports = {
             const carried = creep.store[resourceType] || 0;
             const remaining = getJobRemainingAmount(creep, activeJob);
             if (remaining <= 0) {
-                clearJobMemory(creep);
-                creep.memory.coreLaneState = STATE_RETURN;
+                clearJobMemory(creep, mission, 'deliver_remaining_zero');
+                setCoreLaneState(creep, mission, STATE_RETURN, 'deliver_remaining_zero');
                 return;
             }
             if (!target || !target.store || target.store.getFreeCapacity(resourceType) <= 0 || carried <= 0) {
-                creep.memory.coreLaneState = STATE_RETURN;
+                setCoreLaneState(creep, mission, STATE_RETURN, `deliver_target_or_carry_invalid target=${activeJob.targetId || '-'}`);
                 return;
             }
 
@@ -1374,8 +1494,8 @@ module.exports = {
             const targetFree = target.store.getFreeCapacity(resourceType) || 0;
             const transferAmount = Math.min(carried, targetFree, remaining);
             if (transferAmount <= 0) {
-                clearJobMemory(creep);
-                creep.memory.coreLaneState = STATE_RETURN;
+                clearJobMemory(creep, mission, 'transfer_amount_zero');
+                setCoreLaneState(creep, mission, STATE_RETURN, 'transfer_amount_zero');
                 return;
             }
 
@@ -1390,16 +1510,16 @@ module.exports = {
                 `targetFree=${targetFree} carry=${creep.store[resourceType] || 0} remain=${getJobRemainingAmount(creep, activeJob)}`
             );
             if (getJobRemainingAmount(creep, activeJob) <= 0) {
-                clearJobMemory(creep);
-                creep.memory.coreLaneState = STATE_RETURN;
+                clearJobMemory(creep, mission, 'deliver_complete');
+                setCoreLaneState(creep, mission, STATE_RETURN, 'deliver_complete');
                 return;
             }
             if (transferCode === OK) {
                 const remainingCarryAfterTransfer = Math.max(0, carried - transferAmount);
                 if (remainingCarryAfterTransfer <= 0) {
                     const stillRunnable = isJobRunnable(activeJob, 0, getJobRemainingAmount(creep, activeJob));
-                    creep.memory.coreLaneState = stillRunnable ? STATE_LOAD : STATE_RETURN;
-                    if (!stillRunnable) clearJobMemory(creep);
+                    setCoreLaneState(creep, mission, stillRunnable ? STATE_LOAD : STATE_RETURN, `post_transfer stillRunnable=${stillRunnable ? 1 : 0}`);
+                    if (!stillRunnable) clearJobMemory(creep, mission, 'post_transfer_not_runnable');
                 }
             }
             return;
@@ -1428,8 +1548,8 @@ module.exports = {
             }
 
             if (dumpNonJobCargo(creep, mission, runtime, null)) return;
-            clearJobMemory(creep);
-            creep.memory.coreLaneState = STATE_LOAD;
+            clearJobMemory(creep, mission, 'return_at_head');
+            setCoreLaneState(creep, mission, STATE_LOAD, 'return_at_head');
         }
     }
 };

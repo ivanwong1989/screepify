@@ -204,7 +204,8 @@ var managerTasks = {
             c.memory.role === 'coreLaneHauler' &&
             !this.isCoreLaneAssigned(c) &&
             contractName &&
-            c.memory.missionName === contractName
+            c.memory.missionName === contractName &&
+            c.room && c.room.name === room.name
         );
 
         if (assigned.length > desiredCount) {

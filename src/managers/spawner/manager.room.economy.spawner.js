@@ -8,6 +8,15 @@ const spawnContracts = require('managers_spawner_spawn.contracts');
 const spawnCensus = require('managers_spawner_spawn.census');
 const spawnPlanner = require('managers_spawner_spawn.planner');
 
+function normalizeArchetypeName(archetype) {
+    const raw = archetype ? String(archetype) : '';
+    const lower = raw.toLowerCase();
+    if (lower === 'logisticscorehaulerv2') return 'coreLaneHauler';
+    if (lower === 'mininglanehauler') return 'miningLaneHauler';
+    if (lower === 'simpleharvest') return 'simple_miner';
+    return raw;
+}
+
 var managerSpawner = {
     run: function(room, allCreeps) {
         const missions = room._missions;
@@ -43,7 +52,7 @@ var managerSpawner = {
     },
 
     checkBody: function(type, budget, opts) {
-        const archetype = type;
+        const archetype = normalizeArchetypeName(type);
 
         if (!global._checkBodyCache || global._checkBodyCache.time !== Game.time) {
             global._checkBodyCache = { time: Game.time, byKey: Object.create(null) };
@@ -136,7 +145,7 @@ var managerSpawner = {
     },
 
     generateBody: function(mission, budget) {
-        const archetype = mission && (mission.archetype || (mission.requirements && mission.requirements.archetype));
+        const archetype = normalizeArchetypeName(mission && (mission.archetype || (mission.requirements && mission.requirements.archetype)));
         // --- HACKISH BODY BUDGET RESTRICTION, TO IMPROVE LATER ---
         if (archetype === 'remote_worker' || archetype === 'remote_hauler') {
             budget = Math.min(budget, 3000);
@@ -165,41 +174,44 @@ var managerSpawner = {
             }
             return this.generateMilitaryBody(budget, mission.requirements.body);
         }
-        if (mission.archetype === 'miner' || mission.archetype === 'simple_miner') {
+        if (archetype === 'miner' || archetype === 'simple_miner') {
             // Mobile harvesters need extra mobility early (1W 1C 2M ratio per segment)
             if (mission && mission.data && mission.data.mode === 'mobile') {
                 return this.generateMobileMinerBody(budget);
             }
             return this.generateMinerBody(budget);
-        } else if (mission.archetype === 'remote_miner') {
+        } else if (archetype === 'remote_miner') {
             return this.generateRemoteMinerBody(budget);
-        } else if (mission.archetype === 'mineral_miner') {
+        } else if (archetype === 'mineral_miner') {
             return this.generateMineralMinerBody(budget);
-        } else if (mission.archetype === 'scout') {
+        } else if (archetype === 'scout') {
             return this.generateScoutBody(budget);
-        } else if (mission.archetype === 'dismantler') {
+        } else if (archetype === 'dismantler') {
             return this.generateDismantlerBody(budget);
-        } else if (mission.archetype === 'reserver') {
+        } else if (archetype === 'reserver') {
             return this.generateReserverBody(budget);
-        } else if (mission.archetype === 'claimer') {
+        } else if (archetype === 'claimer') {
             return this.generateClaimerBody(budget);
         } else if (
-            mission.archetype === 'hauler' ||
-            mission.archetype === 'remote_hauler' ||
-            mission.archetype === 'user_hauler' ||
-            mission.archetype === 'coreLaneHauler' ||
-            mission.archetype === 'miningLaneHauler' ||
-            mission.archetype === 'simpleHaulerCore' ||
-            mission.archetype === 'simpleMiningHauler'
+            archetype === 'hauler' ||
+            archetype === 'remote_hauler' ||
+            archetype === 'user_hauler' ||
+            archetype === 'coreLaneHauler' ||
+            archetype === 'miningLaneHauler' ||
+            archetype === 'simpleHaulerCore' ||
+            archetype === 'simpleMiningHauler'
         ) {
             const maxCarryParts = this.resolveHaulerCarryCap(mission);
-            const includeRepairWorkPart = mission.archetype === 'remote_hauler';
+            const includeRepairWorkPart = archetype === 'remote_hauler';
+            if (archetype === 'coreLaneHauler') {
+                return this.generateRoadHaulerBody(budget, maxCarryParts);
+            }
             return this.generateHaulerBody(budget, maxCarryParts, includeRepairWorkPart);
-        } else if (mission.archetype === 'upgrader') {
+        } else if (archetype === 'upgrader') {
             return this.generateWorkerBody(budget, this.resolveWorkerTripletCap(mission));
-        } else if (mission.archetype === 'worker' || mission.archetype === 'builder' || mission.archetype === 'repairer') {
+        } else if (archetype === 'worker' || archetype === 'builder' || archetype === 'repairer') {
             return this.generateWorkerBody(budget, this.resolveWorkerTripletCap(mission));
-        } else if (mission.archetype == 'remote_worker') {
+        } else if (archetype == 'remote_worker') {
             return this.generateRemoteWorkerBody(budget);
         } else {
             return this.generateWorkerBody(budget, this.resolveWorkerTripletCap(mission));
@@ -386,6 +398,33 @@ var managerSpawner = {
         }
 
         if (body.length === 0) return [CARRY, MOVE];
+        return this.sortBody(body);
+    },
+
+    generateRoadHaulerBody: function(budget, maxCarryParts) {
+        const carryCap = Number.isFinite(maxCarryParts) && maxCarryParts > 0
+            ? Math.max(1, Math.floor(maxCarryParts))
+            : Infinity;
+        const hardMaxCarry = Math.min(33, carryCap);
+
+        let carryCount = 0;
+        let moveCount = 0;
+        for (let c = hardMaxCarry; c >= 1; c--) {
+            const m = Math.ceil(c / 2);
+            const parts = c + m;
+            const cost = parts * 50;
+            if (parts > 50) continue;
+            if (cost > budget) continue;
+            carryCount = c;
+            moveCount = m;
+            break;
+        }
+
+        if (carryCount <= 0 || moveCount <= 0) return [CARRY, MOVE];
+
+        const body = [];
+        for (let i = 0; i < carryCount; i++) body.push(CARRY);
+        for (let i = 0; i < moveCount; i++) body.push(MOVE);
         return this.sortBody(body);
     },
 

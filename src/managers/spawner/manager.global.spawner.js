@@ -1,5 +1,40 @@
+function normalizeRoleName(role) {
+    const raw = role ? String(role) : '';
+    const lower = raw.toLowerCase();
+    if (!lower) return '';
+
+    if (lower === 'simpleharvest') return 'simple_miner';
+    if (lower === 'mininglanehauler') return 'miningLaneHauler';
+    if (lower === 'logisticscorehaulerv2') return 'coreLaneHauler';
+    return raw;
+}
+
+function getRolePriorityRank(role) {
+    const normalized = normalizeRoleName(role);
+    switch (normalized) {
+        case 'simple_miner':
+            return 0; // simpleHarvest
+        case 'simpleHaulerCore':
+            return 1;
+        case 'simpleMiningHauler':
+            return 2;
+        case 'miner':
+            return 3;
+        case 'coreLaneHauler':
+            return 4;
+        case 'miningLaneHauler':
+            return 5;
+        case 'upgrader':
+            return 6;
+        case 'worker':
+            return 7;
+        default:
+            return 99;
+    }
+}
+
 function getCandidateSpawnTier(candidate) {
-    const role = candidate && candidate.role ? String(candidate.role) : '';
+    const role = normalizeRoleName(candidate && candidate.role ? candidate.role : '');
     const targetRoom = candidate && candidate.targetRoom ? candidate.targetRoom : null;
     const homeRoom = candidate && candidate.homeRoom ? candidate.homeRoom : null;
 
@@ -120,6 +155,10 @@ module.exports = {
         spawnDistanceCache.processQueue({ maxPairsPerTick: 2 });
 
         allCandidates.sort((a, b) => {
+            const roleRankA = getRolePriorityRank(a && a.role ? a.role : '');
+            const roleRankB = getRolePriorityRank(b && b.role ? b.role : '');
+            if (roleRankA !== roleRankB) return roleRankA - roleRankB;
+
             const tierA = getCandidateSpawnTier(a);
             const tierB = getCandidateSpawnTier(b);
             if (tierA !== tierB) return tierA - tierB;
@@ -164,6 +203,7 @@ module.exports = {
 
     findBestSpawn: function(candidate, availableSpawns) {
         const spawnDistanceCache = require('managers_spawner_spawnDistanceCache');
+        const role = normalizeRoleName(candidate && candidate.role ? candidate.role : '');
 
         let candidates = availableSpawns.filter(s => s.room.energyCapacityAvailable >= candidate.cost);
         const localSpawns = candidates.filter(s => s.room.name === candidate.homeRoom);
@@ -175,7 +215,7 @@ module.exports = {
         const homeSpawns = homeRoom ? homeRoom.find(FIND_MY_SPAWNS) : [];
         const remoteCandidates = candidates.filter(s => {
             if (s.room.name === candidate.homeRoom) return false;
-            if (candidate.role === 'miner' || candidate.role === 'simple_miner') return false;
+            if (role === 'miner' || role === 'simple_miner') return false;
             if (s.room.energyAvailable < candidate.cost) return false;
             if (s.room._opState === 'EMERGENCY') return false;
             return isValidRemoteAssistRoom(candidate.homeRoom, s.room.name);
@@ -235,12 +275,14 @@ module.exports = {
 
         if (spawn.room.name !== candidate.homeRoom) {
             memory.homeSpawnPos = getHomeSpawnPosition(memory.room);
-            if (candidate.bindMode === 'pool') {
+            const travelTargetRoom = candidate.travelTargetRoom || candidate.targetRoom || null;
+            const shouldTravelHomeFirst = !!memory.room && (!travelTargetRoom || travelTargetRoom === memory.room);
+
+            if (candidate.bindMode === 'pool' || shouldTravelHomeFirst) {
                 memory._travellingToHome = true;
-            } else if (candidate.travelTargetRoom) {
-                memory.travelTargetRoom = candidate.travelTargetRoom;
-            } else if (candidate.targetRoom) {
-                memory.travelTargetRoom = candidate.targetRoom;
+                if (memory.travelTargetRoom) delete memory.travelTargetRoom;
+            } else if (travelTargetRoom) {
+                memory.travelTargetRoom = travelTargetRoom;
             }
         } else if (memory.homeSpawnPos) {
             delete memory.homeSpawnPos;
