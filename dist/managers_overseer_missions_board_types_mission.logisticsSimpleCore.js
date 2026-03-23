@@ -393,13 +393,17 @@ module.exports = {
 
     discover({ room, intel, context }) {
         if (!room) return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.logisticsSimpleCore === false) return [];
         const roomMemo = getSimpleCoreRoomMemo(room, getRoomCache(room));
         if (!shouldActivate(room, roomMemo)) return [];
 
+        const emergency = (policy && policy.status === 'EMERGENCY') || (context && context.opState === 'EMERGENCY');
         const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
-            priority: context && context.opState === 'EMERGENCY' ? 1000 : 100
+            priority: emergency ? 1000 : 100
         };
         return [{
             key: this.makeKey(createContext),

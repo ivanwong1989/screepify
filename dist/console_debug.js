@@ -16,6 +16,7 @@ const DEBUG_CATEGORIES = Object.freeze([
     'market',
     'overseer',
     'overseer.ledger',
+    'overseer.policy',
     'roomCache',
     'spawner',
     'system'

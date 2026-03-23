@@ -615,6 +615,9 @@ module.exports = {
 
     discover({ room, intel, context }) {
         if (!room) return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.harvest === false) return [];
         const roomCache = getRoomCache(room);
         const roomMemo = getHarvestRoomMemo(room, intel, roomCache);
         if (!shouldActivateHarvest(room, intel, roomCache, roomMemo)) return [];
@@ -625,6 +628,7 @@ module.exports = {
             : null;
         const out = [];
 
+        const emergency = (policy && policy.status === 'EMERGENCY') || (context && context.opState === 'EMERGENCY');
         for (let i = 0; i < sources.length; i++) {
             const source = sources[i];
             if (!source || !source.id) continue;
@@ -634,7 +638,7 @@ module.exports = {
                 targetRoom: room.name,
                 sourceId: source.id,
                 availableSpaces: Number.isFinite(source.availableSpaces) ? source.availableSpaces : 1,
-                priority: context && context.opState === 'EMERGENCY' ? 1000 : 100
+                priority: emergency ? 1000 : 100
             };
             out.push({
                 key: this.makeKey(createContext),

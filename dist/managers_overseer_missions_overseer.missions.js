@@ -2,7 +2,7 @@ const { profRequire } = require('utils_profRequire');
 const missionBoard = profRequire('managers_overseer_missions_board_missionBoard', 'missions.board');
 
 const overseerMissions = {
-    generate: function(room, intel, opState, economyState, censusCreeps) {
+    generate: function(room, intel, opState, economyState, censusCreeps, policyContext) {
         let budget = intel.energyCapacityAvailable;
         if (opState === 'EMERGENCY') budget = Math.max(intel.energyAvailable, 300);
 
@@ -66,7 +66,17 @@ const overseerMissions = {
         }
 
         const economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || null;
-        const context = { opState, economyState, budget, getMissionCensus, efficientSources, economyFlow };
+        const context = {
+            opState,
+            economyState,
+            budget,
+            getMissionCensus,
+            efficientSources,
+            economyFlow,
+            directive: policyContext && policyContext.directive ? policyContext.directive : null,
+            condition: policyContext && policyContext.condition ? policyContext.condition : null,
+            policy: policyContext && policyContext.policy ? policyContext.policy : null
+        };
 
         // Run persistent mission board updates/reconciliation first.
         missionBoard.runRoom(room, { intel, context });

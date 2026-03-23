@@ -166,7 +166,12 @@ module.exports = {
 
     discover({ room, intel, context }) {
         if (!room) return [];
-        if (context && context.opState === 'EMERGENCY') return [];
+        if (Memory.remoteMissionsEnabled === false) return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.remoteHarvest === false) return [];
+        const phase = policy && policy.phase ? policy.phase : null;
+        if (phase && phase !== 'REMOTE_READY' && phase !== 'MATURE') return [];
 
         const opState = context && context.opState ? context.opState : null;
         const remoteCtx = getRemoteContextIndex(room, opState);

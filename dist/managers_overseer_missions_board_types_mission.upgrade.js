@@ -30,7 +30,9 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room) return [];
         if (!intel || !intel.controller || !intel.controller.my) return [];
-        if (context && context.opState === 'EMERGENCY') return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.upgrade === false) return [];
         const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
@@ -87,6 +89,7 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const context = runtimeCtx && runtimeCtx.context ? runtimeCtx.context : {};
+        const policy = context && context.policy ? context.policy : null;
         const controller = room && room.controller ? room.controller : null;
 
         if (controller) mission.targetId = controller.id;
@@ -129,6 +132,15 @@ module.exports = {
             requiredWork = 0;
             minCount = Math.min(assignedCount, maxCount);
             maxCount = minCount;
+        }
+
+        const upgradeIntensity = policy && policy.priorities
+            ? policy.priorities.upgradeIntensity
+            : null;
+        if (requiredWork > 0 && upgradeIntensity === 'LOW') {
+            requiredWork = Math.max(1, Math.floor(requiredWork * 0.5));
+        } else if (requiredWork > 0 && upgradeIntensity === 'HIGH') {
+            requiredWork = Math.max(requiredWork + 1, Math.ceil(requiredWork * 1.5));
         }
 
         mission.priority = opState === 'EMERGENCY' ? Math.max(90, upgradePriority) : upgradePriority;

@@ -128,7 +128,9 @@ module.exports = {
 
     discover({ room, intel, context }) {
         if (!room) return [];
-        if (context && context.opState === 'EMERGENCY') return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.build === false) return [];
 
         const roomCache = getRoomCache(room);
         const sites = getBuildSites(room, intel, roomCache);

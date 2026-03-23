@@ -29,7 +29,11 @@ module.exports = {
 
     discover({ room, context }) {
         if (!room) return [];
-        if (context && context.opState === 'EMERGENCY') return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.scout === false) return [];
+        const phase = policy && policy.phase ? policy.phase : null;
+        if (phase && phase !== 'REMOTE_READY' && phase !== 'MATURE') return [];
         if (!room.controller || !room.controller.my || room.controller.level < 3) return [];
         if (Memory.remoteMissionsEnabled === false) return [];
 

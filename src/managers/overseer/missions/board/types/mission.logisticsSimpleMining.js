@@ -313,6 +313,9 @@ module.exports = {
 
     discover({ room, intel, context, missionBoard }) {
         if (!room) return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.logisticsSimpleMining === false) return [];
         if (!shouldActivate(room)) return [];
         if (hasActiveMiningV2Mission(room.name, missionBoard)) return [];
 
@@ -320,10 +323,11 @@ module.exports = {
         const simpleSourceCount = getEnergySourceCount(room, intel, blockedSourceIds);
         if (simpleSourceCount <= 0) return [];
 
+        const emergency = (policy && policy.status === 'EMERGENCY') || (context && context.opState === 'EMERGENCY');
         const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
-            priority: context && context.opState === 'EMERGENCY' ? 980 : 87
+            priority: emergency ? 980 : 87
         };
         return [{
             key: this.makeKey(createContext),

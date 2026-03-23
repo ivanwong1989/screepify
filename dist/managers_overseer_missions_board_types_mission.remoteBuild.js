@@ -169,7 +169,10 @@ module.exports = {
 
     discover({ room, context }) {
         if (!room) return [];
-        if (context && context.opState === 'EMERGENCY') return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.remoteBuild === false) return [];
+        if (policy && (policy.status !== 'NORMAL' || policy.posture !== 'GROW')) return [];
         const opState = context && context.opState ? context.opState : null;
         const remoteCtx = getRemoteContextIndex(room, opState);
         const entries = remoteCtx.entries;

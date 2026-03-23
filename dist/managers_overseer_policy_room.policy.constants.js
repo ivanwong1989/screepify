@@ -1,0 +1,116 @@
+const PHASE = Object.freeze({
+    BOOTSTRAP: 'BOOTSTRAP',
+    EARLY_LOCAL: 'EARLY_LOCAL',
+    LOCAL_INFRA: 'LOCAL_INFRA',
+    STORAGE_CORE: 'STORAGE_CORE',
+    REMOTE_READY: 'REMOTE_READY',
+    MATURE: 'MATURE'
+});
+
+const STATUS = Object.freeze({
+    EMERGENCY: 'EMERGENCY',
+    RECOVERING: 'RECOVERING',
+    NORMAL: 'NORMAL',
+    SURPLUS: 'SURPLUS'
+});
+
+const POSTURE = Object.freeze({
+    SURVIVE: 'SURVIVE',
+    RECOVER: 'RECOVER',
+    GROW: 'GROW',
+    STABILIZE: 'STABILIZE',
+    STOCKPILE: 'STOCKPILE',
+    EXPORT: 'EXPORT',
+    AID_NETWORK: 'AID_NETWORK'
+});
+
+const ECONOMY_MODE = Object.freeze({
+    BOOTSTRAP: 'BOOTSTRAP',
+    LOCAL_GROWTH: 'LOCAL_GROWTH',
+    BUFFER_BUILD: 'BUFFER_BUILD',
+    SURPLUS_ENERGY: 'SURPLUS_ENERGY',
+    AID_NETWORK: 'AID_NETWORK'
+});
+
+const DIRECTIVE_MODE = Object.freeze({
+    AUTO: 'AUTO',
+    SELF_SUFFICIENT: 'SELF_SUFFICIENT',
+    DONOR: 'DONOR',
+    RECIPIENT: 'RECIPIENT',
+    EXPAND: 'EXPAND',
+    HOLD: 'HOLD'
+});
+
+const DIRECTIVE_ENERGY_POSTURE = Object.freeze({
+    AUTO: 'AUTO',
+    MAKE_MORE: 'MAKE_MORE',
+    BALANCED: 'BALANCED',
+    STOCKPILE: 'STOCKPILE',
+    EXPORT: 'EXPORT'
+});
+
+const DIRECTIVE_BIAS = Object.freeze({
+    AUTO: 'AUTO',
+    DEFER: 'DEFER',
+    NORMAL: 'NORMAL',
+    PUSH: 'PUSH'
+});
+
+const DIRECTIVE_REMOTE_BIAS = Object.freeze({
+    AUTO: 'AUTO',
+    DEFER: 'DEFER',
+    ALLOW: 'ALLOW',
+    PUSH: 'PUSH'
+});
+
+const DIRECTIVE_TRANSFER_BIAS = Object.freeze({
+    AUTO: 'AUTO',
+    IMPORT: 'IMPORT',
+    EXPORT: 'EXPORT'
+});
+
+const INTENSITY = Object.freeze({
+    LOW: 'LOW',
+    NORMAL: 'NORMAL',
+    HIGH: 'HIGH'
+});
+
+const REMOTE_INTENSITY = Object.freeze({
+    OFF: 'OFF',
+    LOW: 'LOW',
+    NORMAL: 'NORMAL',
+    HIGH: 'HIGH'
+});
+
+const EXPORT_INTENSITY = Object.freeze({
+    OFF: 'OFF',
+    LOW: 'LOW',
+    NORMAL: 'NORMAL',
+    HIGH: 'HIGH'
+});
+
+const DEFAULT_DIRECTIVE = Object.freeze({
+    mode: DIRECTIVE_MODE.AUTO,
+    energyPosture: DIRECTIVE_ENERGY_POSTURE.AUTO,
+    upgradeBias: DIRECTIVE_BIAS.AUTO,
+    buildBias: DIRECTIVE_BIAS.AUTO,
+    repairBias: DIRECTIVE_BIAS.AUTO,
+    remoteBias: DIRECTIVE_REMOTE_BIAS.AUTO,
+    transferBias: DIRECTIVE_TRANSFER_BIAS.AUTO
+});
+
+module.exports = {
+    PHASE,
+    STATUS,
+    POSTURE,
+    ECONOMY_MODE,
+    DIRECTIVE_MODE,
+    DIRECTIVE_ENERGY_POSTURE,
+    DIRECTIVE_BIAS,
+    DIRECTIVE_REMOTE_BIAS,
+    DIRECTIVE_TRANSFER_BIAS,
+    INTENSITY,
+    REMOTE_INTENSITY,
+    EXPORT_INTENSITY,
+    DEFAULT_DIRECTIVE
+};

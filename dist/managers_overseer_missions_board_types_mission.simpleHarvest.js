@@ -587,6 +587,9 @@ module.exports = {
 
     discover({ room, intel, context }) {
         if (!room) return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.simpleHarvest === false) return [];
         const roomCache = getRoomCache(room);
         const roomMemo = getSimpleHarvestRoomMemo(room, intel, roomCache);
         if (!shouldActivateSimpleHarvest(room, intel, roomCache)) return [];
@@ -594,12 +597,13 @@ module.exports = {
         const source = pickSimpleHarvestSource(room, intel, roomCache, roomMemo);
         if (!source || !source.id) return [];
 
+        const emergency = (policy && policy.status === 'EMERGENCY') || (context && context.opState === 'EMERGENCY');
         const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
             sourceId: source.id,
             availableSpaces: Number.isFinite(source.availableSpaces) ? source.availableSpaces : 1,
-            priority: context && context.opState === 'EMERGENCY' ? 1000 : 120
+            priority: emergency ? 1000 : 120
         };
 
         return [{

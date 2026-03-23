@@ -242,6 +242,14 @@ function getTargetStructure(mission, runtimeCtx) {
     return { room, structure, memo };
 }
 
+function isUnderAttackPressure(room, runtimeCtx) {
+    if (!room) return false;
+    const combatState = room.memory && room.memory.admiral ? room.memory.admiral.state : null;
+    const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+    const hostilesPresent = !!(intel && Array.isArray(intel.hostiles) && intel.hostiles.length > 0);
+    return combatState === 'SIEGE' || combatState === 'DEFEND' || hostilesPresent;
+}
+
 module.exports = {
     makeKey(context) {
         return missionKeys.makeRepairTargetKey(
@@ -253,9 +261,9 @@ module.exports = {
 
     discover({ room, intel, context }) {
         if (!room) return [];
-
-        const economyState = context && context.economyState ? context.economyState : 'STOCKPILING';
-        if (economyState === 'EMERGENCY') return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.fortify === false) return [];
 
         const scan = overseerOpportunisticRepair.getRoomScan(room.name);
         if (!scan) return [];
@@ -353,8 +361,9 @@ module.exports = {
         mission.meta = mission.meta || {};
         mission.meta.missionName = mission.meta.missionName || `fortify:${mission.targetId}`;
         mission.meta.desiredWork = FORTIFY_WORKER_TUNING.desiredWork;
-        mission.meta.minCount = FORTIFY_WORKER_TUNING.minCount;
-        mission.meta.maxCount = FORTIFY_WORKER_TUNING.maxCount;
+        const underAttack = isUnderAttackPressure(room, runtimeCtx);
+        mission.meta.minCount = underAttack ? 2 : FORTIFY_WORKER_TUNING.minCount;
+        mission.meta.maxCount = underAttack ? 2 : FORTIFY_WORKER_TUNING.maxCount;
 
         let currentTarget = structure;
         if (room && scan) {
@@ -434,8 +443,12 @@ module.exports = {
             requirements: {
                 archetype: 'worker',
                 requiredWork: FORTIFY_WORKER_TUNING.desiredWork,
-                minCount: FORTIFY_WORKER_TUNING.minCount,
-                maxCount: FORTIFY_WORKER_TUNING.maxCount,
+                minCount: mission.meta && Number.isFinite(mission.meta.minCount)
+                    ? mission.meta.minCount
+                    : FORTIFY_WORKER_TUNING.minCount,
+                maxCount: mission.meta && Number.isFinite(mission.meta.maxCount)
+                    ? mission.meta.maxCount
+                    : FORTIFY_WORKER_TUNING.maxCount,
                 maxWorkParts: FORTIFY_WORKER_TUNING.maxWorkParts,
                 maxCarryParts: FORTIFY_WORKER_TUNING.maxCarryParts,
                 maxMoveParts: FORTIFY_WORKER_TUNING.maxMoveParts,

@@ -465,6 +465,9 @@ module.exports = {
 
     discover({ room, intel, context }) {
         if (!room || !intel) return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.logisticsMiningV2 === false) return [];
         const roomMemo = getMiningV2RoomMemo(room, intel, getRoomCache(room));
         const objectCache = Object.create(null);
         if (!hasStableSink(room, intel, roomMemo)) return [];

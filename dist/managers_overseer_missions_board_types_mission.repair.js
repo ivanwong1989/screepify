@@ -220,6 +220,14 @@ function getTargetStructure(mission, runtimeCtx) {
     return { room, structure, memo };
 }
 
+function isUnderAttackPressure(room, runtimeCtx) {
+    if (!room) return false;
+    const combatState = room.memory && room.memory.admiral ? room.memory.admiral.state : null;
+    const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+    const hostilesPresent = !!(intel && Array.isArray(intel.hostiles) && intel.hostiles.length > 0);
+    return combatState === 'SIEGE' || combatState === 'DEFEND' || hostilesPresent;
+}
+
 module.exports = {
     makeKey(context) {
         return missionKeys.makeRepairTargetKey(
@@ -229,8 +237,11 @@ module.exports = {
         );
     },
 
-    discover({ room, intel }) {
+    discover({ room, intel, context }) {
         if (!room) return [];
+        const policy = context && context.policy ? context.policy : null;
+        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
+        if (missionGates && missionGates.repair === false) return [];
 
         const scan = overseerOpportunisticRepair.getRoomScan(room.name);
         if (!scan) {
@@ -341,8 +352,9 @@ module.exports = {
         mission.meta = mission.meta || {};
         mission.meta.missionName = mission.meta.missionName || `repair:${mission.targetId}`;
         mission.meta.desiredWork = REPAIR_WORKER_TUNING.desiredWork;
-        mission.meta.minCount = REPAIR_WORKER_TUNING.minCount;
-        mission.meta.maxCount = REPAIR_WORKER_TUNING.maxCount;
+        const underAttack = isUnderAttackPressure(room, runtimeCtx);
+        mission.meta.minCount = underAttack ? 2 : REPAIR_WORKER_TUNING.minCount;
+        mission.meta.maxCount = underAttack ? 2 : REPAIR_WORKER_TUNING.maxCount;
 
         let currentTarget = structure;
         if (room && scan) {
@@ -452,8 +464,12 @@ module.exports = {
             requirements: {
                 archetype: 'worker',
                 requiredWork: REPAIR_WORKER_TUNING.desiredWork,
-                minCount: REPAIR_WORKER_TUNING.minCount,
-                maxCount: REPAIR_WORKER_TUNING.maxCount,
+                minCount: mission.meta && Number.isFinite(mission.meta.minCount)
+                    ? mission.meta.minCount
+                    : REPAIR_WORKER_TUNING.minCount,
+                maxCount: mission.meta && Number.isFinite(mission.meta.maxCount)
+                    ? mission.meta.maxCount
+                    : REPAIR_WORKER_TUNING.maxCount,
                 maxWorkParts: REPAIR_WORKER_TUNING.maxWorkParts,
                 maxCarryParts: REPAIR_WORKER_TUNING.maxCarryParts,
                 maxMoveParts: REPAIR_WORKER_TUNING.maxMoveParts,

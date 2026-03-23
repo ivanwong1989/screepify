@@ -2,6 +2,8 @@
  * Overseer Intel Module
  * Handles data gathering and room state determination.
  */
+const roomConditionPolicy = require('managers_overseer_policy_room.condition');
+
 const overseerIntel = {
     gather: function(room) {
         const cache = global.getRoomCache(room);
@@ -213,171 +215,28 @@ const overseerIntel = {
             haulerCapacity, allEnergySources
         };
 
-        // Economy is computed in intel and should be treated as the source of truth downstream.
-        intel.economyState = this.determineEconomyState(room, intel);
+        // Compatibility bridge during policy migration: expose legacy fields from policy/memory.
+        intel.opState = room && room._policy && room._policy.legacy ? room._policy.legacy.opState : null;
+        intel.economyState = room && room._policy && room._policy.legacy
+            ? room._policy.legacy.economyState
+            : ((room.memory && room.memory.overseer && room.memory.overseer.economyState) || 'STOCKPILING');
         intel.economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || { avg: 0, longAvg: 0 };
 
         return intel;
     },
 
     determineOpState: function(room, intel) {
-        if (intel.myCreeps.length === 0) {
-            debug('overseer', `[Overseer] ${room.name} State: EMERGENCY (Zero Population)`);
-            return 'EMERGENCY';
+        if (room && room._policy && room._policy.legacy && room._policy.legacy.opState) {
+            return room._policy.legacy.opState;
         }
-        if (intel.energyAvailable < 300 && intel.myCreeps.length < 2) {
-            debug('overseer', `[Overseer] ${room.name} State: EMERGENCY (Low Energy: ${intel.energyAvailable}, Low Pop: ${intel.myCreeps.length})`);
-            return 'EMERGENCY';
-        }
-        const miners = intel.myCreeps.filter(c => c.memory.role === 'miner');
-        if (miners.length === 0 && intel.sources.length > 0) {
-            debug('overseer', `[Overseer] ${room.name} State: EMERGENCY (No Miners)`);
-            return 'EMERGENCY';
-        }
-        return 'NORMAL';
+        return roomConditionPolicy.deriveLegacyOpState(room, intel, null);
     },
 
     determineEconomyState: function(room, intel) {
-        if (!room.memory.overseer) room.memory.overseer = {};
-        let current = (room.memory.overseer && room.memory.overseer.economyState) || 'STOCKPILING';
-        const miningContainerIds = new Set(intel.sources.map(s => s.containerId).filter(id => id));
-        const allContainers = intel.structures[STRUCTURE_CONTAINER] || [];
-        const logisticsContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
-        
-        const logisticsEnergy = logisticsContainers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
-        const logisticsCapacity = logisticsContainers.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
-
-        const totalStored = logisticsEnergy + intel.storageEnergy;
-        const totalCapacity = logisticsCapacity + intel.storageCapacity;
-
-        // Track net energy flow (in/out of logistics + storage) to inform state changes.
-        // We DO NOT sample every tick (too noisy with batch hauling). Instead we sample every N ticks,
-        // compute a per-tick rate over that window, then EMA it with a low alpha for long horizon.
-        const SAMPLE_TICKS = 20;     // <-- feature #1: sample period
-        const ALPHA = 0.02;         // <-- feature #2: long-horizon EMA (less jumpy)
-
-        if (!room.memory.overseer.economyFlow) {
-            room.memory.overseer.economyFlow = {
-                avg: 0,
-                longAvg: 0,
-
-                // sampling state
-                lastSampleTotal: totalStored,
-                lastSampleTick: Game.time,
-
-                // last computed sample (for logs/debug)
-                lastPerTick: 0,
-                lastDelta: 0,
-                lastDt: 0,
-
-                // logging window state
-                lastLogTotal: totalStored,
-                lastLogTick: Game.time
-            };
+        if (room && room._policy && room._policy.legacy && room._policy.legacy.economyState) {
+            return room._policy.legacy.economyState;
         }
-
-        const flow = room.memory.overseer.economyFlow;
-
-        // Normalize legacy/partial memory (prevents 'undefined' in logs and weird dt math)
-        if (flow.lastSampleTotal === undefined) flow.lastSampleTotal = totalStored;
-        if (flow.lastSampleTick === undefined) flow.lastSampleTick = Game.time;
-        if (flow.lastPerTick === undefined) flow.lastPerTick = 0;
-        if (flow.lastDelta === undefined) flow.lastDelta = 0;
-        if (flow.lastDt === undefined) flow.lastDt = 0;
-        if (flow.lastLogTotal === undefined) flow.lastLogTotal = totalStored;
-        if (flow.lastLogTick === undefined) flow.lastLogTick = Game.time;
-        if (flow.avg === undefined || flow.avg === null || Number.isNaN(flow.avg)) flow.avg = 0;
-        if (flow.longAvg === undefined || flow.longAvg === null || Number.isNaN(flow.longAvg)) flow.longAvg = flow.avg;
-
-        // only compute a new sample every SAMPLE_TICKS (or on first init)
-        const since = Game.time - (flow.lastSampleTick || Game.time);
-        if (since >= SAMPLE_TICKS) {
-            const dt = Math.max(1, Game.time - (flow.lastSampleTick || Game.time));
-            const delta = totalStored - (flow.lastSampleTotal || totalStored);
-            const perTick = delta / dt;
-
-            flow.lastPerTick = perTick;
-            flow.lastDelta = delta;
-            flow.lastDt = dt;
-
-            // EMA update on sampled perTick (long horizon)
-            flow.avg = (flow.avg === undefined || flow.avg === null)
-                ? perTick
-                : ((flow.avg * (1 - ALPHA)) + (perTick * ALPHA));
-
-            flow.longAvg = flow.avg;
-
-            flow.lastSampleTotal = totalStored;
-            flow.lastSampleTick = Game.time;
-
-            room.memory.overseer.economyFlow = flow;
-        }
-
-        const FLOW_POSITIVE = 2;
-        const FLOW_NEGATIVE = -2;
-
-        // Log every 50 ticks; report the most recent sampled perTick + EMA
-        if (Game.time % 50 === 0 && flow._lastLoggedAt !== Game.time) {
-            flow._lastLoggedAt = Game.time;
-            const logDt = Math.max(1, Game.time - (flow.lastLogTick || Game.time));
-            const logDelta = totalStored - (flow.lastLogTotal || totalStored);
-            const logPerTick = logDelta / logDt;
-
-            flow.lastLogTotal = totalStored;
-            flow.lastLogTick = Game.time;
-            room.memory.overseer.economyFlow = flow;
-
-            debug(
-                'overseer',
-                `[Overseer] ${room.name} Flow: total=${totalStored} ` +
-                `sampleDt=${flow.lastDt} sampleDelta=${flow.lastDelta} samplePerTick=${(flow.lastPerTick || 0).toFixed(2)} ` +
-                `windowDt=${logDt} windowDelta=${logDelta} windowPerTick=${logPerTick.toFixed(2)} ` +
-                `avg=${(flow.avg || 0).toFixed(2)}`
-            );
-        }
-
-        const override = room.memory.overseer.economyOverride;
-        const normalized = override ? ('' + override).trim().toUpperCase() : '';
-        if (normalized === 'UPGRADING' || normalized === 'STOCKPILING') return normalized;
-        
-        if (totalCapacity < 500) return 'UPGRADING';
-
-        if (room.storage) {
-            const rcl = (room.controller && room.controller.level) ? room.controller.level : 1;
-            const rclThresholds = {
-                1: { start: 10000, stop: 5000 },
-                2: { start: 20000, stop: 10000 },
-                3: { start: 30000, stop: 15000 },
-                4: { start: 40000, stop: 20000 },
-                5: { start: 100000, stop: 80000 },
-                6: { start: 200000, stop: 150000 },
-                7: { start: 300000, stop: 250000 },
-                8: { start: 350000, stop: 300000 }
-            };
-            const threshold = rclThresholds[rcl] || rclThresholds[5];
-            const UPGRADE_START = threshold.start;
-            const UPGRADE_STOP = threshold.stop;
-            const STORAGE_FILL_UPGRADE_START = 0.90;
-            const STORAGE_FILL_UPGRADE_STOP = 0.80;
-
-            const storageUsed = room.storage.store.getUsedCapacity();
-            const storageCapacity = room.storage.store.getCapacity() || 1;
-            const storageFillRatio = storageUsed / storageCapacity;
-
-            // Start upgrading if either energy stockpile is high enough OR storage is near full.
-            if (current === 'STOCKPILING' && (totalStored >= UPGRADE_START || storageFillRatio >= STORAGE_FILL_UPGRADE_START)) {
-                current = 'UPGRADING';
-            // Return to stockpiling only when both energy and storage pressure are back down.
-            } else if (current === 'UPGRADING' && totalStored <= UPGRADE_STOP && storageFillRatio <= STORAGE_FILL_UPGRADE_STOP) {
-                current = 'STOCKPILING';
-            }
-        } else { // Without storage, the flow tracking is too undeterministic since there's no buffer. do not use flow EMA.
-            // Also most probably without storage means low RCL. focus should be on upgrading still we have. 
-            // We should always we in UPGRADING mode. 
-            current = 'UPGRADING';
-        }
-        room.memory.overseer.economyState = current;
-        return current;
+        return roomConditionPolicy.deriveLegacyEconomyState(room, intel, null);
     }
 };
 
