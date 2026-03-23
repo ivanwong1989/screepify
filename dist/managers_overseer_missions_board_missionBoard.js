@@ -1,12 +1,14 @@
-const missionMemory = require('managers_overseer_missions_board_missionMemory');
-const missionRegistry = require('managers_overseer_missions_board_missionRegistry');
-const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
-const missionStates = require('managers_overseer_missions_board_missionStates');
-const missionCleanup = require('managers_overseer_missions_board_utils_missionCleanup');
-const missionThrottle = require('managers_overseer_missions_board_utils_missionThrottle');
-const boardIndexing = require('managers_overseer_missions_board_utils_boardIndexing');
-const registerDefaults = require('managers_overseer_missions_board_registerDefaults');
-const missionClasses = require('managers_overseer_missions_board_missionClassifications');
+const { profRequire } = require('utils_profRequire');
+
+const missionMemory = profRequire('managers_overseer_missions_board_missionMemory', 'missions.board.memory');
+const missionRegistry = profRequire('managers_overseer_missions_board_missionRegistry', 'missions.board.registry');
+const missionRuntime = profRequire('managers_overseer_missions_board_missionRuntime', 'missions.board.runtime');
+const missionStates = profRequire('managers_overseer_missions_board_missionStates', 'missions.board.states');
+const missionCleanup = profRequire('managers_overseer_missions_board_utils_missionCleanup', 'missions.board.cleanup');
+const missionThrottle = profRequire('managers_overseer_missions_board_utils_missionThrottle', 'missions.board.throttle');
+const boardIndexing = profRequire('managers_overseer_missions_board_utils_boardIndexing', 'missions.board.indexing');
+const registerDefaults = profRequire('managers_overseer_missions_board_registerDefaults', 'missions.board.registerDefaults');
+const missionClasses = profRequire('managers_overseer_missions_board_missionClassifications', 'missions.board.classifications');
 
 const DEFAULT_LIVE_TYPE_CAPS = {
     build: 1,
@@ -78,9 +80,16 @@ function bumpCreateStat(roomName, field) {
     stats.create[field] = (stats.create[field] || 0) + 1;
 }
 
+let cachedBoard = null;
+let cachedBoardTick = -1;
+
 function ensureMemory() {
+    if (cachedBoardTick === Game.time && cachedBoard) return cachedBoard;
+
     registerDefaults.ensureRegistered();
-    return missionMemory.ensureMemory();
+    cachedBoard = missionMemory.ensureMemory();
+    cachedBoardTick = Game.time;
+    return cachedBoard;
 }
 
 function getById(id) {
@@ -211,8 +220,8 @@ function listAll() {
     return Object.values(board.byId);
 }
 
-function listByRoom(roomName) {
-    const board = ensureMemory();
+function listByRoom(roomName, boardArg) {
+    const board = boardArg || ensureMemory();
     const ids = board.byRoom[roomName] || [];
     const result = [];
     for (let i = 0; i < ids.length; i++) {
@@ -222,8 +231,8 @@ function listByRoom(roomName) {
     return result;
 }
 
-function listByType(type) {
-    const board = ensureMemory();
+function listByType(type, boardArg) {
+    const board = boardArg || ensureMemory();
     const ids = board.byType[type] || [];
     const result = [];
     for (let i = 0; i < ids.length; i++) {
@@ -237,16 +246,16 @@ function listActive() {
     return listAll().filter(m => m.state === missionStates.ACTIVE);
 }
 
-function listLiveByRoom(roomName) {
-    const board = ensureMemory();
+function listLiveByRoom(roomName, boardArg) {
+    const board = boardArg || ensureMemory();
     const cache = board.cache || null;
-    if (!cache || !roomName) return listByRoom(roomName).filter(isLiveMission);
+    if (!cache || !roomName) return listByRoom(roomName, board).filter(isLiveMission);
     const cached = cache.byRoomLive && cache.byRoomLive[roomName];
     if (cached && cached.tick === Game.time && Array.isArray(cached.value)) {
         return cached.value;
     }
 
-    const value = listByRoom(roomName).filter(isLiveMission);
+    const value = listByRoom(roomName, board).filter(isLiveMission);
     if (cache.byRoomLive) {
         cache.byRoomLive[roomName] = {
             tick: Game.time,
@@ -672,7 +681,7 @@ function getMissionContractsForRoom(roomName, filterType) {
     if (!roomCache || roomCache.tick !== Game.time) {
         const grouped = Object.create(null);
         const all = [];
-        const missions = listLiveByRoom(roomName);
+        const missions = listLiveByRoom(roomName, board);
         for (let i = 0; i < missions.length; i++) {
             const mission = missions[i];
             const handler = missionRegistry.get(mission.type);

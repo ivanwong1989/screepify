@@ -1,10 +1,12 @@
-const overseerIntel = require('managers_overseer_intel_overseer.intel');
-const overseerResourceLedger = require('managers_overseer_intel_overseer.resourceLedger');
-const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
-const overseerMissions = require('managers_overseer_missions_overseer.missions');
-const missionBoard = require('managers_overseer_missions_board_missionBoard');
-const remoteUtils = require('managers_overseer_utils_overseer.remote');
-const overseerUtils = require('managers_overseer_utils_overseer.utils');
+const { profRequire } = require('utils_profRequire');
+
+const overseerIntel = profRequire('managers_overseer_intel_overseer.intel', 'overseer.intel');
+const overseerResourceLedger = profRequire('managers_overseer_intel_overseer.resourceLedger', 'overseer.resourceLedger');
+const overseerOpportunisticRepair = profRequire('managers_overseer_intel_overseer.opportunistic.repair', 'overseer.opportunisticRepair');
+const overseerMissions = profRequire('managers_overseer_missions_overseer.missions', 'overseer.missions');
+const missionBoard = profRequire('managers_overseer_missions_board_missionBoard', 'missions.board');
+const remoteUtils = profRequire('managers_overseer_utils_overseer.remote', 'overseer.remote');
+const overseerUtils = profRequire('managers_overseer_utils_overseer.utils', 'overseer.utils');
 
 const getRemoteCreepsByHomeRoom = function() {
     const cache = global._remoteCreepsByHomeRoom;

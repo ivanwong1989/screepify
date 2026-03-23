@@ -1036,6 +1036,7 @@ function getTerminalStockTransitState(room) {
     if (!room || !room.storage || !room.terminal) return state;
 
     const roomName = room.name;
+    const terminalId = room.terminal.id;
     for (const name in Game.creeps) {
         const creep = Game.creeps[name];
         if (!creep || !creep.my || !creep.memory) continue;
@@ -1048,9 +1049,13 @@ function getTerminalStockTransitState(room) {
         const carried = creep.store ? (creep.store[parsed.resourceType] || 0) : 0;
         if (carried <= 0) continue;
 
-        if (parsed.sourceId === room.terminal.id || parsed.targetId === room.terminal.id) {
-            state.committedToTerminal[parsed.resourceType] = (state.committedToTerminal[parsed.resourceType] || 0) + carried;
+        let terminalDelta = 0;
+        if (parsed.targetId === terminalId) terminalDelta += carried;
+        if (parsed.sourceId === terminalId) terminalDelta -= carried;
+        if (terminalDelta !== 0) {
+            state.committedToTerminal[parsed.resourceType] = (state.committedToTerminal[parsed.resourceType] || 0) + terminalDelta;
         }
+
         addTransitAmount(state.targetReservations, parsed.targetId, parsed.resourceType, carried);
     }
 

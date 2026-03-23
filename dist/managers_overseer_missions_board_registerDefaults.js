@@ -2,6 +2,7 @@ const missionRegistry = require('managers_overseer_missions_board_missionRegistr
 const { profRequire } = require('utils_profRequire');
 
 const missionHarvest = profRequire('managers_overseer_missions_board_types_mission.harvest', 'mission.harvest');
+const missionContract = profRequire('managers_overseer_missions_board_types_mission.contract', 'mission.contract');
 const missionSimpleHarvest = profRequire('managers_overseer_missions_board_types_mission.simpleHarvest', 'mission.simpleHarvest');
 const missionBuild = profRequire('managers_overseer_missions_board_types_mission.build', 'mission.build');
 const missionRepair = profRequire('managers_overseer_missions_board_types_mission.repair', 'mission.repair');
@@ -24,6 +25,7 @@ let registeredTick = -1;
 function ensureRegistered() {
     if (registeredTick === Game.time) return;
     missionRegistry.register('harvest', missionHarvest);
+    missionRegistry.register('contract', missionContract);
     missionRegistry.register('simpleHarvest', missionSimpleHarvest);
     missionRegistry.register('build', missionBuild);
     missionRegistry.register('repair', missionRepair);

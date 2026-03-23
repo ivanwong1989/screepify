@@ -1,4 +1,5 @@
-const missionBoard = require('managers_overseer_missions_board_missionBoard');
+const { profRequire } = require('utils_profRequire');
+const missionBoard = profRequire('managers_overseer_missions_board_missionBoard', 'missions.board');
 
 const overseerMissions = {
     generate: function(room, intel, opState, economyState, censusCreeps) {

@@ -351,8 +351,8 @@ const overseerIntel = {
                 4: { start: 40000, stop: 20000 },
                 5: { start: 100000, stop: 80000 },
                 6: { start: 200000, stop: 150000 },
-                7: { start: 500000, stop: 450000 },
-                8: { start: 700000, stop: 500000 }
+                7: { start: 300000, stop: 250000 },
+                8: { start: 350000, stop: 300000 }
             };
             const threshold = rclThresholds[rcl] || rclThresholds[5];
             const UPGRADE_START = threshold.start;

@@ -1,7 +1,7 @@
 var registerGlobals = require('bootstrap_globals');
 var registerConsole = require('console_index');
 var MemoryHack = require('utils_memoryHack');
-const profiler = require('screeps-profiler');
+//const profiler = require('screeps-profiler');
 const { profRequire } = require('utils_profRequire');
 
 MemoryHack.register();
@@ -26,7 +26,7 @@ var roleRemoteHaul = profRequire('role_role.remoteHaul', 'role.remoteHaul');
 var roleRemoteWorker = profRequire('role_role.remoteWorker', 'role.remoteWorker');
 var roleMineralMiner = profRequire('role_role.mineralMiner', 'role.mineralMiner');
 var roleScout = profRequire('role_role.scout', 'role.scout');
-var runColony = require('runColony');
+var runColony = profRequire('runColony', 'runColony');
 var movement = require('utils_movement');
 var borderNav = require('utils_creepBorderNav');
 var telemetry = require('telemetry_index');
@@ -73,8 +73,7 @@ function handleTravelToHome(creep) {
     return true;
 }
 
-
-
+/*
 // Any modules that you use that modify the game's prototypes should be require'd
 // before you require the profiler.
 profiler.registerFN(global.getRoomCache, 'utils.getRoomCache');
@@ -97,6 +96,7 @@ profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'over
     ['managers_overseer_missions_board_types_mission.harvest', 'mission.harvest'],
     ['managers_overseer_missions_board_types_mission.build', 'mission.build'],
     ['managers_overseer_missions_board_types_mission.repair', 'mission.repair'],
+    ['managers_overseer_missions_board_types_mission.fortify', 'mission.fortify'],
     ['managers_overseer_missions_board_types_mission.upgrade', 'mission.upgrade'],
     ['managers_overseer_missions_board_types_mission.remoteHarvest', 'mission.remoteHarvest'],
     ['managers_overseer_missions_board_types_mission.remoteHaul', 'mission.remoteHaul'],
@@ -108,8 +108,7 @@ profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'over
     ['managers_overseer_missions_board_types_mission.remoteBuild', 'mission.remoteBuild']
 ].forEach(([moduleId, label]) => profiler.registerObject(require(moduleId), label));
 
-
-
+*/
 
 
 
@@ -271,10 +270,11 @@ function runMainLoop() {
 }
 
 module.exports.loop = function() {
+    /*
     if (Memory.profilerEnabled === true) {
         profiler.enable();
         return profiler.wrap(runMainLoop);
-    }
+    }*/
     return runMainLoop();
 };
 

@@ -1,10 +1,12 @@
-﻿﻿var managerOverseer = require('managers_overseer_manager.room.economy.overseer');
-var managerTasks = require('managers_overseer_tasks_assign_manager.room.economy.tasks.assign');
-var managerStructures = require('managers_structures_manager.structures');
-var managerSpawner = require('managers_spawner_manager.room.economy.spawner');
-const managerMilitaryTasks = require('managers_admiral_manager.room.military.tasks');
-const managerAdmiral = require('managers_admiral_manager.room.military.admiral');
-const overseerUtils = require('managers_overseer_utils_overseer.utils');
+const { profRequire } = require('utils_profRequire');
+
+var managerOverseer = profRequire('managers_overseer_manager.room.economy.overseer', 'overseer');
+var managerTasks = profRequire('managers_overseer_tasks_assign_manager.room.economy.tasks.assign', 'tasks.assign');
+var managerStructures = profRequire('managers_structures_manager.structures', 'structures');
+var managerSpawner = profRequire('managers_spawner_manager.room.economy.spawner', 'spawner');
+const managerMilitaryTasks = profRequire('managers_admiral_manager.room.military.tasks', 'milTasks');
+const managerAdmiral = profRequire('managers_admiral_manager.room.military.admiral', 'admiral');
+const overseerUtils = profRequire('managers_overseer_utils_overseer.utils', 'overseer.utils');
 
 const deriveOverallState = (opsState, combatState) => {
     if (combatState === 'SIEGE') return 'SIEGE';
@@ -53,3 +55,4 @@ module.exports = {
         managerStructures.run(room);
     }
 }
+
