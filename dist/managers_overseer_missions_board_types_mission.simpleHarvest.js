@@ -2,6 +2,7 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const SIMPLE_HARVEST_TRAVEL_CACHE_TTL = 200;
 const SIMPLE_HARVEST_TRAVEL_STORE = 'simpleHarvestTravel';
@@ -260,9 +261,13 @@ function hasNonMiningContainer(room, intel, roomCache) {
     return false;
 }
 
-function shouldActivateSimpleHarvest(room, intel, roomCache) {
+function shouldActivateSimpleHarvest(room, intel, roomCache, policy) {
     if (!room || !room.controller || !room.controller.my) return false;
-    if (room.storage) return false;
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
+    if (phaseRank >= storagePhaseRank && state !== policyConstants.STATE.CRITICAL) return false;
     return !hasNonMiningContainer(room, intel, roomCache);
 }
 
@@ -588,16 +593,14 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.simpleHarvest === false) return [];
         const roomCache = getRoomCache(room);
         const roomMemo = getSimpleHarvestRoomMemo(room, intel, roomCache);
-        if (!shouldActivateSimpleHarvest(room, intel, roomCache)) return [];
+        if (!shouldActivateSimpleHarvest(room, intel, roomCache, policy)) return [];
 
         const source = pickSimpleHarvestSource(room, intel, roomCache, roomMemo);
         if (!source || !source.id) return [];
 
-        const emergency = (policy && policy.status === 'EMERGENCY') || (context && context.opState === 'EMERGENCY');
+        const emergency = policy && policy.state === policyConstants.STATE.CRITICAL;
         const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
@@ -672,8 +675,11 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room._policy;
         const roomCache = getRoomCache(room);
-        if (!shouldActivateSimpleHarvest(room, intel, roomCache)) return false;
+        if (!shouldActivateSimpleHarvest(room, intel, roomCache, policy)) return false;
 
         const source = Game.getObjectById(mission.targetId);
         return !!source;

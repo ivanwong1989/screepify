@@ -102,7 +102,6 @@ profiler.registerObject(require('managers_overseer_utils_overseer.utils'), 'over
     ['managers_overseer_missions_board_types_mission.remoteHaul', 'mission.remoteHaul'],
     ['managers_overseer_missions_board_types_mission.scout', 'mission.scout'],
     ['managers_overseer_missions_board_types_mission.mineral', 'mission.mineral'],
-    ['managers_overseer_missions_board_types_mission.contract', 'mission.contract'],
     ['managers_overseer_missions_board_types_mission.userRemoteMove2Flag', 'mission.userRemoteMove2Flag'],
     ['managers_overseer_missions_board_types_mission.tower', 'mission.tower'],
     ['managers_overseer_missions_board_types_mission.remoteBuild', 'mission.remoteBuild']

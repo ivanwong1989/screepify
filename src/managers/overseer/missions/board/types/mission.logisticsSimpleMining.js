@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const MAX_SIMPLE_MINING_HAULERS = 4;
 
@@ -111,8 +112,13 @@ function getObjectByIdCached(id, objectCache, roomMemo) {
     return obj;
 }
 
-function shouldActivate(room) {
+function shouldActivate(room, policy) {
     if (!room || !room.controller || !room.controller.my) return false;
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
+    if (phaseRank >= storagePhaseRank && state !== policyConstants.STATE.CRITICAL) return false;
     return true;
 }
 
@@ -314,16 +320,14 @@ module.exports = {
     discover({ room, intel, context, missionBoard }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.logisticsSimpleMining === false) return [];
-        if (!shouldActivate(room)) return [];
+        if (!shouldActivate(room, policy)) return [];
         if (hasActiveMiningV2Mission(room.name, missionBoard)) return [];
 
         const blockedSourceIds = getV2UngatedSourceIdSet(intel);
         const simpleSourceCount = getEnergySourceCount(room, intel, blockedSourceIds);
         if (simpleSourceCount <= 0) return [];
 
-        const emergency = (policy && policy.status === 'EMERGENCY') || (context && context.opState === 'EMERGENCY');
+        const emergency = policy && policy.state === policyConstants.STATE.CRITICAL;
         const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
@@ -385,7 +389,10 @@ module.exports = {
     validate(mission, runtimeCtx) {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
-        if (!shouldActivate(room)) return false;
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        if (!shouldActivate(room, policy)) return false;
         if (hasActiveMiningV2Mission(roomName, null)) return false;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         if (!intel || !Array.isArray(intel.sources)) return true;
@@ -399,7 +406,10 @@ module.exports = {
 
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
-        if (!room || !shouldActivate(room)) return;
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        if (!room || !shouldActivate(room, policy)) return;
         const roomMemo = getSimpleMiningRoomMemo(room, getRoomCache(room));
         const objectCache = Object.create(null);
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;

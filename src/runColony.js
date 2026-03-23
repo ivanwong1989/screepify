@@ -8,10 +8,15 @@ const managerMilitaryTasks = profRequire('managers_admiral_manager.room.military
 const managerAdmiral = profRequire('managers_admiral_manager.room.military.admiral', 'admiral');
 const overseerUtils = profRequire('managers_overseer_utils_overseer.utils', 'overseer.utils');
 
-const deriveOverallState = (opsState, combatState) => {
+const deriveOverallState = (roomState, combatState) => {
     if (combatState === 'SIEGE') return 'SIEGE';
     if (combatState === 'DEFEND') return 'DEFENSE';
-    if (combatState === 'CAUTION' || opsState === 'EMERGENCY') return 'WATCH';
+    if (
+        combatState === 'CAUTION'
+        || roomState === 'CRITICAL'
+        || roomState === 'RECOVER'
+        || roomState === 'DEFENSIVE'
+    ) return 'WATCH';
     return 'SAFE';
 };
 
@@ -30,11 +35,12 @@ module.exports = {
         managerAdmiral.run(room);
 
         // 2.5 Unified Room State Summary (non-breaking, additive)
+        const roomState = room._policy && room._policy.state ? room._policy.state : null;
         room._roomState = {
-            ops: room._opState,
-            economy: room._economyState,
+            ops: roomState,
+            economy: roomState,
             combat: room._combatState,
-            overall: deriveOverallState(room._opState, room._combatState)
+            overall: deriveOverallState(roomState, room._combatState)
         };
 
         // 3. Tasks: Generate missions, assign creeps, and request spawns if needed

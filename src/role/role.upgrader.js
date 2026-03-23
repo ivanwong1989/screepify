@@ -213,6 +213,7 @@ const roleUpgrader = {
         if (!missionName) {
             delete creep.memory.task;
             delete creep.memory.taskState;
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             debugUpgrader(creep, 'CLEAR_NO_MISSION');
             return;
         }
@@ -223,6 +224,7 @@ const roleUpgrader = {
         if (!mission || mission.type !== 'upgrade') {
             debugUpgrader(creep, 'CLEAR_BAD_MISSION', `mission=${missionName} type=${mission && mission.type ? mission.type : '-'}`);
             clearUpgraderAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
 
@@ -232,6 +234,7 @@ const roleUpgrader = {
         if (!intent) {
             debugUpgrader(creep, 'CLEAR_NO_INTENT');
             clearUpgraderAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
         const handled = executeIntent(creep, intent);

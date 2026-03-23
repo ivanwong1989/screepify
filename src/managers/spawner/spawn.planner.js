@@ -193,7 +193,7 @@ const spawnPlanner = {
     },
 
     computeBudget: function(room, contract) {
-        const opState = room._opState;
+        const roomState = room && room._policy ? room._policy.state : null;
         let budget = room.energyCapacityAvailable;
         const role = normalizeRoleName(contract && contract.role ? contract.role : '');
 
@@ -241,7 +241,7 @@ const spawnPlanner = {
             budget = room.energyAvailable;
         } else if (!hasMiners || !hasHaulers) {
             budget = Math.max(room.energyAvailable, 200);
-        } else if (opState === 'EMERGENCY') {
+        } else if (roomState === 'CRITICAL') {
             budget = Math.max(room.energyAvailable, 200);
         }
 

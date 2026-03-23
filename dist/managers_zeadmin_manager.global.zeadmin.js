@@ -8,10 +8,15 @@ const ASSAULT_WATCHDOG_DEFAULTS = {
     maxEvents: 80
 };
 
-function deriveOverallState(opsState, combatState) {
+function deriveOverallState(roomState, combatState) {
     if (combatState === 'SIEGE') return 'SIEGE';
     if (combatState === 'DEFEND') return 'DEFENSE';
-    if (combatState === 'CAUTION' || opsState === 'EMERGENCY') return 'WATCH';
+    if (
+        combatState === 'CAUTION'
+        || roomState === 'CRITICAL'
+        || roomState === 'RECOVER'
+        || roomState === 'DEFENSIVE'
+    ) return 'WATCH';
     return 'SAFE';
 }
 
@@ -447,12 +452,11 @@ const managerZeadmin = {
 
             const overseer = room.memory && room.memory.overseer ? room.memory.overseer : {};
             const admiral = room.memory && room.memory.admiral ? room.memory.admiral : {};
-            const opsState = room._opState || overseer.opState || 'UNKNOWN';
-            const economyState = room._economyState || overseer.economyState || 'UNKNOWN';
+            const roomState = (room._policy && room._policy.state) || overseer.state || 'UNKNOWN';
             const combatState = room._combatState || admiral.state || 'UNKNOWN';
             const overallState = room._roomState && room._roomState.overall
                 ? room._roomState.overall
-                : deriveOverallState(opsState, combatState);
+                : deriveOverallState(roomState, combatState);
             const missions = Array.isArray(room._missions) ? room._missions : [];
             const missionByType = countMissionsByType(missions);
             const assaultMissions = missions.filter(m => m && m.type === 'assault');
@@ -471,8 +475,8 @@ const managerZeadmin = {
             const roomReport = {
                 tick: Game.time,
                 states: {
-                    ops: opsState,
-                    economy: economyState,
+                    ops: roomState,
+                    economy: roomState,
                     combat: combatState,
                     overall: overallState
                 },
@@ -544,8 +548,8 @@ const managerZeadmin = {
             if (storageStats.exists && storageStats.fillPct >= 0.9) empire.storage.pressuredRooms += 1;
             if (terminalStats.exists && terminalStats.fillPct >= 0.9) empire.terminal.pressuredRooms += 1;
 
-            empire.states.ops[opsState] = (empire.states.ops[opsState] || 0) + 1;
-            empire.states.economy[economyState] = (empire.states.economy[economyState] || 0) + 1;
+            empire.states.ops[roomState] = (empire.states.ops[roomState] || 0) + 1;
+            empire.states.economy[roomState] = (empire.states.economy[roomState] || 0) + 1;
             empire.states.combat[combatState] = (empire.states.combat[combatState] || 0) + 1;
             empire.states.overall[overallState] = (empire.states.overall[overallState] || 0) + 1;
         }

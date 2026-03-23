@@ -4,6 +4,7 @@ const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
 const managerTerminal = require('managers_structures_manager.terminal');
 const managerLabs = require('managers_structures_manager.labs');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const CORE_END_FLAG = 'CORE_END';
 const CORE_LABS_FLAG = 'CORE_LABS';
@@ -1357,10 +1358,15 @@ function isHeadLocalJob(job, runtime, source, target) {
     return headPos.getRangeTo(source.pos) <= 1 && headPos.getRangeTo(target.pos) <= 1;
 }
 
-function shouldActivate(room, roomMemo) {
+function shouldActivate(room, roomMemo, policy) {
     if (!room || !room.controller || !room.controller.my) return false;
     const spawns = roomMemo && Array.isArray(roomMemo.mySpawns) ? roomMemo.mySpawns : room.find(FIND_MY_SPAWNS);
     if (!spawns || spawns.length <= 0) return false;
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
+    if (phaseRank < storagePhaseRank || state === policyConstants.STATE.CRITICAL) return false;
     if (!room.storage) return false;
     return true;
 }
@@ -1517,7 +1523,7 @@ module.exports = {
         const missionGates = policy && policy.missionGates ? policy.missionGates : null;
         if (missionGates && missionGates.logisticsCoreV2 === false) return [];
         const roomMemo = getLogisticsRoomMemo(room, getRoomCache(room));
-        if (!shouldActivate(room, roomMemo)) return [];
+        if (!shouldActivate(room, roomMemo, policy)) return [];
 
         const createContext = {
             sponsorRoom: room.name,
@@ -1579,7 +1585,10 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         const roomMemo = getLogisticsRoomMemo(room, getRoomCache(room));
-        return shouldActivate(room, roomMemo);
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        return shouldActivate(room, roomMemo, policy);
     },
 
     refresh(mission, runtimeCtx) {
@@ -1589,7 +1598,10 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         const roomCache = getRoomCache(room);
         const roomMemo = getLogisticsRoomMemo(room, roomCache);
-        if (!shouldActivate(room, roomMemo)) return;
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        if (!shouldActivate(room, roomMemo, policy)) return;
         const objectCache = Object.create(null);
 
         const coreFlag = getCoreEndFlag(room);

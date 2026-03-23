@@ -191,10 +191,10 @@ function parkNearSpawnWhileIdle(creep, homeRoomName) {
 const roleScout = {
     run: function(creep) {
         if (!creep || !creep.memory) return;
-        movement.enableTrafficForBuildWorker(creep);
 
         const missionName = creep.memory.missionName;
         if (!missionName) {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
@@ -204,14 +204,17 @@ const roleScout = {
         const mission = getMissionByName(homeRoom, missionName);
         if (!mission) {
             clearScoutAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
 
         if (mission.type !== 'scout') {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
 
+        movement.enableTrafficForBuildWorker(creep);
         delete creep.memory.task;
         delete creep.memory.taskState;
 

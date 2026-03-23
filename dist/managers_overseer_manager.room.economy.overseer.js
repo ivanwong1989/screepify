@@ -8,7 +8,6 @@ const missionBoard = profRequire('managers_overseer_missions_board_missionBoard'
 const remoteUtils = profRequire('managers_overseer_utils_overseer.remote', 'overseer.remote');
 const overseerUtils = profRequire('managers_overseer_utils_overseer.utils', 'overseer.utils');
 const roomConditionPolicy = profRequire('managers_overseer_policy_room.condition', 'overseer.policy.room.condition');
-const roomDirectivePolicy = profRequire('managers_overseer_policy_room.directive', 'overseer.policy.room.directive');
 const roomPolicy = profRequire('managers_overseer_policy_room.policy', 'overseer.policy.room.policy');
 
 const getRemoteCreepsByHomeRoom = function() {
@@ -49,19 +48,6 @@ const isDebugCategoryEnabled = function(category) {
     const cats = Memory.debugCategories;
     if (!cats || typeof cats !== 'object') return true;
     return !!cats[category];
-};
-
-const summarizePolicyGates = function(gates) {
-    if (!gates || typeof gates !== 'object') return { on: [], off: [] };
-    const on = [];
-    const off = [];
-    const keys = Object.keys(gates).sort();
-    for (let i = 0; i < keys.length; i++) {
-        const key = keys[i];
-        if (gates[key]) on.push(key);
-        else off.push(key);
-    }
-    return { on, off };
 };
 
 /**
@@ -125,20 +111,16 @@ var managerOverseer = {
         }
 
         // 3. Determine Room State
-        const directive = roomDirectivePolicy.getEmpireRoomDirective(room.name);
         const condition = roomConditionPolicy.deriveRoomCondition(room, intel, null);
-        const policy = roomPolicy.deriveRoomPolicy(room, intel, condition, directive);
-        const missionOpState = (policy.legacy && policy.legacy.opState) || 'NORMAL';
-        const missionEconomyState = (policy.legacy && policy.legacy.economyState) || 'STOCKPILING';
-        intel.opState = missionOpState;
-        intel.economyState = missionEconomyState;
+        const policy = roomPolicy.deriveRoomPolicy(room, intel, condition);
+        intel.roomState = policy.state;
         const myUser = getMyUsername(room);
 
         // Keep opportunistic road repair targets warm for reserved, visible remotes.
         // This enables micro-repair in remote harvest rooms without full remote repair missions.
         if (myUser) {
             const remoteEntries = remoteUtils.getRemoteEconomicContext(room, {
-                opState: missionOpState,
+                roomState: policy.state,
                 maxScoutAge: 4000
             });
             for (let i = 0; i < remoteEntries.length; i++) {
@@ -168,18 +150,7 @@ var managerOverseer = {
         const censusCreeps = localOwned.concat(remote.assigned || [], remote.idle || []);
 
         // 5. Generate Missions
-        const missions = overseerMissions.generate(
-            room,
-            intel,
-            missionOpState,
-            missionEconomyState,
-            censusCreeps,
-            {
-                directive,
-                condition,
-                policy
-            }
-        );
+        const missions = overseerMissions.generate(room, intel, censusCreeps, { condition, policy });
 
         // 6. Analyze Census (Match Creeps to Missions)
         overseerUtils.analyzeCensus(missions, censusCreeps);
@@ -188,8 +159,6 @@ var managerOverseer = {
         room._missions = missions;
         room._condition = condition;
         room._policy = policy;
-        room._opState = missionOpState;
-        room._economyState = missionEconomyState;
 
         // Avoid dumping full mission objects into persistent memory by default.
         // Enable `Memory.debugMissions = true` to inspect full mission data.
@@ -198,35 +167,23 @@ var managerOverseer = {
         } else {
             delete room.memory.overseer.missions;
         }
-        room.memory.overseer.opState = missionOpState;
-        room.memory.overseer.economyState = missionEconomyState;
+        room.memory.overseer.state = policy.state;
         const policyDebugEnabled = Memory.debugPolicy || isDebugCategoryEnabled('overseer.policy');
         if (policyDebugEnabled) {
             room.memory.overseer.condition = condition;
             room.memory.overseer.policy = policy;
-            const reasons = Array.isArray(policy.reasons) ? policy.reasons.slice(0, 8) : [];
-            const gateSummary = summarizePolicyGates(policy.missionGates);
+            const reasons = Array.isArray(condition.reasons) ? condition.reasons.slice(0, 8) : [];
             debug(
                 'overseer.policy',
-                `[RoomPolicy] ${room.name} phase=${policy.phase} status=${policy.status} posture=${policy.posture} ` +
-                `economyMode=${policy.economyMode} op=${missionOpState} eco=${missionEconomyState} ` +
-                `prio(upg=${policy.priorities.upgradeIntensity},build=${policy.priorities.buildIntensity},repair=${policy.priorities.repairIntensity},fort=${policy.priorities.fortifyIntensity},remote=${policy.priorities.remoteIntensity}) ` +
-                `energy(export=${policy.energy.allowExport ? 1 : 0},import=${policy.energy.requestImport ? 1 : 0},stockpile=${policy.energy.preferStockpile ? 1 : 0},upgrade=${policy.energy.preferUpgrade ? 1 : 0},reserve=${policy.energy.targetReserve}) ` +
+                `[RoomPolicy] ${room.name} phase=${policy.phase} state=${policy.state} ` +
                 `reasons=${reasons.join('; ')}`
-            );
-            debug(
-                'overseer.policy',
-                `[RoomPolicyGates] ${room.name} on=${gateSummary.on.join(',') || '-'} off=${gateSummary.off.join(',') || '-'}`
             );
         } else {
             room.memory.overseer.policy = {
                 tick: Game.time,
                 phase: policy.phase,
-                status: policy.status,
-                posture: policy.posture,
-                economyMode: policy.economyMode,
-                legacy: policy.legacy,
-                reasons: policy.reasons
+                state: policy.state,
+                orders: policy.orders
             };
             delete room.memory.overseer.condition;
         }

@@ -115,6 +115,7 @@ const roleMineralMiner = {
 
         const missionName = creep.memory.missionName;
         if (!missionName) {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
@@ -124,10 +125,12 @@ const roleMineralMiner = {
         const mission = getMissionByName(homeRoom, missionName);
         if (!mission) {
             clearMineralAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
 
         if (mission.type !== 'mineral') {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }

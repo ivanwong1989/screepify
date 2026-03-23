@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const BUILD_WORKER_TUNING = Object.freeze({
     desiredWorkBase: 1,
@@ -121,6 +122,16 @@ function getBuildRoomMemo(room, intel, roomCache) {
     return memo;
 }
 
+function shouldActivateBuild(policy) {
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const minPhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.BASIC_INFRA];
+    if (phaseRank < minPhaseRank) return false;
+    if (state === policyConstants.STATE.CRITICAL) return false;
+    return true;
+}
+
 module.exports = {
     makeKey(context) {
         return missionKeys.makeBuildKey(context.targetRoom || context.sponsorRoom, context.siteId);
@@ -129,8 +140,7 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.build === false) return [];
+        if (!shouldActivateBuild(policy)) return [];
 
         const roomCache = getRoomCache(room);
         const sites = getBuildSites(room, intel, roomCache);

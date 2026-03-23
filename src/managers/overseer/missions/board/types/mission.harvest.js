@@ -2,6 +2,7 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const HARVEST_TRAVEL_CACHE_TTL = 200;
 const HARVEST_TRAVEL_STORE = 'harvestTravel';
@@ -275,9 +276,14 @@ function hasNonMiningContainers(room, intel, roomCache) {
     return false;
 }
 
-function shouldActivateHarvest(room, intel, roomCache, roomMemo) {
+function shouldActivateHarvest(room, intel, roomCache, roomMemo, policy) {
     if (!room || !room.controller || !room.controller.my) return false;
-    if (room.storage) return true;
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
+    const atOrPastStorage = phaseRank >= storagePhaseRank;
+    if (atOrPastStorage || state === policyConstants.STATE.CRITICAL) return true;
     if (hasNonMiningContainers(room, intel, roomCache)) return true;
 
     const sources = roomMemo && Array.isArray(roomMemo.sources)
@@ -286,9 +292,13 @@ function shouldActivateHarvest(room, intel, roomCache, roomMemo) {
     return (sources && sources.length > 1) || false;
 }
 
-function shouldUseHybridEarlyHarvest(room, intel, roomCache, roomMemo) {
+function shouldUseHybridEarlyHarvest(room, intel, roomCache, roomMemo, policy) {
     if (!room || !room.controller || !room.controller.my) return false;
-    if (room.storage) return false;
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
+    if (phaseRank >= storagePhaseRank && state !== policyConstants.STATE.CRITICAL) return false;
     if (hasNonMiningContainers(room, intel, roomCache)) return false;
     const sources = roomMemo && Array.isArray(roomMemo.sources)
         ? roomMemo.sources
@@ -616,19 +626,17 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.harvest === false) return [];
         const roomCache = getRoomCache(room);
         const roomMemo = getHarvestRoomMemo(room, intel, roomCache);
-        if (!shouldActivateHarvest(room, intel, roomCache, roomMemo)) return [];
+        if (!shouldActivateHarvest(room, intel, roomCache, roomMemo, policy)) return [];
 
         const sources = roomMemo.sources;
-        const simpleHarvestAnchorSourceId = shouldUseHybridEarlyHarvest(room, intel, roomCache, roomMemo)
+        const simpleHarvestAnchorSourceId = shouldUseHybridEarlyHarvest(room, intel, roomCache, roomMemo, policy)
             ? pickSimpleHarvestAnchorSourceId(room, intel, roomCache, roomMemo)
             : null;
         const out = [];
 
-        const emergency = (policy && policy.status === 'EMERGENCY') || (context && context.opState === 'EMERGENCY');
+        const emergency = policy && policy.state === policyConstants.STATE.CRITICAL;
         for (let i = 0; i < sources.length; i++) {
             const source = sources[i];
             if (!source || !source.id) continue;
@@ -709,9 +717,12 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return true;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room._policy;
         const roomCache = getRoomCache(room);
         const roomMemo = getHarvestRoomMemo(room, intel, roomCache);
-        if (!shouldActivateHarvest(room, intel, roomCache, roomMemo)) return false;
+        if (!shouldActivateHarvest(room, intel, roomCache, roomMemo, policy)) return false;
 
         const source = Game.getObjectById(mission.targetId);
         return !!source;

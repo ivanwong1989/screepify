@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
 const heap = require('utils_heap');
 
@@ -250,6 +251,19 @@ function isUnderAttackPressure(room, runtimeCtx) {
     return combatState === 'SIEGE' || combatState === 'DEFEND' || hostilesPresent;
 }
 
+function shouldActivateFortify(policy) {
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
+    if (
+        state === policyConstants.STATE.CRITICAL
+        || state === policyConstants.STATE.DEFENSIVE
+        || state === policyConstants.STATE.SIEGE
+    ) return true;
+    return phaseRank >= storagePhaseRank;
+}
+
 module.exports = {
     makeKey(context) {
         return missionKeys.makeRepairTargetKey(
@@ -262,8 +276,7 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.fortify === false) return [];
+        if (!shouldActivateFortify(policy)) return [];
 
         const scan = overseerOpportunisticRepair.getRoomScan(room.name);
         if (!scan) return [];
@@ -341,6 +354,10 @@ module.exports = {
     validate(mission, runtimeCtx) {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        if (!shouldActivateFortify(policy)) return false;
         if (!room) return true;
         const ids = readFortifyQueue(roomName);
         if (!ids || ids.length <= 0) return false;
@@ -362,8 +379,19 @@ module.exports = {
         mission.meta.missionName = mission.meta.missionName || `fortify:${mission.targetId}`;
         mission.meta.desiredWork = FORTIFY_WORKER_TUNING.desiredWork;
         const underAttack = isUnderAttackPressure(room, runtimeCtx);
-        mission.meta.minCount = underAttack ? 2 : FORTIFY_WORKER_TUNING.minCount;
-        mission.meta.maxCount = underAttack ? 2 : FORTIFY_WORKER_TUNING.maxCount;
+        const roomState = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy.state
+            : (room && room._policy && room._policy.state ? room._policy.state : policyConstants.STATE.RECOVER);
+        if (roomState === policyConstants.STATE.SIEGE || underAttack) {
+            mission.meta.minCount = 2;
+            mission.meta.maxCount = 2;
+        } else if (roomState === policyConstants.STATE.CRITICAL || roomState === policyConstants.STATE.RECOVER) {
+            mission.meta.minCount = 0;
+            mission.meta.maxCount = 0;
+        } else {
+            mission.meta.minCount = 1;
+            mission.meta.maxCount = 1;
+        }
 
         let currentTarget = structure;
         if (room && scan) {

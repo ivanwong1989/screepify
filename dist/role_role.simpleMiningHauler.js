@@ -162,6 +162,7 @@ module.exports = {
             if (creep.memory.simpleMiningState !== undefined) delete creep.memory.simpleMiningState;
             if (creep.memory.simpleMiningSourceId !== undefined) delete creep.memory.simpleMiningSourceId;
             if (creep.memory._trafficMove !== undefined) delete creep.memory._trafficMove;
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
         movement.enableTrafficForBuildWorker(creep);

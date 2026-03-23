@@ -2,6 +2,7 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const missionRuntime = require('managers_overseer_missions_board_missionRuntime');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const REBUILD_INTERVAL = 100;
 const PLAIN_COST = 10;
@@ -108,6 +109,16 @@ function hasStableSink(room, intel, roomMemo) {
         return true;
     }
     return false;
+}
+
+function shouldActivateByPolicy(room, policy) {
+    if (!room || !room.controller || !room.controller.my) return false;
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
+    if (phaseRank < storagePhaseRank || state === policyConstants.STATE.CRITICAL) return false;
+    return true;
 }
 
 function isWalkableStructure(structure) {
@@ -468,6 +479,7 @@ module.exports = {
         const policy = context && context.policy ? context.policy : null;
         const missionGates = policy && policy.missionGates ? policy.missionGates : null;
         if (missionGates && missionGates.logisticsMiningV2 === false) return [];
+        if (!shouldActivateByPolicy(room, policy)) return [];
         const roomMemo = getMiningV2RoomMemo(room, intel, getRoomCache(room));
         const objectCache = Object.create(null);
         if (!hasStableSink(room, intel, roomMemo)) return [];
@@ -540,6 +552,10 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room || !room.controller || !room.controller.my) return false;
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room._policy;
+        if (!shouldActivateByPolicy(room, policy)) return false;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const roomMemo = getMiningV2RoomMemo(room, intel, getRoomCache(room));
         const objectCache = Object.create(null);
@@ -556,6 +572,10 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         if (!room) return;
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room._policy;
+        if (!shouldActivateByPolicy(room, policy)) return;
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const roomMemo = getMiningV2RoomMemo(room, intel, getRoomCache(room));
         const objectCache = Object.create(null);

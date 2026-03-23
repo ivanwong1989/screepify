@@ -441,10 +441,10 @@ function getRemoteBuildIntent(creep, mission, homeRoom, homeRoomName) {
 const roleRemoteWorker = {
     run: function(creep) {
         if (!creep || !creep.memory) return;
-        movement.enableTrafficForBuildWorker(creep);
 
         const missionName = creep.memory.missionName;
         if (!missionName) {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
@@ -454,18 +454,22 @@ const roleRemoteWorker = {
         const mission = getMissionByName(homeRoom, missionName);
         if (!mission) {
             clearRemoteWorkerAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
 
         if (!REMOTE_WORKER_MISSION_TYPES.has(mission.type)) {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
 
+        movement.enableTrafficForBuildWorker(creep);
         delete creep.memory.task;
         const intent = getRemoteBuildIntent(creep, mission, homeRoom, homeRoomName);
         if (!intent) {
             clearRemoteWorkerAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
         executeIntent(creep, intent);

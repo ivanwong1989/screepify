@@ -236,6 +236,7 @@ module.exports = {
             if (creep.memory.simpleHaulerTargetId !== undefined) delete creep.memory.simpleHaulerTargetId;
             if (creep.memory.task !== undefined) delete creep.memory.task;
             if (creep.memory._trafficMove !== undefined) delete creep.memory._trafficMove;
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
 
@@ -252,6 +253,7 @@ module.exports = {
             if (creep.memory.simpleHaulerSourceId !== undefined) delete creep.memory.simpleHaulerSourceId;
             if (creep.memory.simpleHaulerTargetId !== undefined) delete creep.memory.simpleHaulerTargetId;
             if (creep.memory._trafficMove !== undefined) delete creep.memory._trafficMove;
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
         movement.enableTrafficForBuildWorker(creep);

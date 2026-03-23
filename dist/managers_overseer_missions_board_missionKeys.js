@@ -44,20 +44,6 @@ function makeMineralKey(roomName, mineralId) {
     return `mineral:${roomName}:${mineralId}`;
 }
 
-function makeContractKey(roomName, mission) {
-    if (!mission) return null;
-    const type = mission.type || 'unknown';
-    const name = mission.name || null;
-    if (name) return `contract:${roomName}:${type}:${name}`;
-
-    if (mission.targetId) return `contract:${roomName}:${type}:target:${mission.targetId}`;
-    if (mission.sourceId) return `contract:${roomName}:${type}:source:${mission.sourceId}`;
-    if (mission.pos && Number.isFinite(mission.pos.x) && Number.isFinite(mission.pos.y) && mission.pos.roomName) {
-        return `contract:${roomName}:${type}:pos:${mission.pos.roomName}:${mission.pos.x}:${mission.pos.y}`;
-    }
-    return `contract:${roomName}:${type}:anon`;
-}
-
 function makeUserMissionKey(roomName, missionType, userMissionId, fallback) {
     const type = missionType || 'userMission';
     const id = userMissionId || fallback || 'anon';
@@ -76,7 +62,6 @@ module.exports = {
     makeRemoteBuildKey,
     makeScoutKey,
     makeMineralKey,
-    makeContractKey,
     makeUserMissionKey
 };
 

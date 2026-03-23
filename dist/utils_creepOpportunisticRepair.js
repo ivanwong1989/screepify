@@ -37,8 +37,10 @@ function isDireFortifyContext(room) {
 function allowOpportunisticFortify(room) {
     if (!room) return false;
     if (isDireFortifyContext(room)) return true;
-    const economyState = room.memory && room.memory.overseer && room.memory.overseer.economyState;
-    return economyState === 'UPGRADING';
+    const roomState = room._policy && room._policy.state
+        ? room._policy.state
+        : (room.memory && room.memory.overseer ? room.memory.overseer.state : null);
+    return roomState === 'GROW' || roomState === 'STOCKPILE';
 }
 
 function getOpportunisticRoomTargets(roomName) {

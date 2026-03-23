@@ -2,6 +2,8 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
+
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
     if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
@@ -32,8 +34,15 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room || !intel) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.mineral === false) return [];
+        const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+        const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+        const phaseRank = policyConstants.PHASE_RANK[phase] || 0;
+        if (phaseRank < policyConstants.PHASE_RANK[policyConstants.PHASE.LABS]) return [];
+        if (
+            state === policyConstants.STATE.CRITICAL
+            || state === policyConstants.STATE.RECOVER
+            || state === policyConstants.STATE.SIEGE
+        ) return [];
 
         const minerals = Array.isArray(intel.minerals) ? intel.minerals : [];
         const out = [];

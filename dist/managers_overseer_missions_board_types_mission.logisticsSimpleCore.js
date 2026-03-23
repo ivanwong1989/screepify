@@ -2,6 +2,7 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const heap = require('utils_heap');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const CORE_END_FLAG = 'CORE_END';
 const SIMPLE_CORE_TARGET_TYPES = new Set([
@@ -180,12 +181,15 @@ function hasCoreLaneFlag(room) {
     return !!(flag && flag.pos && flag.pos.roomName === room.name);
 }
 
-function shouldActivate(room, roomMemo) {
+function shouldActivate(room, roomMemo, policy) {
     if (!room || !room.controller || !room.controller.my) return false;
     const spawns = roomMemo && Array.isArray(roomMemo.mySpawns) ? roomMemo.mySpawns : room.find(FIND_MY_SPAWNS);
     if (!spawns || spawns.length <= 0) return false;
-    // Simple core logistics is a pre-storage fallback; storage rooms should use logisticsCoreV2.
-    if (room.storage) return false;
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
+    if (phaseRank >= storagePhaseRank && state !== policyConstants.STATE.CRITICAL) return false;
     if (hasCoreLaneFlag(room)) return false;
     return true;
 }
@@ -394,12 +398,10 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.logisticsSimpleCore === false) return [];
         const roomMemo = getSimpleCoreRoomMemo(room, getRoomCache(room));
-        if (!shouldActivate(room, roomMemo)) return [];
+        if (!shouldActivate(room, roomMemo, policy)) return [];
 
-        const emergency = (policy && policy.status === 'EMERGENCY') || (context && context.opState === 'EMERGENCY');
+        const emergency = policy && policy.state === policyConstants.STATE.CRITICAL;
         const createContext = {
             sponsorRoom: room.name,
             targetRoom: room.name,
@@ -460,7 +462,10 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         const roomMemo = getSimpleCoreRoomMemo(room, getRoomCache(room));
-        return shouldActivate(room, roomMemo);
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        return shouldActivate(room, roomMemo, policy);
     },
 
     refresh(mission, runtimeCtx) {
@@ -469,7 +474,10 @@ module.exports = {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
         const roomMemo = getSimpleCoreRoomMemo(room, getRoomCache(room));
-        if (!shouldActivate(room, roomMemo)) return;
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        if (!shouldActivate(room, roomMemo, policy)) return;
         const objectCache = Object.create(null);
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const planSignature = getSimpleCorePlanSignature(roomName, intel, roomMemo);

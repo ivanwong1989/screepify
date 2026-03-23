@@ -268,7 +268,6 @@ function tryOpportunisticPickup(creep, resourceType) {
 const roleRemoteHaul = {
     run: function(creep) {
         if (!creep || !creep.memory) return;
-        movement.enableTrafficForCoreLaneHauler(creep);
 
         if (creep.memory._travellingToHome) {
             roleUniversal.run(creep);
@@ -277,6 +276,7 @@ const roleRemoteHaul = {
 
         const missionName = creep.memory.missionName;
         if (!missionName) {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
@@ -286,13 +286,16 @@ const roleRemoteHaul = {
         const mission = getMissionByName(homeRoom, missionName);
         if (!mission) {
             clearAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
         if (mission.type !== 'remote_haul') {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
 
+        movement.enableTrafficForCoreLaneHauler(creep);
         delete creep.memory.task;
 
         const data = mission.data || {};

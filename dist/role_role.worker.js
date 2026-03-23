@@ -36,40 +36,6 @@ function getRoomCache(room) {
     return global.getRoomCache(room);
 }
 
-function roomHasCoreLaneMission(room, memo) {
-    if (!room) return false;
-    if (memo && memo.hasCoreLaneMission !== undefined) return memo.hasCoreLaneMission;
-    const missions = Array.isArray(room._missions) ? room._missions : [];
-    for (let i = 0; i < missions.length; i++) {
-        const mission = missions[i];
-        if (mission && mission.type === 'logisticsCoreV2') {
-            if (memo) memo.hasCoreLaneMission = true;
-            return true;
-        }
-    }
-    if (memo) memo.hasCoreLaneMission = false;
-    return false;
-}
-
-function roomHasActiveCoreLaneHauler(room, memo, roomCache) {
-    if (!room) return false;
-    if (memo && memo.hasActiveCoreLaneHauler !== undefined) return memo.hasActiveCoreLaneHauler;
-
-    const creeps = (roomCache && Array.isArray(roomCache.myCreeps))
-        ? roomCache.myCreeps
-        : room.find(FIND_MY_CREEPS);
-    for (let i = 0; i < creeps.length; i++) {
-        const c = creeps[i];
-        if (!c || !c.memory) continue;
-        if (c.memory.role !== 'coreLaneHauler') continue;
-        if (c.memory.missionType && c.memory.missionType !== 'logisticsCoreV2') continue;
-        if (memo) memo.hasActiveCoreLaneHauler = true;
-        return true;
-    }
-    if (memo) memo.hasActiveCoreLaneHauler = false;
-    return false;
-}
-
 function clearWorkerAssignment(creep, reason, extra) {
     if (!creep || !creep.memory) return;
     const missionName = creep.memory.missionName;
@@ -506,26 +472,11 @@ const roleWorker = {
                     `workerState=${creep.memory.workerState || '-'} room=${creep.room && creep.room.name ? creep.room.name : '-'}`
                 );
             }
-            const roomMemo = getWorkerRoomMemo(creep.room);
-            const roomCache = getRoomCache(creep.room);
-            const hasCoreLaneScope = roomHasCoreLaneMission(creep.room, roomMemo) || roomHasActiveCoreLaneHauler(creep.room, roomMemo, roomCache);
-            if (hasCoreLaneScope) {
-                movement.enableTrafficBlockerOnly(creep, {
-                    anchorPos: creep.pos,
-                    range: 1
-                });
-                if (Memory.debugTraffic && typeof debug === 'function') {
-                    debug(
-                        'traffic',
-                        `[BuildTraffic] blocker_only creep=${creep.name} room=${creep.room.name} mission=none reason=core_lane_active`
-                    );
-                }
-                return;
-            }
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             if (Memory.debugTraffic && typeof debug === 'function') {
                 debug(
                     'traffic',
-                    `[BuildTraffic] skip blocker_only creep=${creep.name} room=${creep.room.name} mission=none reason=no_core_lane_scope`
+                    `[BuildTraffic] blocker_only creep=${creep.name} room=${creep.room.name} mission=none reason=missing_assignment`
                 );
             }
             roleUniversal.run(creep);
@@ -537,6 +488,7 @@ const roleWorker = {
         const mission = getMissionByName(homeRoom, missionName);
         if (!mission) {
             clearWorkerAssignment(creep, 'mission_not_found_in_home_room', `home=${homeRoomName || '-'}`);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
 
@@ -547,6 +499,7 @@ const roleWorker = {
                     `type=${mission.type || '-'} fallback=roleUniversal`
                 );
             }
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }

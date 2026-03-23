@@ -3,6 +3,7 @@ const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
 const remoteUtils = require('managers_overseer_utils_overseer.remote');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const MAX_REMOTE_BUILD_SITES_PER_ROOM = 3;
 const MAX_REMOTE_ROAD_SITES_PER_TICK = 3;
@@ -25,15 +26,15 @@ function toPosObject(pos, fallbackRoomName) {
     return { x, y, roomName };
 }
 
-function getRemoteContextIndex(homeRoom, opState) {
+function getRemoteContextIndex(homeRoom, roomState) {
     if (!homeRoom) return { entries: [], byName: Object.create(null) };
     const store = heap.getStore(REMOTE_BUILD_CONTEXT_INDEX_STORE, { ttl: 3 });
-    const key = `${homeRoom.name}:${opState || 'none'}:${Game.time}`;
+    const key = `${homeRoom.name}:${roomState || 'none'}:${Game.time}`;
     const cached = store[key];
     if (cached && Array.isArray(cached.entries) && cached.byName) return cached;
 
     const entries = remoteUtils.getRemoteEconomicContext(homeRoom, {
-        opState: opState || null,
+        roomState: roomState || null,
         maxScoutAge: 4000
     });
     const byName = Object.create(null);
@@ -46,9 +47,9 @@ function getRemoteContextIndex(homeRoom, opState) {
     return next;
 }
 
-function getRemoteEntry(homeRoom, remoteRoomName, opState) {
+function getRemoteEntry(homeRoom, remoteRoomName, roomState) {
     if (!homeRoom || !remoteRoomName) return null;
-    const ctx = getRemoteContextIndex(homeRoom, opState);
+    const ctx = getRemoteContextIndex(homeRoom, roomState);
     return ctx.byName[remoteRoomName] || null;
 }
 
@@ -170,11 +171,12 @@ module.exports = {
     discover({ room, context }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.remoteBuild === false) return [];
-        if (policy && (policy.status !== 'NORMAL' || policy.posture !== 'GROW')) return [];
-        const opState = context && context.opState ? context.opState : null;
-        const remoteCtx = getRemoteContextIndex(room, opState);
+        const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+        const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+        const phaseRank = policyConstants.PHASE_RANK[phase] || 0;
+        if (phaseRank < policyConstants.PHASE_RANK[policyConstants.PHASE.LINKS]) return [];
+        if (state !== policyConstants.STATE.GROW) return [];
+        const remoteCtx = getRemoteContextIndex(room, state);
         const entries = remoteCtx.entries;
         const out = [];
 
@@ -267,7 +269,8 @@ module.exports = {
         const sponsor = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[mission.sponsorRoom];
         const context = runtimeCtx && runtimeCtx.context ? runtimeCtx.context : null;
         if (!sponsor || !sponsor.controller || !sponsor.controller.my) return false;
-        const entry = getRemoteEntry(sponsor, mission.targetRoom, context && context.opState);
+        const roomState = context && context.policy && context.policy.state ? context.policy.state : null;
+        const entry = getRemoteEntry(sponsor, mission.targetRoom, roomState);
         if (!(entry && entry.enabled)) return false;
         const expectedKey = missionKeys.makeRemoteBuildKey(
             mission.sponsorRoom,

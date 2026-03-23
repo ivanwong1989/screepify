@@ -6,6 +6,7 @@ const heap = require('utils_heap');
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const REMOTE_HAUL_LANE_LAYOUT_VERSION = 4;
 const TARGET_WORK = 7;
@@ -56,15 +57,15 @@ function buildOtherSourceRings(sources, currentSourceId, roomName) {
     return blockedTiles;
 }
 
-function getRemoteContextIndex(homeRoom, opState) {
+function getRemoteContextIndex(homeRoom, roomState) {
     if (!homeRoom) return { entries: [], byName: Object.create(null) };
     const store = heap.getStore(REMOTE_HAUL_CONTEXT_INDEX_STORE, { ttl: 3 });
-    const key = `${homeRoom.name}:${opState || 'none'}:${Game.time}`;
+    const key = `${homeRoom.name}:${roomState || 'none'}:${Game.time}`;
     const cached = store[key];
     if (cached && Array.isArray(cached.entries) && cached.byName) return cached;
 
     const entries = remoteUtils.getRemoteEconomicContext(homeRoom, {
-        opState: opState || null,
+        roomState: roomState || null,
         maxScoutAge: 4000
     });
     const byName = Object.create(null);
@@ -77,9 +78,9 @@ function getRemoteContextIndex(homeRoom, opState) {
     return next;
 }
 
-function getRemoteEntry(homeRoom, remoteRoomName, opState) {
+function getRemoteEntry(homeRoom, remoteRoomName, roomState) {
     if (!homeRoom || !remoteRoomName) return null;
-    const ctx = getRemoteContextIndex(homeRoom, opState);
+    const ctx = getRemoteContextIndex(homeRoom, roomState);
     return ctx.byName[remoteRoomName] || null;
 }
 
@@ -271,14 +272,19 @@ module.exports = {
         if (!room || !intel) return [];
         if (Memory.remoteMissionsEnabled === false) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.remoteHaul === false) return [];
-        const phase = policy && policy.phase ? policy.phase : null;
-        if (phase && phase !== 'REMOTE_READY' && phase !== 'MATURE') return [];
+        const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+        const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+        const phaseRank = policyConstants.PHASE_RANK[phase] || 0;
+        if (phaseRank < policyConstants.PHASE_RANK[policyConstants.PHASE.LINKS]) return [];
+        if (
+            state === policyConstants.STATE.CRITICAL
+            || state === policyConstants.STATE.RECOVER
+            || state === policyConstants.STATE.DEFENSIVE
+            || state === policyConstants.STATE.SIEGE
+        ) return [];
         if (!getDropoffTarget(room, intel)) return [];
 
-        const opState = context && context.opState ? context.opState : null;
-        const remoteCtx = getRemoteContextIndex(room, opState);
+        const remoteCtx = getRemoteContextIndex(room, state);
         const entries = remoteCtx.entries;
         const out = [];
 
@@ -374,7 +380,8 @@ module.exports = {
         const dropoff = getDropoffTarget(sponsor, intel);
         if (!dropoff) return false;
 
-        const entry = getRemoteEntry(sponsor, mission.meta && mission.meta.remoteRoom, context && context.opState);
+        const roomState = context && context.policy && context.policy.state ? context.policy.state : null;
+        const entry = getRemoteEntry(sponsor, mission.meta && mission.meta.remoteRoom, roomState);
         if (!entry || !entry.enabled) return false;
         const source = getSourceInfo(entry, mission.targetId);
         if (!source) return false;
@@ -395,6 +402,7 @@ module.exports = {
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[mission.sponsorRoom];
         const intel = runtimeCtx && runtimeCtx.intel ? runtimeCtx.intel : null;
         const context = runtimeCtx && runtimeCtx.context ? runtimeCtx.context : null;
+        const roomState = context && context.policy && context.policy.state ? context.policy.state : null;
         if (!room || !intel) {
             updateProgress(mission, 'cached');
             return;
@@ -410,7 +418,7 @@ module.exports = {
 
         const entryWrap = runtimeCtx && runtimeCtx.remoteHaulEntry
             ? runtimeCtx.remoteHaulEntry
-            : getRemoteEntry(room, mission.meta.remoteRoom || mission.targetRoom, context && context.opState);
+            : getRemoteEntry(room, mission.meta.remoteRoom || mission.targetRoom, roomState);
         const entry = entryWrap && entryWrap.entry ? entryWrap.entry : null;
         const source = runtimeCtx && runtimeCtx.remoteHaulSource
             ? runtimeCtx.remoteHaulSource

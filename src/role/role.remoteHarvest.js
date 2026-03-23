@@ -60,7 +60,6 @@ function moveToPos(creep, pos, range) {
 const roleRemoteHarvest = {
     run: function(creep) {
         if (!creep || !creep.memory) return;
-        movement.enableTrafficForBuildWorker(creep);
 
         if (creep.memory._travellingToHome) {
             roleUniversal.run(creep);
@@ -69,6 +68,7 @@ const roleRemoteHarvest = {
 
         const missionName = creep.memory.missionName;
         if (!missionName) {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
@@ -78,14 +78,17 @@ const roleRemoteHarvest = {
         const mission = getMissionByName(homeRoom, missionName);
         if (!mission) {
             clearAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
 
         if (mission.type !== 'remote_harvest') {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
 
+        movement.enableTrafficForBuildWorker(creep);
         delete creep.memory.task;
 
         const data = mission.data || {};

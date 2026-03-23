@@ -255,6 +255,14 @@ function enableTrafficBlockerOnly(creep, opts) {
     }
 }
 
+function enableTrafficBlockerOnlyAtCurrentPos(creep, range) {
+    if (!creep || !creep.pos) return;
+    enableTrafficBlockerOnly(creep, {
+        anchorPos: creep.pos,
+        range: Number.isFinite(range) ? Math.max(0, range) : 1
+    });
+}
+
 function planMove(creep, dir) {
     if (!creep || !Number.isInteger(dir)) return ERR_INVALID_ARGS;
     cleanupIdleMoveMem(creep);
@@ -364,6 +372,7 @@ module.exports = {
     enableTrafficForBuildWorker,
     enableTrafficForCoreLaneHauler,
     enableTrafficBlockerOnly,
+    enableTrafficBlockerOnlyAtCurrentPos,
     planMove,
     planMoveTo,
     planLaneStep,

@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
 const heap = require('utils_heap');
 
@@ -228,6 +229,15 @@ function isUnderAttackPressure(room, runtimeCtx) {
     return combatState === 'SIEGE' || combatState === 'DEFEND' || hostilesPresent;
 }
 
+function shouldActivateRepair(policy) {
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const minPhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.EARLY];
+    if (state === policyConstants.STATE.CRITICAL || state === policyConstants.STATE.SIEGE) return true;
+    return phaseRank >= minPhaseRank;
+}
+
 module.exports = {
     makeKey(context) {
         return missionKeys.makeRepairTargetKey(
@@ -240,8 +250,7 @@ module.exports = {
     discover({ room, intel, context }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.repair === false) return [];
+        if (!shouldActivateRepair(policy)) return [];
 
         const scan = overseerOpportunisticRepair.getRoomScan(room.name);
         if (!scan) {
@@ -326,6 +335,10 @@ module.exports = {
     validate(mission, runtimeCtx) {
         const roomName = mission.targetRoom || mission.sponsorRoom;
         const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        if (!shouldActivateRepair(policy)) return false;
         if (!room) return true;
         const ids = readRepairQueue(roomName);
         if (!ids || ids.length <= 0) {

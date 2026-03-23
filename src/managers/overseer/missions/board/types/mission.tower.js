@@ -1,4 +1,5 @@
 const overseerOpportunisticRepair = require('managers_overseer_intel_overseer.opportunistic.repair');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 module.exports = {
 
@@ -452,19 +453,29 @@ module.exports = {
             const repairIds = (repairScan && Array.isArray(repairScan.repairIds)) ? repairScan.repairIds : [];
             const fortifyIds = (repairScan && Array.isArray(repairScan.fortifyIds)) ? repairScan.fortifyIds : [];
             const hasCriticalScan = !!(repairScan && repairScan.critical);
-            const economyState = (context && context.economyState)
-                ? context.economyState
-                : ((intel && intel.economyState) ? intel.economyState : 'STOCKPILING');
+            const roomState = (context && context.policy && context.policy.state)
+                ? context.policy.state
+                : ((intel && intel.roomState) ? intel.roomState : policyConstants.STATE.RECOVER);
+            const roomPhase = (context && context.policy && context.policy.phase)
+                ? context.policy.phase
+                : policyConstants.PHASE.BOOTSTRAP;
+            const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[roomPhase])
+                ? policyConstants.PHASE_RANK[roomPhase]
+                : 0;
+            const storagePhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE];
             const hasStorage = !!room.storage;
             const storageEnergy = (intel && Number.isFinite(intel.storageEnergy)) ? intel.storageEnergy : 0;
             const noStorageEnergyGate = intel.energyAvailable > (intel.energyCapacityAvailable * 0.8);
             const storageEnergyGate = storageEnergy >= 10000;
+            const allowEconomyRepairByPhase = phaseRank >= storagePhaseRank;
             const allowRepairEconomy = inDefense || hasCriticalScan || (hasStorage
-                ? (economyState === 'UPGRADING' && storageEnergyGate)
-                : noStorageEnergyGate);
+                ? (allowEconomyRepairByPhase
+                    && (roomState === policyConstants.STATE.GROW || roomState === policyConstants.STATE.STOCKPILE)
+                    && storageEnergyGate)
+                : (allowEconomyRepairByPhase && noStorageEnergyGate));
             if (!allowRepairEconomy) {
                 towerDebug(() =>
-                    `[Tower] ${room.name} skip-repair economy=${economyState} ` +
+                    `[Tower] ${room.name} skip-repair state=${roomState} ` +
                     `storage=${storageEnergy} inDefense=${inDefense ? 1 : 0} critical=${hasCriticalScan ? 1 : 0}`
                 );
                 return;

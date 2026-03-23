@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 const userMissions = require('userMissions');
 
 function cloneContract(contract) {
@@ -97,6 +98,16 @@ function generateMove2FlagContracts(room, missions) {
     }
 }
 
+function shouldActivateMove2Flag(policy) {
+    const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+    const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+    const phaseRank = Number.isFinite(policyConstants.PHASE_RANK[phase]) ? policyConstants.PHASE_RANK[phase] : 0;
+    const linksPhaseRank = policyConstants.PHASE_RANK[policyConstants.PHASE.LINKS];
+    if (phaseRank < linksPhaseRank) return false;
+    if (state === policyConstants.STATE.CRITICAL || state === policyConstants.STATE.SIEGE) return false;
+    return true;
+}
+
 module.exports = {
     makeKey(context) {
         const roomName = context.targetRoom || context.sponsorRoom;
@@ -108,6 +119,8 @@ module.exports = {
 
     discover({ room, intel, context }) {
         if (!room) return [];
+        const policy = context && context.policy ? context.policy : null;
+        if (!shouldActivateMove2Flag(policy)) return [];
         const contracts = [];
         generateMove2FlagContracts(room, contracts);
 
@@ -170,12 +183,24 @@ module.exports = {
         };
     },
 
-    validate(mission) {
+    validate(mission, runtimeCtx) {
+        const roomName = mission.sponsorRoom || mission.targetRoom;
+        const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        if (!shouldActivateMove2Flag(policy)) return false;
         return !!getContract(mission);
     },
 
     refresh(mission, runtimeCtx, discovered) {
         cleanupAssigned(mission);
+        const roomName = mission.sponsorRoom || mission.targetRoom;
+        const room = runtimeCtx && runtimeCtx.room ? runtimeCtx.room : Game.rooms[roomName];
+        const policy = runtimeCtx && runtimeCtx.context && runtimeCtx.context.policy
+            ? runtimeCtx.context.policy
+            : room && room._policy;
+        if (!shouldActivateMove2Flag(policy)) return;
         const discoveredContract = discovered && discovered.createContext
             ? discovered.createContext.contract
             : null;

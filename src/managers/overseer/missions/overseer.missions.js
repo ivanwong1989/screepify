@@ -2,9 +2,13 @@ const { profRequire } = require('utils_profRequire');
 const missionBoard = profRequire('managers_overseer_missions_board_missionBoard', 'missions.board');
 
 const overseerMissions = {
-    generate: function(room, intel, opState, economyState, censusCreeps, policyContext) {
+    generate: function(room, intel, censusCreeps, policyContext) {
+        const policy = policyContext && policyContext.policy ? policyContext.policy : null;
+        const roomState = policy && policy.state ? policy.state : 'GROW';
         let budget = intel.energyCapacityAvailable;
-        if (opState === 'EMERGENCY') budget = Math.max(intel.energyAvailable, 300);
+        if (roomState === 'CRITICAL' || roomState === 'RECOVER') {
+            budget = Math.max(intel.energyAvailable, 300);
+        }
 
         const allCensusCreeps = Array.isArray(censusCreeps) ? censusCreeps : intel.myCreeps;
         const creepsByMission = allCensusCreeps.reduce((acc, c) => {
@@ -67,24 +71,25 @@ const overseerMissions = {
 
         const economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || null;
         const context = {
-            opState,
-            economyState,
+            roomState,
             budget,
             getMissionCensus,
             efficientSources,
             economyFlow,
-            directive: policyContext && policyContext.directive ? policyContext.directive : null,
             condition: policyContext && policyContext.condition ? policyContext.condition : null,
-            policy: policyContext && policyContext.policy ? policyContext.policy : null
+            policy
         };
 
         // Run persistent mission board updates/reconciliation first.
         missionBoard.runRoom(room, { intel, context });
+        const legacyContracts = missionBoard.listLiveByRoom(room.name).filter(m => m && m.type === 'contract');
+        for (let i = 0; i < legacyContracts.length; i++) {
+            missionBoard.markCancelled(legacyContracts[i].id, 'legacy_contract_removed');
+        }
 
         // Bridge board missions into mission contracts consumed by task assignment.
         // Fetch through the room-scoped per-tick cache instead of rebuilding the same filtered list repeatedly.
         const orderedTypes = [
-            'contract',
             'tower',
             'remoteBuild',
             'simpleHarvest',

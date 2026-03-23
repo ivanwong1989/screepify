@@ -184,13 +184,16 @@ function getRemoteContext(room, options = {}) {
     const scoutMem = getSponsorScoutMemory(room);
     if (!scoutMem) return entries;
 
-    const opState = options.opState || null;
+    const roomState = options.roomState || null;
     const maxScoutAge = Number.isFinite(options.maxScoutAge) ? options.maxScoutAge : 4000;
 
     // Global + per-room enable toggles
     const globalEnabled = Memory.remoteMissionsEnabled !== false;
     const roomEnabled = scoutMem.enabled !== false;
-    const stateOk = opState !== 'EMERGENCY';
+    const stateOk = roomState !== 'CRITICAL'
+        && roomState !== 'RECOVER'
+        && roomState !== 'DEFENSIVE'
+        && roomState !== 'SIEGE';
 
     // RCL-gated remote room cap:
     // RCL < 3: disabled

@@ -217,7 +217,7 @@ module.exports = {
             if (s.room.name === candidate.homeRoom) return false;
             if (role === 'miner' || role === 'simple_miner') return false;
             if (s.room.energyAvailable < candidate.cost) return false;
-            if (s.room._opState === 'EMERGENCY') return false;
+            if (s.room._policy && s.room._policy.state === 'CRITICAL') return false;
             return isValidRemoteAssistRoom(candidate.homeRoom, s.room.name);
         });
 

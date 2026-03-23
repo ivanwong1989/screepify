@@ -1,214 +1,143 @@
 const constants = require('managers_overseer_policy_room.policy.constants');
 
-function derivePhase(room) {
+function derivePhase(room, intel) {
     const controller = room && room.controller ? room.controller : null;
-    const rcl = controller && Number.isFinite(controller.level) ? controller.level : 0;
+    const myRoom = !!(controller && controller.my);
+    if (!myRoom) return constants.PHASE.BOOTSTRAP;
+
+    const structures = intel && intel.structures ? intel.structures : {};
+    const spawns = structures[STRUCTURE_SPAWN] || [];
+    const links = structures[STRUCTURE_LINK] || [];
+    const labs = structures[STRUCTURE_LAB] || [];
+    const sources = intel && Array.isArray(intel.sources) ? intel.sources : [];
+    const sourceCount = sources.length;
+    const sourceContainerCount = sources.filter(s => !!(s && s.containerId)).length;
+    const sourceLinkCount = sources.filter(s => !!(s && s.linkId)).length;
+    const hasAnySourceContainer = sourceContainerCount > 0;
+    const hasMajorSourceContainerCoverage = sourceCount > 0 && sourceContainerCount >= Math.max(1, Math.ceil(sourceCount * 0.75));
+    const miningContainerIds = new Set(sources.map(s => s && s.containerId).filter(Boolean));
+    const allContainers = structures[STRUCTURE_CONTAINER] || [];
+    const nonMiningContainers = allContainers.filter(c => c && !miningContainerIds.has(c.id));
     const hasStorage = !!(room && room.storage);
     const hasTerminal = !!(room && room.terminal);
+    const hasControllerLink = !!(controller && links.some(link => link && link.pos && link.pos.getRangeTo(controller) <= 3));
+    const linkInfrastructureReady = links.length >= 2 && (sourceLinkCount > 0 || hasControllerLink);
 
-    if (!controller || !controller.my || rcl <= 1) return constants.PHASE.BOOTSTRAP;
-    if (!hasStorage && rcl <= 3) return constants.PHASE.EARLY_LOCAL;
-    if (!hasStorage) return constants.PHASE.LOCAL_INFRA;
-    if (rcl < 6) return constants.PHASE.STORAGE_CORE;
-    if (!hasTerminal) return constants.PHASE.REMOTE_READY;
-    return constants.PHASE.MATURE;
+    if (!spawns.length || sourceCount <= 0) return constants.PHASE.BOOTSTRAP;
+    if (labs.length > 0) return constants.PHASE.LABS;
+    if (hasTerminal) return constants.PHASE.TERMINAL;
+    if (hasStorage && linkInfrastructureReady) return constants.PHASE.LINKS;
+    if (hasStorage) return constants.PHASE.STORAGE;
+    if (hasMajorSourceContainerCoverage && nonMiningContainers.length > 0) return constants.PHASE.BASIC_INFRA;
+    if (hasAnySourceContainer || nonMiningContainers.length > 0) return constants.PHASE.EARLY;
+    return constants.PHASE.BOOTSTRAP;
 }
 
-function deriveLegacyOpState(room, intel, reasons) {
-    const myCreeps = (intel && Array.isArray(intel.myCreeps)) ? intel.myCreeps : [];
-    const sources = (intel && Array.isArray(intel.sources)) ? intel.sources : [];
-    const energyAvailable = (intel && Number.isFinite(intel.energyAvailable)) ? intel.energyAvailable : 0;
-
-    if (myCreeps.length === 0) {
-        if (Array.isArray(reasons)) reasons.push('legacy opState: EMERGENCY (zero population)');
-        return 'EMERGENCY';
+function countRoles(myCreeps) {
+    const counts = {
+        miner: 0,
+        simpleMiner: 0,
+        hauler: 0,
+        simpleHaulerCore: 0,
+        simpleMiningHauler: 0
+    };
+    for (let i = 0; i < myCreeps.length; i++) {
+        const creep = myCreeps[i];
+        const role = creep && creep.memory ? creep.memory.role : null;
+        if (role === 'miner') counts.miner++;
+        else if (role === 'simple_miner') counts.simpleMiner++;
+        else if (role === 'hauler' || role === 'coreLaneHauler' || role === 'miningLaneHauler') counts.hauler++;
+        else if (role === 'simpleHaulerCore') counts.simpleHaulerCore++;
+        else if (role === 'simpleMiningHauler') counts.simpleMiningHauler++;
     }
-    if (energyAvailable < 300 && myCreeps.length < 2) {
-        if (Array.isArray(reasons)) reasons.push(`legacy opState: EMERGENCY (energy=${energyAvailable}, pop=${myCreeps.length})`);
-        return 'EMERGENCY';
-    }
-    const miners = myCreeps.filter(c => c && c.memory && c.memory.role === 'miner');
-    if (miners.length === 0 && sources.length > 0) {
-        if (Array.isArray(reasons)) reasons.push('legacy opState: EMERGENCY (no miners)');
-        return 'EMERGENCY';
-    }
-    return 'NORMAL';
+    return counts;
 }
 
-function ensureEconomyFlow(room, totalStored) {
-    if (!room.memory.overseer) room.memory.overseer = {};
-    if (!room.memory.overseer.economyFlow) {
-        room.memory.overseer.economyFlow = {
-            avg: 0,
-            longAvg: 0,
-            lastSampleTotal: totalStored,
-            lastSampleTick: Game.time,
-            lastPerTick: 0,
-            lastDelta: 0,
-            lastDt: 0,
-            lastLogTotal: totalStored,
-            lastLogTick: Game.time
-        };
-    }
-    const flow = room.memory.overseer.economyFlow;
-    if (flow.lastSampleTotal === undefined) flow.lastSampleTotal = totalStored;
-    if (flow.lastSampleTick === undefined) flow.lastSampleTick = Game.time;
-    if (flow.lastPerTick === undefined) flow.lastPerTick = 0;
-    if (flow.lastDelta === undefined) flow.lastDelta = 0;
-    if (flow.lastDt === undefined) flow.lastDt = 0;
-    if (flow.lastLogTotal === undefined) flow.lastLogTotal = totalStored;
-    if (flow.lastLogTick === undefined) flow.lastLogTick = Game.time;
-    if (flow.avg === undefined || flow.avg === null || Number.isNaN(flow.avg)) flow.avg = 0;
-    if (flow.longAvg === undefined || flow.longAvg === null || Number.isNaN(flow.longAvg)) flow.longAvg = flow.avg;
-    room.memory.overseer.economyFlow = flow;
-    return flow;
+function getStockpileTargetByRcl(rcl) {
+    const targets = constants.STOCKPILE_STORAGE_ENERGY_TARGET_BY_RCL || {};
+    if (Number.isFinite(rcl) && Number.isFinite(targets[rcl])) return targets[rcl];
+    return 0;
 }
 
-function deriveLegacyEconomyState(room, intel, reasons) {
-    if (!room.memory.overseer) room.memory.overseer = {};
-    let current = (room.memory.overseer && room.memory.overseer.economyState) || 'STOCKPILING';
+function deriveState(room, intel, phase, reasons) {
+    const myCreeps = intel && Array.isArray(intel.myCreeps) ? intel.myCreeps : [];
+    const sources = intel && Array.isArray(intel.sources) ? intel.sources : [];
+    const energyAvailable = intel && Number.isFinite(intel.energyAvailable) ? intel.energyAvailable : 0;
+    const energyCapacityAvailable = intel && Number.isFinite(intel.energyCapacityAvailable) ? intel.energyCapacityAvailable : 0;
+    const storageEnergy = intel && Number.isFinite(intel.storageEnergy) ? intel.storageEnergy : 0;
+    const controller = room && room.controller ? room.controller : null;
+    const rcl = controller && Number.isFinite(controller.level) ? controller.level : 0;
+    const stockpileTarget = getStockpileTargetByRcl(rcl);
+    const hostiles = intel && Array.isArray(intel.hostiles) ? intel.hostiles : [];
+    const combatState = room && room.memory && room.memory.admiral ? room.memory.admiral.state : null;
 
-    const sources = (intel && Array.isArray(intel.sources)) ? intel.sources : [];
-    const structures = (intel && intel.structures) ? intel.structures : {};
-    const storageEnergy = (intel && Number.isFinite(intel.storageEnergy)) ? intel.storageEnergy : 0;
-    const storageCapacity = (intel && Number.isFinite(intel.storageCapacity)) ? intel.storageCapacity : 0;
-
-    const miningContainerIds = new Set(sources.map(s => s && s.containerId).filter(id => !!id));
-    const allContainers = structures[STRUCTURE_CONTAINER] || [];
-    const logisticsContainers = allContainers.filter(c => !miningContainerIds.has(c.id));
-
-    const logisticsEnergy = logisticsContainers.reduce((sum, c) => sum + (c.store[RESOURCE_ENERGY] || 0), 0);
-    const logisticsCapacity = logisticsContainers.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
-
-    const totalStored = logisticsEnergy + storageEnergy;
-    const totalCapacity = logisticsCapacity + storageCapacity;
-
-    const SAMPLE_TICKS = 20;
-    const ALPHA = 0.02;
-
-    const flow = ensureEconomyFlow(room, totalStored);
-
-    const since = Game.time - (flow.lastSampleTick || Game.time);
-    if (since >= SAMPLE_TICKS) {
-        const dt = Math.max(1, Game.time - (flow.lastSampleTick || Game.time));
-        const delta = totalStored - (flow.lastSampleTotal || totalStored);
-        const perTick = delta / dt;
-
-        flow.lastPerTick = perTick;
-        flow.lastDelta = delta;
-        flow.lastDt = dt;
-        flow.avg = (flow.avg === undefined || flow.avg === null)
-            ? perTick
-            : ((flow.avg * (1 - ALPHA)) + (perTick * ALPHA));
-        flow.longAvg = flow.avg;
-        flow.lastSampleTotal = totalStored;
-        flow.lastSampleTick = Game.time;
-        room.memory.overseer.economyFlow = flow;
+    if (combatState === 'SIEGE') {
+        reasons.push('combat=SIEGE -> state SIEGE');
+        return constants.STATE.SIEGE;
+    }
+    if (combatState === 'DEFEND' || hostiles.length > 0) {
+        reasons.push('combat threat present -> state DEFENSIVE');
+        return constants.STATE.DEFENSIVE;
     }
 
-    if (Game.time % 50 === 0 && flow._lastLoggedAt !== Game.time) {
-        flow._lastLoggedAt = Game.time;
-        const logDt = Math.max(1, Game.time - (flow.lastLogTick || Game.time));
-        const logDelta = totalStored - (flow.lastLogTotal || totalStored);
-        const logPerTick = logDelta / logDt;
-        flow.lastLogTotal = totalStored;
-        flow.lastLogTick = Game.time;
-        room.memory.overseer.economyFlow = flow;
+    const roleCounts = countRoles(myCreeps);
+    const minerCount = roleCounts.miner + roleCounts.simpleMiner;
+    const haulerCount = roleCounts.hauler + roleCounts.simpleHaulerCore + roleCounts.simpleMiningHauler;
+    const pop = myCreeps.length;
+    const spawnEnergyLow = energyAvailable < Math.max(250, Math.floor(energyCapacityAvailable * 0.35));
 
-        debug(
-            'overseer',
-            `[Overseer] ${room.name} Flow: total=${totalStored} ` +
-            `sampleDt=${flow.lastDt} sampleDelta=${flow.lastDelta} samplePerTick=${(flow.lastPerTick || 0).toFixed(2)} ` +
-            `windowDt=${logDt} windowDelta=${logDelta} windowPerTick=${logPerTick.toFixed(2)} ` +
-            `avg=${(flow.avg || 0).toFixed(2)}`
-        );
+    if (pop <= 0) {
+        reasons.push('population=0 -> state CRITICAL');
+        return constants.STATE.CRITICAL;
+    }
+    if (sources.length > 0 && minerCount <= 0) {
+        reasons.push('no miners -> state CRITICAL');
+        return constants.STATE.CRITICAL;
+    }
+    if (energyAvailable < 300 && pop < 2) {
+        reasons.push('very low spawn energy + low pop -> state CRITICAL');
+        return constants.STATE.CRITICAL;
     }
 
-    const override = room.memory.overseer.economyOverride;
-    const normalized = override ? ('' + override).trim().toUpperCase() : '';
-    if (normalized === 'UPGRADING' || normalized === 'STOCKPILING') {
-        if (Array.isArray(reasons)) reasons.push(`legacy economy override -> ${normalized}`);
-        return normalized;
+    if (pop <= 2 || spawnEnergyLow || haulerCount <= 0 || phase === constants.PHASE.BOOTSTRAP) {
+        reasons.push('workforce/energy weak -> state RECOVER');
+        return constants.STATE.RECOVER;
     }
 
-    if (totalCapacity < 500) {
-        if (Array.isArray(reasons)) reasons.push('legacy economy: low logistics capacity -> UPGRADING');
-        return 'UPGRADING';
+    if (room && room.storage && storageEnergy < stockpileTarget) {
+        reasons.push(`storage below stockpile target (${storageEnergy}/${stockpileTarget}) -> state STOCKPILE`);
+        return constants.STATE.STOCKPILE;
     }
 
-    if (room.storage) {
-        const rcl = (room.controller && room.controller.level) ? room.controller.level : 1;
-        const rclThresholds = {
-            1: { start: 10000, stop: 5000 },
-            2: { start: 20000, stop: 10000 },
-            3: { start: 30000, stop: 15000 },
-            4: { start: 40000, stop: 20000 },
-            5: { start: 100000, stop: 80000 },
-            6: { start: 200000, stop: 150000 },
-            7: { start: 300000, stop: 250000 },
-            8: { start: 350000, stop: 300000 }
-        };
-        const threshold = rclThresholds[rcl] || rclThresholds[5];
-        const UPGRADE_START = threshold.start;
-        const UPGRADE_STOP = threshold.stop;
-        const STORAGE_FILL_UPGRADE_START = 0.90;
-        const STORAGE_FILL_UPGRADE_STOP = 0.80;
-        const storageUsed = room.storage.store.getUsedCapacity();
-        const storageCap = room.storage.store.getCapacity() || 1;
-        const storageFillRatio = storageUsed / storageCap;
-
-        if (current === 'STOCKPILING' && (totalStored >= UPGRADE_START || storageFillRatio >= STORAGE_FILL_UPGRADE_START)) {
-            current = 'UPGRADING';
-        } else if (current === 'UPGRADING' && totalStored <= UPGRADE_STOP && storageFillRatio <= STORAGE_FILL_UPGRADE_STOP) {
-            current = 'STOCKPILING';
-        }
-    } else {
-        current = 'UPGRADING';
-    }
-
-    if (Array.isArray(reasons)) reasons.push(`legacy economy hysteresis -> ${current}`);
-    return current;
+    reasons.push('default healthy -> state GROW');
+    return constants.STATE.GROW;
 }
 
 function deriveRoomCondition(room, intel, context) {
     const reasons = [];
     const controller = room && room.controller ? room.controller : null;
-    const opState = context && context.opState
-        ? context.opState
-        : deriveLegacyOpState(room, intel, reasons);
-    const economyState = context && context.economyState
-        ? context.economyState
-        : deriveLegacyEconomyState(room, intel, reasons);
-
     const myCreepCount = intel && Array.isArray(intel.myCreeps) ? intel.myCreeps.length : 0;
     const energyAvailable = intel && Number.isFinite(intel.energyAvailable) ? intel.energyAvailable : 0;
     const energyCapacityAvailable = intel && Number.isFinite(intel.energyCapacityAvailable) ? intel.energyCapacityAvailable : 0;
     const storageEnergy = intel && Number.isFinite(intel.storageEnergy) ? intel.storageEnergy : 0;
-    const energyLow = energyAvailable < Math.max(250, Math.floor(energyCapacityAvailable * 0.45));
-
-    let status = constants.STATUS.NORMAL;
-    if (opState === 'EMERGENCY') status = constants.STATUS.EMERGENCY;
-    else if (myCreepCount <= 2 || energyLow) status = constants.STATUS.RECOVERING;
-    else if (economyState === 'UPGRADING' && storageEnergy >= 200000) status = constants.STATUS.SURPLUS;
-
-    reasons.push(`status derived as ${status} from op=${opState} economy=${economyState}`);
-
-    const phase = derivePhase(room);
-    reasons.push(`phase derived as ${phase}`);
+    const phase = derivePhase(room, intel);
+    const state = deriveState(room, intel, phase, reasons);
 
     return {
-        version: 1,
+        version: 2,
         roomName: room ? room.name : null,
         phase,
-        status,
-        legacy: {
-            opState,
-            economyState
-        },
+        state,
         facts: {
             rcl: controller && Number.isFinite(controller.level) ? controller.level : 0,
             hasStorage: !!(room && room.storage),
             hasTerminal: !!(room && room.terminal),
+            linkCount: intel && intel.structures && Array.isArray(intel.structures[STRUCTURE_LINK])
+                ? intel.structures[STRUCTURE_LINK].length
+                : 0,
+            labCount: intel && intel.structures && Array.isArray(intel.structures[STRUCTURE_LAB])
+                ? intel.structures[STRUCTURE_LAB].length
+                : 0,
             myCreepCount,
             sourceCount: intel && Array.isArray(intel.sources) ? intel.sources.length : 0,
             energyAvailable,
@@ -221,7 +150,5 @@ function deriveRoomCondition(room, intel, context) {
 }
 
 module.exports = {
-    deriveLegacyOpState,
-    deriveLegacyEconomyState,
     deriveRoomCondition
 };

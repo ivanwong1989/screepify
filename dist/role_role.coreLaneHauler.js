@@ -1126,6 +1126,7 @@ module.exports = {
         if (!creep || !creep.my) return;
         const mission = getMissionForCreep(creep);
         if (!mission) {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             unassignCreep(creep);
             return;
         }

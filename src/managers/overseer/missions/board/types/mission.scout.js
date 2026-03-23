@@ -1,6 +1,7 @@
 const missionStates = require('managers_overseer_missions_board_missionStates');
 const missionClasses = require('managers_overseer_missions_board_missionClassifications');
 const missionKeys = require('managers_overseer_missions_board_missionKeys');
+const policyConstants = require('managers_overseer_policy_room.policy.constants');
 
 const DEFAULT_SCOUT_INTERVAL = 500;
 const MIN_SCOUT_INTERVAL = 25;
@@ -30,10 +31,11 @@ module.exports = {
     discover({ room, context }) {
         if (!room) return [];
         const policy = context && context.policy ? context.policy : null;
-        const missionGates = policy && policy.missionGates ? policy.missionGates : null;
-        if (missionGates && missionGates.scout === false) return [];
-        const phase = policy && policy.phase ? policy.phase : null;
-        if (phase && phase !== 'REMOTE_READY' && phase !== 'MATURE') return [];
+        const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
+        const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
+        const phaseRank = policyConstants.PHASE_RANK[phase] || 0;
+        if (phaseRank < policyConstants.PHASE_RANK[policyConstants.PHASE.LINKS]) return [];
+        if (state === policyConstants.STATE.CRITICAL || state === policyConstants.STATE.SIEGE) return [];
         if (!room.controller || !room.controller.my || room.controller.level < 3) return [];
         if (Memory.remoteMissionsEnabled === false) return [];
 

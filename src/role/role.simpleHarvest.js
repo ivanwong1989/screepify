@@ -90,6 +90,7 @@ const roleSimpleHarvest = {
 
         const missionName = creep.memory.missionName;
         if (!missionName) {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }
@@ -99,10 +100,12 @@ const roleSimpleHarvest = {
         const mission = getMissionByName(homeRoom, missionName);
         if (!mission) {
             clearAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
 
         if (mission.type !== 'simple_harvest') {
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             roleUniversal.run(creep);
             return;
         }

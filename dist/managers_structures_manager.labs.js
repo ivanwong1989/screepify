@@ -596,7 +596,7 @@ const managerLabs = {
 
         const cfg = getRoomConfig(base, room.name);
         if (!cfg.enabled) return [];
-        if (room._opState === 'EMERGENCY') return [];
+        if (room._policy && room._policy.state === 'CRITICAL') return [];
 
         // Reverse still uses the dedicated module, but we can run boost stocking in parallel.
         if (cfg.mode && cfg.mode.toLowerCase() === 'reverse') {
@@ -694,7 +694,7 @@ const managerLabs = {
         const cfg = getRoomConfig(base, room.name);
         if (!cfg.enabled) return;
         if (!shouldRunThisTick(room.name, cfg.runEvery)) return;
-        if (room._opState === 'EMERGENCY') return;
+        if (room._policy && room._policy.state === 'CRITICAL') return;
 
         const cache = global.getRoomCache(room);
         const labs = cache.myStructuresByType[STRUCTURE_LAB] || [];

@@ -209,13 +209,14 @@ function clearAssignment(creep) {
 module.exports = {
     run(creep) {
         if (!creep || !creep.my) return;
-        movement.enableTrafficForCoreLaneHauler(creep);
 
         const mission = getMissionForCreep(creep);
         if (!mission) {
             clearAssignment(creep);
+            movement.enableTrafficBlockerOnlyAtCurrentPos(creep);
             return;
         }
+        movement.enableTrafficForCoreLaneHauler(creep);
 
         const runtime = getRuntime(mission);
         if (!runtime) {

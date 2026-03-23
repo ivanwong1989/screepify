@@ -2,7 +2,6 @@
  * Overseer Intel Module
  * Handles data gathering and room state determination.
  */
-const roomConditionPolicy = require('managers_overseer_policy_room.condition');
 
 const overseerIntel = {
     gather: function(room) {
@@ -39,14 +38,27 @@ const overseerIntel = {
             }
         } 
 
+        const extractorIdByPos = Object.create(null);
+        for (const e of extractors) {
+            const key = posKey(e.pos.x, e.pos.y);
+            if (extractorIdByPos[key] === undefined) {
+                extractorIdByPos[key] = e.id;
+            }
+        }
+
         const storage = room.storage;
         const terminal = room.terminal;
+        const allEnergySources = [];
         
         let containerEnergy = 0;
         let containerCapacity = 0;
         for (const c of containers) {
-            containerEnergy += (c.store[RESOURCE_ENERGY] || 0);
+            const energy = c.store[RESOURCE_ENERGY] || 0;
+            containerEnergy += energy;
             containerCapacity += c.store.getCapacity(RESOURCE_ENERGY);
+            if (energy > 0) {
+                allEnergySources.push({ id: c.id, pos: c.pos, amount: energy, type: 'container' });
+            }
         }
         const storageEnergy = storage ? storage.store[RESOURCE_ENERGY] : 0;
         const storageCapacity = storage ? storage.store.getCapacity(RESOURCE_ENERGY) : 0;
@@ -58,15 +70,9 @@ const overseerIntel = {
         );
         const haulerCapacity = logisticsCreeps.reduce((sum, c) => sum + c.store.getCapacity(RESOURCE_ENERGY), 0);
 
-        const allEnergySources = [];
         if (storageEnergy > 0 && storage) {
             allEnergySources.push({ id: storage.id, pos: storage.pos, amount: storageEnergy, type: 'storage' });
         }
-        containers.forEach(c => {
-            if (c.store[RESOURCE_ENERGY] > 0) {
-                allEnergySources.push({ id: c.id, pos: c.pos, amount: c.store[RESOURCE_ENERGY], type: 'container' });
-            }
-        });
         dropped.forEach(r => {
             if (r.resourceType === RESOURCE_ENERGY && r.amount > 50) {
                 allEnergySources.push({ id: r.id, pos: r.pos, amount: r.amount, type: 'dropped' });
@@ -147,7 +153,7 @@ const overseerIntel = {
                 }
                 if (containerId) break;
             }
-            const extractor = extractors.find(e => e.pos.isEqualTo(mineral.pos));
+            const extractorId = extractorIdByPos[posKey(mineral.pos.x, mineral.pos.y)] || null;
 
             let availableSpaces = 0;
             for (let x = -1; x <= 1; x++) {
@@ -164,8 +170,8 @@ const overseerIntel = {
                 mineralType: mineral.mineralType,
                 mineralAmount: mineral.mineralAmount,
                 ticksToRegeneration: mineral.ticksToRegeneration || 0,
-                hasExtractor: !!extractor,
-                extractorId: extractor ? extractor.id : null,
+                hasExtractor: !!extractorId,
+                extractorId: extractorId,
                 hasContainer: !!containerId,
                 containerId: containerId,
                 availableSpaces: availableSpaces
@@ -215,28 +221,10 @@ const overseerIntel = {
             haulerCapacity, allEnergySources
         };
 
-        // Compatibility bridge during policy migration: expose legacy fields from policy/memory.
-        intel.opState = room && room._policy && room._policy.legacy ? room._policy.legacy.opState : null;
-        intel.economyState = room && room._policy && room._policy.legacy
-            ? room._policy.legacy.economyState
-            : ((room.memory && room.memory.overseer && room.memory.overseer.economyState) || 'STOCKPILING');
+        intel.roomState = room && room._policy && room._policy.state ? room._policy.state : null;
         intel.economyFlow = (room.memory.overseer && room.memory.overseer.economyFlow) || { avg: 0, longAvg: 0 };
 
         return intel;
-    },
-
-    determineOpState: function(room, intel) {
-        if (room && room._policy && room._policy.legacy && room._policy.legacy.opState) {
-            return room._policy.legacy.opState;
-        }
-        return roomConditionPolicy.deriveLegacyOpState(room, intel, null);
-    },
-
-    determineEconomyState: function(room, intel) {
-        if (room && room._policy && room._policy.legacy && room._policy.legacy.economyState) {
-            return room._policy.legacy.economyState;
-        }
-        return roomConditionPolicy.deriveLegacyEconomyState(room, intel, null);
     }
 };
 

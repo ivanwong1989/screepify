@@ -1,116 +1,65 @@
 const PHASE = Object.freeze({
     BOOTSTRAP: 'BOOTSTRAP',
-    EARLY_LOCAL: 'EARLY_LOCAL',
-    LOCAL_INFRA: 'LOCAL_INFRA',
-    STORAGE_CORE: 'STORAGE_CORE',
-    REMOTE_READY: 'REMOTE_READY',
-    MATURE: 'MATURE'
+    EARLY: 'EARLY',
+    BASIC_INFRA: 'BASIC_INFRA',
+    STORAGE: 'STORAGE',
+    LINKS: 'LINKS',
+    TERMINAL: 'TERMINAL',
+    LABS: 'LABS'
 });
 
-const STATUS = Object.freeze({
-    EMERGENCY: 'EMERGENCY',
-    RECOVERING: 'RECOVERING',
-    NORMAL: 'NORMAL',
-    SURPLUS: 'SURPLUS'
-});
-
-const POSTURE = Object.freeze({
-    SURVIVE: 'SURVIVE',
+const STATE = Object.freeze({
+    CRITICAL: 'CRITICAL',
     RECOVER: 'RECOVER',
     GROW: 'GROW',
-    STABILIZE: 'STABILIZE',
     STOCKPILE: 'STOCKPILE',
-    EXPORT: 'EXPORT',
-    AID_NETWORK: 'AID_NETWORK'
+    DEFENSIVE: 'DEFENSIVE',
+    SIEGE: 'SIEGE'
 });
 
-const ECONOMY_MODE = Object.freeze({
-    BOOTSTRAP: 'BOOTSTRAP',
-    LOCAL_GROWTH: 'LOCAL_GROWTH',
-    BUFFER_BUILD: 'BUFFER_BUILD',
-    SURPLUS_ENERGY: 'SURPLUS_ENERGY',
-    AID_NETWORK: 'AID_NETWORK'
+const ORDER_MODE = Object.freeze({
+    AUTO: 'AUTO'
 });
 
-const DIRECTIVE_MODE = Object.freeze({
-    AUTO: 'AUTO',
-    SELF_SUFFICIENT: 'SELF_SUFFICIENT',
-    DONOR: 'DONOR',
-    RECIPIENT: 'RECIPIENT',
-    EXPAND: 'EXPAND',
-    HOLD: 'HOLD'
+const DEFAULT_ORDERS = Object.freeze({
+    enabled: false,
+    mode: ORDER_MODE.AUTO
 });
 
-const DIRECTIVE_ENERGY_POSTURE = Object.freeze({
-    AUTO: 'AUTO',
-    MAKE_MORE: 'MAKE_MORE',
-    BALANCED: 'BALANCED',
-    STOCKPILE: 'STOCKPILE',
-    EXPORT: 'EXPORT'
+const STOCKPILE_STORAGE_ENERGY_TARGET_BY_RCL = Object.freeze({
+    1: 0,
+    2: 0,
+    3: 20000,
+    4: 50000,
+    5: 100000,
+    6: 150000,
+    7: 250000,
+    8: 350000
 });
 
-const DIRECTIVE_BIAS = Object.freeze({
-    AUTO: 'AUTO',
-    DEFER: 'DEFER',
-    NORMAL: 'NORMAL',
-    PUSH: 'PUSH'
-});
+const PHASE_ORDER = Object.freeze([
+    PHASE.BOOTSTRAP,
+    PHASE.EARLY,
+    PHASE.BASIC_INFRA,
+    PHASE.STORAGE,
+    PHASE.LINKS,
+    PHASE.TERMINAL,
+    PHASE.LABS
+]);
 
-const DIRECTIVE_REMOTE_BIAS = Object.freeze({
-    AUTO: 'AUTO',
-    DEFER: 'DEFER',
-    ALLOW: 'ALLOW',
-    PUSH: 'PUSH'
-});
-
-const DIRECTIVE_TRANSFER_BIAS = Object.freeze({
-    AUTO: 'AUTO',
-    IMPORT: 'IMPORT',
-    EXPORT: 'EXPORT'
-});
-
-const INTENSITY = Object.freeze({
-    LOW: 'LOW',
-    NORMAL: 'NORMAL',
-    HIGH: 'HIGH'
-});
-
-const REMOTE_INTENSITY = Object.freeze({
-    OFF: 'OFF',
-    LOW: 'LOW',
-    NORMAL: 'NORMAL',
-    HIGH: 'HIGH'
-});
-
-const EXPORT_INTENSITY = Object.freeze({
-    OFF: 'OFF',
-    LOW: 'LOW',
-    NORMAL: 'NORMAL',
-    HIGH: 'HIGH'
-});
-
-const DEFAULT_DIRECTIVE = Object.freeze({
-    mode: DIRECTIVE_MODE.AUTO,
-    energyPosture: DIRECTIVE_ENERGY_POSTURE.AUTO,
-    upgradeBias: DIRECTIVE_BIAS.AUTO,
-    buildBias: DIRECTIVE_BIAS.AUTO,
-    repairBias: DIRECTIVE_BIAS.AUTO,
-    remoteBias: DIRECTIVE_REMOTE_BIAS.AUTO,
-    transferBias: DIRECTIVE_TRANSFER_BIAS.AUTO
-});
+const PHASE_RANK = Object.freeze(
+    PHASE_ORDER.reduce((acc, phase, idx) => {
+        acc[phase] = idx;
+        return acc;
+    }, {})
+);
 
 module.exports = {
     PHASE,
-    STATUS,
-    POSTURE,
-    ECONOMY_MODE,
-    DIRECTIVE_MODE,
-    DIRECTIVE_ENERGY_POSTURE,
-    DIRECTIVE_BIAS,
-    DIRECTIVE_REMOTE_BIAS,
-    DIRECTIVE_TRANSFER_BIAS,
-    INTENSITY,
-    REMOTE_INTENSITY,
-    EXPORT_INTENSITY,
-    DEFAULT_DIRECTIVE
+    STATE,
+    ORDER_MODE,
+    DEFAULT_ORDERS,
+    STOCKPILE_STORAGE_ENERGY_TARGET_BY_RCL,
+    PHASE_ORDER,
+    PHASE_RANK
 };
