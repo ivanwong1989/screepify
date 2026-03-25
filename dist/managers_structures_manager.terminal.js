@@ -1,86 +1,16 @@
-const DEFAULTS = Object.freeze({
-    enabled: true,
-    runEvery: 25,
-    minCredits: 5000,
-    energyReserve: 20000,
-    terminalEnergyTarget: 60000,
-    terminalEnergyMax: 80000,
-    maxDealsPerRoom: 1,
-    energyValue: 16,
-    maxOverpayPct: 0.08,
-    sellBufferPct: 0.05
-});
-
-const DEFAULT_BUY = Object.freeze({
-    batch: 500,
-    maxPrice: 2.0
-});
-
-const DEFAULT_BASIC_BUY = Object.freeze({
-    batch: 250,
-    maxPrice: 1.0
-});
-
-const DEFAULT_SELL_ENERGY = Object.freeze({
-    batch: 5000,
-    minPrice: 0.01
-});
-
-const BASIC_MINERALS = Object.freeze([
-    RESOURCE_HYDROGEN,
-    RESOURCE_OXYGEN,
-    RESOURCE_UTRIUM,
-    RESOURCE_LEMERGIUM,
-    RESOURCE_KEANIUM,
-    RESOURCE_ZYNTHIUM,
-    RESOURCE_CATALYST
-]);
-
-const DEFAULT_RESOURCE_CONFIG = Object.freeze(
-    BASIC_MINERALS.reduce((acc, type) => {
-        acc[type] = {
-            target: 500,
-            buy: DEFAULT_BASIC_BUY
-        };
-        return acc;
-    }, {
-        [RESOURCE_LEMERGIUM_OXIDE]: {
-            target: 1500,
-            buy: DEFAULT_BUY
-        },
-        [RESOURCE_GHODIUM]: {
-            target: 500,
-            buy: DEFAULT_BUY
-        },
-        [RESOURCE_ENERGY]: {
-            target: 800000,
-            sell: DEFAULT_SELL_ENERGY
-        }
-    })
-);
-
-const DEFAULT_ROOM_STOCK_TARGETS = Object.freeze(
-    Object.keys(DEFAULT_RESOURCE_CONFIG).reduce((acc, type) => {
-        const spec = DEFAULT_RESOURCE_CONFIG[type];
-        if (spec && typeof spec.target === 'number') acc[type] = spec.target;
-        return acc;
-    }, {})
-);
-
-const DEFAULT_TERMINAL_STOCK_TARGETS = Object.freeze(
-    Object.keys(DEFAULT_RESOURCE_CONFIG).reduce((acc, type) => {
-        if (type === RESOURCE_ENERGY) return acc;
-        const spec = DEFAULT_RESOURCE_CONFIG[type];
-        if (spec && typeof spec.target === 'number') acc[type] = spec.target;
-        return acc;
-    }, {})
-);
-
 function clampNumber(value, fallback, min) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
     if (num < min) return min;
     return num;
+}
+
+function parseConfiguredNumber(value, min, max, integer) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    if (Number.isFinite(min) && num < min) return null;
+    if (Number.isFinite(max) && num > max) return null;
+    return integer ? Math.floor(num) : num;
 }
 
 function ensureMarketConfig() {
@@ -91,19 +21,17 @@ function ensureMarketConfig() {
     // Root only keeps:
     //  - globalEnabled (master switch)
     //  - rooms[roomName] (all tuning lives here)
-    //  - defaultsPatch (optional "apply to all rooms" patch)
     //  - manualOrders (account-wide tracking)
     //
     if (!cfg.rooms || typeof cfg.rooms !== 'object') cfg.rooms = {};
     if (!cfg.manualOrders || typeof cfg.manualOrders !== 'object') cfg.manualOrders = {};
-    if (!cfg.defaultsPatch || typeof cfg.defaultsPatch !== 'object') cfg.defaultsPatch = {};
 
     // Back-compat: old cfg.enabled becomes globalEnabled (master).
     if (typeof cfg.globalEnabled !== 'boolean') {
         if (typeof cfg.enabled === 'boolean') cfg.globalEnabled = cfg.enabled;
-        else cfg.globalEnabled = DEFAULTS.enabled;
+        else cfg.globalEnabled = false;
     }
-    cfg.globalEnabled = cfg.globalEnabled !== false;
+    cfg.globalEnabled = cfg.globalEnabled === true;
 
     cfg._initialized = true;
     return cfg;
@@ -114,88 +42,38 @@ function clonePlain(obj) {
     return JSON.parse(JSON.stringify(obj));
 }
 
-function isZeadminStockTargetsAuthorityEnabled() {
-    if (!Memory.zeadmin || typeof Memory.zeadmin !== 'object') return false;
-    const rb = Memory.zeadmin.resourceBalancing;
-    if (!rb || typeof rb !== 'object') return false;
-    if (rb.enabled === false) return false;
-    return rb.stockTargetsEnabled !== false;
-}
-
-function applyRoomDefaults(roomCfg) {
-    roomCfg.enabled = (typeof roomCfg.enabled === 'boolean') ? roomCfg.enabled : true;
-    roomCfg.runEvery = clampNumber(roomCfg.runEvery, DEFAULTS.runEvery, 1);
-    roomCfg.minCredits = clampNumber(roomCfg.minCredits, DEFAULTS.minCredits, 0);
-    roomCfg.energyReserve = clampNumber(roomCfg.energyReserve, DEFAULTS.energyReserve, 0);
-    roomCfg.terminalEnergyTarget = clampNumber(roomCfg.terminalEnergyTarget, DEFAULTS.terminalEnergyTarget, 0);
-    roomCfg.terminalEnergyMax = clampNumber(roomCfg.terminalEnergyMax, DEFAULTS.terminalEnergyMax, 0);
-    roomCfg.maxDealsPerRoom = clampNumber(roomCfg.maxDealsPerRoom, DEFAULTS.maxDealsPerRoom, 0);
-    roomCfg.energyValue = clampNumber(roomCfg.energyValue, DEFAULTS.energyValue, 0);
-    roomCfg.maxOverpayPct = clampNumber(roomCfg.maxOverpayPct, DEFAULTS.maxOverpayPct, 0);
-    roomCfg.sellBufferPct = clampNumber(roomCfg.sellBufferPct, DEFAULTS.sellBufferPct, 0);
+function normalizeRuntimeRoomConfig(rawRoomCfg) {
+    const roomCfg = clonePlain(rawRoomCfg && typeof rawRoomCfg === 'object' ? rawRoomCfg : {});
+    roomCfg.enabled = roomCfg.enabled === true;
+    roomCfg.runEvery = parseConfiguredNumber(roomCfg.runEvery, 1, null, true);
+    roomCfg.minCredits = parseConfiguredNumber(roomCfg.minCredits, 0, null, false);
+    roomCfg.energyReserve = parseConfiguredNumber(roomCfg.energyReserve, 0, null, false);
+    roomCfg.terminalEnergyTarget = parseConfiguredNumber(roomCfg.terminalEnergyTarget, 0, null, false);
+    roomCfg.terminalEnergyMax = parseConfiguredNumber(roomCfg.terminalEnergyMax, 0, null, false);
+    roomCfg.maxDealsPerRoom = parseConfiguredNumber(roomCfg.maxDealsPerRoom, 0, null, true);
+    roomCfg.energyValue = parseConfiguredNumber(roomCfg.energyValue, 0, null, false);
+    roomCfg.maxOverpayPct = parseConfiguredNumber(roomCfg.maxOverpayPct, 0, null, false);
+    roomCfg.sellBufferPct = parseConfiguredNumber(roomCfg.sellBufferPct, 0, null, false);
 
     if (!roomCfg.buy || typeof roomCfg.buy !== 'object') roomCfg.buy = {};
     if (!roomCfg.sell || typeof roomCfg.sell !== 'object') roomCfg.sell = {};
     if (!roomCfg.terminalStockTargets || typeof roomCfg.terminalStockTargets !== 'object') roomCfg.terminalStockTargets = {};
     if (!roomCfg.roomStockTargets || typeof roomCfg.roomStockTargets !== 'object') roomCfg.roomStockTargets = {};
-    const zeadminStockAuthority = isZeadminStockTargetsAuthorityEnabled();
-
-    for (const resourceType of Object.keys(DEFAULT_RESOURCE_CONFIG)) {
-        const spec = DEFAULT_RESOURCE_CONFIG[resourceType];
-        if (spec.buy && !roomCfg.buy[resourceType]) roomCfg.buy[resourceType] = Object.assign({}, spec.buy);
-        if (spec.sell && !roomCfg.sell[resourceType]) roomCfg.sell[resourceType] = Object.assign({}, spec.sell);
-    }
-
-    if (!zeadminStockAuthority) {
-        for (const resourceType of Object.keys(DEFAULT_TERMINAL_STOCK_TARGETS)) {
-            if (!(resourceType in roomCfg.terminalStockTargets)) {
-                roomCfg.terminalStockTargets[resourceType] = DEFAULT_TERMINAL_STOCK_TARGETS[resourceType];
-            }
-        }
-    }
-    for (const resourceType of Object.keys(DEFAULT_ROOM_STOCK_TARGETS)) {
-        if (!(resourceType in roomCfg.roomStockTargets)) {
-            roomCfg.roomStockTargets[resourceType] = DEFAULT_ROOM_STOCK_TARGETS[resourceType];
-        }
-    }
+    return roomCfg;
 }
 
-function ensureRoomConfig(roomName) {
+function ensureRoomConfig(roomName, opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const create = options.create !== false;
     const base = ensureMarketConfig();
     const key = ('' + roomName).trim().toUpperCase();
     if (!key) return null;
 
-    if (!base.rooms[key] || typeof base.rooms[key] !== 'object') base.rooms[key] = {};
-    const roomCfg = base.rooms[key];
-
-    // 1) Start with base defaults
-    applyRoomDefaults(roomCfg);
-
-    // 2) Apply any "apply to all rooms" patch (persisted)
-    if (base.defaultsPatch && typeof base.defaultsPatch === 'object') {
-        mergePatch(roomCfg, base.defaultsPatch);
-        applyRoomDefaults(roomCfg);
+    if (!base.rooms[key] || typeof base.rooms[key] !== 'object') {
+        if (!create) return null;
+        base.rooms[key] = {};
     }
-
-    // 3) Migrate root-level tuning into per-room config only for market tuning keys.
-    const legacy = base; // root object may still contain old keys
-    const legacyKeys = [
-        'runEvery','minCredits','energyReserve','terminalEnergyTarget','terminalEnergyMax',
-        'maxDealsPerRoom','energyValue','maxOverpayPct','sellBufferPct'
-    ];
-    for (const k of legacyKeys) {
-        if (roomCfg[k] === undefined && legacy[k] !== undefined) roomCfg[k] = legacy[k];
-    }
-    if (legacy.buy && typeof legacy.buy === 'object') {
-        roomCfg.buy = Object.assign({}, legacy.buy, roomCfg.buy);
-    }
-    if (legacy.sell && typeof legacy.sell === 'object') {
-        roomCfg.sell = Object.assign({}, legacy.sell, roomCfg.sell);
-    }
-    // Normalize again after merges
-    applyRoomDefaults(roomCfg);
-
-    return roomCfg;
+    return base.rooms[key];
 }
 
 function normalizeManualOrderMeta(meta) {
@@ -266,10 +144,9 @@ function applyMarketPatch(patch) {
     if (Object.keys(roomPatch).length === 0) return cfg;
 
     for (const roomName of Object.keys(cfg.rooms || {})) {
-        const roomCfg = ensureRoomConfig(roomName);
+        const roomCfg = ensureRoomConfig(roomName, { create: false });
         if (!roomCfg) continue;
         mergePatch(roomCfg, roomPatch);
-        applyRoomDefaults(roomCfg);
     }
 
     return ensureMarketConfig();
@@ -290,15 +167,14 @@ function resetRoomConfig(roomName) {
     const key = ('' + roomName).trim().toUpperCase();
     if (!key) return cfg;
 
-    // Drop any existing overrides for the room, then re-seed via ensureRoomConfig
-    cfg.rooms[key] = {};
-    ensureRoomConfig(key);
+    // Drop room config entirely; do not re-seed defaults into memory.
+    delete cfg.rooms[key];
     return ensureMarketConfig();
 }
 
 function getRoomConfig(base, roomName) {
-    // base is ignored in the per-room config model (kept for older call sites).
-    return ensureRoomConfig(roomName);
+    const roomCfg = ensureRoomConfig(roomName, { create: false });
+    return normalizeRuntimeRoomConfig(roomCfg || {});
 }
 
 function getRoomTotals(room) {
@@ -335,17 +211,17 @@ function shouldRunThisTick(roomName, interval) {
 
 function normalizeBuySpec(spec) {
     const out = Object.assign({}, spec);
-    out.batch = clampNumber(out.batch, 500, 1);
-    out.maxPrice = Number.isFinite(Number(out.maxPrice)) ? Number(out.maxPrice) : Infinity;
-    out.enabled = out.enabled !== false;
+    out.batch = parseConfiguredNumber(out.batch, 1, null, true);
+    out.maxPrice = parseConfiguredNumber(out.maxPrice, 0, null, false);
+    out.enabled = out.enabled === true;
     return out;
 }
 
 function normalizeSellSpec(spec) {
     const out = Object.assign({}, spec);
-    out.batch = clampNumber(out.batch, 1000, 1);
-    out.minPrice = Number.isFinite(Number(out.minPrice)) ? Number(out.minPrice) : 0;
-    out.enabled = out.enabled !== false;
+    out.batch = parseConfiguredNumber(out.batch, 1, null, true);
+    out.minPrice = parseConfiguredNumber(out.minPrice, 0, null, false);
+    out.enabled = out.enabled === true;
     return out;
 }
 
@@ -400,6 +276,18 @@ function formatAmountSteps(steps) {
     return steps.map(step => `${step.label}=${step.amount}`).join(' -> ');
 }
 
+function marketDebug(tag, message) {
+    if (typeof debug !== 'function') return;
+    debug('market', `[Market:${tag}] ${message}`);
+}
+
+function shouldLogMarketRoom(roomName, interval) {
+    const name = ('' + (roomName || '')).trim().toUpperCase();
+    if (!name) return false;
+    const freq = Math.max(1, Math.floor(Number(interval) || 1));
+    return shouldRunThisTick(name, freq);
+}
+
 function getRunStatus(room, cfg) {
     const reasons = [];
     const base = ensureMarketConfig();
@@ -409,7 +297,16 @@ function getRunStatus(room, cfg) {
     if (room && (!room.controller || !room.controller.my)) reasons.push('not owned');
     if (!base.globalEnabled) reasons.push('global disabled');
     if (!cfg || !cfg.enabled) reasons.push('room disabled');
-    if (cfg && cfg.maxDealsPerRoom <= 0) reasons.push('maxDealsPerRoom=0');
+    if (cfg && cfg.runEvery == null) reasons.push('runEvery missing/invalid');
+    if (cfg && cfg.minCredits == null) reasons.push('minCredits missing/invalid');
+    if (cfg && cfg.energyReserve == null) reasons.push('energyReserve missing/invalid');
+    if (cfg && cfg.terminalEnergyTarget == null) reasons.push('terminalEnergyTarget missing/invalid');
+    if (cfg && cfg.terminalEnergyMax == null) reasons.push('terminalEnergyMax missing/invalid');
+    if (cfg && cfg.maxDealsPerRoom == null) reasons.push('maxDealsPerRoom missing/invalid');
+    if (cfg && cfg.energyValue == null) reasons.push('energyValue missing/invalid');
+    if (cfg && cfg.maxOverpayPct == null) reasons.push('maxOverpayPct missing/invalid');
+    if (cfg && cfg.sellBufferPct == null) reasons.push('sellBufferPct missing/invalid');
+    if (cfg && Number.isFinite(cfg.maxDealsPerRoom) && cfg.maxDealsPerRoom <= 0) reasons.push('maxDealsPerRoom=0');
     if (room && room.terminal && room.terminal.cooldown && room.terminal.cooldown > 0) {
         reasons.push(`terminal cooldown=${room.terminal.cooldown}`);
     }
@@ -424,6 +321,12 @@ function buildBuyExplanation(room, cfg, roomTotals) {
     const lines = [];
     if (!cfg.buy || typeof cfg.buy !== 'object') {
         lines.push('Buy: no buy config');
+        return lines;
+    }
+    if (
+        cfg.minCredits == null || cfg.energyReserve == null || cfg.energyValue == null || cfg.maxOverpayPct == null
+    ) {
+        lines.push('Buy: blocked (missing required room config fields)');
         return lines;
     }
     if (Game.market.credits < cfg.minCredits) {
@@ -443,7 +346,7 @@ function buildBuyExplanation(room, cfg, roomTotals) {
     const deficits = [];
     for (const resourceType of Object.keys(cfg.buy)) {
         const spec = normalizeBuySpec(cfg.buy[resourceType] || {});
-        if (!spec.enabled) continue;
+        if (!spec.enabled || spec.batch == null || spec.maxPrice == null) continue;
         const target = roomStockTargets[resourceType] || 0;
         if (target <= 0) continue;
         const total = roomTotals[resourceType] || 0;
@@ -476,8 +379,8 @@ function buildBuyExplanation(room, cfg, roomTotals) {
             continue;
         }
 
-        const maxPrice = Number.isFinite(spec.maxPrice) ? spec.maxPrice : Infinity;
-        const priceLimit = Number.isFinite(maxPrice) ? maxPrice * (1 + cfg.maxOverpayPct) : Infinity;
+        const maxPrice = spec.maxPrice;
+        const priceLimit = maxPrice * (1 + cfg.maxOverpayPct);
         const myOrders = Game.market.orders || {};
         let best = null;
         const skipped = {
@@ -589,6 +492,12 @@ function buildSellExplanation(room, cfg, roomTotals) {
         lines.push('Sell: no sell config');
         return lines;
     }
+    if (
+        cfg.energyReserve == null || cfg.energyValue == null || cfg.sellBufferPct == null
+    ) {
+        lines.push('Sell: blocked (missing required room config fields)');
+        return lines;
+    }
 
     const terminal = room.terminal;
     const energyAvailable = (terminal.store[RESOURCE_ENERGY] || 0) - cfg.energyReserve;
@@ -605,7 +514,7 @@ function buildSellExplanation(room, cfg, roomTotals) {
 
     for (const resourceType of Object.keys(cfg.sell)) {
         const spec = normalizeSellSpec(cfg.sell[resourceType] || {});
-        if (!spec.enabled) continue;
+        if (!spec.enabled || spec.batch == null || spec.minPrice == null) continue;
 
         const target = roomStockTargets[resourceType] || 0;
         const total = roomTotals[resourceType] || 0;
@@ -744,6 +653,9 @@ function buildSellExplanation(room, cfg, roomTotals) {
 
 function tryBuy(room, cfg, roomTotals) {
     if (!cfg.buy || typeof cfg.buy !== 'object') return false;
+    if (
+        cfg.minCredits == null || cfg.energyReserve == null || cfg.energyValue == null || cfg.maxOverpayPct == null
+    ) return false;
     if (Game.market.credits < cfg.minCredits) return false;
 
     const terminal = room.terminal;
@@ -757,6 +669,10 @@ function tryBuy(room, cfg, roomTotals) {
     for (const resourceType of Object.keys(cfg.buy)) {
         const spec = normalizeBuySpec(cfg.buy[resourceType] || {});
         if (!spec.enabled) continue;
+        if (spec.batch == null || spec.maxPrice == null) {
+            marketDebug('Config', `${room.name} buy ${resourceType} skipped: missing/invalid batch or maxPrice`);
+            continue;
+        }
         const target = roomStockTargets[resourceType] || 0;
         if (target <= 0) continue;
         const total = roomTotals[resourceType] || 0;
@@ -775,8 +691,8 @@ function tryBuy(room, cfg, roomTotals) {
         const orders = Game.market.getAllOrders({ type: ORDER_SELL, resourceType: resourceType });
         if (!orders || orders.length === 0) continue;
 
-        const maxPrice = Number.isFinite(spec.maxPrice) ? spec.maxPrice : Infinity;
-        const priceLimit = Number.isFinite(maxPrice) ? maxPrice * (1 + cfg.maxOverpayPct) : Infinity;
+        const maxPrice = spec.maxPrice;
+        const priceLimit = maxPrice * (1 + cfg.maxOverpayPct);
         const myOrders = Game.market.orders || {};
         let best = null;
 
@@ -821,6 +737,7 @@ function tryBuy(room, cfg, roomTotals) {
                 debug('market', `[Market] ${room.name} bought ${best.amount} ${resourceType} @ ${best.order.price} (eff=${eff} energy=${best.energyCost})`);
                 return true;
             }
+            marketDebug('DealError', `${room.name} buy failed result=${result} order=${best.order.id} resource=${resourceType} amount=${best.amount}`);
         }
     }
 
@@ -829,6 +746,9 @@ function tryBuy(room, cfg, roomTotals) {
 
 function trySell(room, cfg) {
     if (!cfg.sell || typeof cfg.sell !== 'object') return false;
+    if (
+        cfg.energyReserve == null || cfg.energyValue == null || cfg.sellBufferPct == null
+    ) return false;
     const terminal = room.terminal;
     const energyAvailable = (terminal.store[RESOURCE_ENERGY] || 0) - cfg.energyReserve;
     if (energyAvailable <= 0) return false;
@@ -840,6 +760,10 @@ function trySell(room, cfg) {
     for (const resourceType of Object.keys(cfg.sell)) {
         const spec = normalizeSellSpec(cfg.sell[resourceType] || {});
         if (!spec.enabled) continue;
+        if (spec.batch == null || spec.minPrice == null) {
+            marketDebug('Config', `${room.name} sell ${resourceType} skipped: missing/invalid batch or minPrice`);
+            continue;
+        }
 
         const target = roomStockTargets[resourceType] || 0;
         const total = roomTotals[resourceType] || 0;
@@ -906,6 +830,7 @@ function trySell(room, cfg) {
                 debug('market', `[Market] ${room.name} sold ${best.amount} ${resourceType} @ ${best.order.price} (eff=${eff} energy=${best.energyCost})`);
                 return true;
             }
+            marketDebug('DealError', `${room.name} sell failed result=${result} order=${best.order.id} resource=${resourceType} amount=${best.amount}`);
         }
     }
 
@@ -916,14 +841,11 @@ function summarizeGlobalConfig(cfg) {
     const lines = [];
     const roomNames = Object.keys((cfg && cfg.rooms) || {}).sort();
     lines.push(`Market global=${cfg && cfg.globalEnabled ? 'ON' : 'OFF'} rooms=${roomNames.length}`);
-    if (cfg && cfg.defaultsPatch && Object.keys(cfg.defaultsPatch).length > 0) {
-        lines.push(`DefaultsPatch keys: ${Object.keys(cfg.defaultsPatch).sort().join(', ')}`);
-    }
     if (roomNames.length > 0) {
         lines.push('Room enablement:');
         for (const name of roomNames.slice(0, 20)) {
             const rc = cfg.rooms[name];
-            const en = rc && rc.enabled !== false;
+            const en = rc && rc.enabled === true;
             lines.push(`${name}: ${en ? 'ON' : 'OFF'}`);
         }
         if (roomNames.length > 20) lines.push(`(+${roomNames.length - 20} more)`);
@@ -1072,9 +994,10 @@ summarize: function() {
     },
 
     summarizeRoom: function(roomName) {
-        const roomCfg = ensureRoomConfig(roomName);
-        if (!roomCfg) return 'Unknown room: ' + roomName;
-        return summarizeConfig(roomCfg);
+        const key = normalizeRoomName(roomName);
+        const raw = ensureRoomConfig(key, { create: false });
+        if (!raw) return `No room market config: ${key}`;
+        return summarizeConfig(getRoomConfig(null, key));
     },
 
     // ---- Manual Market Orders (created via console) ----
@@ -1142,7 +1065,8 @@ summarize: function() {
     getTerminalEnergyTarget: function(roomName) {
         const cfg = ensureMarketConfig();
         const merged = getRoomConfig(cfg, roomName);
-        return clampNumber(merged && merged.terminalEnergyTarget, DEFAULTS.terminalEnergyTarget, 0);
+        const target = merged && Number.isFinite(merged.terminalEnergyTarget) ? merged.terminalEnergyTarget : 0;
+        return Math.max(0, Math.floor(target));
     },
 
     getTrackedResources: function(roomName) {
@@ -1208,12 +1132,20 @@ summarize: function() {
         cleanupManualOrders(base);
 
         const cfg = getRoomConfig(base, room.name);
-        if (!cfg || !cfg.enabled) return;
-        if (cfg.maxDealsPerRoom <= 0) return;
-        if (room.terminal.cooldown && room.terminal.cooldown > 0) return;
-        if (!shouldRunThisTick(room.name, cfg.runEvery)) return;
-
-        if (room._policy && room._policy.state === 'CRITICAL') return;
+        const status = getRunStatus(room, cfg);
+        if (!status.ok) {
+            if (shouldLogMarketRoom(room.name, 25)) {
+                marketDebug(
+                    'RunSkip',
+                    `${room.name} blocked: ${status.reasons.join(', ')} ` +
+                    `cfg={enabled:${cfg.enabled}, runEvery:${cfg.runEvery}, minCredits:${cfg.minCredits}, ` +
+                    `energyReserve:${cfg.energyReserve}, terminalEnergyTarget:${cfg.terminalEnergyTarget}, ` +
+                    `terminalEnergyMax:${cfg.terminalEnergyMax}, maxDealsPerRoom:${cfg.maxDealsPerRoom}, ` +
+                    `energyValue:${cfg.energyValue}, maxOverpayPct:${cfg.maxOverpayPct}, sellBufferPct:${cfg.sellBufferPct}}`
+                );
+            }
+            return;
+        }
 
         const roomTotals = getRoomTotals(room);
         if (tryBuy(room, cfg, roomTotals)) return;

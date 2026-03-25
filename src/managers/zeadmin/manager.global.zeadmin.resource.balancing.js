@@ -12,45 +12,6 @@ const BASIC_MINERALS = Object.freeze([
     RESOURCE_CATALYST
 ]);
 
-const DEFAULT_CORE_STOCK_TARGETS = Object.freeze(
-    BASIC_MINERALS.reduce((acc, type) => {
-        acc[type] = 5000;
-        return acc;
-    }, {
-        [RESOURCE_GHODIUM]: 5000
-    })
-);
-
-const DEFAULT_SATELLITE_LAB_STOCK_TARGETS = Object.freeze(
-    BASIC_MINERALS.reduce((acc, type) => {
-        acc[type] = 1000;
-        return acc;
-    }, {
-        [RESOURCE_GHODIUM]: 500
-    })
-);
-
-const DEFAULTS = Object.freeze({
-    enabled: true,
-    runEvery: 5,
-    coreRoom: null,
-    stockTargetsEnabled: true,
-    coreStockTargets: DEFAULT_CORE_STOCK_TARGETS,
-    satelliteLabStockTargets: DEFAULT_SATELLITE_LAB_STOCK_TARGETS,
-    satelliteNoLabExportTarget: 15000,
-    noLabKeepPctWhenCoreDeficit: 0.75,
-    noLabKeepPctWhenOverflow: 0.25,
-    storageFillThresholdPct: 0.9,
-    terminalFillThresholdPct: 0.9,
-    minSourceTerminalEnergyReserve: 15000,
-    minTargetTerminalFree: 10000,
-    minSendAmount: 2000,
-    maxSendAmount: 15000,
-    maxEnergyCostPerUnit: 0.2,
-    overflowMaxEnergyCostPerUnit: 0.35,
-    maxSendsPerTick: 1
-});
-
 function clampNumber(value, fallback, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
@@ -59,6 +20,15 @@ function clampNumber(value, fallback, min, max) {
     if (num < lo) return lo;
     if (num > hi) return hi;
     return num;
+}
+
+function parseConfiguredNumber(value, min, max, integer) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    const lo = Number.isFinite(min) ? min : -Infinity;
+    const hi = Number.isFinite(max) ? max : Infinity;
+    if (num < lo || num > hi) return null;
+    return integer ? Math.floor(num) : num;
 }
 
 function normalizeRoomName(roomName) {
@@ -201,56 +171,64 @@ function ensureConfig() {
     }
 
     const cfg = Memory.zeadmin[CONFIG_ROOT_KEY];
-    cfg.enabled = cfg.enabled !== false;
-    cfg.runEvery = clampNumber(cfg.runEvery, DEFAULTS.runEvery, 1, 1000);
-    cfg.coreRoom = cfg.coreRoom ? normalizeRoomName(cfg.coreRoom) : DEFAULTS.coreRoom;
-    cfg.stockTargetsEnabled = cfg.stockTargetsEnabled !== false;
+    cfg.enabled = cfg.enabled === true;
+    cfg.runEvery = parseConfiguredNumber(cfg.runEvery, 1, 1000, true);
+    cfg.coreRoom = cfg.coreRoom ? normalizeRoomName(cfg.coreRoom) : null;
+    cfg.stockTargetsEnabled = cfg.stockTargetsEnabled === true;
 
     if (!cfg.coreStockTargets || typeof cfg.coreStockTargets !== 'object') {
-        cfg.coreStockTargets = clonePlain(DEFAULTS.coreStockTargets);
+        cfg.coreStockTargets = {};
     }
     if (!cfg.satelliteLabStockTargets || typeof cfg.satelliteLabStockTargets !== 'object') {
-        cfg.satelliteLabStockTargets = clonePlain(DEFAULTS.satelliteLabStockTargets);
+        cfg.satelliteLabStockTargets = {};
     }
     cfg.coreStockTargets = normalizeStockTargets(cfg.coreStockTargets);
     cfg.satelliteLabStockTargets = normalizeStockTargets(cfg.satelliteLabStockTargets);
-    cfg.satelliteNoLabExportTarget = Math.floor(
-        clampNumber(cfg.satelliteNoLabExportTarget, DEFAULTS.satelliteNoLabExportTarget, 0, 300000)
-    );
-    cfg.noLabKeepPctWhenCoreDeficit = clampNumber(
-        cfg.noLabKeepPctWhenCoreDeficit,
-        DEFAULTS.noLabKeepPctWhenCoreDeficit,
-        0,
-        1
-    );
-    cfg.noLabKeepPctWhenOverflow = clampNumber(
-        cfg.noLabKeepPctWhenOverflow,
-        DEFAULTS.noLabKeepPctWhenOverflow,
-        0,
-        cfg.noLabKeepPctWhenCoreDeficit
-    );
+    cfg.satelliteNoLabExportTarget = parseConfiguredNumber(cfg.satelliteNoLabExportTarget, 0, 300000, true);
+    cfg.noLabKeepPctWhenCoreDeficit = parseConfiguredNumber(cfg.noLabKeepPctWhenCoreDeficit, 0, 1, false);
+    cfg.noLabKeepPctWhenOverflow = parseConfiguredNumber(cfg.noLabKeepPctWhenOverflow, 0, 1, false);
 
-    cfg.storageFillThresholdPct = clampNumber(cfg.storageFillThresholdPct, DEFAULTS.storageFillThresholdPct, 0.5, 1);
-    cfg.terminalFillThresholdPct = clampNumber(cfg.terminalFillThresholdPct, DEFAULTS.terminalFillThresholdPct, 0.5, 1);
-    cfg.minSourceTerminalEnergyReserve = clampNumber(
-        cfg.minSourceTerminalEnergyReserve,
-        DEFAULTS.minSourceTerminalEnergyReserve,
-        0,
-        300000
-    );
-    cfg.minTargetTerminalFree = clampNumber(cfg.minTargetTerminalFree, DEFAULTS.minTargetTerminalFree, 0, 300000);
-    cfg.minSendAmount = Math.floor(clampNumber(cfg.minSendAmount, DEFAULTS.minSendAmount, 100, 100000));
-    cfg.maxSendAmount = Math.floor(clampNumber(cfg.maxSendAmount, DEFAULTS.maxSendAmount, cfg.minSendAmount, 300000));
-    cfg.maxEnergyCostPerUnit = clampNumber(cfg.maxEnergyCostPerUnit, DEFAULTS.maxEnergyCostPerUnit, 0, 10);
-    cfg.overflowMaxEnergyCostPerUnit = clampNumber(
-        cfg.overflowMaxEnergyCostPerUnit,
-        DEFAULTS.overflowMaxEnergyCostPerUnit,
-        cfg.maxEnergyCostPerUnit,
-        10
-    );
-    cfg.maxSendsPerTick = Math.floor(clampNumber(cfg.maxSendsPerTick, DEFAULTS.maxSendsPerTick, 1, 10));
+    cfg.storageFillThresholdPct = parseConfiguredNumber(cfg.storageFillThresholdPct, 0.5, 1, false);
+    cfg.terminalFillThresholdPct = parseConfiguredNumber(cfg.terminalFillThresholdPct, 0.5, 1, false);
+    cfg.minSourceTerminalEnergyReserve = parseConfiguredNumber(cfg.minSourceTerminalEnergyReserve, 0, 300000, false);
+    cfg.minTargetTerminalFree = parseConfiguredNumber(cfg.minTargetTerminalFree, 0, 300000, false);
+    cfg.minSendAmount = parseConfiguredNumber(cfg.minSendAmount, 100, 100000, true);
+    cfg.maxSendAmount = parseConfiguredNumber(cfg.maxSendAmount, 100, 300000, true);
+    cfg.maxEnergyCostPerUnit = parseConfiguredNumber(cfg.maxEnergyCostPerUnit, 0, 10, false);
+    cfg.overflowMaxEnergyCostPerUnit = parseConfiguredNumber(cfg.overflowMaxEnergyCostPerUnit, 0, 10, false);
+    cfg.maxSendsPerTick = parseConfiguredNumber(cfg.maxSendsPerTick, 1, 10, true);
 
     return cfg;
+}
+
+function getConfigValidationErrors(cfg) {
+    const errors = [];
+    if (!cfg || cfg.runEvery == null) errors.push('runEvery missing/invalid');
+    if (!cfg || cfg.satelliteNoLabExportTarget == null) errors.push('satelliteNoLabExportTarget missing/invalid');
+    if (!cfg || cfg.noLabKeepPctWhenCoreDeficit == null) errors.push('noLabKeepPctWhenCoreDeficit missing/invalid');
+    if (!cfg || cfg.noLabKeepPctWhenOverflow == null) errors.push('noLabKeepPctWhenOverflow missing/invalid');
+    if (!cfg || cfg.storageFillThresholdPct == null) errors.push('storageFillThresholdPct missing/invalid');
+    if (!cfg || cfg.terminalFillThresholdPct == null) errors.push('terminalFillThresholdPct missing/invalid');
+    if (!cfg || cfg.minSourceTerminalEnergyReserve == null) errors.push('minSourceTerminalEnergyReserve missing/invalid');
+    if (!cfg || cfg.minTargetTerminalFree == null) errors.push('minTargetTerminalFree missing/invalid');
+    if (!cfg || cfg.minSendAmount == null) errors.push('minSendAmount missing/invalid');
+    if (!cfg || cfg.maxSendAmount == null) errors.push('maxSendAmount missing/invalid');
+    if (!cfg || cfg.maxEnergyCostPerUnit == null) errors.push('maxEnergyCostPerUnit missing/invalid');
+    if (!cfg || cfg.overflowMaxEnergyCostPerUnit == null) errors.push('overflowMaxEnergyCostPerUnit missing/invalid');
+    if (!cfg || cfg.maxSendsPerTick == null) errors.push('maxSendsPerTick missing/invalid');
+    if (
+        cfg
+        && Number.isFinite(cfg.minSendAmount)
+        && Number.isFinite(cfg.maxSendAmount)
+        && cfg.maxSendAmount < cfg.minSendAmount
+    ) errors.push('maxSendAmount < minSendAmount');
+    if (
+        cfg
+        && Number.isFinite(cfg.noLabKeepPctWhenOverflow)
+        && Number.isFinite(cfg.noLabKeepPctWhenCoreDeficit)
+        && cfg.noLabKeepPctWhenOverflow > cfg.noLabKeepPctWhenCoreDeficit
+    ) errors.push('noLabKeepPctWhenOverflow > noLabKeepPctWhenCoreDeficit');
+    return errors;
 }
 
 function shouldRunThisTick(interval) {
@@ -391,6 +369,11 @@ module.exports = {
 
         if (!cfg.enabled) {
             store.lastSummary.reason = 'disabled';
+            return store;
+        }
+        const configErrors = getConfigValidationErrors(cfg);
+        if (configErrors.length > 0) {
+            store.lastSummary.reason = `invalid config: ${configErrors.join(', ')}`;
             return store;
         }
         if (!shouldRunThisTick(cfg.runEvery)) {

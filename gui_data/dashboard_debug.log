@@ -1,0 +1,166 @@
+[dashboard-debug 2026-03-25 20:24:37] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:24:37] ui.init geometry='1x1+0+0' minsize='1000x640'
+[dashboard-debug 2026-03-25 20:24:42] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:24:42] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:24:42] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:24:42] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='1446x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:25:16] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:25:16] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:25:16] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:25:16] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame9' tab_count=4
+[dashboard-debug 2026-03-25 20:25:17] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:25:18] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:25:18] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:25:18] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame13' tab_count=4
+[dashboard-debug 2026-03-25 20:25:20] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:25:21] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:25:21] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:25:21] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame17' tab_count=4
+[dashboard-debug 2026-03-25 20:25:40] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:25:40] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:25:41] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:25:41] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame21' tab_count=4
+[dashboard-debug 2026-03-25 20:25:43] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:25:43] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:25:43] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:25:43] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame25' tab_count=4
+[dashboard-debug 2026-03-25 20:25:44] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:25:44] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:25:45] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:25:45] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame29' tab_count=4
+[dashboard-debug 2026-03-25 20:25:48] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:25:48] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:25:48] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:25:48] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame33' tab_count=4
+[dashboard-debug 2026-03-25 20:25:59] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:25:59] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:25:59] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:25:59] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame37' tab_count=4
+[dashboard-debug 2026-03-25 20:26:01] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:26:01] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:26:01] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:26:01] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame41' tab_count=4
+[dashboard-debug 2026-03-25 20:26:04] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:26:04] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:26:04] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:26:04] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame45' tab_count=4
+[dashboard-debug 2026-03-25 20:26:30] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:26:30] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:26:30] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:26:30] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame49' tab_count=4
+[dashboard-debug 2026-03-25 20:26:32] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:26:32] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:26:32] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:26:32] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame53' tab_count=4
+[dashboard-debug 2026-03-25 20:26:35] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:26:35] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:26:35] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:26:35] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame57' tab_count=4
+[dashboard-debug 2026-03-25 20:27:20] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:27:20] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:27:21] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:27:21] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame61' tab_count=4
+[dashboard-debug 2026-03-25 20:27:22] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:27:22] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:27:22] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:27:22] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame65' tab_count=4
+[dashboard-debug 2026-03-25 20:27:25] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:27:25] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:27:25] ui.market_table.rebuild resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:27:25] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame69' tab_count=4
+[dashboard-debug 2026-03-25 20:29:22] ui.market_table.rebuild old_tabs=0 resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:29:22] ui.init geometry='1x1+0+0' minsize='1000x640'
+[dashboard-debug 2026-03-25 20:29:26] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:29:26] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:29:26] ui.market_table.rebuild old_tabs=4 resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:29:26] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='1446x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:29:46] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:29:47] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:29:47] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:29:47] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:29:48] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:29:48] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:29:48] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:29:48] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:29:51] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:29:51] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:29:51] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:29:51] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:30:09] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:30:09] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:30:09] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:30:09] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:30:10] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:30:10] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:30:10] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:30:10] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:30:14] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:30:14] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:30:14] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:30:14] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:30:34] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:30:34] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:30:34] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:30:34] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:30:35] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:30:35] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:30:35] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:30:35] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:30:38] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:30:38] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:30:38] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:30:39] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:31:25] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:31:25] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:31:25] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:31:25] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame6' tab_count=4
+[dashboard-debug 2026-03-25 20:31:27] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:31:27] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:31:27] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:31:27] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame6' tab_count=4
+[dashboard-debug 2026-03-25 20:31:30] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:31:30] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:31:30] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:31:30] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame6' tab_count=4
+[dashboard-debug 2026-03-25 20:31:45] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:31:45] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:31:45] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:31:45] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:31:47] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:31:47] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:31:47] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:31:47] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame6' tab_count=4
+[dashboard-debug 2026-03-25 20:31:50] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:31:50] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:31:50] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:31:50] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame6' tab_count=4
+[dashboard-debug 2026-03-25 20:32:21] ui.market_table.rebuild old_tabs=0 resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:32:21] ui.init geometry='1x1+0+0' minsize='1000x640'
+[dashboard-debug 2026-03-25 20:32:27] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:32:27] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:32:28] ui.market_table.rebuild old_tabs=4 resource_rows=84 tab_labels=['Basics', 'Compounds', 'Commodities', 'Deposits'] tabs=4
+[dashboard-debug 2026-03-25 20:32:28] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='1446x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:33:18] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:33:18] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:33:18] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:33:19] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame6' tab_count=4
+[dashboard-debug 2026-03-25 20:33:21] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:33:21] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:33:21] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:33:21] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame6' tab_count=4
+[dashboard-debug 2026-03-25 20:33:23] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:33:23] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:33:23] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:33:23] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame6' tab_count=4
+[dashboard-debug 2026-03-25 20:34:17] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:34:17] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:34:17] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:34:17] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:34:19] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:34:19] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:34:19] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:34:19] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4
+[dashboard-debug 2026-03-25 20:34:22] fetch.snapshot.summary errors=0 labs_rows=1 market_rooms=3 market_rows=3 memory_path='' room_rows=6 shard='shard3'
+[dashboard-debug 2026-03-25 20:34:22] ui.snapshot.apply errors=0 market_details=3 market_rooms=3 market_rows=3 room_rows=6
+[dashboard-debug 2026-03-25 20:34:22] ui.market_table.rebuild.skip reason='resource-signature-unchanged' resource_rows=84
+[dashboard-debug 2026-03-25 20:34:22] ui.market_layout notebook_exists=True notebook_mapped=True notebook_size='954x366' root_size='1920x1009' selected_tab='.!frame.!panedwindow.!frame2.!notebook.!frame2.!frame.!canvas.!frame.!labelframe2.!labelframe.!notebook.!frame5' tab_count=4

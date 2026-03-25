@@ -1,5 +1,6 @@
 module.exports = function registerConsole() {
     require('console_debug')();
+    require('console_memory')();
     require('console_labs')();
     require('console_market')();
     require('console_remote')();
