@@ -290,11 +290,13 @@ const overseerUtils = {
             boardVisuals.push({
                 name: missionName,
                 type: m.type,
+                state: m.state || null,
                 priority: Number.isFinite(m.priority) ? m.priority : 0,
                 requirements: m.requirements || (contract && contract.requirements) || null,
                 census: (contract && contract.census) || m.census || null,
                 assigned: m.assigned || null,
                 demand: m.demand || null,
+                progress: m.progress || null,
                 meta: m.meta || null,
                 data: m.data || (contract && contract.data) || null,
                 pos: m.pos || (contract && contract.pos) || null,
@@ -307,9 +309,113 @@ const overseerUtils = {
         return boardVisuals;
     },
 
+    getMissionVisualColor: function(missionState, filled) {
+        const state = missionState || 'active';
+        if (state === 'blocked') return '#ff9966';
+        if (state === 'completing') return '#ffee88';
+        if (state === 'proposed') return '#99ccff';
+        return filled ? '#aaffaa' : '#ffaaaa';
+    },
+
+    drawMissionWorksites: function(room, mission, color, lookupState) {
+        if (!room || !mission) return;
+        const MAX_PER_MISSION = 8;
+        const MAX_QUEUE_IDS = 4;
+        const lookup = lookupState || { used: 0, max: 80 };
+        const seenPos = Object.create(null);
+        let drawn = 0;
+
+        const drawAtPos = (pos, label, stroke, radius) => {
+            if (!pos || pos.roomName !== room.name || drawn >= MAX_PER_MISSION) return;
+            const key = `${pos.roomName}:${pos.x},${pos.y}`;
+            if (seenPos[key]) return;
+            seenPos[key] = true;
+            drawn++;
+            room.visual.circle(pos.x, pos.y, {
+                fill: 'transparent',
+                radius: Number.isFinite(radius) ? radius : 0.38,
+                stroke: stroke || color,
+                strokeWidth: 0.08
+            });
+            if (label) {
+                room.visual.text(label, pos.x, pos.y - 0.38, {
+                    font: 0.3,
+                    color: stroke || color,
+                    stroke: '#000000',
+                    strokeWidth: 0.12
+                });
+            }
+        };
+
+        const drawById = (id, label, stroke, radius) => {
+            if (!id || drawn >= MAX_PER_MISSION) return;
+            if (lookup.used >= lookup.max) return;
+            lookup.used++;
+            const obj = Game.getObjectById(id);
+            if (!obj || !obj.pos) return;
+            drawAtPos(obj.pos, label, stroke, radius);
+        };
+
+        const data = mission.data || {};
+        if (mission.pos) drawAtPos(mission.pos, mission.type || 'M', color, 0.5);
+        if (mission.targetId) drawById(mission.targetId, 'T', color, 0.42);
+        if (Array.isArray(mission.targetIds)) {
+            for (let i = 0; i < mission.targetIds.length && i < 3; i++) {
+                drawById(mission.targetIds[i], 'T', color, 0.35);
+            }
+        }
+        if (data.sourceId) drawById(data.sourceId, 'S', '#66ccff', 0.35);
+        if (Array.isArray(data.sourceIds)) {
+            for (let i = 0; i < data.sourceIds.length && i < 3; i++) {
+                drawById(data.sourceIds[i], 'S', '#66ccff', 0.32);
+            }
+        }
+        if (data.pickupId) drawById(data.pickupId, 'P', '#ffcc66', 0.32);
+        if (data.dropoffId) drawById(data.dropoffId, 'D', '#99ff99', 0.32);
+        if (Array.isArray(data.dropoffIds)) {
+            for (let i = 0; i < data.dropoffIds.length && i < 2; i++) {
+                drawById(data.dropoffIds[i], 'D', '#99ff99', 0.3);
+            }
+        }
+        if (data.containerId) drawById(data.containerId, 'C', '#cccccc', 0.28);
+
+        const positionPoints = [
+            { pos: data.sourcePos, label: 'S', color: '#66ccff' },
+            { pos: data.standPos, label: 'ST', color: '#66ccff' },
+            { pos: data.pickupPos, label: 'P', color: '#ffcc66' },
+            { pos: data.dropoffPos, label: 'D', color: '#99ff99' },
+            { pos: data.containerPos, label: 'C', color: '#cccccc' }
+        ];
+        for (let i = 0; i < positionPoints.length; i++) {
+            const point = positionPoints[i];
+            if (!point || !point.pos) continue;
+            drawAtPos(point.pos, point.label, point.color, 0.28);
+        }
+
+        if (
+            heap
+            && data.queueStore
+            && data.queueKey
+            && drawn < MAX_PER_MISSION
+            && lookup.used < lookup.max
+        ) {
+            const store = heap.getStore(data.queueStore, { ttl: null });
+            const entry = store && store[data.queueKey];
+            const ids = entry && Array.isArray(entry.ids) ? entry.ids : [];
+            for (let i = 0; i < ids.length && i < MAX_QUEUE_IDS; i++) {
+                drawById(ids[i], 'Q', '#ffdd88', 0.24);
+                if (drawn >= MAX_PER_MISSION || lookup.used >= lookup.max) break;
+            }
+        }
+    },
+
     visualize: function(room, missions, roomState) {
-        const opsState = roomState && roomState.ops ? roomState.ops : 'UNKNOWN';
-        const economyState = roomState && roomState.economy ? roomState.economy : 'UNKNOWN';
+        const policyPhase = roomState && roomState.phase
+            ? roomState.phase
+            : (room && room._policy && room._policy.phase ? room._policy.phase : 'UNKNOWN');
+        const policyState = roomState && roomState.state
+            ? roomState.state
+            : (room && room._policy && room._policy.state ? room._policy.state : 'UNKNOWN');
         const combatState = roomState && roomState.combat ? roomState.combat : 'UNKNOWN';
         const overallState = roomState && roomState.overall ? roomState.overall : 'UNKNOWN';
 
@@ -317,16 +423,23 @@ const overseerUtils = {
         if (overallState === 'SIEGE') color = 'red';
         else if (overallState === 'DEFENSE') color = '#ff6600';
         else if (overallState === 'WATCH') color = '#ffaa00';
-        else if (opsState === 'EMERGENCY') color = 'red';
+        else if (policyState === 'CRITICAL') color = 'red';
 
         room.visual.text(
-            `State: ${overallState} | Ops: ${opsState} | Combat: ${combatState} | Eco: ${economyState}`,
+            `Phase: ${policyPhase} | Policy: ${policyState} | Overall: ${overallState} | Combat: ${combatState}`,
             1,
             1,
             { align: 'left', color: color, font: 0.7 }
         );
+        room.visual.text(
+            `RemotePathVis: ${Memory && Memory.debugVisualRemotePaths === true ? 'ON' : 'OFF'}`,
+            1,
+            1.8,
+            { align: 'left', color: '#cfd8ff', font: 0.45 }
+        );
         const REMOTE_PATH_DRAW_INTERVAL = 5;
-        const drawRemotePaths = (Game.time % REMOTE_PATH_DRAW_INTERVAL) === 0;
+        const drawRemotePaths = (Memory && Memory.debugVisualRemotePaths === true)
+            && ((Game.time % REMOTE_PATH_DRAW_INTERVAL) === 0);
         this.drawCoreLaneV2Visuals(room);
         if (drawRemotePaths) this.drawMiningLaneV2Visuals(room);
         // ------------------------------------------------------------
@@ -354,7 +467,7 @@ const overseerUtils = {
             function shortKey(key) {
                 if (!key) return '?';
                 if (key.length <= 22) return key;
-                return key.slice(0, 10) + '…' + key.slice(-10);
+                return key.slice(0, 10) + '...' + key.slice(-10);
             }
 
             // Legend is drawn ONLY in the current room (top-right) to avoid text stacking on tiles.
@@ -436,8 +549,37 @@ const overseerUtils = {
             }
         }
 
-        let y = 2.5;
+        let y = 2.7;
         const visualMissions = this.getLiveBoardVisualMissions(room, missions);
+        const byState = Object.create(null);
+        const byStage = Object.create(null);
+        for (let i = 0; i < visualMissions.length; i++) {
+            const mission = visualMissions[i];
+            const state = mission && mission.state ? mission.state : 'unknown';
+            byState[state] = (byState[state] || 0) + 1;
+            const stage = mission && mission.progress && mission.progress.stage ? mission.progress.stage : null;
+            if (stage) byStage[stage] = (byStage[stage] || 0) + 1;
+        }
+        const missionStateSummary = Object.keys(byState).sort().map(k => `${k}:${byState[k]}`);
+        if (missionStateSummary.length > 0) {
+            room.visual.text(
+                `Mission states: ${missionStateSummary.join(' | ')}`,
+                1,
+                y,
+                { align: 'left', color: '#ffd27f', font: 0.45 }
+            );
+            y += 0.8;
+        }
+        const missionStageSummary = Object.keys(byStage).sort().map(k => `${k}:${byStage[k]}`);
+        if (missionStageSummary.length > 0) {
+            room.visual.text(
+                `Mission stages: ${missionStageSummary.join(' | ')}`,
+                1,
+                y,
+                { align: 'left', color: '#a7d3ff', font: 0.42 }
+            );
+            y += 0.8;
+        }
         const getFleetCounts = (type) => {
             const m = visualMissions.find(m => m.type === type);
             if (!m) return null;
@@ -462,14 +604,20 @@ const overseerUtils = {
                 y,
                 { align: 'left', color: '#aaccff', font: 0.5 }
             );
-            y += 1.0;
+            y += 0.9;
         }
         const sortedMissions = [...visualMissions].sort((a, b) => b.priority - a.priority);
+        const lookupState = { used: 0, max: 80 };
         sortedMissions.forEach(m => {
             const progress = this.getMissionProgress(m);
-            const filled = progress.filled;
-            const color = filled ? '#aaffaa' : '#ffaaaa';
-            room.visual.text(`[${m.priority}] ${m.name} (${progress.summary})`, 1, y, {align: 'left', font: 0.7, color: color});
+            const missionState = m && m.state ? m.state : 'active';
+            const stage = m && m.progress && m.progress.stage ? m.progress.stage : null;
+            const goalState = m && m.progress && m.progress.goalState ? m.progress.goalState : null;
+            const color = this.getMissionVisualColor(missionState, progress.filled);
+            let line = `[${m.priority}] [${missionState}] ${m.name} (${progress.summary})`;
+            if (stage) line += ` stg=${stage}`;
+            if (goalState) line += ` goal=${goalState}`;
+            room.visual.text(line, 1, y, {align: 'left', font: 0.6, color: color});
             y += 1.0;
 
             if (m.pos) {
@@ -481,18 +629,14 @@ const overseerUtils = {
                 room.visual.text(label, m.pos.x, m.pos.y - 0.5, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15, align: 'center' });
                 if (m.type === 'harvest' || m.type === 'simple_harvest' || m.type === 'mineral') {
                     room.visual.circle(m.pos, {fill: 'transparent', radius: 0.7, stroke: color, strokeWidth: 0.1, lineStyle: 'dashed'});
-                } 
-            } else if (m.type === 'build' || m.type === 'repair' || m.type === 'fortify') {
-                const targetIds = m.targetId ? [m.targetId] : (m.targetIds || []);
-                targetIds.forEach(id => {
-                    const target = Game.getObjectById(id);
-                    if (target) room.visual.text(`🔨 ${progress.short}`, target.pos.x, target.pos.y, { font: 0.3, color: color, stroke: '#000000', strokeWidth: 0.15 });
-                });
+                }
             }
+            this.drawMissionWorksites(room, m, color, lookupState);
         });
     }
 };
 
 module.exports = overseerUtils;
+
 
 

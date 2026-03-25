@@ -112,6 +112,24 @@ module.exports = function registerDebugConsole() {
         configurable: true
     });
 
+    Object.defineProperty(global, 'debugvispathson', {
+        get: function() {
+            Memory.debugVisualRemotePaths = true;
+            console.log('Debug visual remote path mode ENABLED');
+            return 'Debug visual remote path mode ENABLED';
+        },
+        configurable: true
+    });
+
+    Object.defineProperty(global, 'debugvispathsoff', {
+        get: function() {
+            delete Memory.debugVisualRemotePaths;
+            console.log('Debug visual remote path mode DISABLED');
+            return 'Debug visual remote path mode DISABLED';
+        },
+        configurable: true
+    });
+
     Object.defineProperty(global, 'sparkstatson', {
         get: function() {
             Memory.telemetry.sparkStatsPrint = true;

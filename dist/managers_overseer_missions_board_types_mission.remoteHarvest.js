@@ -13,6 +13,21 @@ const REMOTE_HARVEST_CONTEXT_INDEX_STORE = 'remoteHarvestContextIndex';
 function cleanupAssigned(mission) {
     if (!mission.assigned) mission.assigned = { primary: [], support: [] };
     if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
+    const missionName = mission && mission.meta ? mission.meta.missionName : null;
+    const roomName = mission && mission.sponsorRoom ? mission.sponsorRoom : null;
+    if (missionName) {
+        const observed = [];
+        for (const name in Game.creeps) {
+            const creep = Game.creeps[name];
+            if (!creep || !creep.my || !creep.memory) continue;
+            if (creep.memory.role !== 'remote_miner') continue;
+            if (roomName && creep.memory.room && creep.memory.room !== roomName) continue;
+            if (creep.memory.missionName !== missionName) continue;
+            observed.push(creep.name);
+        }
+        mission.assigned.primary = observed;
+        return;
+    }
     mission.assigned.primary = mission.assigned.primary.filter(name => !!Game.creeps[name]);
 }
 

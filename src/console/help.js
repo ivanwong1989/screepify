@@ -7,6 +7,8 @@ module.exports = function registerHelpConsole() {
                 'debugoff          - disable debug logging',
                 'debugvison           - enable debug visual logging',
                 'debugvisoff          - disable debug visual logging',
+                'debugvispathson      - enable remote path visual logging (haul/harvest lanes)',
+                'debugvispathsoff     - disable remote path visual logging',
                 'sparkstatson           - enable sparkline console printing',
                 'sparkstatsoff           - disable sparkline console printing',
                 'debugviscombaton           - enable debug visual combat logging',

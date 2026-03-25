@@ -340,21 +340,36 @@ function updateAssignmentState(mission) {
     if (!Array.isArray(mission.assigned.primary)) mission.assigned.primary = [];
     if (!Array.isArray(mission.assigned.support)) mission.assigned.support = [];
 
-    const primary = mission.assigned.primary;
-    let hasDead = false;
-    for (let i = 0; i < primary.length; i++) {
-        if (!Game.creeps[primary[i]]) {
-            hasDead = true;
-            break;
+    const missionName = mission && mission.meta ? mission.meta.missionName : null;
+    const roomName = mission && (mission.sponsorRoom || mission.targetRoom) ? (mission.sponsorRoom || mission.targetRoom) : null;
+    if (missionName) {
+        const observed = [];
+        for (const name in Game.creeps) {
+            const creep = Game.creeps[name];
+            if (!creep || !creep.my || !creep.memory) continue;
+            if (creep.memory.role !== 'simple_miner') continue;
+            if (roomName && creep.memory.room && creep.memory.room !== roomName) continue;
+            if (creep.memory.missionName !== missionName) continue;
+            observed.push(creep.name);
         }
-    }
-    if (hasDead) {
-        const alive = [];
+        mission.assigned.primary = observed;
+    } else {
+        const primary = mission.assigned.primary;
+        let hasDead = false;
         for (let i = 0; i < primary.length; i++) {
-            const name = primary[i];
-            if (Game.creeps[name]) alive.push(name);
+            if (!Game.creeps[primary[i]]) {
+                hasDead = true;
+                break;
+            }
         }
-        mission.assigned.primary = alive;
+        if (hasDead) {
+            const alive = [];
+            for (let i = 0; i < primary.length; i++) {
+                const name = primary[i];
+                if (Game.creeps[name]) alive.push(name);
+            }
+            mission.assigned.primary = alive;
+        }
     }
     if (mission.assigned.primary.length > 0) setIfChanged(mission, 'lastProgressTick', Game.time);
 }

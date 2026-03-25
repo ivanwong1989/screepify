@@ -35,12 +35,12 @@ module.exports = {
         managerAdmiral.run(room);
 
         // 2.5 Unified Room State Summary (non-breaking, additive)
-        const roomState = room._policy && room._policy.state ? room._policy.state : null;
+        const policyState = room._policy && room._policy.state ? room._policy.state : null;
         room._roomState = {
-            ops: roomState,
-            economy: roomState,
+            phase: room && room._policy && room._policy.phase ? room._policy.phase : 'UNKNOWN',
+            state: policyState,
             combat: room._combatState,
-            overall: deriveOverallState(roomState, room._combatState)
+            overall: deriveOverallState(policyState, room._combatState)
         };
 
         // 3. Tasks: Generate missions, assign creeps, and request spawns if needed

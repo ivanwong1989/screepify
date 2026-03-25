@@ -274,7 +274,59 @@ function moveWorkerTo(creep, target, range, useTraffic) {
     borderNav.moveToTarget(creep, target, range);
 }
 
-function vacateSourceRingIfNeeded(creep, mission, allowSourceRing, useTraffic) {
+function isPassableStructure(structure) {
+    if (!structure) return true;
+    if (structure.structureType === STRUCTURE_ROAD) return true;
+    if (structure.structureType === STRUCTURE_CONTAINER) return true;
+    if (structure.structureType === STRUCTURE_RAMPART && (structure.my || structure.isPublic)) return true;
+    return false;
+}
+
+function isWalkablePos(room, x, y) {
+    if (!room || x < 0 || x > 49 || y < 0 || y > 49) return false;
+    if (room.getTerrain().get(x, y) === TERRAIN_MASK_WALL) return false;
+    const structures = room.lookForAt(LOOK_STRUCTURES, x, y);
+    for (let i = 0; i < structures.length; i++) {
+        if (!isPassableStructure(structures[i])) return false;
+    }
+    return true;
+}
+
+function pickVacateStep(creep, sources) {
+    if (!creep || !creep.room || !Array.isArray(sources) || sources.length <= 0) return null;
+    const room = creep.room;
+    let best = null;
+    let bestScore = Infinity;
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            const x = creep.pos.x + dx;
+            const y = creep.pos.y + dy;
+            if (!isWalkablePos(room, x, y)) continue;
+
+            let nearAnySource = false;
+            let nearestRange = Infinity;
+            for (let i = 0; i < sources.length; i++) {
+                const src = sources[i];
+                if (!src || !src.pos) continue;
+                const range = Math.max(Math.abs(src.pos.x - x), Math.abs(src.pos.y - y));
+                if (range <= 1) {
+                    nearAnySource = true;
+                    break;
+                }
+                if (range < nearestRange) nearestRange = range;
+            }
+            if (nearAnySource) continue;
+            if (nearestRange < bestScore) {
+                bestScore = nearestRange;
+                best = new RoomPosition(x, y, room.name);
+            }
+        }
+    }
+    return best;
+}
+
+function vacateSourceRingIfNeeded(creep, mission, allowSourceRing, useTraffic, preferredMoveTarget) {
     if (!creep || allowSourceRing) return false;
 
     const sources = getRelevantSources(creep, mission);
@@ -293,6 +345,19 @@ function vacateSourceRingIfNeeded(creep, mission, allowSourceRing, useTraffic) {
     }
 
     if (!nearest || nearestRange > 1) return false;
+
+    // Prefer continuing toward the active gather target so vacating and energy collection happen together.
+    if (preferredMoveTarget && preferredMoveTarget.pos) {
+        moveWorkerTo(creep, preferredMoveTarget, 1, useTraffic);
+        return true;
+    }
+
+    const vacatePos = pickVacateStep(creep, sources);
+    if (vacatePos) {
+        moveWorkerTo(creep, vacatePos, 0, useTraffic);
+        return true;
+    }
+
     moveWorkerTo(creep, nearest, 2, useTraffic);
     return true;
 }
@@ -302,7 +367,7 @@ function runGather(creep, mission, useTraffic) {
     const memo = getWorkerRoomMemo(creep.room);
     const intent = getEnergyIntent(creep, mission, memo, roomCache);
     const allowSourceRing = !!(intent && intent.type === 'harvest' && intent.target instanceof Source);
-    if (vacateSourceRingIfNeeded(creep, mission, allowSourceRing, useTraffic)) return;
+    if (vacateSourceRingIfNeeded(creep, mission, allowSourceRing, useTraffic, intent && intent.target ? intent.target : null)) return;
     if (!intent || !intent.target) {
         if ((creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0) > 0) {
             creep.memory.workerState = WORKER_STATE_WORK;
