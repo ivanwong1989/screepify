@@ -163,6 +163,78 @@ function normalizeBoostAssignments(boosts, labById) {
     return result;
 }
 
+function labsInRange2(a, b) {
+    if (!a || !b || !a.pos || !b.pos) return false;
+    return a.pos.getRangeTo(b.pos) <= 2;
+}
+
+function chooseBestReactInputPair(labs, allowedOutputIds, boostLabIds) {
+    const candidates = labs.filter(l => l && !boostLabIds.has(l.id));
+    if (candidates.length < 3) return [];
+
+    let bestPair = null;
+    let bestScore = -1;
+
+    for (let i = 0; i < candidates.length; i++) {
+        const a = candidates[i];
+        for (let j = i + 1; j < candidates.length; j++) {
+            const b = candidates[j];
+            let outputsInRange = 0;
+
+            for (const out of candidates) {
+                if (!out || out.id === a.id || out.id === b.id) continue;
+                if (allowedOutputIds && !allowedOutputIds.has(out.id)) continue;
+                if (!labsInRange2(out, a) || !labsInRange2(out, b)) continue;
+                outputsInRange += 1;
+            }
+
+            const pairLoadedBonus = ((a.store.getUsedCapacity() || 0) + (b.store.getUsedCapacity() || 0)) / 100000;
+            const score = outputsInRange + pairLoadedBonus;
+            if (score > bestScore) {
+                bestScore = score;
+                bestPair = [a.id, b.id];
+            }
+        }
+    }
+
+    return bestPair || [];
+}
+
+function resolveReactLayout(cfg, labs, labById, boostLabIds) {
+    const explicitInputs = normalizeLabIdList(cfg.inputLabs, labById).filter(id => !boostLabIds.has(id));
+    const explicitOutputsRaw = normalizeLabIdList(cfg.outputLabs, labById).filter(id => !boostLabIds.has(id));
+    const explicitOutputSet = explicitOutputsRaw.length > 0 ? new Set(explicitOutputsRaw) : null;
+
+    let inputIds = explicitInputs.slice(0, 2);
+    if (inputIds.length < 2) {
+        inputIds = chooseBestReactInputPair(labs, explicitOutputSet, boostLabIds);
+    }
+    if (inputIds.length < 2) {
+        return { inputIds: [], outputIds: [] };
+    }
+
+    const inputA = labById[inputIds[0]];
+    const inputB = labById[inputIds[1]];
+    if (!inputA || !inputB) {
+        return { inputIds: [], outputIds: [] };
+    }
+
+    let outputs = [];
+    if (explicitOutputSet) {
+        outputs = explicitOutputsRaw
+            .map(id => labById[id])
+            .filter(lab => lab && lab.id !== inputA.id && lab.id !== inputB.id);
+    } else {
+        outputs = labs.filter(lab => lab && !boostLabIds.has(lab.id) && lab.id !== inputA.id && lab.id !== inputB.id);
+    }
+
+    const outputIds = outputs
+        .filter(outLab => labsInRange2(outLab, inputA) && labsInRange2(outLab, inputB))
+        .map(l => l.id);
+
+    return { inputIds, outputIds };
+}
+
 function chooseSource(room, resourceType) {
     if (room.storage && room.storage.store && (room.storage.store[resourceType] || 0) > 0) {
         return room.storage;
@@ -340,18 +412,13 @@ function buildLabLogisticsMissions(room, cfg) {
 
     const mode = (cfg.mode || DEFAULTS.mode).toLowerCase();
     const reaction = normalizeReaction(cfg.reaction);
-    const inputIds = normalizeLabIdList(cfg.inputLabs, labById);
-    const inputA = (inputIds.length > 0) ? labById[inputIds[0]] : null;
-    const inputB = (inputIds.length > 1) ? labById[inputIds[1]] : null;
     const boostAssignments = normalizeBoostAssignments(cfg.boosts, labById);
     const boostLabIds = new Set(Object.values(boostAssignments));
-
-    let outputIds = normalizeLabIdList(cfg.outputLabs, labById);
-    if (outputIds.length === 0) {
-        outputIds = labs
-            .map(l => l.id)
-            .filter(id => !inputIds.includes(id) && !boostLabIds.has(id));
-    }
+    const layout = resolveReactLayout(cfg, labs, labById, boostLabIds);
+    const inputIds = layout.inputIds;
+    const outputIds = layout.outputIds;
+    const inputA = (inputIds.length > 0) ? labById[inputIds[0]] : null;
+    const inputB = (inputIds.length > 1) ? labById[inputIds[1]] : null;
 
     const missionPrefix = `labhaul:${room.name}`;
 const seen = new Set();
@@ -499,12 +566,40 @@ const enqueue = (sourceId, targetId, resourceType, label) => {
             requestFill(inputB, reaction.reagentB, cfg.inputTarget);
         }
 
+        let hasOpenOutput = false;
         for (const outId of outputIds) {
             const lab = labById[outId];
             if (!lab) continue;
             if (boostLabIds.has(lab.id)) continue;
+
+            const canUseForProduct = (
+                !lab.cooldown &&
+                (!lab.mineralType || lab.mineralType === reaction.product) &&
+                (!reaction.product || (lab.store.getFreeCapacity(reaction.product) > 0))
+            );
+            if (canUseForProduct) hasOpenOutput = true;
+
             if (reaction.product && lab.mineralType && lab.mineralType !== reaction.product && (lab.store[lab.mineralType] || 0) > 0) {
                 requestClear(lab, lab.mineralType);
+            }
+        }
+
+        const canReact = (
+            inputA.mineralType === reaction.reagentA &&
+            inputB.mineralType === reaction.reagentB &&
+            (inputA.store[reaction.reagentA] || 0) > 0 &&
+            (inputB.store[reaction.reagentB] || 0) > 0
+        );
+
+        // If reaction-ready but every output lab is effectively full/blocked, clear product from full outputs.
+        if (canReact && !hasOpenOutput && reaction.product) {
+            for (const outId of outputIds) {
+                const lab = labById[outId];
+                if (!lab || boostLabIds.has(lab.id)) continue;
+                if (lab.mineralType !== reaction.product) continue;
+                if ((lab.store[reaction.product] || 0) <= 0) continue;
+                if (lab.store.getFreeCapacity(reaction.product) > 0) continue;
+                requestClear(lab, reaction.product);
             }
         }
     }
@@ -558,8 +653,9 @@ function classifyLabNeedFromLabel(label) {
     if (parts[2] === 'fill') return 'fill';
     if (parts[2] === 'reverse') {
         const op = parts[3] || '';
-        if (op === 'clear' || op === 'clearCompound') return 'reverse_clear';
         if (op === 'fill') return 'reverse_fill';
+        // Treat all reverse cleanup variants as clear operations for scheduling priority.
+        if (op.indexOf('clear') === 0 || op === 'makeSpace') return 'reverse_clear';
     }
     return 'transfer';
 }
@@ -705,17 +801,12 @@ const managerLabs = {
 
         const mode = (cfg.mode || DEFAULTS.mode).toLowerCase();
         const reaction = normalizeReaction(cfg.reaction);
-        const inputIds = normalizeLabIdList(cfg.inputLabs, labById);
+        const boostLabIds = new Set(Object.values(normalizeBoostAssignments(cfg.boosts, labById)));
+        const layout = resolveReactLayout(cfg, labs, labById, boostLabIds);
+        const inputIds = layout.inputIds;
+        const outputIds = layout.outputIds;
         const inputA = (inputIds.length > 0) ? labById[inputIds[0]] : null;
         const inputB = (inputIds.length > 1) ? labById[inputIds[1]] : null;
-        const boostLabIds = new Set(Object.values(normalizeBoostAssignments(cfg.boosts, labById)));
-
-        let outputIds = normalizeLabIdList(cfg.outputLabs, labById);
-        if (outputIds.length === 0) {
-            outputIds = labs
-                .map(l => l.id)
-                .filter(id => !inputIds.includes(id) && !boostLabIds.has(id));
-        }
 
         // Reverse mode branch out
         if (mode === 'reverse') {

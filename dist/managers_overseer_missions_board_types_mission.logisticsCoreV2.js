@@ -1275,7 +1275,9 @@ function getLabHaulJobs(room, includeEnergyNeeds) {
         const isClearOp = (
             operation === 'clear' ||
             operation === 'reverse_clear' ||
-            operation === 'reverse_clearCompound'
+            operation === 'reverse_clearCompound' ||
+            operation === 'reverse_clearOutput' ||
+            operation === 'reverse_makeSpace'
         );
         // In idle/purge flows, clear ops should win over energy fills so labs are emptied promptly.
         const priority = isClearOp ? Math.max(basePriority, 90) : basePriority;
