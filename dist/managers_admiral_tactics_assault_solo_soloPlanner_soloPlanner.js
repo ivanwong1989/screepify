@@ -296,6 +296,63 @@ function computePathSteps(fromPos, goal, extra = {}) {
     return { steps: packDirections(pf.path, fromPos), incomplete: !!pf.incomplete };
 }
 
+function hasBlockingCreepAtExpectedTile(creep, expectedKey) {
+    if (!creep || !expectedKey) return false;
+    const parts = String(expectedKey).split(':'); // room:x:y
+    if (parts.length !== 3) return false;
+    const roomName = parts[0];
+    const x = Number(parts[1]);
+    const y = Number(parts[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+
+    const room = Game.rooms && Game.rooms[roomName];
+    if (!room) return false;
+
+    const creeps = room.lookForAt(LOOK_CREEPS, x, y) || [];
+    for (const c of creeps) {
+        if (c && c.id && c.id !== creep.id) return true;
+    }
+    return false;
+}
+
+function findReachableApproachStep(creep, goalPos, range, opts) {
+    if (!creep || !creep.pos || !goalPos) return null;
+    if (goalPos.roomName !== creep.room.name) return null;
+    if (!Number.isFinite(range) || range <= 0) return null;
+
+    const room = creep.room;
+    const candidates = [];
+    for (let x = Math.max(0, goalPos.x - range); x <= Math.min(49, goalPos.x + range); x++) {
+        for (let y = Math.max(0, goalPos.y - range); y <= Math.min(49, goalPos.y + range); y++) {
+            const p = new RoomPosition(x, y, goalPos.roomName);
+            if (p.getRangeTo(goalPos.x, goalPos.y) > range) continue;
+            if (!isPassable(room, p, creep.id)) continue;
+            candidates.push(p);
+        }
+    }
+
+    if (candidates.length === 0) return null;
+
+    let best = null;
+    for (const candidate of candidates) {
+        const pf = PathFinder.search(
+            creep.pos,
+            { pos: candidate, range: 0 },
+            {
+                maxRooms: 1,
+                roomCallback: opts && typeof opts.roomCallback === 'function' ? opts.roomCallback : undefined
+            }
+        );
+
+        if (!pf || pf.incomplete || !pf.path || pf.path.length === 0) continue;
+        if (!best || pf.path.length < best.len) {
+            best = { len: pf.path.length, to: pf.path[0] };
+        }
+    }
+
+    return best ? best.to : null;
+}
+
 function ensurePath(mem, purpose, fromPos, goal, opts) {
     const ps = getPathState(mem, purpose);
     if (!ps || !fromPos || !goal || !goal.pos) return ps;
@@ -442,16 +499,22 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
             );
         }
 
-        // If we stalled, temporarily "block" the expected tile so PF will route around traffic.
+        // If we stalled, only inject a temporary block when the expected tile is
+        // actually occupied by another creep (true traffic case).
         if (prog && prog.stalled && expectedKey) {
-            const parts = expectedKey.split(':'); // room:x:y
-            if (parts.length === 3) {
-                const [rn, xs, ys] = parts;
-                const x = Number(xs), y = Number(ys);
-                if (Number.isFinite(x) && Number.isFinite(y)) {
-                    addTempBlock(mem, rn, { x, y }, 5, 255);
-                    logSolo(runtime, logEnabled, `planner: inject block ${rn}:${x},${y} ttl=5`);
+            const blockedByCreep = hasBlockingCreepAtExpectedTile(creep, expectedKey);
+            if (blockedByCreep) {
+                const parts = expectedKey.split(':'); // room:x:y
+                if (parts.length === 3) {
+                    const [rn, xs, ys] = parts;
+                    const x = Number(xs), y = Number(ys);
+                    if (Number.isFinite(x) && Number.isFinite(y)) {
+                        addTempBlock(mem, rn, { x, y }, 5, 255);
+                        logSolo(runtime, logEnabled, `planner: inject block ${rn}:${x},${y} ttl=5`);
+                    }
                 }
+            } else {
+                logSolo(runtime, logEnabled, `planner: stalled without traffic expected=${expectedKey} no-inject`);
             }
         }
     }
@@ -544,13 +607,37 @@ function plan(creep, runtime, goalOrTarget, maybeGoalOrOpts, maybeOpts) {
         roomCallback: pfRoomCallback
     });
 
-    // If PF has no step, just fallback to direct goal (moveTo can handle local).
+    // If PF has no step, do not blindly fallback to moveTo(goal) for local blocked targets.
+    // Try a bounded "approach tile in goal range" first; if none exists, hold.
     if (!pfTo) {
+        const approachTo = findReachableApproachStep(creep, goalPos, pfRange, {
+            roomCallback: pfRoomCallback
+        });
+        if (approachTo) {
+            logSolo(
+                runtime,
+                logEnabled,
+                `planner: approach-fallback creep=${creep.name} from=${formatPos(creep.pos)} to=${formatPos(approachTo)} goal=${formatPos(goalPos)} range=${pfRange}`
+            );
+            return {
+                moveTarget: { x: approachTo.x, y: approachTo.y, roomName: approachTo.roomName },
+                range: 0,
+                reason: 'pf:approach-fallback'
+            };
+        }
+
         logSolo(
             runtime,
             logEnabled,
             `planner: no-pf-step creep=${creep.name} pos=${formatPos(creep.pos)} goal=${formatPos(goalPos)} range=${pfRange} force=${forceRecalc}`
         );
+        if (goalPos.roomName === creep.room.name) {
+            return {
+                moveTarget: null,
+                range: 0,
+                reason: 'hold:no-pf-step-local'
+            };
+        }
         return {
             moveTarget: { x: goalPos.x, y: goalPos.y, roomName: goalPos.roomName },
             range,

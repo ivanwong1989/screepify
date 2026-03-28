@@ -288,6 +288,12 @@ function shouldReengage(creep) {
         (creep.hits / creep.hitsMax) >= REENGAGE_AT;
 }
 
+function hasEngageDirective(flags, dismantleMode) {
+    if (!flags) return false;
+    if (dismantleMode) return !!flags.attackPos;
+    return !!flags.attackFlag;
+}
+
 
 // --------------------
 // 🧭 PF CALLBACK WIRING HELPERS
@@ -368,8 +374,9 @@ function getRetreatWaypoint(runtime, flags, ao) {
     return waypoints[idx];
 }
 
-function updatePhase(creep, runtime, flags, ao) {
+function updatePhase(creep, runtime, flags, ao, dismantleMode) {
     const waypoints = flags.waypointPositions || [];
+    const engageDirective = hasEngageDirective(flags, dismantleMode);
 
     if (!runtime.phase) runtime.phase = 'RENDEZVOUS';
     const dbg = runtime.debug || (runtime.debug = {});
@@ -413,9 +420,9 @@ function updatePhase(creep, runtime, flags, ao) {
 
     // ENGAGE → STAGE if attack flag removed (A/B no longer present)
     if (runtime.phase === 'ENGAGE') {
-        if (!flags.attackFlag) {
+        if (!engageDirective) {
             runtime.phase = 'STAGE';
-            dbg.lastPhaseReason = 'attack flag missing';
+            dbg.lastPhaseReason = 'engage directive missing';
             return;
         }
 
@@ -433,14 +440,14 @@ function updatePhase(creep, runtime, flags, ao) {
             if (rp && isInRange(creep, rp, 2)) {
                 // If attack directive exists, resume ENGAGE to AO/attack flag.
                 // Otherwise fall back to STAGE.
-                runtime.phase = flags.attackFlag ? 'ENGAGE' : 'STAGE';
+                runtime.phase = engageDirective ? 'ENGAGE' : 'STAGE';
                 dbg.lastPhaseReason = `reengage at retreat waypoint ${formatPos(rp)}`;
             } else if (flags.waitPos && isInRange(creep, flags.waitPos, 2)) {
                 // Fallback: legacy behaviour if no waypoints are defined / reachable
-                runtime.phase = flags.attackFlag ? 'ENGAGE' : 'STAGE';
+                runtime.phase = engageDirective ? 'ENGAGE' : 'STAGE';
                 dbg.lastPhaseReason = `reengage at waitPos ${formatPos(flags.waitPos)}`;
             } else if (!flags.waitPos && ao.centerPos && isInRange(creep, ao.centerPos, 3)) {
-                runtime.phase = flags.attackFlag ? 'ENGAGE' : 'STAGE';
+                runtime.phase = engageDirective ? 'ENGAGE' : 'STAGE';
                 dbg.lastPhaseReason = `reengage at ao.centerPos ${formatPos(ao.centerPos)}`;
             }
         }
@@ -508,6 +515,8 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
     const flags = flagsResolver.resolveFlags(mission); // handles W/Y via mission.data.flags (not inferred)
     const ao = aoResolver.resolveAO(mission, flags);
+    const dismantleMode = isDismantleMission(mission);
+    const engageDirective = hasEngageDirective(flags, dismantleMode);
     const prevSoloCreepId = runtime && runtime.meta ? runtime.meta.lastSoloCreepId : null;
     const creepChanged = !!(prevSoloCreepId && prevSoloCreepId !== creep.id);
 
@@ -557,7 +566,7 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
     // Only advance phases once assembled (prevents "waitPos missing => STAGE => A")
     if (runtime.assembled.done) {
-        updatePhase(creep, runtime, flags, ao);
+        updatePhase(creep, runtime, flags, ao, dismantleMode);
     }
 
     // Cross-room / waypoint routing
@@ -584,7 +593,7 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
             // If attack/AO flag was removed while we were in ENGAGE, fall back to latest reached waypoint
             // (instead of snapping all the way back to W).
-            if (runtime.phase === 'STAGE' && !flags.attackFlag) {
+            if (runtime.phase === 'STAGE' && !engageDirective) {
                 const hold = getRetreatWaypoint(runtime, flags, ao);
                 if (hold) routeTarget = hold;
             }
@@ -593,8 +602,10 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
 
 
     // AO-bounded target selection
-    const dismantleMode = isDismantleMission(mission);
-    const dismantleHardMode = dismantleMode && !!(flags && flags.attackFlag && String(flags.attackFlag.name || '').toUpperCase() === 'DH');
+    const attackName = flags
+        ? (flags.attackFlag ? flags.attackFlag.name : flags.attackFlagName)
+        : null;
+    const dismantleHardMode = dismantleMode && String(attackName || '').toUpperCase() === 'DH';
 
     let target = null;
     let targetDebug = null;
@@ -608,7 +619,7 @@ function runCore(creep, mission, context, runtime, runtimeKey, now) {
         engageCtx = engage.getEngageContext(creep, flags, ao, targetDebug);
 
         if (dismantleMode) {
-            if (!flags || !flags.attackFlag) {
+            if (!engageDirective) {
                 target = null;
                 targetDebug.reason = 'dismantle:no-attack-flag';
             } else if (dismantleHardMode && flags.attackPos) {
@@ -645,6 +656,7 @@ cbDbg.lastRoomCallbackMode = active ? active.mode : 'none';
 
     const enableSoloDebug = true;
         //!!(runtime && runtime.debug && runtime.debug.soloPlannerVerbose);
+    const forceSoloRecalc = runtime.phase === 'ENGAGE' && !dismantleMode;
 
     // 🧠 SOLO PATH PLANNING (pure PF step; goal is decided above)
     // In ENGAGE: goal = tactical anchor (movement position), NOT the shoot/heal target.
@@ -719,8 +731,8 @@ cbDbg.lastRoomCallbackMode = active ? active.mode : 'none';
             runtime,
             moveGoal,
             enableSoloDebug
-                ? { range: moveRange, cacheKey: 'solo', forceRecalc: (runtime.phase === 'ENGAGE'), debug: true, missionName: mission && mission.name }
-                : { range: moveRange, cacheKey: 'solo', forceRecalc: (runtime.phase === 'ENGAGE'), missionName: mission && mission.name }
+                ? { range: moveRange, cacheKey: 'solo', forceRecalc: forceSoloRecalc, debug: true, missionName: mission && mission.name }
+                : { range: moveRange, cacheKey: 'solo', forceRecalc: forceSoloRecalc, missionName: mission && mission.name }
         );
 
     // Let actionPlan handle attack/heal logic.
