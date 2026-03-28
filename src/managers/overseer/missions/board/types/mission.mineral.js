@@ -37,7 +37,7 @@ module.exports = {
         const phase = policy && policy.phase ? policy.phase : policyConstants.PHASE.BOOTSTRAP;
         const state = policy && policy.state ? policy.state : policyConstants.STATE.RECOVER;
         const phaseRank = policyConstants.PHASE_RANK[phase] || 0;
-        if (phaseRank < policyConstants.PHASE_RANK[policyConstants.PHASE.LABS]) return [];
+        if (phaseRank < policyConstants.PHASE_RANK[policyConstants.PHASE.STORAGE]) return [];
         if (
             state === policyConstants.STATE.CRITICAL
             || state === policyConstants.STATE.RECOVER
