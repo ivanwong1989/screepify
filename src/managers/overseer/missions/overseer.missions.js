@@ -103,6 +103,7 @@ const overseerMissions = {
             'logisticsCoreV2',
             'logisticsMiningV2',
             'remoteHarvest',
+            'remoteReserve',
             'remoteHaul',
             'scout',
             'mineral',

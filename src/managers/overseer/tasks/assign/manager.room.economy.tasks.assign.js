@@ -84,6 +84,8 @@ var managerTasks = {
             needs.carry = true;
         } else if (type === 'remote_haul') {
             needs.carry = true;
+        } else if (type === 'remote_reserve') {
+            needs.claim = true;
         }
 
         mission._needsTick = Game.time;
@@ -743,6 +745,43 @@ var managerTasks = {
             case 'remote_haul':
                 // Remote haulers execute directly in role.remoteHaul.
                 break;
+            case 'remote_reserve': {
+                const data = mission.data || {};
+                const controllerId = data.controllerId || null;
+                const controller = controllerId ? Game.getObjectById(controllerId) : null;
+                if (controller) {
+                    task = {
+                        type: 'reserve',
+                        targetId: controller.id,
+                        range: 1
+                    };
+                    break;
+                }
+
+                const controllerPos = this.toRoomPosition(data.controllerPos || mission.targetPos);
+                if (controllerPos) {
+                    task = {
+                        type: 'move',
+                        targetPos: {
+                            x: controllerPos.x,
+                            y: controllerPos.y,
+                            roomName: controllerPos.roomName
+                        },
+                        range: 1
+                    };
+                    break;
+                }
+
+                const remoteRoomName = data.targetRoom || data.remoteRoom || mission.targetRoom || null;
+                if (remoteRoomName) {
+                    task = {
+                        type: 'move',
+                        targetPos: { x: 25, y: 25, roomName: remoteRoomName },
+                        range: 20
+                    };
+                }
+                break;
+            }
             case 'upgrade':
                 // Upgraders execute directly in role.upgrader from mission contract data.
                 break;

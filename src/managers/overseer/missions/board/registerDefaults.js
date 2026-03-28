@@ -13,6 +13,7 @@ const missionLogisticsSimpleMining = profRequire('managers_overseer_missions_boa
 const missionLogisticsMiningV2 = profRequire('managers_overseer_missions_board_types_mission.logisticsMiningV2', 'mission.logisticsMiningV2');
 const missionRemoteHarvest = profRequire('managers_overseer_missions_board_types_mission.remoteHarvest', 'mission.remoteHarvest');
 const missionRemoteHaul = profRequire('managers_overseer_missions_board_types_mission.remoteHaul', 'mission.remoteHaul');
+const missionRemoteReserve = profRequire('managers_overseer_missions_board_types_mission.remoteReserve', 'mission.remoteReserve');
 const missionScout = profRequire('managers_overseer_missions_board_types_mission.scout', 'mission.scout');
 const missionMineral = profRequire('managers_overseer_missions_board_types_mission.mineral', 'mission.mineral');
 const missionUserRemoteMove2Flag = profRequire('managers_overseer_missions_board_types_mission.userRemoteMove2Flag', 'mission.userRemoteMove2Flag');
@@ -35,6 +36,7 @@ function ensureRegistered() {
     missionRegistry.register('logisticsMiningV2', missionLogisticsMiningV2);
     missionRegistry.register('remoteHarvest', missionRemoteHarvest);
     missionRegistry.register('remoteHaul', missionRemoteHaul);
+    missionRegistry.register('remoteReserve', missionRemoteReserve);
     missionRegistry.register('scout', missionScout);
     missionRegistry.register('mineral', missionMineral);
     missionRegistry.register('userRemoteMove2Flag', missionUserRemoteMove2Flag);

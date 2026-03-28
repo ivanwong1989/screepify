@@ -26,6 +26,7 @@ const MISSION_REFRESH_POLICY = Object.freeze({
     logisticsMiningV2: { interval: 11 },
     remoteHarvest: { interval: 47 },
     remoteHaul: { interval: 31 },
+    remoteReserve: { interval: 47 },
     scout: { interval: 37 },
     mineral: { interval: 61 },
     tower: { interval: 1 },

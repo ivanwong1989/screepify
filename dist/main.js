@@ -23,6 +23,7 @@ var roleMiner = profRequire('role_role.miner', 'role.miner');
 var roleSimpleHarvest = profRequire('role_role.simpleHarvest', 'role.simpleHarvest');
 var roleRemoteHarvest = profRequire('role_role.remoteHarvest', 'role.remoteHarvest');
 var roleRemoteHaul = profRequire('role_role.remoteHaul', 'role.remoteHaul');
+var roleRemoteReserve = profRequire('role_role.remoteReserve', 'role.remoteReserve');
 var roleRemoteWorker = profRequire('role_role.remoteWorker', 'role.remoteWorker');
 var roleMineralMiner = profRequire('role_role.mineralMiner', 'role.mineralMiner');
 var roleScout = profRequire('role_role.scout', 'role.scout');
@@ -247,6 +248,8 @@ function runMainLoop() {
                     roleRemoteHarvest.run(creep);
                 } else if (creep.memory.role === 'remote_hauler') {
                     roleRemoteHaul.run(creep);
+                } else if (creep.memory.role === 'reserver') {
+                    roleRemoteReserve.run(creep);
                 } else if (creep.memory.role === 'remote_worker') {
                     roleRemoteWorker.run(creep);
                 } else if (creep.memory.role === 'mineral_miner') {
