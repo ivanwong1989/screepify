@@ -1149,6 +1149,9 @@ module.exports = {
         const coreLaneIsLoop = coreLane.isLoop === true;
 
         let activeJob = creep.memory.coreLaneJobId ? getLaneJobById(runtime, creep.memory.coreLaneJobId) : null;
+        if (creep.memory.coreLaneJobId && !activeJob) {
+            clearJobMemory(creep, mission, `stale_job_missing:${creep.memory.coreLaneJobId}`);
+        }
         if (activeJob) {
             const carried = creep.store[activeJob.resourceType] || 0;
             const remaining = getJobRemainingAmount(creep, activeJob);

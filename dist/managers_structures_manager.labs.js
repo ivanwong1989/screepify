@@ -174,6 +174,7 @@ function chooseBestReactInputPair(labs, allowedOutputIds, boostLabIds) {
 
     let bestPair = null;
     let bestScore = -1;
+    let bestKey = null;
 
     for (let i = 0; i < candidates.length; i++) {
         const a = candidates[i];
@@ -188,11 +189,14 @@ function chooseBestReactInputPair(labs, allowedOutputIds, boostLabIds) {
                 outputsInRange += 1;
             }
 
-            const pairLoadedBonus = ((a.store.getUsedCapacity() || 0) + (b.store.getUsedCapacity() || 0)) / 100000;
-            const score = outputsInRange + pairLoadedBonus;
-            if (score > bestScore) {
+            const score = outputsInRange;
+            const aId = '' + a.id;
+            const bId = '' + b.id;
+            const pairKey = aId < bId ? `${aId}|${bId}` : `${bId}|${aId}`;
+            if (score > bestScore || (score === bestScore && (!bestKey || pairKey < bestKey))) {
                 bestScore = score;
                 bestPair = [a.id, b.id];
+                bestKey = pairKey;
             }
         }
     }
