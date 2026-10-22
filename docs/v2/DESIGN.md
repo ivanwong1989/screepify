@@ -110,7 +110,7 @@ Folders are real folders. esbuild resolves `require('./x')` normally, which remo
  * @typedef {Object} Process
  * @property {string}  id          unique, e.g. 'act.towers'
  * @property {Phase}   phase
- * @property {'room'|'empire'} scope   room → run once per owned room
+ * @property {'room'|'shard'} scope   room → once per tracked room (see §18); shard → once per tick
  * @property {Tier}    tier        decides shedding under CPU pressure
  * @property {number}  [priority=100] lower runs first within a phase
  * @property {number}  [every=1]   cadence in ticks (staggered per room)
@@ -201,7 +201,9 @@ v1's best idea was the mission contract. v2 keeps it, formalises it, and package
  * @typedef {Object} Mission
  * @property {string} id         stable, e.g. 'harvest:W1N1:<sourceId>'
  * @property {string} type       MissionType key
- * @property {string} home       owning room
+ * @property {string} home       owning room (spawns + owns the creeps)
+ * @property {string} room       room where the work happens (may differ from home)
+ * @property {string} [shardTarget]  only for cross-shard missions (§18.3)
  * @property {number} priority   higher = more important
  * @property {Demand} demand     { work?, carry?, claim?, minCreeps, maxCreeps }
  * @property {string} archetype  body recipe key ('miner', 'hauler', 'worker'…)
@@ -281,7 +283,7 @@ missions(demand) ─► census(fulfilment by mission id, incl. spawning)
 
 - **No `Memory.spawnTickets`.** The creep's memory (`m`) is set at spawn time. Spawning creeps are counted through `spawn.spawning.name` → `Memory.creeps[name].m`. This removes the ticket GC in v1's `main.js`.
 - Pre-spawn for replacements: when a creep's `ticksToLive` is below its `travelTicks` plus spawn time, the mission counts it as departing.
-- The empire spawner (cross-room spawning) comes in phase 4, as an empire-scope process that consumes leftover requests.
+- The empire spawner (cross-room spawning) comes in phase 4, as a shard-scope process that consumes leftover requests.
 
 ## 11. Shared services
 
@@ -341,7 +343,7 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | Spawner (contracts, census, planner, tickets) + global spawner | `sense/census`, `plan/spawnPlanner`, `act/spawns` |
 | `structures/*` | `act/links`, `act/terminal`, `act/labs`, `act/towers` |
 | Admiral, military tasks, `role.assault`, `role.defender` | Shelved → future `act/military` + `missions/assault` |
-| Zeadmin empire board/tasker/executor | Empire-scope processes (phase 4) |
+| Zeadmin empire board/tasker/executor | Shard-scope processes (phase 4) |
 | `telemetry/*`, `screeps-profiler` | `kernel/telemetry.js` (always on) |
 | `heap.js`, `roomCache.js`, `global._*` | `services/cache` |
 | Grunt flatten-copy | esbuild bundle |
@@ -367,7 +369,52 @@ Switchover can happen as early as the end of phase 1 if v2 outperforms v1 for th
 | Planning (amortised by cadence) | < 1 CPU / room / tick |
 | Whole bot, 1 room RCL 4–5, ~15 creeps | ≤ 8 CPU average |
 
-## 18. Open questions
+## 18. Scaling: more rooms and more shards (no reboot needed)
+
+The kernel's **process list is static** and the **set of rooms and shards it runs over is dynamic**. A new room or shard therefore never requires a code change or restart: it shows up in `ctx` on the next tick and every room-scope process starts covering it.
+
+### 18.1 Room lifecycle (`Memory.rooms[name].k`)
+
+```
+ scouted ─► target ─► claiming ─► bootstrap ─► owned ─► (lost → GC)
+              │                       ▲
+              └──► remote (reserved/harvested by a home room)
+```
+
+| Kind | Who runs it | Processes that cover it |
+|---|---|---|
+| `owned` (has spawn) | itself | all room-scope processes |
+| `bootstrap` (claimed, no spawn yet) | **parent** room | parent gets `pioneer`/`build` missions targeting it; its towers/defense run locally once they exist |
+| `remote` | parent room | parent's remote missions (reserve/harvest/haul) |
+| `target` / `claiming` | empire planner | `claim` mission spawned from the nearest suitable room |
+
+- **Mission `home` and target room are separate.** `Mission.home` owns the creeps and spawning; `Mission.room` is where the work happens. This is how one room feeds another without special cases.
+- **Rooms are promoted automatically:** when a `bootstrap` room has a working spawn, its kind becomes `owned` and its own planners take over. The parent's pioneer missions stop being generated.
+- **Garbage collection:** a `sense.rooms` process (cadence 50) drops heap stores and memory for rooms that are no longer tracked.
+
+### 18.2 Expanding within the CPU budget
+
+- **Expansion is gated on CPU, not just GCL.** The empire planner only picks a new target when the CPU EMA plus a per-room cost estimate (measured by telemetry) is below `limit × 0.8`, and the bucket is trending up.
+- **Per-room CPU accounting:** telemetry keeps CPU per process *per room*, so the cost of one room is known before claiming another.
+- **Shedding is ordered by room priority:** under pressure, `low` tier work stops in the least important rooms (newest, then remotes) first, and the core room is protected.
+- **Cadence staggering** (§5.3) already spreads room work across ticks, so adding rooms raises average CPU instead of creating spikes.
+
+### 18.3 Shards
+
+Each shard runs the **same bundle** in its own VM, with its own `Memory`, heap and CPU limit. Shards only share data through `InterShardMemory` (each shard writes its own string; others can read it).
+
+| Concern | Design |
+|---|---|
+| Shard-specific behaviour | Only through config: `config.shards[Game.shard.name]` overrides process toggles, pixel generation, expansion. Never `if (shard === 'shard2')` in code (v1's pixel hack moves here) |
+| Scope | New process scope **`shard`** (once per shard per tick), alongside `room`. The `empire` layer is a set of shard-scope processes |
+| Cross-shard comms | `processes/sense/intershard.js` (cadence 10): reads other shards' `InterShardMemory`, writes our own. Versioned JSON: `{ v, t, creeps: {name: mem}, msgs: [...] }`, trimmed to stay well under the size limit |
+| Creeps through portals | `Memory.creeps` does not follow a creep across a portal. Before entering, the creep runner writes `{m, t, home}` under its name in our ISM. On the other side, a creep with no memory is **adopted** from the source shard's ISM, then the entry is acked and deleted |
+| Cross-shard missions | A `portal` action plus `shardTarget` on the mission. A cross-shard claim is: the empire planner on shard A posts a message, and shard B's planner turns it into local missions |
+| CPU split | `shard.cpu` process calls `Game.cpu.setShardLimits` from `config.cpu.shards` (only matters for accounts with CPU on several shards; shard3 is capped at 20) |
+
+Cross-shard play stays a **non-goal for phases 0–3** (§1). Reserving the `shard` scope, the ISM schema and the adopt-on-arrival rule now means it won't need a contract change later.
+
+## 19. Open questions
 
 1. **Movement:** write our own (cached paths and shove), or adopt a known library pattern (Traveler-style)? Leaning towards our own minimal one.
 2. **Room planning:** manual flags or placement for now, or an automatic base planner in phase 2? It's a big CPU burst, so it would be a `burst` job.
