@@ -7,7 +7,7 @@ Architecture and roadmap: [`docs/v2/DESIGN.md`](docs/v2/DESIGN.md).
 
 | Command | What it does |
 |---|---|
-| `npm install` | Install dev tooling (esbuild, TypeScript for checking, screeps-api) |
+| `npm install` | Install dev tooling (esbuild, TypeScript for checking, Screeps types) |
 | `npm run check` | Type-check `src/` (JSDoc + `@ts-check`, no emit) |
 | `npm test` | Unit and bundle smoke tests (`node --test`, mocked `Game`) |
 | `npm run build` | Bundle `src/main.js` → `dist/main.js` |

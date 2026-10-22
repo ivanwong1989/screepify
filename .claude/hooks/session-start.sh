@@ -9,7 +9,7 @@ fi
 cd "$CLAUDE_PROJECT_DIR"
 
 # node_modules is not committed on v2; install if missing or incomplete
-if [ ! -x node_modules/.bin/esbuild ] || [ ! -x node_modules/.bin/tsc ] || [ ! -d node_modules/screeps-api ]; then
+if [ ! -x node_modules/.bin/esbuild ] || [ ! -x node_modules/.bin/tsc ] || [ ! -d node_modules/@types/screeps ]; then
   npm install --no-audit --no-fund
 fi
 
