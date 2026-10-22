@@ -14,6 +14,7 @@ const cache = require('../services/cache');
  */
 
 const ALPHA = 0.1;
+const SKIP_DECAY = 0.95;
 
 /**
  * @typedef {{runAvg: number, tickAvg: number, runs: number, max: number, last: number}} ProcStat
@@ -64,9 +65,16 @@ function record(id, roomName, cpu) {
     if (roomName) s.acc.rooms[roomName] = (s.acc.rooms[roomName] || 0) + cpu;
 }
 
-/** Counts a process run skipped for budget (for the report). */
-function skipped() {
-    state().acc.skipped++;
+/**
+ * Counts a run skipped for budget, and decays its estimate so one expensive
+ * run can't keep the process out forever.
+ * @param {string} [id]
+ */
+function skipped(id) {
+    const s = state();
+    s.acc.skipped++;
+    const p = id ? s.procs[id] : undefined;
+    if (p) p.runAvg *= SKIP_DECAY;
 }
 
 /**

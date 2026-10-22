@@ -21,6 +21,8 @@
  * @property {Tier} tier
  * @property {number} [priority]         lower runs first within a phase (default 100)
  * @property {number} [every]            cadence in ticks, staggered (default 1)
+ * @property {import('./ctx').RoomKind[]} [kinds]  room scope only: room kinds to run on
+ *                                       (default: all tracked rooms)
  * @property {number} [bucketNeeded]     burst only: minimum bucket before it may run
  * @property {(ctx: import('./ctx').TickContext) => boolean} [pending]
  *                                       burst only: true while it still has work

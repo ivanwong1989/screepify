@@ -1,6 +1,8 @@
 // @ts-check
 'use strict';
 
+const cache = require('../services/cache');
+
 /**
  * Builds the TickContext (DESIGN §6) once per tick.
  *
@@ -32,12 +34,20 @@ function build(config) {
     const rooms = {};
     /** @type {import('../contracts/ctx').RoomCtx[]} */
     const roomList = [];
+    const missionStore = cache.store('room.missions');
     const names = Object.keys(Game.rooms).sort();
     for (const name of names) {
         const room = Game.rooms[name];
         const kind = roomKind(room);
         if (!kind) continue;
+        /** @type {import('../contracts/ctx').RoomCtx} */
         const rc = { name, room, kind };
+        // Missions are planned on a cadence and kept on heap between passes.
+        const planned = missionStore[name];
+        if (planned) {
+            rc.missions = planned.list;
+            rc.missionsById = planned.byId;
+        }
         rooms[name] = rc;
         roomList.push(rc);
     }

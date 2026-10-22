@@ -1,6 +1,6 @@
 # Screepify v2 — Architecture Design
 
-> Status: **Phase 0 implemented** (see §16) · Baseline: `master` @ `10a8ff4` · Branch: `v2`
+> Status: **Phase 1 implemented**, not yet run in game (see §16, and [ECONOMY.md](ECONOMY.md) for the v1 port) · Baseline: `master` @ `10a8ff4` · Branch: `v2`
 
 ## 0. Decisions already made
 
@@ -270,7 +270,7 @@ actions[t.a].run(creep, task) → CONTINUE | DONE | FAIL
 
 - Creeps are **not** re-evaluated every tick. v1's tasker walks every creep against every mission each tick. In v2, assignment runs only for idle creeps, or when a mission vanishes or is rebalanced (cadence 5–10).
 - **Action executors** do one thing: move into range, perform the intent, and return a status. All moving goes through `services/movement`.
-- Creep `role` is gone. Behaviour comes from `mission.type`. `main.js` no longer has a hard-coded list of roles.
+- Creep `role` is gone. Behaviour comes from `mission.type`; `memory.a` (archetype) only says which body class the creep is, so missions can require e.g. a miner. `main.js` no longer has a hard-coded list of roles.
 
 ## 10. Spawning
 
@@ -414,11 +414,13 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **0 — Skeleton** | Build/check/test tooling, kernel, registry, ctx, telemetry, memory schema, cache service, console basics, pixel rule, stats segment export | Kernel tests pass. Empty loop costs < 0.5 CPU. Deploys to branch `v2` |
-| **1 — Core economy** | intel, census, harvest, fill, haul, upgrade, build, repair, spawns, towers, safe mode, movement (Traveler-style, no traffic manager), stamp layout + construction builder, dashboard v2 mode | **Restart colony on v2.** Reaches RCL 4 unattended. Average CPU within budget with bucket rising |
+| **0 — Skeleton** ✅ | Build/check/test tooling, kernel, registry, ctx, telemetry, memory schema, cache service, console basics, pixel rule, stats segment export | Kernel tests pass. Empty loop costs < 0.5 CPU. Deploys to branch `v2` |
+| **1 — Core economy** ✅ code, ⏳ in game | intel, census, harvest, fill, haul, upgrade, build, repair, spawns, towers, safe mode, movement (Traveler-style, no traffic manager), stamp layout + construction builder, dashboard v2 mode | **Restart colony on v2.** Reaches RCL 4 unattended. Average CPU within budget with bucket rising |
 | **2 — Growth** | Automatic room planner, traffic management, links, storage logistics, remotes (reserve/harvest/haul), terminal balancing, labs (basic), scout | Sustains 2 remotes per room within 20 CPU. Planner lays out a fresh room with no manual input |
 | **3 — Defense+** | defend missions, threat-driven tower/rampart policy; optional military plugin port | Survives NPC invaders and small player raids |
 | **4 — Empire** | Expansion/claim, cross-room spawning, resource balancing | Second room claimed and bootstrapped automatically |
+
+Phase 1 is verified in a single-room simulator against v1 (`test/sim.test.js`, [ECONOMY.md](ECONOMY.md)); the in-game exit criteria are still open.
 
 Switchover can happen as early as the end of phase 1 if v2 outperforms v1 for the current colony size. `master` and v1 stay deployable on branch `default` until v2 is merged.
 

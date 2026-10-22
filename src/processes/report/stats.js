@@ -37,6 +37,10 @@ function buildRooms(ctx) {
             energy: room.energyAvailable,
             energyCap: room.energyCapacityAvailable,
             storage: room.storage ? room.storage.store.getUsedCapacity(RESOURCE_ENERGY) : null,
+            op: rc.state ? rc.state.op : null,
+            economy: rc.state ? rc.state.economy : null,
+            missions: rc.missions ? rc.missions.length : 0,
+            sites: rc.intel ? rc.intel.sites.length : 0,
             cpu: round(roomCpu[rc.name] || 0)
         };
     }
@@ -57,7 +61,13 @@ function buildPayload(ctx) {
     while (samples.length > ctx.config.stats.history) samples.shift();
 
     let creeps = 0;
-    for (const _ in Game.creeps) creeps++;
+    /** @type {Record<string, number>} */
+    const byArchetype = {};
+    for (const name in Game.creeps) {
+        creeps++;
+        const a = Game.creeps[name].memory.a || 'unknown';
+        byArchetype[a] = (byArchetype[a] || 0) + 1;
+    }
 
     return {
         v: STATS_VERSION,
@@ -74,6 +84,7 @@ function buildPayload(ctx) {
         },
         gcl: { level: Game.gcl.level, progress: Game.gcl.progress, total: Game.gcl.progressTotal },
         creeps,
+        byArchetype,
         rooms: buildRooms(ctx),
         history: samples
     };

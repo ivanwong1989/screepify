@@ -81,7 +81,7 @@ function validate(processes) {
 /**
  * @typedef {{
  *   booted: boolean,
- *   owed: Set<string>,
+ *   owed: Map<string, number>,
  *   fails: Record<string, number>,
  *   quarantine: Record<string, number>,
  *   lastTick: {ran: number, skipped: number, burst: string|null}
@@ -109,7 +109,7 @@ function createKernel(processes) {
         const s = cache.store('kernel');
         if (!s.owed) {
             s.booted = false;
-            s.owed = new Set();
+            s.owed = new Map();
             s.fails = Object.create(null);
             s.quarantine = Object.create(null);
             s.lastTick = { ran: 0, skipped: 0, burst: null };
@@ -218,6 +218,7 @@ function createKernel(processes) {
                 else if (isDue(every, key, ctx.time)) rest.push({ p, room: undefined, key });
             } else {
                 for (const room of ctx.roomList) {
+                    if (p.kinds && p.kinds.indexOf(room.kind) === -1) continue;
                     const key = `${p.id}@${room.name}`;
                     if (s.owed.has(key)) owedFirst.push({ p, room, key });
                     else if (isDue(every, key, ctx.time)) rest.push({ p, room, key });
@@ -229,12 +230,15 @@ function createKernel(processes) {
         const entries = owedFirst.length ? owedFirst.concat(rest) : rest;
         for (const { p, room, key } of entries) {
             if (p.tier !== 'critical') {
+                const since = s.owed.get(key);
+                // Never starve: after maxOwedTicks of skipping, run regardless of budget.
+                const starving = since !== undefined && ctx.time - since >= cfg.kernel.maxOwedTicks;
                 const lowBlocked = p.tier === 'low' && ctx.cpu.bucket < cfg.kernel.lowBucketFloor;
                 const over = Game.cpu.getUsed() + telemetry.estimate(p.id) > ctx.kernel.softLimit;
-                if (lowBlocked || over) {
-                    s.owed.add(key);
+                if (!starving && (lowBlocked || over)) {
+                    if (since === undefined) s.owed.set(key, ctx.time);
                     s.lastTick.skipped++;
-                    telemetry.skipped();
+                    telemetry.skipped(p.id);
                     continue;
                 }
             }

@@ -86,6 +86,16 @@ class ScreepsApiClient:
         data = payload.get("data", payload)
         return _json_load_maybe(data)
 
+    def get_memory_segment(self, segment, shard=None):
+        payload = self._request_json("/api/user/memory-segment", {"segment": segment, "shard": shard})
+        data = payload.get("data", "")
+        if not data:
+            return {}
+        try:
+            return json.loads(data)
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
 
 def _looks_like_room_name(value):
     return isinstance(value, str) and bool(ROOM_NAME_RE.match(value))
@@ -170,8 +180,64 @@ def build_room_rows(memory_obj, memory_path=""):
     return rows
 
 
+def build_v2_room_rows(stats):
+    """Room rows from the v2 stats segment (see docs/v2/DESIGN.md §14.1)."""
+    rows = []
+    rooms = stats.get("rooms", {}) if isinstance(stats, dict) else {}
+    for name in sorted(rooms):
+        r = rooms[name] or {}
+        rows.append(
+            {
+                "room": name,
+                "op_state": r.get("op") or "",
+                "economy_state": r.get("economy") or "",
+                "admiral_state": f"RCL {r.get('rcl', 0)}",
+                "spawn_tickets": f"{r.get('energy', 0)}/{r.get('energyCap', 0)}",
+                "remote_enabled": r.get("kind", ""),
+                "market_enabled": f"{r.get('cpu', 0)} cpu",
+            }
+        )
+    return rows
+
+
+def format_v2_stats(stats):
+    """Human-readable summary of the v2 stats segment."""
+    if not isinstance(stats, dict) or not stats:
+        return "No v2 stats segment found (v1 bot, or v2 not active on this shard yet)."
+    cpu = stats.get("cpu", {})
+    lines = [
+        f"shard {stats.get('shard', '?')}  tick {stats.get('t', '?')}  stats v{stats.get('v', '?')}",
+        "",
+        f"CPU avg {cpu.get('avg', 0)} / {cpu.get('limit', 0)}   bucket {cpu.get('bucket', 0)}   "
+        f"kernel {cpu.get('kernel', 0)}   skipped/tick {cpu.get('skipped', 0)}",
+        "",
+        f"{'process':<26}{'cpu/tick':>10}{'cpu/run':>10}",
+    ]
+    for row in cpu.get("byProcess", []):
+        if isinstance(row, list) and len(row) >= 3:
+            lines.append(f"{row[0]:<26}{row[1]:>10}{row[2]:>10}")
+    gcl = stats.get("gcl", {})
+    lines += ["", f"GCL {gcl.get('level', '?')}  ({gcl.get('progress', 0)}/{gcl.get('total', 0)})",
+              f"creeps {stats.get('creeps', 0)}  " + "  ".join(f"{k}:{v}" for k, v in sorted((stats.get('byArchetype') or {}).items()))]
+    for name, r in sorted((stats.get("rooms") or {}).items()):
+        lines.append(
+            f"{name}: RCL {r.get('rcl')} {r.get('progress')}/{r.get('progressTotal')}  energy {r.get('energy')}/{r.get('energyCap')}  "
+            f"storage {r.get('storage')}  {r.get('op')}/{r.get('economy')}  missions {r.get('missions')}  sites {r.get('sites')}  cpu {r.get('cpu')}"
+        )
+    history = stats.get("history") or []
+    if history:
+        lines += ["", "recent (tick, cpu avg, bucket):"]
+        for h in history[-10:]:
+            lines.append(f"  {h}")
+    return "\n".join(lines)
+
+
 def build_creep_metrics(memory_obj):
     creeps = memory_obj.get("creeps", {}) if isinstance(memory_obj, dict) else {}
+    if isinstance(creeps, dict):
+        # v2 keeps the body class in `a` instead of `role`.
+        creeps = {k: (dict(v, role=v.get("a")) if isinstance(v, dict) and "role" not in v and "a" in v else v)
+                  for k, v in creeps.items()}
     if not isinstance(creeps, dict):
         return {"total": 0, "role_rows": []}
 
@@ -363,13 +429,21 @@ class Poller:
         profile = safe_call(client.get_profile, {})
         game_time = safe_call(lambda: client.get_game_time(shard=shard), {})
         memory_obj = safe_call(lambda: client.get_memory(memory_path=memory_path, shard=shard), {})
+        segment = settings.get("stats_segment", "")
+        v2_stats = {}
+        if str(segment).strip():
+            v2_stats = safe_call(lambda: client.get_memory_segment(int(segment), shard=shard), {})
+        room_rows = build_room_rows(memory_obj, memory_path=memory_path)
+        if v2_stats and not room_rows:
+            room_rows = build_v2_room_rows(v2_stats)
 
         return {
             "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "profile": profile,
             "game_time": game_time,
             "memory": memory_obj,
-            "room_rows": build_room_rows(memory_obj, memory_path=memory_path),
+            "room_rows": room_rows,
+            "v2_stats": v2_stats,
             "creep_metrics": build_creep_metrics(memory_obj),
             "market_rows": build_market_rows(memory_obj),
             "market_details": build_market_details(memory_obj),
@@ -398,6 +472,7 @@ class DashboardApp(tk.Tk):
         self.shard_var = tk.StringVar(value="shard3")
         self.path_var = tk.StringVar(value="")
         self.interval_var = tk.StringVar(value="5")
+        self.segment_var = tk.StringVar(value="90")
         self.status_var = tk.StringVar(value="Idle")
         self.user_var = tk.StringVar(value="-")
         self.tick_var = tk.StringVar(value="-")
@@ -481,6 +556,8 @@ class DashboardApp(tk.Tk):
         market_tab = ttk.Frame(tabs, padding=6)
         labs_tab = ttk.Frame(tabs, padding=6)
         raw_tab = ttk.Frame(tabs, padding=6)
+        v2_tab = ttk.Frame(tabs, padding=6)
+        tabs.add(v2_tab, text="v2 Stats")
         tabs.add(creeps_tab, text="Creeps")
         tabs.add(market_tab, text="Market")
         tabs.add(labs_tab, text="Labs")
@@ -560,6 +637,13 @@ class DashboardApp(tk.Tk):
             self.labs_tree.heading(c, text=t)
             self.labs_tree.column(c, width=w, anchor="center")
 
+        seg_row = ttk.Frame(v2_tab)
+        seg_row.pack(fill=tk.X)
+        ttk.Label(seg_row, text="Stats segment (blank = off):").pack(side=tk.LEFT)
+        ttk.Entry(seg_row, textvariable=self.segment_var, width=6).pack(side=tk.LEFT, padx=6)
+        self.v2_text = ScrolledText(v2_tab, wrap=tk.NONE, font=("Consolas", 10))
+        self.v2_text.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
+
         ttk.Label(raw_tab, text="Raw Memory JSON").pack(anchor="w")
         self.raw_json = ScrolledText(raw_tab, wrap=tk.NONE, font=("Consolas", 10))
         self.raw_json.pack(fill=tk.BOTH, expand=True)
@@ -577,6 +661,7 @@ class DashboardApp(tk.Tk):
             "shard": self.shard_var.get().strip(),
             "memory_path": self.path_var.get().strip(),
             "interval": self.interval_var.get().strip() or "5",
+            "stats_segment": self.segment_var.get().strip(),
         }
 
     def _validate_settings(self, settings):
@@ -652,6 +737,7 @@ class DashboardApp(tk.Tk):
         self.shard_var.set(settings.get("shard", self.shard_var.get()))
         self.path_var.set(settings.get("memory_path", self.path_var.get()))
         self.interval_var.set(str(settings.get("interval", self.interval_var.get())))
+        self.segment_var.set(str(settings.get("stats_segment", self.segment_var.get())))
         self.status_var.set(f"Config loaded: {CONFIG_PATH.name}")
 
     def _drain_queue(self):
@@ -762,6 +848,9 @@ class DashboardApp(tk.Tk):
 
         self.raw_json.delete("1.0", tk.END)
         self.raw_json.insert("1.0", json.dumps(memory_obj, indent=2, ensure_ascii=True, default=str))
+
+        self.v2_text.delete("1.0", tk.END)
+        self.v2_text.insert("1.0", format_v2_stats(snapshot.get("v2_stats", {})))
 
     def _on_market_row_selected(self, _event=None):
         self._refresh_market_details_from_selection()

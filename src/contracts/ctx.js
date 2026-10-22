@@ -13,12 +13,13 @@
  * @property {string} name
  * @property {Room} room
  * @property {RoomKind} kind              writer: kernel/context (from Memory.rooms[n].k)
- * @property {Object} [intel]             writer: sense.intel        (phase 1)
- * @property {import('./mission').Mission[]} [missions]  writer: plan.missions (phase 1)
- * @property {Object} [census]            writer: sense.census       (phase 1)
- * @property {Object} [reservations]      writer: act.* via reservation service (phase 1)
- * @property {import('./spawn').SpawnRequest[]} [spawnQueue]  writer: plan.spawnPlanner (phase 1)
- * @property {Object} [state]             writer: sense.threat / plan.missions (phase 1)
+ * @property {import('../processes/sense/intel').RoomIntel} [intel]   writer: sense.intel
+ * @property {import('../processes/sense/intel').RoomState} [state]   writer: sense.intel
+ * @property {import('../processes/sense/census').Census} [census]    writer: sense.census
+ *                                         (census.reserved is also updated by mission
+ *                                          types when they hand out gather tasks)
+ * @property {import('./mission').Mission[]} [missions]               writer: plan.missions
+ * @property {Record<string, import('./mission').Mission>} [missionsById]  writer: plan.missions
  *
  * @typedef {Object} KernelInfo
  * @property {boolean} burstPending       writer: kernel — a burst job is waiting for bucket

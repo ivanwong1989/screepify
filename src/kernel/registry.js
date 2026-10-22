@@ -9,10 +9,23 @@
  * @type {import('../contracts/process').Process[]}
  */
 module.exports = [
+    // SENSE
     require('../processes/sense/memoryGC'),
+    require('../processes/sense/intel'),
+    require('../processes/sense/census'),
+    require('../processes/sense/repairScan'),
+    // PLAN
+    require('../processes/plan/missions'),
+    require('../processes/plan/assignment'),
+    require('../processes/plan/construction'),
+    // ACT
+    require('../processes/act/defense'),
+    require('../processes/act/spawns'),
+    require('../processes/act/towers'),
+    require('../processes/act/links'),
+    require('../processes/act/creeps'),
+    // REPORT
     require('../processes/report/stats'),
     require('../processes/report/pixel')
-    // phase 1: sense.intel, sense.census, plan.missions, plan.assignment,
-    //          plan.spawnPlanner, act.creeps, act.spawns, act.towers, ...
     // require('../processes/act/military'),   // shelved (DESIGN D3)
 ];

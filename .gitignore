@@ -7,3 +7,6 @@ dist/
 
 # Python
 __pycache__/
+
+# Dashboard settings (contains your API token)
+gui_data/dashboard_config.json

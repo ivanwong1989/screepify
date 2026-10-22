@@ -22,8 +22,11 @@
  * @property {{enabled: boolean}} pixel
  * @property {{segment: number, history: number, topProcesses: number}} stats
  * @property {{quarantineAfter: number, quarantineTicks: number, errorLogInterval: number,
- *             lowBucketFloor: number}} kernel
+ *             lowBucketFloor: number, maxOwedTicks: number}} kernel
  * @property {Record<string, boolean>} debug
+ * @property {string[]} allies           usernames never treated as hostile
+ * @property {{enabled: boolean, rooms: string[]}} safeMode   rooms: [] = all owned rooms
+ * @property {{enabled: boolean}} construction                automatic layout + sites
  * @property {Record<string, any>} shards
  */
 
@@ -36,9 +39,13 @@ const DEFAULTS = {
         quarantineAfter: 20,
         quarantineTicks: 500,
         errorLogInterval: 100,
-        lowBucketFloor: 1000
+        lowBucketFloor: 1000,
+        maxOwedTicks: 50
     },
     debug: {},
+    allies: [],
+    safeMode: { enabled: true, rooms: [] },
+    construction: { enabled: true },
     shards: {}
 };
 

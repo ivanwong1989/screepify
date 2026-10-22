@@ -1,0 +1,64 @@
+// @ts-check
+'use strict';
+
+/**
+ * Mission registry (DESIGN §8).
+ *
+ * `generators` run in this order every planning pass (v1 order, economy only);
+ * `executors` map a mission type to the module whose nextTask() drives creeps.
+ * Adding a mission type = one module + one line in each list that applies.
+ */
+
+const tower = require('./tower');
+const harvest = require('./harvest');
+const fleet = require('./fleet');
+const logistics = require('./logistics');
+const repair = require('./repair');
+const upgrade = require('./upgrade');
+const build = require('./build');
+const decongest = require('./decongest');
+const transfer = require('./transfer');
+
+/** @typedef {(plan: import('../contracts/mission').PlanContext, out: import('../contracts/mission').Mission[]) => void} Generator */
+
+/** @type {Array<{name: string, generate: Generator}>} */
+const generators = [
+    { name: 'tower', generate: tower.generate },
+    // phase 2: scout, remote build/harvest/haul, reserve, claim, move2flag
+    { name: 'harvest', generate: harvest.generate },
+    // phase 2: mineral
+    { name: 'fleet', generate: fleet.generate },
+    { name: 'logistics', generate: logistics.generate },
+    // phase 2: labs
+    { name: 'repair', generate: repair.generate },
+    { name: 'upgrade', generate: upgrade.generate },
+    { name: 'build', generate: build.generate },
+    { name: 'decongest', generate: decongest.generate },
+    // phase 2: user dismantle / transfer
+    { name: 'idleUpgrade', generate: upgrade.generateIdle }
+];
+
+/** @type {Record<string, import('../contracts/mission').MissionType['nextTask']>} */
+const executors = {
+    harvest: harvest.nextTask,
+    transfer: transfer.nextTask,
+    upgrade: upgrade.nextTask,
+    build: build.nextTask,
+    repair: repair.nextTask,
+    decongest: decongest.nextTask
+};
+
+/** Mission types creeps are never assigned to (spawn-only or structure-driven). */
+const UNASSIGNABLE = new Set(['hauler_fleet', 'tower_attack', 'tower_heal', 'tower_repair']);
+
+/** Body parts a mission type needs (v1 getMissionNeeds). */
+/** @param {string} type */
+function needs(type) {
+    if (type === 'harvest' || type === 'mineral' || type === 'dismantle') return { work: true, carry: false, claim: false };
+    if (type === 'upgrade' || type === 'build' || type === 'repair') return { work: true, carry: true, claim: false };
+    if (type === 'transfer') return { work: false, carry: true, claim: false };
+    if (type === 'reserve' || type === 'claim') return { work: false, carry: false, claim: true };
+    return { work: false, carry: false, claim: false };
+}
+
+module.exports = { generators, executors, UNASSIGNABLE, needs };

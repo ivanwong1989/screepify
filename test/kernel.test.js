@@ -52,6 +52,20 @@ test('remote rooms recorded in Memory are tracked too', (t) => {
     assert.deepEqual(kinds, { W1N1: 'owned', W1N2: 'remote' });
 });
 
+test('room processes can be limited to room kinds', (t) => {
+    const w = setup({
+        rooms: { W1N1: makeRoom('W1N1'), W1N2: makeRoom('W1N2', { my: false }) },
+        memory: { v: 2, creeps: {}, rooms: { W1N2: { k: 'remote' } } }
+    });
+    t.after(() => w.restore());
+    const seen = [];
+    const k = load().createKernel([
+        proc({ id: 'own', scope: 'room', kinds: ['owned'], run: (ctx, room) => seen.push(room.name) })
+    ]);
+    k.tick();
+    assert.deepEqual(seen, ['W1N1']);
+});
+
 test('cadence: every N runs once per N ticks, staggered per key', (t) => {
     const w = setup({ rooms: { W1N1: makeRoom('W1N1'), W5N9: makeRoom('W5N9') } });
     t.after(() => w.restore());
@@ -90,6 +104,22 @@ test('over budget: normal is skipped and owed, critical always runs', (t) => {
     ran.length = 0;
     k.tick();
     assert.equal(ran[0], 'normal', 'owed process runs first next tick');
+});
+
+test('a process skipped for budget is never starved', (t) => {
+    const w = setup({ bucket: 5000, limit: 20, memory: { v: 2, creeps: {}, rooms: {}, config: { kernel: { maxOwedTicks: 5 } } } });
+    t.after(() => w.restore());
+    let runs = 0;
+    const k = load().createKernel([
+        proc({ id: 'spiky', run: () => { runs++; if (runs === 1) w.spend(500); } })
+    ]);
+    k.tick(); // one 500-CPU run inflates the estimate far above the budget
+    w.nextTick();
+    for (let i = 0; i < 10; i++) {
+        k.tick();
+        w.nextTick();
+    }
+    assert.ok(runs >= 2, 'ran again after maxOwedTicks');
 });
 
 test('low tier is blocked while bucket is below the floor', (t) => {

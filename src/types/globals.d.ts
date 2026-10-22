@@ -20,6 +20,12 @@ interface RoomMemory {
 }
 
 interface CreepMemory {
+    /** Archetype / body class (miner, hauler, worker, ...). */
+    a?: string;
+    /** Spawn binding key (slot key or mission id). */
+    b?: string;
+    /** Task state: 'init' | 'gathering' | 'working' | 'idle'. */
+    s?: string;
     /** Mission id (DESIGN §9). */
     m?: string;
     /** Current task (DESIGN §9). */
