@@ -388,7 +388,7 @@ The segment API details (activation and size limits) still need to be checked be
 
 **Tests.** `node --test test/` with a minimal `Game`/`Memory` mock. Cover kernel scheduling, shedding and isolation, planners, body builder, and spawn deficits.
 
-**Deploy.** `scripts/deploy.js` uses screeps-api to upload to **Screeps code branch `v2`**. Switchover means activating branch `v2` in-game. Rollback means activating `default` again, which still runs v1.
+**Deploy.** `scripts/deploy.js` uses Node `https` (works behind proxies) to upload to **Screeps code branch `v2`**. Switchover means activating branch `v2` in-game. Rollback means activating `default` again, which still runs v1.
 
 npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload).
 
