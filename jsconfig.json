@@ -1,4 +1,16 @@
 {
-  "compilerOptions": { "module": "commonjs", "target": "es6" },
-  "exclude": ["node_modules"]
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2020",
+    "lib": ["es2020"],
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "types": ["screeps", "lodash"]
+  },
+  "include": ["src/**/*.js", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
 }

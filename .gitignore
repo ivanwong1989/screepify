@@ -1,2 +1,9 @@
 # Screeps credentials and local configuration
 .screeps.json
+
+# Dependencies and build output
+node_modules/
+dist/
+
+# Python
+__pycache__/
