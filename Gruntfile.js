@@ -11,7 +11,19 @@ module.exports = function(grunt) {
         }
     }
 
-    var config = require('./.screeps.json')
+    // Credentials come from .screeps.json locally, or from SCREEPS_* env vars in cloud sessions
+    var config = {};
+    try {
+        config = require('./.screeps.json');
+    } catch (e) {
+        config = {
+            email: process.env.SCREEPS_EMAIL,
+            password: process.env.SCREEPS_PASSWORD,
+            token: process.env.SCREEPS_TOKEN,
+            branch: process.env.SCREEPS_BRANCH || 'default',
+            ptr: process.env.SCREEPS_PTR === 'true'
+        };
+    }
     var branch = grunt.option('branch') || config.branch;
     var email = grunt.option('email') || config.email;
     var password = grunt.option('password') || config.password;
