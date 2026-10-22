@@ -10,6 +10,10 @@
 | D2 | Where v2 lives | Fresh **`v2` git branch**, built from scratch; `master` keeps running live until v2 is mature |
 | D3 | Military (assault, duo/solo planners, drain) | **Shelved** for phases 0–2. Towers + basic defense stay in scope |
 | D4 | Colony continuity | A colony restart is acceptable if it buys a cleaner architecture |
+| D5 | Movement | Our own library, built on **lessons from Traveler** (§11.1) |
+| D6 | Room planning | **Automatic planner** (§12.1). A simple stamp layout in phase 1, the full planner in phase 2 |
+| D7 | Stats | Console **and dashboard**: stats exported to a memory segment that `gui_data/dashboard.py` reads (§14.1) |
+| D8 | Pixels | **Generate whenever the bucket is full** (§5.2) |
 
 ## 1. Goals and non-goals
 
@@ -81,7 +85,7 @@ src/
     movement/  cache/  body.js  pos.js  log.js
   processes/                 # plugins, grouped by domain
     sense/   intel.js  census.js  threat.js
-    plan/    missions.js  spawnPlanner.js  assignment.js
+    plan/    missions.js  spawnPlanner.js  assignment.js  layout.js  construction.js
     act/     creeps.js  spawns.js  towers.js  links.js  defense.js
     report/  stats.js  visuals.js
   missions/                  # one folder per mission type (plug-and-play)
@@ -134,15 +138,18 @@ module.exports = [
 
 | Bucket | Tiers allowed | Soft CPU target |
 |---|---|---|
-| `< 1,000` | critical | `limit × 0.8` |
-| `1,000 – 6,000` | critical + normal | `limit × 0.95` |
+| `< 1,000` | critical + normal (if it fits) | `limit × 0.8` (refill) |
+| `1,000 – 6,000` | all (if it fits) | `limit × 0.95` |
 | `> 6,000` | all | `limit × 1.2` (spend some bucket) |
-| `= 10,000` and idle | all + `burst` jobs | e.g. room planning, pixel (config) |
+| `≥ burst job's threshold` | all + one `burst` job | e.g. room planner; each job declares the bucket it needs |
+| `= 10,000`, no burst job queued | all, then **generate a pixel** (D8) | — |
 
-Order of checks per process: **due → tier allowed → fits remaining budget (EMA cost) → run**.
+Order of checks per process: **due → tier allowed → fits remaining budget (EMA cost) → run**. `low` tier only runs while the bucket is ≥ 1,000.
 
 - A process skipped for budget is marked **owed**. Owed processes jump the queue next tick, so nothing starves.
 - **Critical** processes (spawning, harvest/fill execution, towers, defense) always run, even over budget.
+
+**Pixels vs bursts (D8).** `Game.cpu.generatePixel()` empties the bucket, so the bot must keep working normally from a near-empty bucket. That's why the low-bucket band still runs `normal` work when it fits within the limit. Burst jobs don't need a full bucket: they run as soon as the bucket reaches their declared threshold, before it ever gets to 10,000. A pixel is generated only when the bucket is full **and** no burst job is waiting, so pixels never starve the planner. Pixel generation can be switched off per shard in config.
 
 ### 5.3 Cadence staggering
 
@@ -289,11 +296,33 @@ missions(demand) ─► census(fulfilment by mission id, incl. spawning)
 
 | Service | Replaces (v1) | Notes |
 |---|---|---|
-| `movement` | `creepBorderNav`, `creepLaneMovement`, scattered `moveTo` | Cached serialized paths (heap), cost matrices per room every N ticks, stuck detection, swap/shove for idle creeps |
+| `movement` | `creepBorderNav`, `creepLaneMovement`, scattered `moveTo` | See §11.1 |
 | `cache` | `heap.js`, `roomCache.js`, `global._*` | Named heap stores with TTL; per-tick `find` cache |
 | `body` | spawner body builders, `bodyCodec` | Archetype recipes scaled by energy budget |
 | `pos` | ad-hoc RoomPosition handling | pack/unpack, range helpers |
 | `log` | `debug(...)` categories | Categories toggled via `Memory.config.debug` |
+
+### 11.1 Movement library (D5)
+
+We write our own, borrowing the ideas that made Traveler cheap. We re-implement the ideas rather than copy its code.
+
+**API.** One call, used by every action executor:
+
+```js
+/** @returns {ScreepsReturnCode} */
+move.to(creep, target, { range = 1, priority = 0, avoidHostile = true, preferRoads = true })
+```
+
+| Lesson from Traveler | How v2 applies it |
+|---|---|
+| Path once, reuse many ticks | Path serialized as a direction string and stored on heap (`creep.name → {dest, path, i}`). Each tick costs one `move(dir)`, not a `PathFinder` call |
+| Detect stuck, then repath | Same position for 2+ ticks (fatigue excluded) → repath **with creeps as obstacles** for that one search |
+| Cache cost matrices | Per room on heap: structures and roads, rebuilt every N ticks or when a construction site or structure count changes. Creep positions are never cached |
+| Route between rooms first | `Game.map.findRoute` with a room cost from intel (avoid hostile owned rooms and source-keeper rooms, prefer highways); `PathFinder` is then limited to the rooms on the route |
+| Ignore creeps by default | The normal search ignores creeps; only the stuck repath counts them |
+| Room-edge handling | Exit-tile bounce handled inside `move.to`, which replaces v1's `creepBorderNav` |
+
+**Beyond Traveler: traffic management (phase 2).** Moves become *intents* collected during ACT and resolved at the end of the tick. Higher-priority creeps can then **swap with** or **shove** idle or lower-priority creeps (e.g. a static miner standing on a road), which removes most "stuck" repaths. Phase 1 ships without it.
 
 ## 12. Structures and defense
 
@@ -308,6 +337,27 @@ missions(demand) ─► census(fulfilment by mission id, incl. spawning)
 
 Safe mode is driven by config (`config.safeMode.rooms`, or automatic for all owned rooms) instead of the hard-coded `W44S28`.
 
+### 12.1 Automatic room planner (D6)
+
+Split into a **planner** (expensive, rare) and a **builder** (cheap, frequent):
+
+| Part | Process | Tier / cadence | Output |
+|---|---|---|---|
+| Planner | `plan.layout` | `burst` job, once per room (on claim, or on demand from the console) | A compact layout: `{rcl → structureType → packed positions}` stored in `Memory.rooms[n].plan` (or a segment if it grows) |
+| Builder | `plan.construction` | `normal`, every 50 ticks + on RCL change | Places construction sites from the stored plan for the current RCL, respecting the site limit and priority order (spawn → extensions → tower → storage → roads…) |
+
+**Planner steps (phase 2).**
+1. Distance transform on the terrain to find open areas.
+2. Place the core stamp (spawns, storage, terminal, link, towers) at the best spot that balances openness against distance to sources and controller.
+3. Flood-fill extension stamps outward from the core.
+4. Lay roads with `PathFinder` from the core to sources, controller and mineral, reusing tiles where possible.
+5. Place container and link spots at sources and the controller.
+6. Place ramparts with min-cut around the core (phase 3).
+
+The planner is written as a **resumable state machine**: it does a slice of work per tick, so a single run never risks the 500 CPU tick ceiling. It runs only when the bucket allows (§5.2).
+
+**Phase 1 stand-in.** A fixed, deterministic stamp around the first spawn: checkerboard extensions, roads to sources and the controller, and containers. That is enough to reach RCL 4 unattended. The phase-2 planner replaces it behind the same plan format, so the builder doesn't change.
+
 ## 13. Military (shelved, D3)
 
 - v1's admiral stack (~11.7k lines) is **not ported** in phases 0–2.
@@ -318,7 +368,19 @@ Safe mode is driven by config (`config.safeMode.rooms`, or automatic for all own
 
 **Config.** `config.js` holds defaults, deep-merged with `Memory.config` at boot and on `config.reload()`. Covers process toggles, cadence overrides, safe-mode rooms, pixel generation, debug categories.
 
-**Console.** Each domain registers its commands at boot (`console/*.js`): `stats()`, `proc.list()`, `proc.toggle(id)`, `mission.list(room)`, `config.set(path, value)`.
+**Console.** Each domain registers its commands at boot (`console/*.js`): `stats()`, `proc.list()`, `proc.toggle(id)`, `mission.list(room)`, `config.set(path, value)`, `plan.run(room)`, `plan.show(room)`.
+
+### 14.1 Stats and dashboard (D7)
+
+| Piece | Design |
+|---|---|
+| Source of truth | Kernel telemetry (§5.5) plus a `report.stats` process |
+| Console | `stats()` prints a compact table: CPU (avg, top processes), bucket, GCL/RCL progress, energy per tick, creeps per mission, unmet missions |
+| Export | `report.stats` (tier `low`, every 20 ticks) writes compact JSON to a dedicated **memory segment** (config, default 90), not to `Memory`, so normal ticks don't parse it |
+| Contents | `{v, shard, t, cpu: {avg, limit, bucket, byProcess: top N}, gcl, rooms: {name: {rcl, progress, energy, storage, creeps, missions, threat}}, history: ring buffer of ~100 samples}` |
+| Dashboard | `gui_data/dashboard.py` gains a v2 mode that reads the segment through the API endpoint for memory segments, per shard, and keeps its v1 `Memory` mode until switchover |
+
+The segment API details (activation and size limits) still need to be checked before implementation.
 
 **Build.** `scripts/build.js` uses esbuild to bundle `src/main.js` into `dist/main.js` (CommonJS). The output target must match the official server's JS runtime; verify this before locking it in. Start conservatively (`es2018`).
 
@@ -352,9 +414,9 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **0 — Skeleton** | Build/check/test tooling, kernel, registry, ctx, telemetry, memory schema, cache service, console basics | Kernel tests pass. Empty loop costs < 0.5 CPU. Deploys to branch `v2` |
-| **1 — Core economy** | intel, census, harvest, fill, haul, upgrade, build, repair, spawns, towers, safe mode, movement | **Restart colony on v2.** Reaches RCL 4 unattended. Average CPU within budget with bucket rising |
-| **2 — Growth** | links, storage logistics, remotes (reserve/harvest/haul), terminal balancing, labs (basic), scout | Sustains 2 remotes per room within 20 CPU |
+| **0 — Skeleton** | Build/check/test tooling, kernel, registry, ctx, telemetry, memory schema, cache service, console basics, pixel rule, stats segment export | Kernel tests pass. Empty loop costs < 0.5 CPU. Deploys to branch `v2` |
+| **1 — Core economy** | intel, census, harvest, fill, haul, upgrade, build, repair, spawns, towers, safe mode, movement (Traveler-style, no traffic manager), stamp layout + construction builder, dashboard v2 mode | **Restart colony on v2.** Reaches RCL 4 unattended. Average CPU within budget with bucket rising |
+| **2 — Growth** | Automatic room planner, traffic management, links, storage logistics, remotes (reserve/harvest/haul), terminal balancing, labs (basic), scout | Sustains 2 remotes per room within 20 CPU. Planner lays out a fresh room with no manual input |
 | **3 — Defense+** | defend missions, threat-driven tower/rampart policy; optional military plugin port | Survives NPC invaders and small player raids |
 | **4 — Empire** | Expansion/claim, cross-room spawning, resource balancing | Second room claimed and bootstrapped automatically |
 
@@ -416,7 +478,8 @@ Cross-shard play stays a **non-goal for phases 0–3** (§1). Reserving the `sha
 
 ## 19. Open questions
 
-1. **Movement:** write our own (cached paths and shove), or adopt a known library pattern (Traveler-style)? Leaning towards our own minimal one.
-2. **Room planning:** manual flags or placement for now, or an automatic base planner in phase 2? It's a big CPU burst, so it would be a `burst` job.
-3. **Stats export:** keep the console sparklines only, or also push to `Memory.stats` or a segment for the `gui_data/dashboard.py` tool?
-4. **Pixel generation:** keep it on with a full bucket? On a 20 CPU shard it competes with bucket-funded bursts.
+The first round is resolved as D5–D8. Still to check during implementation (facts, not decisions):
+
+1. The official server's JS runtime version, which sets the esbuild target (§14).
+2. Memory segment API details for the stats export (§14.1).
+3. `InterShardMemory` size limits and calls (§18.3).
