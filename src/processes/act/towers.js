@@ -2,6 +2,7 @@
 'use strict';
 
 const roomData = require('../../services/roomData');
+const towerMissions = require('../../missions/tower');
 
 /**
  * Towers (port of v1 tasker tower assignment + role.tower).
@@ -11,6 +12,10 @@ const roomData = require('../../services/roomData');
  *   unkillable target alive, then the fastest kill, else closest
  * - heal/repair: closest target with remaining deficit, deficits shared
  *   across towers so they don't all overheal one target
+ *
+ * Tower missions are worked out fresh here every tick (missions/tower), not
+ * read from the planned list, which is refreshed every 2 ticks and can be
+ * skipped under CPU pressure: a hostile that just entered gets shot at once.
  */
 
 /**
@@ -74,8 +79,15 @@ module.exports = {
     priority: 20,
     run(ctx, rc) {
         const towers = roomData.myByType(rc.room, STRUCTURE_TOWER);
-        if (towers.length === 0 || !rc.missions) return;
-        const mission = rc.missions
+        if (towers.length === 0) return;
+        /** @type {import('../../contracts/mission').Mission[]} */
+        let list = [];
+        if (rc.intel && rc.state) {
+            towerMissions.generate(/** @type {any} */ ({ rc, intel: rc.intel, state: rc.state }), list);
+        } else if (rc.missions) {
+            list = rc.missions;
+        }
+        const mission = list
             .filter(m => m.type === 'tower_attack' || m.type === 'tower_heal' || m.type === 'tower_repair')
             .sort((a, b) => b.priority - a.priority)[0];
         if (!mission) return;

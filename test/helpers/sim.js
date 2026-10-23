@@ -220,9 +220,22 @@ class StoreStructure extends Structure {
 }
 
 class StructureTower extends StoreStructure {
-    attack() { return C.OK; }
-    heal() { return C.OK; }
-    repair() { return C.OK; }
+    _act(target, power, apply) {
+        if (!target || this.store.energy < C.TOWER_ENERGY_COST) return C.ERR_NOT_ENOUGH_ENERGY;
+        const r = Math.max(1, this.pos.getRangeTo(target.pos));
+        let amount = power;
+        if (r >= C.TOWER_FALLOFF_RANGE) amount = power * (1 - C.TOWER_FALLOFF);
+        else if (r > C.TOWER_OPTIMAL_RANGE) {
+            amount = power * (1 - C.TOWER_FALLOFF * (r - C.TOWER_OPTIMAL_RANGE) / (C.TOWER_FALLOFF_RANGE - C.TOWER_OPTIMAL_RANGE));
+        }
+        this.store.energy -= C.TOWER_ENERGY_COST;
+        apply(Math.floor(amount));
+        this._world.stats.towerActions = (this._world.stats.towerActions || 0) + 1;
+        return C.OK;
+    }
+    attack(t) { return this._act(t, C.TOWER_POWER_ATTACK, a => { t.hits -= a; }); }
+    heal(t) { return this._act(t, C.TOWER_POWER_HEAL, a => { t.hits = Math.min(t.hitsMax, t.hits + a); }); }
+    repair(t) { return this._act(t, C.TOWER_POWER_REPAIR, a => { t.hits = Math.min(t.hitsMax, t.hits + a); }); }
 }
 
 class StructureLink extends StoreStructure {
@@ -504,6 +517,16 @@ function createWorld(spec) {
         }
     };
     world.creepList = () => Object.values(global.Game.creeps);
+    /** Hostile creeps (not in Game.creeps; they stand still). */
+    world.hostiles = [];
+    world.addHostile = (x, y, body, owner) => {
+        const h = new Creep(world, x, y, `hostile_${world.hostiles.length}`, body);
+        h.my = false;
+        h.owner = { username: owner || 'Invader' };
+        h.ticksToLive = 1500;
+        world.hostiles.push(h);
+        return h;
+    };
 
     const room = {
         name: roomName,
@@ -522,9 +545,9 @@ function createWorld(spec) {
             switch (type) {
                 case C.FIND_SOURCES: out = sources.slice(); break;
                 case C.FIND_SOURCES_ACTIVE: out = sources.filter(s => s.energy > 0); break;
-                case C.FIND_CREEPS:
+                case C.FIND_CREEPS: out = world.creepList().filter(c => !c.spawning).concat(world.hostiles); break;
                 case C.FIND_MY_CREEPS: out = world.creepList().filter(c => !c.spawning); break;
-                case C.FIND_HOSTILE_CREEPS: out = []; break;
+                case C.FIND_HOSTILE_CREEPS: out = world.hostiles.slice(); break;
                 case C.FIND_STRUCTURES: out = structures.concat([controller]); break;
                 case C.FIND_MY_STRUCTURES: out = structures.filter(s => s.my).concat([controller]); break;
                 case C.FIND_MY_SPAWNS: out = structures.filter(s => s.structureType === 'spawn'); break;
@@ -703,10 +726,18 @@ function createWorld(spec) {
             }
             if (world.energyAvailable() < C.SPAWN_ENERGY_CAPACITY && s.store.energy < C.SPAWN_ENERGY_CAPACITY) s.store.energy++;
         }
-        // Aging and death.
+        // Hostiles die at 0 hits.
+        for (const h of world.hostiles.slice()) {
+            if (h.hits > 0) continue;
+            world.hostiles.splice(world.hostiles.indexOf(h), 1);
+            world.objects.delete(h.id);
+            world.stats.killed = (world.stats.killed || 0) + 1;
+        }
+        // Aging and death (and my creeps at 0 hits).
         for (const c of creeps) {
             if (c.spawning || c.ticksToLive === undefined) continue;
             c.ticksToLive--;
+            if (c.hits <= 0) c.ticksToLive = 0;
             if (c.ticksToLive <= 0) {
                 if (c.store.energy > 0) world.dropEnergy(c.pos.x, c.pos.y, c.store.energy);
                 delete global.Game.creeps[c.name];
