@@ -5,13 +5,14 @@ const config = require('../config');
 const roomData = require('../services/roomData');
 const policyRules = require('../services/policyRules');
 const state = require('./shared/state');
+const matcher = require('../services/matcher');
 
 /**
  * Mineral mining (port of v1 mission.mineral + role.mineralMiner).
  *
  * mineral:<id>  one miner (archetype mineralMiner, worker body) per mineral
  *               with an extractor. It harvests until full, carries the load
- *               to storage (terminal if storage is full) and comes back.
+ *               where the logistics request list wants it and comes back.
  *
  * When (v1): phase STORAGE or later, not CRITICAL / RECOVER / SIEGE, mineral
  * not depleted.
@@ -20,8 +21,8 @@ const state = require('./shared/state');
  * - Stock cap: no mining while storage + terminal already hold
  *   `config.minerals.maxStock` of that mineral, or storage has less than
  *   `minStorageFree` space (minerals must not crowd out the energy stockpile).
- * - Loads go to storage first, not the terminal; the terminal is stocked from
- *   storage by its targets (P11).
+ * - Loads go where the logistics request list wants them (a terminal stock
+ *   target, else storage), not to the terminal first.
  */
 
 /**
@@ -54,16 +55,19 @@ function generate(plan, out) {
 }
 
 /** @type {import('../contracts/mission').MissionType['nextTask']} */
-function nextTask(creep, m) {
+function nextTask(creep, m, rc) {
     const mineral = /** @type {Mineral|null} */ (state.obj(m.targetId));
     const depleted = !mineral || mineral.mineralAmount <= 0;
     // Same "full" test as the harvest action, so a finished harvest goes straight to delivery.
     const full = creep.store.getFreeCapacity() <= creep.getActiveBodyparts(WORK) * HARVEST_POWER;
     if (creep.store.getUsedCapacity() > 0 && (full || depleted)) {
         const res = /** @type {ResourceConstant} */ (Object.keys(creep.store).find(r => (creep.store[/** @type {ResourceConstant} */ (r)] || 0) > 0));
+        // Where it goes is the request list's call (a terminal stock target,
+        // else storage); storage then terminal only when nothing wants it.
         const room = creep.room;
-        const dest = [room.storage, room.terminal].find(s => s && s.store.getFreeCapacity(res) > 0);
-        return dest ? { a: 'transfer', i: dest.id, r: res } : null;
+        const asked = rc.requests ? matcher.redirect(rc.requests, res, creep.store[res] || 0) : null;
+        const dest = asked || ([room.storage, room.terminal].find(s => s && s.store.getFreeCapacity(res) > 0) || {}).id;
+        return dest ? { a: 'transfer', i: dest, r: res } : null;
     }
     if (depleted) return null;
     return { a: 'harvest', i: /** @type {Mineral} */ (mineral).id };

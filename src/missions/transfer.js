@@ -5,6 +5,7 @@ const cache = require('../services/cache');
 const roomData = require('../services/roomData');
 const { closest } = require('../services/pos');
 const state = require('./shared/state');
+const matcher = require('../services/matcher');
 const { gather } = require('./shared/gather');
 
 /**
@@ -15,7 +16,8 @@ const { gather } = require('./shared/gather');
  *   deliver to the target, partial loads allowed
  * - haul:   fill from the route's source, deliver to the route's target; routes
  *   with allowPartial deliver as soon as there's cargo
- * - any non-energy cargo is dumped into storage/terminal first
+ * - any non-energy cargo goes first to where the logistics request list wants it
+ *   (services/matcher: a store asking for it, else storage)
  */
 
 const EMPTY_SOURCE_TIMEOUT = 20;
@@ -28,12 +30,20 @@ function scratch(creep) {
 }
 
 /**
- * @param {Room} room
+ * Where non-energy cargo goes: the request list decides (no rules of our own,
+ * docs/v2/LOGISTICS.md). The fallback order below only applies in rooms
+ * without a request list (no storage or not owned).
+ * @param {import('../contracts/ctx').RoomCtx} rc
  * @param {ResourceConstant} type
  * @param {string|undefined} missionTargetId
  * @param {Creep} creep
  */
-function dumpTarget(room, type, missionTargetId, creep) {
+function dumpTarget(rc, type, missionTargetId, creep) {
+    const room = creep.room;
+    if (rc.requests && room.name === rc.name) {
+        const d = matcher.redirect(rc.requests, type, creep.store[type] || 0);
+        if (d) return /** @type {any} */ (state.obj(d));
+    }
     if (room.storage && room.storage.store.getFreeCapacity(type) > 0) return room.storage;
     if (room.terminal && room.terminal.store.getFreeCapacity(type) > 0) return room.terminal;
     const t = /** @type {any} */ (state.obj(missionTargetId));
@@ -90,7 +100,7 @@ function nextTask(creep, m, rc, depth) {
     for (const type in creep.store) {
         const rt = /** @type {ResourceConstant} */ (type);
         if (rt === RESOURCE_ENERGY || (creep.store[rt] || 0) <= 0) continue;
-        const dump = dumpTarget(room, rt, m.targetId, creep);
+        const dump = dumpTarget(rc, rt, m.targetId, creep);
         if (dump) return { a: 'transfer', i: dump.id, r: rt };
     }
 

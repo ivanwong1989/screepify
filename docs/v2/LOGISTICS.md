@@ -1,6 +1,6 @@
 # Screepify v2 — Logistics: requests, bands and the ledger
 
-> Status: **L1, L2 done**; L3–L4 to do. It replaces the per-feature storage/terminal rules from P4, P10 and P11 before any of them is deployed. It extends [DESIGN.md](DESIGN.md) §6 (ctx) and §9 (tasks).
+> Status: **L1–L3 done**; L4 (labs) to do. It replaces the per-feature storage/terminal rules from P4, P10 and P11 before any of them is deployed. It extends [DESIGN.md](DESIGN.md) §6 (ctx) and §9 (tasks).
 
 ## 1. The problem
 
@@ -9,7 +9,7 @@ Every building that holds resources wants some amount of something: extensions w
 | Writer | Rule |
 |---|---|
 | `coreLane.dumpCargo` | leftovers → storage, else terminal |
-| `missions/transfer.js` | non-energy cargo → **terminal**, else storage |
+| `missions/transfer.js` | non-energy cargo → storage, else terminal (ignores what the terminal asks for) |
 | `missions/mineral.js` | loads → storage, else terminal |
 | `laneStock` (P11) | storage ↔ terminal toward targets, energy target exact |
 
@@ -137,13 +137,32 @@ Simulator tests in `test/laneHead.test.js` use a real lane hauler, extensions em
 
 The soak first reported two flips. They turned out to be a bookkeeping bug in the test itself: the bot reacts to an outside change in the same tick, and the test had logged the change one tick late.
 
+## 4d. What L3 showed
+
+`test/economyFlow.test.js` runs the **whole economy** for 6,000 ticks in the simulator: spawning, miners, mining haulers, upgraders, the lane hauler, the mineral miner, a controller container, a spare container, and a terminal with stock targets and random sends. The audit pairs each creep's withdraw with its next delivery, so energy that is used (upgrading, building) isn't a move, and energy a miner harvested counts as inflow from outside.
+
+It found two **real relays** in v2 code that predates the model:
+
+| Found | Cause | Fix |
+|---|---|---|
+| Spare container filled by mining-lane haulers, drained by consolidation, again and again | `miningLane.sinkFor` picked the nearest of storage or any non-mining container | With storage, the lane delivers to storage only |
+| Same pattern through fleet routes | logistics used every non-mining container as a sink | With storage, sinks are storage and the controller container only |
+
+Container bands now follow their role: mining containers give everything; with storage, only the controller container asks for energy and any other container gives everything; without storage they're the room's buffer.
+
+Undoing each fix makes the soak fail with concrete reversals (`energy <spare>: in@640 → out@785`).
+
+**Not blocked on purpose:** `gather` skips the controller container only while storage has ≥ 1,000 energy. When storage is empty, haulers may take from it to feed spawns. That moves energy forward to spawning, not back and forth, and blocking it could starve the room in a crisis.
+
+**Gap noted, not fixed:** nothing refills the controller container once mining lanes take over (from phase STORAGE); upgraders get their energy from storage instead. It isn't a loop. When logistics moves onto the matcher, the controller container's band request will cover it.
+
 ## 5. Plan
 
 | Step | Scope |
 |---|---|
 | L1 ✅ | `services/bands.js`, `services/ledger.js`, `services/requests.js`, `services/matcher.js`, `sense.logistics` (`rc.requests`); `test/logistics.test.js`. No behaviour change yet |
 | L2 ✅ | `missions/shared/laneHead.js`: committed jobs at the head, leftover cargo and storage ↔ terminal through the matcher; `laneStock` and `dumpCargo` removed; `services/flipGuard`; `test/laneHead.test.js` |
-| L3 | `transfer.js`, mineral miner delivery and logistics supply through the matcher |
+| L3 ✅ | `transfer.js` and mineral miner delivery through the matcher; container bands by role; mining-lane and fleet sinks; `gather` and the controller container; lane targets left out of the list; `test/economyFlow.test.js` |
 | L4 | P12 labs as bands (reagent requests, product offers, boost stock), with no new hauling rules |
 
 P11's balancing (`act.terminal`) and the terminal targets carry over unchanged as config. Only how they get moved changes.

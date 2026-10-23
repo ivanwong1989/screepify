@@ -9,8 +9,10 @@
  *
  * @typedef {{min: number, target: number, max: number}} Band
  * @typedef {{terminal: import('./terminal').TerminalConfig, roomName: string,
- *            miningContainers: Set<string>, blocked?: Set<string>}} BandInfo
+ *            miningContainers: Set<string>, controllerContainer?: string|null, hasBuffer?: boolean,
+ *            blocked?: Set<string>, exclude?: Set<string>}} BandInfo
  *   blocked: `${id}:${res}` left out by services/flipGuard
+ *   exclude: stores another hauler owns outright (the core lane's targets)
  */
 
 const TOWER_MIN = 0.7;
@@ -52,8 +54,13 @@ function band(s, res, info) {
         case STRUCTURE_TOWER:
             return res === RESOURCE_ENERGY ? mk(Math.floor(cap * TOWER_MIN), cap, cap) : null;
         case STRUCTURE_CONTAINER:
+            // Mining containers give everything. With storage, only the
+            // controller container asks for energy; any other container is
+            // emptied into storage. Without storage they are the room's buffer.
             if (info.miningContainers.has(s.id)) return OFFER_ALL;
-            return res === RESOURCE_ENERGY ? mk(Math.floor(cap * CONTAINER_MIN), cap, cap) : OFFER_ALL;
+            if (res !== RESOURCE_ENERGY) return OFFER_ALL;
+            if (info.hasBuffer && s.id !== info.controllerContainer) return OFFER_ALL;
+            return mk(Math.floor(cap * CONTAINER_MIN), cap, cap);
         case STRUCTURE_TERMINAL: {
             const cfg = info.terminal;
             const room = (cfg.rooms && cfg.rooms[info.roomName]) || {};
@@ -83,7 +90,7 @@ function band(s, res, info) {
  */
 function resourcesOf(s, info) {
     const out = new Set(/** @type {ResourceConstant[]} */ (Object.keys(s.store).filter(r => (s.store[r] || 0) > 0)));
-    if (s.structureType !== STRUCTURE_CONTAINER || !info.miningContainers.has(s.id)) out.add(RESOURCE_ENERGY);
+    if (s.structureType !== STRUCTURE_CONTAINER || band(s, RESOURCE_ENERGY, info) !== OFFER_ALL) out.add(RESOURCE_ENERGY);
     if (s.structureType === STRUCTURE_TERMINAL) {
         const cfg = info.terminal;
         const room = (cfg.rooms && cfg.rooms[info.roomName]) || {};

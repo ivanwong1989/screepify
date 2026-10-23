@@ -15,7 +15,7 @@ const { CONTINUE, SKIP } = require('../contracts/task');
  *
  * From phase STORAGE (not CRITICAL), every source with a container gets its
  * own haulers on a fixed path from the container to the nearest sink
- * (storage, else a non-mining container):
+ * (storage; without storage, the nearest non-mining container):
  *
  *   path      plain 10, swamp 30, road 2, both ends 1; the core lane head
  *             costs 200 (walk around it); tiles next to any source are
@@ -57,14 +57,19 @@ function posOf(p, room) {
 }
 
 /**
- * Nearest sink to the container: storage or a non-mining container (v1 resolveSink).
+ * Sink for the lane: storage when there is one. Without storage, the nearest
+ * non-mining container (v1 resolveSink). With storage, other containers are
+ * drained into it, so delivering into them would pass energy in and out of
+ * the same container (docs/v2/LOGISTICS.md; found by test/economyFlow).
  * @param {Room} room
  * @param {import('../processes/sense/intel').RoomIntel} intel
  * @param {RoomPosition} from
  */
 function sinkFor(room, intel, from) {
     /** @type {any[]} */
-    const sinks = room.storage ? [room.storage] : [];
+    if (room.storage) return room.storage;
+    /** @type {any[]} */
+    const sinks = [];
     for (const c of roomData.byType(room, STRUCTURE_CONTAINER)) if (!intel.miningContainerIds.has(c.id)) sinks.push(c);
     let best = null;
     let bestR = Infinity;

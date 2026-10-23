@@ -62,6 +62,7 @@ function build(structures, l, info, latch) {
             out.buffer = { id: s.id, x: s.pos.x, y: s.pos.y, avail, free: Math.max(0, s.store.getFreeCapacity() - incoming) };
             continue;
         }
+        if (info.exclude && info.exclude.has(s.id)) continue;
         for (const res of bands.resourcesOf(s, info)) {
             if (info.blocked && info.blocked.has(`${s.id}:${res}`)) continue;
             const b = bands.band(s, res, info);

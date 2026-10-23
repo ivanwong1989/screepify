@@ -78,10 +78,16 @@ function gather(creep, rc, options) {
     const piles = roomData.dropped(room).filter(r =>
         r.resourceType === RESOURCE_ENERGY && r.amount > 50 && excludeIds.indexOf(r.id) === -1 &&
         r.amount - (reserved[r.id] || 0) >= 50);
+    // While storage has energy, leave the controller container to upgraders
+    // (they name it in allowedIds): taking from it here would empty a store
+    // that logistics refills (docs/v2/LOGISTICS.md bands). With storage empty
+    // it's allowed again: feeding spawns beats starving.
+    const ctrlContainer = room.storage && room.storage.store[RESOURCE_ENERGY] >= 1000 && rc.intel
+        ? rc.intel.controllerContainerId : null;
     const stores = []
         .concat(roomData.byType(room, STRUCTURE_CONTAINER), roomData.byType(room, STRUCTURE_STORAGE),
             roomData.byType(room, STRUCTURE_LINK))
-        .filter(s => excludeIds.indexOf(s.id) === -1 &&
+        .filter(s => excludeIds.indexOf(s.id) === -1 && s.id !== ctrlContainer &&
             (s.store[RESOURCE_ENERGY] || 0) - (reserved[s.id] || 0) >= 50);
 
     if (o.preferNearestAvailable) {

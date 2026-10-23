@@ -12,7 +12,8 @@ const cache = require('../../services/cache');
  * offers, per resource, after counting what haulers already carry or have
  * committed to (services/ledger). Runs after census, every tick: the list is
  * only valid for the tick it was built in. Stores the flip guard has blocked
- * (services/flipGuard) are left out.
+ * (services/flipGuard) and the core lane's targets (rc.lanes.core, filled by
+ * the lane hauler alone) are left out. Runs after sense.lanes.
  */
 
 /** @type {import('../../contracts/process').Process} */
@@ -22,7 +23,7 @@ module.exports = {
     scope: 'room',
     kinds: ['owned'],
     tier: 'critical',
-    priority: 40,
+    priority: 45,
     run(ctx, rc) {
         if (!rc.census || !rc.intel) return;
         const room = rc.room;
@@ -33,7 +34,9 @@ module.exports = {
         for (const src of rc.intel.sources) if (src.containerId) miningContainers.add(src.containerId);
         const l = ledger.build(rc.census.active);
         rc.requests = requests.build(stores, l, {
-            terminal: ctx.config.terminal, roomName: rc.name, miningContainers, blocked: flipGuard.blocked(rc.name)
+            terminal: ctx.config.terminal, roomName: rc.name, miningContainers, blocked: flipGuard.blocked(rc.name),
+            controllerContainer: rc.intel.controllerContainerId || null, hasBuffer: !!(room.storage && room.storage.my),
+            exclude: (rc.lanes && rc.lanes.core) || undefined
         }, cache.store('logistics.latch')[rc.name] || (cache.store('logistics.latch')[rc.name] = {}));
         // Same list for actions, which get no ctx (missions/shared/laneHead), and the console.
         cache.store('logistics.requests')[rc.name] = { t: Game.time, reqs: rc.requests };

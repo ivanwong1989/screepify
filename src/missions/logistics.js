@@ -241,7 +241,14 @@ function generate(plan, out) {
     const nonMining = containers.filter(c => !intel.miningContainerIds.has(c.id));
     const sinks = [];
     if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) sinks.push(storage);
-    for (const c of nonMining) if (c.store.getFreeCapacity(RESOURCE_ENERGY) > 0) sinks.push(c);
+    // With storage, the only other sink is the controller container; other
+    // containers are drained into storage below (consolidation), so filling
+    // them too would pass energy in and out of the same container
+    // (docs/v2/LOGISTICS.md bands).
+    for (const c of nonMining) {
+        if (storage && c.id !== intel.controllerContainerId) continue;
+        if (c.store.getFreeCapacity(RESOURCE_ENERGY) > 0) sinks.push(c);
+    }
 
     if (sinks.length > 0) {
         const nearEfficient = new Set();
