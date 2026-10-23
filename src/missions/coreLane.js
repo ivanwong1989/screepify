@@ -3,7 +3,7 @@
 
 const laneStore = require('../services/laneStore');
 const laneClaims = require('../services/laneClaims');
-const laneStock = require('./shared/laneStock');
+const laneHead = require('./shared/laneHead');
 const movement = require('../services/movement');
 const traffic = require('../services/traffic');
 const roomData = require('../services/roomData');
@@ -27,9 +27,11 @@ const { CONTINUE, SKIP } = require('../contracts/task');
  *
  * Creep memory: ls = state ('L'|'D'|'R'), ld = loop direction, lr = renewing.
  *
- * Side jobs while idle at the head: terminal stock (missions/shared/laneStock,
- * P11). Not ported yet: labs (P12) and off-lane "core service" refills, which
- * v2's logistics supply missions already cover.
+ * At the head, everything moved between stores (storage ↔ terminal, leftover
+ * cargo, the head link's energy) goes through the logistics matcher
+ * (missions/shared/laneHead, docs/v2/LOGISTICS.md); a committed job is always
+ * finished before a lane run. Not ported yet: labs (P12) and off-lane "core
+ * service" refills, which v2's logistics supply missions already cover.
  *
  * Differences from v1:
  * - The lane mission stays up in CRITICAL while a lane hauler is alive (it is
@@ -182,20 +184,6 @@ function nearestDemand(creep, lane, opts) {
     return best;
 }
 
-/** Puts cargo other than `keep` into storage. Returns true if that used the tick. @param {Creep} creep @param {string|null} keep */
-function dumpCargo(creep, keep) {
-    const storage = creep.room.storage;
-    for (const rt in creep.store) {
-        if ((creep.store[/** @type {ResourceConstant} */ (rt)] || 0) <= 0 || rt === keep) continue;
-        const target = storage && storage.store.getFreeCapacity(/** @type {ResourceConstant} */ (rt)) > 0 ? storage : creep.room.terminal;
-        if (!target) continue;
-        if (!creep.pos.isNearTo(target)) movement.to(creep, target, { range: 1 });
-        else creep.transfer(target, /** @type {ResourceConstant} */ (rt));
-        return true;
-    }
-    return false;
-}
-
 /** Link next to the head and within 2 of storage that has energy (v1 head drain link). @param {Room} room @param {laneStore.Lane} lane */
 function headLink(room, lane) {
     const storage = room.storage;
@@ -247,7 +235,7 @@ function retire(creep) {
     const bigger = Object.values(Game.creeps).some(c => c !== creep && !c.spawning && c.memory.a === 'laneHauler' &&
         c.memory.h === creep.memory.h && c.getActiveBodyparts(CARRY) > mine);
     if (!bigger) return false;
-    if (dumpCargo(creep, null)) return true;
+    if (creep.store.getUsedCapacity() > 0 && laneHead.stash(creep, null)) return true;
     creep.suicide();
     return true;
 }
@@ -282,8 +270,12 @@ function run(creep) {
             else delete mem.lr;
             if (r === OK) return CONTINUE;
         }
+        // A committed job (head stores) is finished first: one or two ticks.
+        if (mem.j) {
+            if (laneHead.job(creep)) return CONTINUE;
+        }
         if (anyDemand) {
-            if (dumpCargo(creep, RESOURCE_ENERGY)) return CONTINUE;
+            if (laneHead.stash(creep, RESOURCE_ENERGY)) return CONTINUE;
             if ((creep.store[RESOURCE_ENERGY] || 0) > 0) {
                 mem.ls = 'D';
                 return deliver(creep, lane, opts);
@@ -307,24 +299,14 @@ function run(creep) {
         }
         // Idle: park at the head, keep the head link drained into storage.
         if (indexOf(creep, lane) !== 0) {
-            if (dumpCargo(creep, RESOURCE_ENERGY)) return CONTINUE;
             stepToward(creep, lane, 0);
             return CONTINUE;
         }
         traffic.working(creep, posOf(room.name, lane.head), 0);
-        // Side job: finish a terminal stock load before other cargo handling.
-        if (mem.sj && laneStock.step(creep, room)) return CONTINUE;
-        const storage = room.storage;
-        if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
-            if ((creep.store[RESOURCE_ENERGY] || 0) > 0) {
-                if (creep.pos.isNearTo(storage)) creep.transfer(storage, RESOURCE_ENERGY);
-                return CONTINUE;
-            }
-            const link = headLink(room, lane);
-            if (link && creep.pos.isNearTo(link) && creep.withdraw(link, RESOURCE_ENERGY) === OK) return CONTINUE;
-        }
-        if (dumpCargo(creep, RESOURCE_ENERGY)) return CONTINUE;
-        laneStock.step(creep, room);
+        if (laneHead.stash(creep, null)) return CONTINUE;
+        const link = headLink(room, lane);
+        if (link && creep.pos.isNearTo(link) && creep.withdraw(link, RESOURCE_ENERGY) === OK) return CONTINUE;
+        laneHead.start(creep);
         return CONTINUE;
     }
     if (mem.ls === 'D') return deliver(creep, lane, opts);
@@ -334,7 +316,7 @@ function run(creep) {
         stepToward(creep, lane, 0);
         return CONTINUE;
     }
-    if (dumpCargo(creep, null)) return CONTINUE;
+    if (laneHead.stash(creep, null)) return CONTINUE;
     mem.ls = 'L';
     return CONTINUE;
 }

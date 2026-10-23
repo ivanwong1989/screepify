@@ -1,6 +1,6 @@
 # Screepify v2 — Logistics: requests, bands and the ledger
 
-> Status: **L1 done** (model, no behaviour change yet); L2–L4 to do. It replaces the per-feature storage/terminal rules from P4, P10 and P11 before any of them is deployed. It extends [DESIGN.md](DESIGN.md) §6 (ctx) and §9 (tasks).
+> Status: **L1, L2 done**; L3–L4 to do. It replaces the per-feature storage/terminal rules from P4, P10 and P11 before any of them is deployed. It extends [DESIGN.md](DESIGN.md) §6 (ctx) and §9 (tasks).
 
 ## 1. The problem
 
@@ -36,6 +36,7 @@ amount:  0 ─────── min ═══════ target ════�
 - **Below min** the store *requests* enough to reach **target**.
 - **Above max** it *offers* everything above **target**.
 - **In between** nothing happens. That gap is the hysteresis.
+- **Latch (thermostat):** once below min, the store keeps requesting until it reaches target, even after it passes min. Once above max, it keeps offering until it's back at target. Without the latch, a store fed in several loads stops just past min (L2 found a terminal stuck at 18.7k). It's still loop-free: a filling store is ≤ target ≤ max, so it never offers, and a draining one is ≥ target ≥ min, so it never requests. The latch lives on heap; after a VM reset a store simply waits inside its band.
 
 | Store | Energy band | Other resources |
 |---|---|---|
@@ -90,6 +91,10 @@ This removes "picked up X, demand appeared, dumped X back into storage, picked X
 
 `missions/transfer.js`, `coreLane.dumpCargo`, the mineral miner's delivery and `laneStock` stop choosing destinations themselves. They ask the matcher, which falls back to the buffer.
 
+### 2.5 Circuit breaker
+
+`services/flipGuard` records every committed job per (store, resource) as out at its source and in at its destination. A store that switches between giving and receiving **6 times within 100 ticks** is left out of the request list for 1,500 ticks and logged as an error. Legit outside changes (sends, market) flip a store at most about every 50 ticks. The model should never trip it; it's there so a bug can't keep a hauler shuttling while the colony starves. `logistics.show(room)` in the console lists requests, offers and blocked stores.
+
 Request priority (high first): spawns/extensions → towers → boost labs → reaction labs → terminal → controller container → buffer.
 
 ## 3. Your three questions
@@ -115,12 +120,29 @@ Request priority (high first): spawns/extensions → towers → boost labs → r
 - **Cost:** `requests.build` for an RCL 8 room (60 extensions, 6 towers, 15 creeps, full terminal) takes about 31 µs in Node.
 - Terminal energy band: `config.terminal.energy` ± `energyMargin` (20k ± 2k).
 
+## 4c. What L2 showed
+
+Simulator tests in `test/laneHead.test.js` use a real lane hauler, extensions emptied by "spawning", and terminal sends and receipts. Every withdraw and transfer is logged.
+
+| Test | Result |
+|---|---|
+| Terminal 0 → fills to exactly 20,000 in full loads, then nothing for 300 ticks | ✅ |
+| Terminal 60k → drains to exactly 20,000, then nothing | ✅ |
+| Terminal inside its band (18.5k, 21.5k) → nothing moves | ✅ |
+| Lane empties while a terminal load is in hand → load goes to the terminal, not back to storage; lane refilled after | ✅ |
+| Storage full → leftovers overflow into the terminal with no flip | ✅ |
+| 6,000-tick soak: half the extensions emptied every 37 ticks, a terminal send/receive/trade every 150 → no flip without an outside cause; 157 refills, average 17.9 ticks, worst 64 | ✅ |
+| Planted v1-style loop (matcher shuttles storage ↔ terminal) → flip guard cuts it, lane still fed | ✅ |
+| Planted bug "leftovers always to the terminal" → soak fails at once (`energy: in@974 → out@976`) | ✅ caught |
+
+The soak first reported two flips. They turned out to be a bookkeeping bug in the test itself: the bot reacts to an outside change in the same tick, and the test had logged the change one tick late.
+
 ## 5. Plan
 
 | Step | Scope |
 |---|---|
 | L1 ✅ | `services/bands.js`, `services/ledger.js`, `services/requests.js`, `services/matcher.js`, `sense.logistics` (`rc.requests`); `test/logistics.test.js`. No behaviour change yet |
-| L2 | Core lane hauler: head side jobs (terminal, head link) and leftover cargo through the matcher; drop `laneStock` and `dumpCargo` rules |
+| L2 ✅ | `missions/shared/laneHead.js`: committed jobs at the head, leftover cargo and storage ↔ terminal through the matcher; `laneStock` and `dumpCargo` removed; `services/flipGuard`; `test/laneHead.test.js` |
 | L3 | `transfer.js`, mineral miner delivery and logistics supply through the matcher |
 | L4 | P12 labs as bands (reagent requests, product offers, boost stock), with no new hauling rules |
 

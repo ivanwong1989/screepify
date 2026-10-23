@@ -13,6 +13,13 @@ const ledger = require('./ledger');
  * @typedef {{req: Entry[], off: Entry[]}} ResourceRequests
  * @typedef {{id: string, x: number, y: number, avail: Record<string, number>, free: number}} Buffer
  * @typedef {{byRes: Record<string, ResourceRequests>, buffer: Buffer|null}} Requests
+ * @typedef {Record<string, 'fill'|'drain'>} Latch  `${id}:${res}` → what the store is doing
+ *
+ * Latch (thermostat): a store that dropped below min keeps requesting until it
+ * reaches target; one that rose above max keeps offering until it's back at
+ * target. Without it a store fed in several loads stops as soon as it's past
+ * min. Still no ping-pong: a filling store is ≤ target ≤ max, so it never
+ * offers, and a draining one is ≥ target ≥ min, so it never requests.
  */
 
 /** Request priority by structure type (higher first). */
@@ -33,9 +40,11 @@ const OFFER_PRIO = {
  * @param {any[]} structures  my structures with a store (storage included)
  * @param {import('./ledger').Ledger} l
  * @param {import('./bands').BandInfo} info
+ * @param {Latch} [latch]  kept between ticks by the caller (heap); updated here
  * @returns {Requests}
  */
-function build(structures, l, info) {
+function build(structures, l, info, latch) {
+    const lt = latch || {};
     /** @type {Requests} */
     const out = { byRes: {}, buffer: null };
     const slot = (/** @type {string} */ res) => out.byRes[res] || (out.byRes[res] = { req: [], off: [] });
@@ -54,14 +63,19 @@ function build(structures, l, info) {
             continue;
         }
         for (const res of bands.resourcesOf(s, info)) {
+            if (info.blocked && info.blocked.has(`${s.id}:${res}`)) continue;
             const b = bands.band(s, res, info);
             if (!b) continue;
             const e = ledger.effective(l, s, res);
-            if (e < b.min) {
+            const key = `${s.id}:${res}`;
+            if (e < b.min) lt[key] = 'fill';
+            else if (e > b.max) lt[key] = 'drain';
+            else if ((lt[key] === 'fill' && e >= b.target) || (lt[key] === 'drain' && e <= b.target)) delete lt[key];
+            if (lt[key] === 'fill') {
                 const room = s.store.getFreeCapacity(res);
                 const n = Math.min(b.target - e, room === null ? Infinity : room);
                 if (n > 0) slot(res).req.push({ id: s.id, amount: n, prio: REQUEST_PRIO[s.structureType] || 20, x: s.pos.x, y: s.pos.y });
-            } else if (e > b.max) {
+            } else if (lt[key] === 'drain') {
                 const n = Math.min(e - b.target, s.store[res] || 0);
                 if (n > 0) slot(res).off.push({ id: s.id, amount: n, prio: OFFER_PRIO[s.structureType] || 45, x: s.pos.x, y: s.pos.y });
             }

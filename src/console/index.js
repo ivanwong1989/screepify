@@ -15,6 +15,7 @@ const telemetry = require('../kernel/telemetry');
  *   config.get(path?) / config.set(path, value) / config.reset(path) / config.reload()
  *   policy.show() / policy.set(room, state) / policy.clear(room)
  *   terminal.show() / terminal.send(from, to, res, amount)   (console/terminal.js)
+ *   logistics.show(room)          requests/offers and blocked stores (console/logistics.js)
  */
 
 /**
@@ -60,7 +61,8 @@ function register(kernel) {
         'policy.show()                   room phase, state and why',
         'policy.set(room, state) / policy.clear(room)   override a room\'s state',
         'terminal.show()                 terminal energy vs target, next stock move',
-        'terminal.send(from, to, res, amount)   one manual send'
+        'terminal.send(from, to, res, amount)   one manual send',
+        'logistics.show(room)            what each store wants or gives this tick'
     ].join('\n');
 
     g.stats = () => {
@@ -172,6 +174,7 @@ function register(kernel) {
     };
 
     require('./terminal').register();
+    require('./logistics').register();
 }
 
 module.exports = { register };

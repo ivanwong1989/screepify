@@ -9,7 +9,8 @@
  *
  * @typedef {{min: number, target: number, max: number}} Band
  * @typedef {{terminal: import('./terminal').TerminalConfig, roomName: string,
- *            miningContainers: Set<string>}} BandInfo
+ *            miningContainers: Set<string>, blocked?: Set<string>}} BandInfo
+ *   blocked: `${id}:${res}` left out by services/flipGuard
  */
 
 const TOWER_MIN = 0.7;

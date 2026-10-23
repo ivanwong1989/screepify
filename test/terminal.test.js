@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * Terminal (porting P11): stock targets moved by the lane hauler
- * (services/terminal + missions/shared/laneStock) and energy balancing
- * between rooms (act.terminal).
+ * Terminal (porting P11): the terminal's band stocked by the lane hauler
+ * through the logistics matcher (missions/shared/laneHead) and energy
+ * balancing between rooms (act.terminal).
  */
 
 const test = require('node:test');
@@ -19,36 +19,7 @@ function fresh() {
     delete global.__v2heap;
 }
 
-const CFG = { energy: 20000, stock: {}, flushUntargeted: false, rooms: {}, balance: { enabled: true, batch: 10000 } };
 const store = (cap, content) => Object.assign(new Store(cap, false), content);
-
-test('stock: energy to its target first, both ways', () => {
-    fresh();
-    const t = require('../src/services/terminal');
-    const storage = { store: store(1000000, { energy: 300000 }) };
-    assert.deepEqual(t.nextMove(storage, { store: store(300000, { energy: 2000 }) }, CFG, 'W1N1'),
-        { from: 'storage', res: 'energy', amount: 18000 });
-    assert.deepEqual(t.nextMove(storage, { store: store(300000, { energy: 100000 }) }, CFG, 'W1N1'),
-        { from: 'terminal', res: 'energy', amount: 80000 });
-    const noStorageEnergy = { store: store(1000000, {}) };
-    assert.equal(t.nextMove(noStorageEnergy, { store: store(300000, { energy: 0 }) }, CFG, 'W1N1'), null);
-});
-
-test('stock: resource targets with a deadband, room overrides, untargeted left alone', () => {
-    fresh();
-    const t = require('../src/services/terminal');
-    const cfg = Object.assign({}, CFG, { stock: { X: 5000 }, rooms: { W2N2: { stock: { X: 0, K: 1000 } } } });
-    const storage = { store: store(1000000, { X: 20000, K: 50000 }) };
-    const term = (c) => ({ store: store(300000, Object.assign({ energy: 20000 }, c)) });
-    assert.equal(t.nextMove(storage, term({ X: 4800 }), cfg, 'W1N1'), null, 'within 250 of 5000');
-    assert.deepEqual(t.nextMove(storage, term({ X: 4000 }), cfg, 'W1N1'), { from: 'storage', res: 'X', amount: 1000 });
-    assert.deepEqual(t.nextMove(storage, term({ X: 9000 }), cfg, 'W1N1'), { from: 'terminal', res: 'X', amount: 4000 });
-    assert.equal(t.nextMove(storage, term({ X: 5000, O: 14000 }), cfg, 'W1N1'), null, 'untargeted O stays');
-    assert.deepEqual(t.nextMove(storage, term({ X: 5000, O: 14000 }), Object.assign({}, cfg, { flushUntargeted: true }), 'W1N1'),
-        { from: 'terminal', res: 'O', amount: 14000 });
-    // W2N2: X target 0 means untargeted there; K stocked to 1000.
-    assert.deepEqual(t.nextMove(storage, term({ X: 3000 }), cfg, 'W2N2'), { from: 'storage', res: 'K', amount: 1000 });
-});
 
 test('balance: richest surplus feeds the deepest deficit, donor stays above target', () => {
     fresh();

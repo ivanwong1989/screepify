@@ -108,6 +108,7 @@ function simulate(seed, ticks) {
     const caps = [50, 400, 1650, 1650, 1250, 800];
     const haulers = caps.map((c, i) => ({ name: `h${i}`, spawning: false, memory: {}, store: new Store(c), wait: 0 }));
     const moves = [];
+    const latch = {};
     for (let t = 1; t <= ticks; t++) {
         // Outside world.
         if (rand() < 0.05) for (const s of [w.spawn, ...w.ext]) if (rand() < 0.5) { s.store.energy = 0; touch(s, t); }
@@ -118,7 +119,7 @@ function simulate(seed, ticks) {
         if (rand() < 0.002) { w.terminal.store.energy += 10000; touch(w.terminal, t); }
         if (rand() < 0.002) { w.terminal.store.X = Math.max(0, (w.terminal.store.X || 0) + (rand() < 0.5 ? -1000 : 1000)); touch(w.terminal, t); }
 
-        const reqs = requests.build(w.all, ledger.build(haulers), w.info);
+        const reqs = requests.build(w.all, ledger.build(haulers), w.info, latch);
         for (const h of haulers) {
             if (h.wait > 0) { h.wait--; continue; }
             let j = h.memory.j;

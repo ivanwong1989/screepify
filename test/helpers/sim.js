@@ -641,12 +641,14 @@ function createWorld(spec) {
                     c.store[it.r] -= amt;
                     it.target.store[it.r] = (it.target.store[it.r] || 0) + amt;
                 }
+                if (amt > 0 && world.carryLog) world.carryLog.push({ t: global.Game.time, creep: c.name, a: 'transfer', id: it.target.id, r: it.r, n: amt });
             } else if (it.a === 'withdraw') {
                 const amt = Math.min(it.amount || Infinity, it.target.store[it.r] || 0, c.store.getFreeCapacity(it.r));
                 if (amt > 0) {
                     it.target.store[it.r] -= amt;
                     c.store[it.r] = (c.store[it.r] || 0) + amt;
                 }
+                if (amt > 0 && world.carryLog) world.carryLog.push({ t: global.Game.time, creep: c.name, a: 'withdraw', id: it.target.id, r: it.r, n: amt });
             } else if (it.a === 'pickup') {
                 if (dropped.indexOf(it.target) !== -1) {
                     const amt = Math.min(it.target.amount, c.store.getFreeCapacity());
