@@ -11,6 +11,7 @@
 module.exports = [
     // SENSE
     require('../processes/sense/memoryGC'),
+    require('../processes/sense/adopt'),
     require('../processes/sense/intel'),
     require('../processes/sense/census'),
     require('../processes/sense/policy'),

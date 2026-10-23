@@ -125,6 +125,37 @@ function nearDeath(creep, lead, busy) {
 }
 
 /**
+ * Binds creeps that work a slot/mission contract's mission but carry no
+ * binding (adopted after a Memory wipe, or reassigned) to a free contract of
+ * that mission, so they count and no duplicate is spawned.
+ * @param {Contract[]} list
+ * @param {Creep[]} creeps
+ */
+function bindStrays(list, creeps) {
+    /** @type {Record<string, Contract[]>} */
+    const byMission = {};
+    /** @type {Set<string>} */
+    const keys = new Set();
+    for (const c of list) {
+        keys.add(c.key);
+        if (c.mode === 'pool') continue;
+        (byMission[c.mission.id] || (byMission[c.mission.id] = [])).push(c);
+    }
+    /** @type {Record<string, number>} */
+    const taken = {};
+    for (const creep of creeps) if (creep.memory.b && keys.has(creep.memory.b)) taken[creep.memory.b] = (taken[creep.memory.b] || 0) + 1;
+    for (const creep of creeps) {
+        const mem = creep.memory;
+        if ((mem.b && keys.has(mem.b)) || !mem.m || !byMission[mem.m]) continue;
+        if (byMission[mem.m].some(c => c.archetype !== mem.a)) continue;
+        const free = byMission[mem.m].find(c => (taken[c.key] || 0) < c.desired);
+        if (!free) continue;
+        mem.b = free.key;
+        taken[free.key] = (taken[free.key] || 0) + 1;
+    }
+}
+
+/**
  * @param {Contract[]} list
  * @param {Creep[]} creeps  home creeps incl. spawning
  * @param {number} busy
@@ -212,6 +243,7 @@ function run(ctx, rc) {
 
     const list = contracts(rc.missions, room.energyCapacityAvailable);
     if (list.length === 0) return;
+    bindStrays(list, rc.census.creeps);
     const counts = fulfillment(list, rc.census.creeps, spawnBusyTicks(spawns));
     const roomMem = /** @type {any} */ (Memory.rooms[room.name] || (Memory.rooms[room.name] = {}));
     const mem = roomMem.sp || (roomMem.sp = { hist: [] });
@@ -261,6 +293,7 @@ module.exports = {
     run,
     contracts,
     fulfillment,
+    bindStrays,
     desiredCount,
     select,
     budget

@@ -163,3 +163,17 @@ test('sim: an idle lane hauler renews at the spawn next to the head', () => {
     assert.ok((sim.world.stats.renewed || 0) > before, 'renewed');
     assert.ok(hauler.ticksToLive > 900, `ttl ${hauler.ticksToLive}`);
 });
+
+test('sim: after a Memory wipe the existing lane hauler is adopted, not duplicated', () => {
+    const sim = bootLane(diagonal);
+    sim.run(800);
+    const hauler = Object.values(Game.creeps).find(c => c.memory.a === 'laneHauler');
+    assert.ok(hauler, 'lane hauler');
+    for (const k of Object.keys(Memory)) if (k !== 'config') delete Memory[k];
+    Memory.creeps = {};
+    sim.run(100);
+    const lane = Object.values(Game.creeps).filter(c => c.memory.a === 'laneHauler');
+    assert.deepEqual(lane.map(c => c.name), [hauler.name], 'same single lane hauler');
+    assert.equal(hauler.memory.b, 'coreLane', 'bound to the lane contract');
+    assert.ok(Memory.rooms.W1N1.ln && Memory.rooms.W1N1.ln.p, 'lane rebuilt');
+});

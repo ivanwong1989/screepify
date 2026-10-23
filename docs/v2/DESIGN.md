@@ -410,6 +410,7 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | `traffic/*` (screeps-traffic-manager + adapter) | `services/traffic.js`, `processes/act/traffic.js` |
 | `mission.logisticsMiningV2` + `role.miningLaneHauler` (mining lanes) | `missions/miningLane.js` |
 | `mission.logisticsCoreV2` + `role.coreLaneHauler` (core lane) | `services/lanes*.js`, `services/laneStore.js`, `processes/plan/lanes.js`, `missions/coreLane.js` |
+| v1 creeps after the switch | `processes/sense/adopt.js` + `act.spawns` bindStrays |
 | `telemetry/*`, `screeps-profiler` | `kernel/telemetry.js` (always on) |
 | `heap.js`, `roomCache.js`, `global._*` | `services/cache` |
 | Grunt flatten-copy | esbuild bundle |
@@ -427,6 +428,13 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 Features from the newer v1 branch `dev_make_missions_missions` (room policy, traffic, lane logistics, remotes, labs, terminal) are scheduled into phase 2 in [PORTING.md](PORTING.md).
 
 Phase 1 is verified in a single-room simulator against v1 (`test/sim.test.js`, [ECONOMY.md](ECONOMY.md)); the in-game exit criteria are still open.
+
+**Switching a live colony from v1 (memory wipe).**
+1. Optional backup: `GET https://screeps.com/api/user/memory?shard=<shard>` with your token.
+2. `npm run deploy`, then make branch `v2` active in the Script tab.
+3. On its first tick v2 migrates Memory to `v: 2`, deleting every key except `Memory.config`. `RawMemory.set('{}')` in the console does the same by hand.
+4. `sense.adopt` gives every creep without v2 memory a home (the room it stands in, or the closest room of mine within 3) and an archetype from its body. Missions then assign it as usual, and `act.spawns` binds it to a free slot so nothing is spawned twice. Military, claim and scout creeps are left alone.
+5. Lanes are found again by `plan.lanes`. Consider `config.set('construction.enabled', false)` in rooms built by hand.
 
 Switchover can happen as early as the end of phase 1 if v2 outperforms v1 for the current colony size. `master` and v1 stay deployable on branch `default` until v2 is merged.
 
