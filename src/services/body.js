@@ -11,6 +11,7 @@ const cache = require('./cache');
 /** Energy caps per archetype (v1 "body budget restriction"). */
 const BUDGET_CAP = {
     worker: 3000,
+    mineralMiner: 3000,
     hauler: 4000,
     miningHauler: 4000,
     remote_worker: 3000,
@@ -182,6 +183,7 @@ function build(archetype, budget, opts) {
         case 'laneHauler': return roadHauler(capped, o.maxCarry);
         case 'miningHauler': return hauler(capped, o.maxCarry);
         case 'scout': return scout();
+        case 'mineralMiner':
         case 'worker':
         default: return worker(capped);
     }

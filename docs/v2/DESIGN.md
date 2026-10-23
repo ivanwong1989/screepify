@@ -413,6 +413,7 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | `mission.logisticsCoreV2` + `role.coreLaneHauler` (core lane) | `services/lanes*.js`, `services/laneStore.js`, `processes/plan/lanes.js`, `missions/coreLane.js` |
 | `mission.fortify` (one fortifier on the weakest wall) | `missions/fortify.js`, rules in `services/policyRules.js` + `services/repairScan.js` |
 | `manager.terminal` stock targets + lane stock jobs, zeadmin energy balancer | `services/terminal.js`, `missions/shared/laneStock.js`, `processes/act/terminal.js`, `console/terminal.js` |
+| `mission.mineral` + `role.mineralMiner` | `missions/mineral.js` |
 | v1 creeps after the switch | `processes/sense/adopt.js` + `act.spawns` bindStrays |
 | `telemetry/*`, `screeps-profiler` | `kernel/telemetry.js` (always on) |
 | `heap.js`, `roomCache.js`, `global._*` | `services/cache` |

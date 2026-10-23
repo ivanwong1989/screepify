@@ -32,6 +32,9 @@
  * @property {{enabled: boolean, mining: boolean, cpuPerTick: number, rebuildEvery: number, checkEvery: number}} lanes
  *           core lane search (plan.lanes) and the lane hauler (missions/coreLane);
  *           `mining` switches mining lanes (missions/miningLane) on or off
+ * @property {{enabled: boolean, maxStock: number, minStorageFree: number}} minerals
+ *           mineral mining (missions/mineral): stops at maxStock of that mineral
+ *           in storage + terminal, or when storage has less than minStorageFree space
  * @property {import('./services/terminal').TerminalConfig} terminal
  *           terminal stock targets (lane hauler, services/terminal) and energy
  *           balancing between rooms (act.terminal)
@@ -63,6 +66,7 @@ const DEFAULTS = {
     },
     traffic: { enabled: true },
     lanes: { enabled: true, mining: true, cpuPerTick: 10, rebuildEvery: 5000, checkEvery: 50 },
+    minerals: { enabled: true, maxStock: 100000, minStorageFree: 50000 },
     terminal: {
         energy: 20000,
         stock: {},
@@ -72,7 +76,7 @@ const DEFAULTS = {
     },
     missions: {
         every: {
-            tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, fortify: 25, upgrade: 11,
+            tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, fortify: 25, mineral: 31, upgrade: 11,
             build: 17, decongest: 31, idleUpgrade: 31, default: 31
         }
     },

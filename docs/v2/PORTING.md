@@ -73,7 +73,7 @@ source files only.
 | P7 ✅ | Fortify | `mission.fortify.js` (498) | `missions/fortify.js` (one mission per room), gated by P1 state; rules in `services/policyRules.js` | S |
 | P8 | Scout | `mission.scout`, `role.scout`, `overseer.scout` (651) | `missions/scout.js`, writes to `sense/intel` | S |
 | P9 | Remotes: reserve / harvest / haul / build | `mission.remote*`, `role.remote*`, `overseer.remote*` (3,946) | `missions/remote/{reserve,harvest,haul,build}.js`, `services/remotePath.js`; room kind `remote` per DESIGN §18.1 | L |
-| P10 | Minerals | `mission.mineral`, `role.mineralMiner` (378) | `missions/mineral.js` + storage routes in `logistics.js` | S |
+| P10 ✅ | Minerals | `mission.mineral`, `role.mineralMiner` (378) | `missions/mineral.js` (miner carries its own loads, as v1); stock cap in `config.minerals` | S |
 | P11 ✅ | Terminal | `manager.terminal.js` (1,156) | `services/terminal.js` (rules), `missions/shared/laneStock.js` (lane side job), `processes/act/terminal.js` (balancing), `console/terminal.js`. Market trading not ported | M |
 | P12 | Labs (auto in/out, clear, reverse, boost stock) | `manager.labs.js`, `labs.reverse.js` (1,226) | `processes/plan/labs.js` (pick reaction) + `act/labs.js` (run) + lab fill/clear missions | M |
 | P13 | Ramparts | `manager.ramparts.js` (29) | Fold into `plan/construction.js` | S |
@@ -209,6 +209,13 @@ Original plan for P4, kept for reference:
 - **Console:** `terminal.show()`, `terminal.send(from, to, res, amount)`.
 - **Not ported:** automatic market trading (DESIGN §1 non-goal) and v1's manual order tracking.
 - The simulator now has terminals.
+
+**P10 Minerals. ✅ Done** (`missions/mineral.js`, `test/mineral.test.js`).
+- One miner per mineral with an extractor (`mineral:<id>`, archetype `mineralMiner`, worker body, priority 40), as v1. It harvests until full and carries the load itself, so no mineral hauling is needed.
+- When: phase STORAGE or later, and not CRITICAL / RECOVER / SIEGE (v1).
+- **New stock cap:** no mining while storage plus terminal hold `config.minerals.maxStock` (100k) of that mineral, or while storage has less than `minStorageFree` (50k) free. The live rooms already hold 143k–567k of their minerals in storages that are 67–85% full (2026-10-23), so they won't mine until those stocks are used.
+- Loads go to storage first, terminal second (v1: terminal first). The terminal is stocked from storage by its targets (P11).
+- The simulator now has minerals and extractors (1 per WORK, 5-tick cooldown).
 
 **P6 Simple variants.**
 - Diff v1's simple missions against v2's harvest/logistics.

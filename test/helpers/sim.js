@@ -138,6 +138,16 @@ class Source extends RoomObject {
     }
 }
 
+class Mineral extends RoomObject {
+    constructor(world, x, y, type, amount) {
+        super(world, x, y);
+        this.mineralType = type;
+        this.mineralAmount = amount;
+        this.density = 3;
+        this.ticksToRegeneration = undefined;
+    }
+}
+
 class Resource extends RoomObject {
     constructor(world, x, y, amount) {
         super(world, x, y);
@@ -306,6 +316,15 @@ class Creep extends RoomObject {
     }
     harvest(src) {
         if (!this._need('work')) return C.ERR_NO_BODYPART;
+        if (src instanceof Mineral) {
+            if (!this.pos.isNearTo(src)) return C.ERR_NOT_IN_RANGE;
+            const ex = this.room.find(C.FIND_STRUCTURES).find(s => s.structureType === 'extractor' && s.pos.isEqualTo(src.pos));
+            if (!ex) return C.ERR_NOT_FOUND;
+            if (ex.cooldown > 0) return C.ERR_TIRED;
+            if (src.mineralAmount <= 0) return C.ERR_NOT_ENOUGH_RESOURCES;
+            this._intents.work = { a: 'harvest', target: src, extractor: ex };
+            return C.OK;
+        }
         if (!src || !(src instanceof Source)) return C.ERR_INVALID_TARGET;
         if (!this.pos.isNearTo(src)) return C.ERR_NOT_IN_RANGE;
         if (src.energy <= 0) return C.ERR_NOT_ENOUGH_RESOURCES;
@@ -503,6 +522,15 @@ function createWorld(spec) {
     world.structures = structures;
     world.sites = sites;
     world.sources = sources;
+    const minerals = [];
+    world.minerals = minerals;
+    /** Adds a mineral (and an extractor on it when `extractor`). */
+    world.addMineral = (x, y, type, amount, extractor) => {
+        const m = new Mineral(world, x, y, type, amount);
+        minerals.push(m);
+        if (extractor) world.addStructure('extractor', x, y);
+        return m;
+    };
     world.dropped = dropped;
     world.controller = controller;
     world.energyAvailable = () => structures.filter(s => s.structureType === 'spawn' || s.structureType === 'extension')
@@ -544,6 +572,7 @@ function createWorld(spec) {
             let out;
             switch (type) {
                 case C.FIND_SOURCES: out = sources.slice(); break;
+                case C.FIND_MINERALS: out = minerals.slice(); break;
                 case C.FIND_SOURCES_ACTIVE: out = sources.filter(s => s.energy > 0); break;
                 case C.FIND_CREEPS: out = world.creepList().filter(c => !c.spawning).concat(world.hostiles); break;
                 case C.FIND_MY_CREEPS: out = world.creepList().filter(c => !c.spawning); break;
@@ -635,7 +664,12 @@ function createWorld(spec) {
             const it = c._intents.work;
             if (!it) continue;
             const w = c.getActiveBodyparts('work');
-            if (it.a === 'harvest') {
+            if (it.a === 'harvest' && it.extractor) {
+                const amt = Math.min(w, it.target.mineralAmount, c.store.getFreeCapacity());
+                it.target.mineralAmount -= amt;
+                c.store[it.target.mineralType] = (c.store[it.target.mineralType] || 0) + amt;
+                it.extractor.cooldown = 5;
+            } else if (it.a === 'harvest') {
                 const amt = Math.min(w * C.HARVEST_POWER, it.target.energy);
                 it.target.energy -= amt;
                 const keep = Math.min(amt, c.store.getFreeCapacity());
@@ -688,7 +722,7 @@ function createWorld(spec) {
                 if (world.terrain[ny * 50 + nx] === C.TERRAIN_MASK_WALL) continue;
                 const blocker = structures.concat([controller]).find(s => s.pos.x === nx && s.pos.y === ny &&
                     C.OBSTACLE_OBJECT_TYPES.indexOf(s.structureType) !== -1);
-                if (blocker || sources.some(s => s.pos.x === nx && s.pos.y === ny)) continue;
+                if (blocker || sources.some(s => s.pos.x === nx && s.pos.y === ny) || minerals.some(s => s.pos.x === nx && s.pos.y === ny)) continue;
                 const other = occupied.get(ny * 50 + nx);
                 if (other && other !== c) {
                     const od = other._intents.move;
@@ -746,6 +780,7 @@ function createWorld(spec) {
                 world.stats.died.push(c.name);
             }
         }
+        for (const s of structures) if (s.structureType === 'extractor' && s.cooldown > 0) s.cooldown--;
         // Sources regenerate.
         for (const s of sources) {
             s.ticksToRegeneration--;
@@ -780,6 +815,7 @@ function createWorld(spec) {
             else if (C.OBSTACLE_OBJECT_TYPES.indexOf(st.structureType) !== -1) m.set(st.pos.x, st.pos.y, 255);
         }
         for (const src of sources) m.set(src.pos.x, src.pos.y, 255);
+        for (const mn of minerals) m.set(mn.pos.x, mn.pos.y, 255);
         if (withCreeps) for (const c of world.creepList()) if (!c.spawning) m.set(c.pos.x, c.pos.y, 255);
         return m;
     };

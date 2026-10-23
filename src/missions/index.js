@@ -15,6 +15,7 @@ const fleet = require('./fleet');
 const logistics = require('./logistics');
 const repair = require('./repair');
 const fortify = require('./fortify');
+const mineral = require('./mineral');
 const upgrade = require('./upgrade');
 const build = require('./build');
 const decongest = require('./decongest');
@@ -35,7 +36,7 @@ const generators = [
     { name: 'tower', generate: tower.generate },
     // phase 2: scout, remote build/harvest/haul, reserve, claim, move2flag
     { name: 'harvest', generate: harvest.generate },
-    // phase 2: mineral
+    { name: 'mineral', generate: mineral.generate },
     { name: 'miningLane', generate: miningLane.generate },
     { name: 'fleet', generate: fleet.generate, key: p => `${laneClaims.of(p.rc).mining.size}` },
     { name: 'coreLane', generate: coreLane.generate },
@@ -64,6 +65,7 @@ const executors = {
     build: build.nextTask,
     repair: repair.nextTask,
     fortify: fortify.nextTask,
+    mineral: mineral.nextTask,
     decongest: decongest.nextTask,
     coreLane: coreLane.nextTask,
     miningLane: miningLane.nextTask
@@ -75,7 +77,8 @@ const UNASSIGNABLE = new Set(['hauler_fleet', 'tower_attack', 'tower_heal', 'tow
 /** Body parts a mission type needs (v1 getMissionNeeds). */
 /** @param {string} type */
 function needs(type) {
-    if (type === 'harvest' || type === 'mineral' || type === 'dismantle') return { work: true, carry: false, claim: false };
+    if (type === 'harvest' || type === 'dismantle') return { work: true, carry: false, claim: false };
+    if (type === 'mineral') return { work: true, carry: true, claim: false };
     if (type === 'upgrade' || type === 'build' || type === 'repair' || type === 'fortify') return { work: true, carry: true, claim: false };
     if (type === 'transfer' || type === 'coreLane' || type === 'miningLane') return { work: false, carry: true, claim: false };
     if (type === 'reserve' || type === 'claim') return { work: false, carry: false, claim: true };
