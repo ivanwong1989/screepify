@@ -65,8 +65,8 @@ source files only.
 | # | Feature | v1 source (lines) | v2 target | Effort |
 |---|---|---|---|---|
 | P1 ✅ | Room policy (phase + state) | `overseer/policy/*` (279) | `processes/sense/policy.js`, targets in `config.policy`, result in `rc.policy`; upgrade + fortify gated | S |
-| P2 | Mission refresh throttling | `board/utils/missionThrottle.js` (56) | `cadence` field on each MissionType, read by `plan/missions.js` | S |
-| P3 | Traffic manager | `traffic/*`, `utils/movement.js` (1,019) | `services/traffic.js` + one call in `act/creeps.js` after all moves | M |
+| P2 ✅ | Mission refresh throttling | `board/utils/missionThrottle.js` (56) | Per-generator interval in `config.missions.every`, reuse in `plan/missions.js` | S |
+| P3 ✅ | Traffic manager | `traffic/*`, `utils/movement.js` (1,019) | `services/traffic.js` + `act/traffic.js` (after all creeps act) | M |
 | P4 | Core lane logistics | `mission.logisticsCoreV2.js`, `role.coreLaneHauler.js` (3,469) | `services/lanes.js` (path + cache), `missions/coreLane.js`, actions `load` / `deliver` | L |
 | P5 | Mining lane logistics | `mission.logisticsMiningV2.js`, `role.miningLaneHauler.js`, `utils/creepLaneMovement.js` (1,367) | Reuse `services/lanes.js`, then `missions/miningLane.js`; replaces `fleet.js` haul routes from phase STORAGE | M |
 | P6 | Early-game "simple" variants | `logisticsSimple*`, `simpleHarvest`, `role.simple*` (2,635) | **Not ported as code.** Covered by v2's existing harvest/logistics plus P1 phase settings | S |
@@ -121,12 +121,30 @@ P3 traffic ┘   P13 ramparts                              P12 labs
 - Console: `policy.show()`, `policy.set(room, state)`, `policy.clear(room)`. The phase and state are also in the stats segment.
 - Still to do in later items: phase choosing the logistics mode (P4/P5/P6).
 
-**P3 Traffic.**
-- Keep the vendored `screeps-traffic-manager` as is, in `services/traffic/vendor.js`.
-- Write one small adapter. Creeps register through `services/movement.js` only, and `act/creeps.js` resolves all moves once per room after every creep has acted.
-- Drop the `.ori.js` copy.
+**P2 Refresh intervals. ✅ Done** (`test/planning.test.js`).
+- Each generator reuses its last output until its interval in `config.missions.every` runs out. The values are v1's: tower 1, logistics 7, fleet 11, upgrade 11, build 17, harvest 21, repair 25, others 31.
+- All generators refresh straight away when any of these change: op or economy state, policy, RCL, energy capacity, site count, or whether hostiles are present. Logistics also refreshes when spawn energy drops below capacity, so refills start at once.
+- Simulator: planning went from 0.027 to 0.006 ms per tick with the same economy.
+
+**P3 Traffic. ✅ Done** (`services/traffic.js`, `processes/act/traffic.js`, `test/traffic.test.js`).
+- Rewritten from the vendored manager instead of copying it. Same depth-first swap/shove search and working-area preference. State lives in a per-tick heap store, not on room or creep objects.
+- `movement.to` registers each step and still calls `creep.move`. If `act.traffic` is off (`config.traffic.enabled`) or fails, creeps move exactly as before.
+- `act.traffic` runs once per shard, after `act.creeps`, and resolves every room where something wants to move.
+- Every one of my creeps can be moved aside unless it's pinned, tired or has no MOVE. Actions mark a working area once in range. Harvesting creeps are pinned, so miners stay on their containers.
+- Movement now spots when a creep was shoved off its path and repaths, instead of following the old path from the wrong tile.
+- Shove directions are tried in a fixed rotating order, not at random.
+- The simulator now lets a creep step into a tile vacated in the same tick, as the real game does.
+- Results: in a one-tile lane, an idle creep no longer blocks a hauler. On the open simulator room the economy is unchanged and traffic costs about 0.025 ms per tick.
 
 **Existing rooms (decided 2026-10-23).** Three live rooms are already built around a core lane, with extensions placed along it, which the lane hauler keeps supplied. The design exists to cut traffic. P4/P5 port the **behaviour** first: they run on the lanes and flags already in those rooms and don't move or add structures. Whether the automatic stamp/room planner (DESIGN §12.1) can produce the same layout is a separate later question.
+
+What the live layout looks like (screenshot of one room, 2026-10-23):
+- The spawns and storage sit at the top of the core.
+- From there a diagonal road loop runs down and back up through about 60 extensions, which are packed on both sides so every one touches the lane.
+- The labs are a separate cluster under the `CORE_LABS` flag.
+- Mining roads come in from each source to the edge of the core.
+
+So the core lane hauler only works if it follows the loop in one direction and fills every extension next to it as it passes. Traffic (P3) matters most where the mining roads meet the loop.
 
 Before v2 runs in those rooms, check `plan.construction` (the phase-1 stamp builder). Extensions, towers and storage are capped per RCL and will already be at the cap there, so only roads and containers are at risk. It could still add roads from the spawn to the sources and controller, and a container at the end of each road. If that's unwanted, set `config.set('construction.enabled', false)` until the planner understands the lane layout.
 

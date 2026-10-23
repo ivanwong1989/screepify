@@ -2,6 +2,7 @@
 'use strict';
 
 const movement = require('../services/movement');
+const traffic = require('../services/traffic');
 const { unpack } = require('../services/pos');
 const { CONTINUE, DONE, SKIP } = require('../contracts/task');
 
@@ -44,7 +45,10 @@ function targetOf(task) {
  */
 function approach(creep, target, range) {
     const pos = target.pos || target;
-    if (creep.pos.roomName === pos.roomName && creep.pos.inRangeTo(pos, range)) return true;
+    if (creep.pos.roomName === pos.roomName && creep.pos.inRangeTo(pos, range)) {
+        traffic.working(creep, pos, range);
+        return true;
+    }
     movement.to(creep, pos, { range });
     return false;
 }
@@ -75,6 +79,7 @@ const actions = {
         const src = targetOf(t);
         if (!src) return SKIP;
         if (!approach(creep, src, 1)) return CONTINUE;
+        traffic.pin(creep);
         const r = creep.harvest(src);
         if (r === OK) {
             const cap = creep.store.getCapacity();

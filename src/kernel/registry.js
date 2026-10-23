@@ -25,6 +25,7 @@ module.exports = [
     require('../processes/act/towers'),
     require('../processes/act/links'),
     require('../processes/act/creeps'),
+    require('../processes/act/traffic'),
     // REPORT
     require('../processes/report/stats'),
     require('../processes/report/pixel')

@@ -4,6 +4,7 @@
 const cache = require('./cache');
 const roomData = require('./roomData');
 const { isExit } = require('./pos');
+const traffic = require('./traffic');
 
 /**
  * Movement library (DESIGN §11.1), built on Traveler's ideas:
@@ -12,7 +13,7 @@ const { isExit } = require('./pos');
  * - cost matrices cached per room, rebuilt when structures/sites change
  * - route between rooms with Game.map.findRoute first, then PathFinder inside the route
  *
- * Traffic management (swap/shove) is phase 2.
+ * Moves go through services/traffic, which can swap or shove creeps in the way.
  */
 
 const STUCK_TICKS = 2;
@@ -178,9 +179,13 @@ function to(creep, target, opts) {
         const same = creep.pos.x === st.lx && creep.pos.y === st.ly;
         const bounced = isExit(creep.pos) && (st.lx === 0 || st.ly === 0 || st.lx === 49 || st.ly === 49);
         if (same || bounced) st.stuck++;
-        else {
+        else if (onPath(creep.pos, st)) {
             st.stuck = 0;
             st.path = st.path.substr(1);
+        } else {
+            // Moved somewhere else (shoved by traffic): the path no longer starts here.
+            st.stuck = 0;
+            st.path = '';
         }
     }
 
@@ -195,7 +200,24 @@ function to(creep, target, opts) {
         return ERR_NO_PATH;
     }
     const dir = /** @type {DirectionConstant} */ (Number(st.path[0]));
-    return creep.move(dir);
+    return traffic.register(creep, dir);
+}
+
+const STEP = [null, [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+
+/**
+ * True when `pos` is where last tick's first path step leads (room changes count).
+ * @param {RoomPosition} pos
+ * @param {TravelState} st
+ */
+function onPath(pos, st) {
+    const d = STEP[Number(st.path[0])];
+    if (!d) return true;
+    const x = st.lx + d[0];
+    const y = st.ly + d[1];
+    // Stepping onto an exit tile moves the creep to the next room's edge.
+    if (x <= 0 || x >= 49 || y <= 0 || y >= 49) return true;
+    return pos.x === x && pos.y === y;
 }
 
 /** Forgets a creep's cached path. @param {Creep|string} creep */

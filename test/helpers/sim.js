@@ -631,28 +631,36 @@ function createWorld(spec) {
                 it.target.hits = Math.min(it.target.hitsMax, it.target.hits + amt * C.REPAIR_POWER);
             }
         }
-        // Movement: no stacking; swaps allowed.
+        // Movement: no stacking; swaps allowed; a creep may step into a tile
+        // vacated this tick (resolved in passes until nothing changes, like the engine).
         const occupied = new Map();
         for (const c of creeps) if (!c.spawning) occupied.set(c.pos.y * 50 + c.pos.x, c);
-        for (const c of creeps) {
-            const dir = c._intents.move;
-            if (!dir || c.spawning) continue;
-            const nx = c.pos.x + DIRS[dir][0];
-            const ny = c.pos.y + DIRS[dir][1];
-            if (nx < 1 || nx > 48 || ny < 1 || ny > 48) continue;
-            if (world.terrain[ny * 50 + nx] === C.TERRAIN_MASK_WALL) continue;
-            const blocker = structures.concat([controller]).find(s => s.pos.x === nx && s.pos.y === ny &&
-                C.OBSTACLE_OBJECT_TYPES.indexOf(s.structureType) !== -1);
-            if (blocker || sources.some(s => s.pos.x === nx && s.pos.y === ny)) continue;
-            const other = occupied.get(ny * 50 + nx);
-            if (other && other !== c) {
-                const od = other._intents.move;
-                const swaps = od && other.pos.x + DIRS[od][0] === c.pos.x && other.pos.y + DIRS[od][1] === c.pos.y;
-                if (!swaps) continue;
+        const moved = new Set();
+        let progress = true;
+        while (progress) {
+            progress = false;
+            for (const c of creeps) {
+                const dir = c._intents.move;
+                if (!dir || c.spawning || moved.has(c)) continue;
+                const nx = c.pos.x + DIRS[dir][0];
+                const ny = c.pos.y + DIRS[dir][1];
+                if (nx < 1 || nx > 48 || ny < 1 || ny > 48) continue;
+                if (world.terrain[ny * 50 + nx] === C.TERRAIN_MASK_WALL) continue;
+                const blocker = structures.concat([controller]).find(s => s.pos.x === nx && s.pos.y === ny &&
+                    C.OBSTACLE_OBJECT_TYPES.indexOf(s.structureType) !== -1);
+                if (blocker || sources.some(s => s.pos.x === nx && s.pos.y === ny)) continue;
+                const other = occupied.get(ny * 50 + nx);
+                if (other && other !== c) {
+                    const od = other._intents.move;
+                    const swaps = od && other.pos.x + DIRS[od][0] === c.pos.x && other.pos.y + DIRS[od][1] === c.pos.y;
+                    if (!swaps) continue;
+                }
+                if (occupied.get(c.pos.y * 50 + c.pos.x) === c) occupied.delete(c.pos.y * 50 + c.pos.x);
+                c.pos = new RoomPosition(nx, ny, roomName);
+                occupied.set(ny * 50 + nx, c);
+                moved.add(c);
+                progress = true;
             }
-            occupied.delete(c.pos.y * 50 + c.pos.x);
-            c.pos = new RoomPosition(nx, ny, roomName);
-            occupied.set(ny * 50 + nx, c);
         }
         for (const c of creeps) c._intents = {};
 
