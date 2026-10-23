@@ -70,5 +70,19 @@ module.exports = {
         'constructedWall', 'extension', 'link', 'storage', 'tower', 'observer', 'powerSpawn', 'powerBank', 'lab',
         'terminal', 'nuker', 'factory', 'invaderCore'],
     RESOURCE_ENERGY: 'energy',
-    BOOSTS: {}
+    BOOSTS: {},
+    LAB_REACTION_AMOUNT: 5, LAB_MINERAL_CAPACITY: 3000, LAB_ENERGY_CAPACITY: 2000,
+    // Base reactions (tier 0 → tier 1, and G); the game's table is bigger.
+    REACTIONS: {
+        H: { O: 'OH', L: 'LH', K: 'KH', U: 'UH', Z: 'ZH', G: 'GH' },
+        O: { H: 'OH', L: 'LO', K: 'KO', U: 'UO', Z: 'ZO', G: 'GO' },
+        Z: { K: 'ZK', H: 'ZH', O: 'ZO' },
+        L: { U: 'UL', H: 'LH', O: 'LO' },
+        K: { Z: 'ZK', H: 'KH', O: 'KO' },
+        G: { H: 'GH', O: 'GO' },
+        U: { L: 'UL', H: 'UH', O: 'UO' },
+        ZK: { UL: 'G' },
+        UL: { ZK: 'G' }
+    },
+    REACTION_TIME: { OH: 20, ZK: 5, UL: 5, G: 5, UH: 10, UO: 10, KH: 10, KO: 10, LH: 15, LO: 10, ZH: 20, ZO: 10, GH: 10, GO: 10 }
 };

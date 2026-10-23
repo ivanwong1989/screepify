@@ -10,7 +10,9 @@
  * @typedef {{min: number, target: number, max: number}} Band
  * @typedef {{terminal: import('./terminal').TerminalConfig, roomName: string,
  *            miningContainers: Set<string>, controllerContainer?: string|null, hasBuffer?: boolean,
- *            blocked?: Set<string>, exclude?: Set<string>}} BandInfo
+ *            blocked?: Set<string>, exclude?: Set<string>,
+ *            labs?: Record<string, import('./labs').LabRole>, labCfg?: import('./labs').LabConfig}} BandInfo
+ *   labs: role per lab id (services/labs plan); labs without a role offer everything
  *   blocked: `${id}:${res}` left out by services/flipGuard
  *   exclude: stores another hauler owns outright (the core lane's targets)
  */
@@ -77,9 +79,31 @@ function band(s, res, info) {
             }
             return cfg.flushUntargeted ? OFFER_ALL : null;
         }
+        case STRUCTURE_LAB: {
+            // Energy in a lab is for boosting; it isn't moved here.
+            if (res === RESOURCE_ENERGY) return null;
+            const role = info.labs && info.labs[s.id];
+            const held = labMineral(s);
+            if (role && res === role.res) {
+                // A lab holds one mineral: ask only once the old one is gone
+                // (it is offered meanwhile: "empty but wrong mineral", v1).
+                if (held && held !== res) return null;
+                const c = /** @type {import('./labs').LabConfig} */ (info.labCfg);
+                if (role.kind === 'in') return mk(Math.floor(c.inputTarget / 2), c.inputTarget, LAB_MINERAL_CAPACITY);
+                if (role.kind === 'boost') return mk(Math.floor(c.boostTarget / 2), c.boostTarget, LAB_MINERAL_CAPACITY);
+                return mk(0, 0, c.outputMax);
+            }
+            return OFFER_ALL;
+        }
         default:
             return null;
     }
+}
+
+/** The mineral a lab holds, or null. @param {any} s */
+function labMineral(s) {
+    for (const r of Object.keys(s.store)) if (r !== RESOURCE_ENERGY && (s.store[r] || 0) > 0) return r;
+    return null;
 }
 
 /**
@@ -95,6 +119,12 @@ function resourcesOf(s, info) {
     }
     const out = new Set(/** @type {ResourceConstant[]} */ (Object.keys(s.store).filter(r => (s.store[r] || 0) > 0)));
     if (s.structureType !== STRUCTURE_CONTAINER || band(s, RESOURCE_ENERGY, info) !== OFFER_ALL) out.add(RESOURCE_ENERGY);
+    if (s.structureType === STRUCTURE_LAB) {
+        out.delete(RESOURCE_ENERGY);
+        const role = info.labs && info.labs[s.id];
+        if (role) out.add(/** @type {ResourceConstant} */ (role.res));
+        return Array.from(out);
+    }
     if (s.structureType === STRUCTURE_TERMINAL) {
         const cfg = info.terminal;
         const room = (cfg.rooms && cfg.rooms[info.roomName]) || {};

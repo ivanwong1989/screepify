@@ -229,6 +229,54 @@ class StoreStructure extends Structure {
     }
 }
 
+/** Lab store: energy up to 2000, one mineral type up to 3000. */
+class LabStore extends Store {
+    constructor() {
+        super(C.LAB_MINERAL_CAPACITY + C.LAB_ENERGY_CAPACITY, false);
+    }
+    mineralType() {
+        for (const k in this) if (k !== 'energy' && (this[k] || 0) > 0) return k;
+        return null;
+    }
+    getCapacity(r) {
+        if (!r) return null;
+        if (r === 'energy') return C.LAB_ENERGY_CAPACITY;
+        const m = this.mineralType();
+        return m && m !== r ? null : C.LAB_MINERAL_CAPACITY;
+    }
+    getFreeCapacity(r) {
+        const cap = this.getCapacity(r);
+        if (cap === null) return null;
+        return cap - (this[r] || 0);
+    }
+}
+
+class StructureLab extends Structure {
+    constructor(world, x, y) {
+        super(world, x, y, 'lab', 500);
+        this.store = new LabStore();
+        this.cooldown = 0;
+    }
+    get mineralType() { return this.store.mineralType(); }
+    runReaction(a, b) {
+        if (this.cooldown > 0) return C.ERR_TIRED;
+        if (!a || !b || a.structureType !== 'lab' || b.structureType !== 'lab') return C.ERR_INVALID_TARGET;
+        if (this.pos.getRangeTo(a) > 2 || this.pos.getRangeTo(b) > 2) return C.ERR_NOT_IN_RANGE;
+        const ra = a.mineralType;
+        const rb = b.mineralType;
+        if (!ra || !rb || (a.store[ra] || 0) < C.LAB_REACTION_AMOUNT || (b.store[rb] || 0) < C.LAB_REACTION_AMOUNT) return C.ERR_NOT_ENOUGH_RESOURCES;
+        const product = C.REACTIONS[ra] && C.REACTIONS[ra][rb];
+        if (!product) return C.ERR_INVALID_ARGS;
+        if (this.store.getFreeCapacity(product) === null || this.store.getFreeCapacity(product) < C.LAB_REACTION_AMOUNT) return C.ERR_FULL;
+        a.store[ra] -= C.LAB_REACTION_AMOUNT;
+        b.store[rb] -= C.LAB_REACTION_AMOUNT;
+        this.store[product] = (this.store[product] || 0) + C.LAB_REACTION_AMOUNT;
+        this.cooldown = C.REACTION_TIME[product] || 10;
+        this._world.stats.reactions = (this._world.stats.reactions || 0) + 1;
+        return C.OK;
+    }
+}
+
 class StructureTower extends StoreStructure {
     _act(target, power, apply) {
         if (!target || this.store.energy < C.TOWER_ENERGY_COST) return C.ERR_NOT_ENOUGH_ENERGY;
@@ -621,6 +669,7 @@ function createWorld(spec) {
         const cap = { extension: C.EXTENSION_ENERGY_CAPACITY[controller.level], container: C.CONTAINER_CAPACITY, storage: C.STORAGE_CAPACITY, terminal: 300000, tower: C.TOWER_CAPACITY }[type];
         if (type === 'tower') s = new StructureTower(world, x, y, type, 3000, cap, true);
         else if (type === 'link') s = new StructureLink(world, x, y);
+        else if (type === 'lab') s = new StructureLab(world, x, y);
         else if (cap) s = new StoreStructure(world, x, y, type, type === 'container' ? C.CONTAINER_HITS : 1000, cap, type !== 'storage' && type !== 'container' && type !== 'terminal');
         else s = new Structure(world, x, y, type, type === 'road' ? C.ROAD_HITS : 1000);
         if (type === 'terminal') s.cooldown = 0;
@@ -782,7 +831,7 @@ function createWorld(spec) {
                 world.stats.died.push(c.name);
             }
         }
-        for (const s of structures) if (s.structureType === 'extractor' && s.cooldown > 0) s.cooldown--;
+        for (const s of structures) if ((s.structureType === 'extractor' || s.structureType === 'lab') && s.cooldown > 0) s.cooldown--;
         // Sources regenerate.
         for (const s of sources) {
             s.ticksToRegeneration--;

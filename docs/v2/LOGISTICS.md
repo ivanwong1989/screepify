@@ -1,6 +1,6 @@
 # Screepify v2 — Logistics: requests, bands and the ledger
 
-> Status: **L1–L3 done**; L4 (labs) to do. It replaces the per-feature storage/terminal rules from P4, P10 and P11 before any of them is deployed. It extends [DESIGN.md](DESIGN.md) §6 (ctx) and §9 (tasks).
+> Status: **L1–L4 done.** It replaces the per-feature storage/terminal rules from P4, P10 and P11 before any of them is deployed. It extends [DESIGN.md](DESIGN.md) §6 (ctx) and §9 (tasks).
 
 ## 1. The problem
 
@@ -164,6 +164,15 @@ Live on 2026-10-23, `sense.logistics` cost **0.8 CPU per tick** for three rooms,
 - Only structure types that can have a band are looked at (`requests.BANDED`: no links, labs, factory, ramparts…). Energy-only stores skip the walk over their store's keys.
 - A lane hauler with nothing to do at the head looks again after 5 ticks, not every tick.
 
+## 4f. Labs (L4)
+
+- **Plan** (`services/labs`, `plan.labs` every 100 ticks, on heap): the input pair is the one most other labs can react with (within 2 of both; v1). The reaction is `config.labs.reaction` or **auto**: the product whose two reagents the room holds most of (both ≥ 10k, product < 20k). The current reaction is kept while its reagents last (≥ 2k), so the plan doesn't flip between similar stockpiles. Boost labs come from `config.labs.boosts` (`{resource: labId}`; v1).
+- **Bands:** input lab asks for its reagent below 1,000, up to 2,000. Output lab gives its product above 1,500, down to 0. Boost lab asks for its boost below 500, up to 1,000. **Any other mineral is offered in full**, and a lab is never asked for a reagent while it still holds a different mineral (v1's "empty but wrong mineral is fine"). Lab energy (for boosting) stays with logistics supply.
+- **Hauling:** `missions/labHaul` keeps one hauler (≤ 10 CARRY) per room while any lab job is pending. It takes matcher jobs that touch a lab (`touch` option), using the same committed-job code as the lane hauler (`missions/shared/jobs`). No new hauling rules.
+- **Reactions:** `act.labs` runs each output lab off cooldown when both inputs hold ≥ 5 of the planned reagents.
+- **Tests** (`test/labs.test.js`): layout; reaction choice on the live W44S28 stock (→ KO), stickiness and config; lab bands; a 4,000-tick sim (reactions run, every KO unit accounted for, no lab both filled and emptied, output labs never stall, lane still fed); a reaction switch mid-run (old reagents out, new ones in, no lab filled then emptied of the same resource); boost lab stocked to exactly 1,000 and then left alone. Planted bugs (no wrong-mineral rule, input labs that give back) both fail the soaks.
+- **Not ported:** v1's reverse mode (breaking compounds down) and the per-room manual input/output lab lists.
+
 ## 5. Plan
 
 | Step | Scope |
@@ -171,6 +180,6 @@ Live on 2026-10-23, `sense.logistics` cost **0.8 CPU per tick** for three rooms,
 | L1 ✅ | `services/bands.js`, `services/ledger.js`, `services/requests.js`, `services/matcher.js`, `sense.logistics` (`rc.requests`); `test/logistics.test.js`. No behaviour change yet |
 | L2 ✅ | `missions/shared/laneHead.js`: committed jobs at the head, leftover cargo and storage ↔ terminal through the matcher; `laneStock` and `dumpCargo` removed; `services/flipGuard`; `test/laneHead.test.js` |
 | L3 ✅ | `transfer.js` and mineral miner delivery through the matcher; container bands by role; mining-lane and fleet sinks; `gather` and the controller container; lane targets left out of the list; `test/economyFlow.test.js` |
-| L4 | P12 labs as bands (reagent requests, product offers, boost stock), with no new hauling rules |
+| L4 ✅ | P12 labs as bands (`services/labs`, `plan.labs`, `act.labs`, lab bands, `missions/labHaul`, shared `missions/shared/jobs`); `test/labs.test.js` |
 
 P11's balancing (`act.terminal`) and the terminal targets carry over unchanged as config. Only how they get moved changes.

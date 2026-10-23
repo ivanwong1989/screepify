@@ -16,6 +16,7 @@ const logistics = require('./logistics');
 const repair = require('./repair');
 const fortify = require('./fortify');
 const mineral = require('./mineral');
+const labHaul = require('./labHaul');
 const upgrade = require('./upgrade');
 const build = require('./build');
 const decongest = require('./decongest');
@@ -47,7 +48,7 @@ const generators = [
         key: p => `${p.intel.energyAvailable < p.intel.energyCapacityAvailable ? 'refill' : 'full'}:` +
             `${laneClaims.of(p.rc).core ? 'lane' : '-'}:${laneClaims.of(p.rc).mining.size}`
     },
-    // phase 2: labs
+    { name: 'labHaul', generate: labHaul.generate },
     { name: 'repair', generate: repair.generate },
     { name: 'fortify', generate: fortify.generate },
     { name: 'upgrade', generate: upgrade.generate },
@@ -66,6 +67,7 @@ const executors = {
     repair: repair.nextTask,
     fortify: fortify.nextTask,
     mineral: mineral.nextTask,
+    labHaul: labHaul.nextTask,
     decongest: decongest.nextTask,
     coreLane: coreLane.nextTask,
     miningLane: miningLane.nextTask
@@ -80,7 +82,7 @@ function needs(type) {
     if (type === 'harvest' || type === 'dismantle') return { work: true, carry: false, claim: false };
     if (type === 'mineral') return { work: true, carry: true, claim: false };
     if (type === 'upgrade' || type === 'build' || type === 'repair' || type === 'fortify') return { work: true, carry: true, claim: false };
-    if (type === 'transfer' || type === 'coreLane' || type === 'miningLane') return { work: false, carry: true, claim: false };
+    if (type === 'transfer' || type === 'coreLane' || type === 'miningLane' || type === 'labHaul') return { work: false, carry: true, claim: false };
     if (type === 'reserve' || type === 'claim') return { work: false, carry: false, claim: true };
     return { work: false, carry: false, claim: false };
 }

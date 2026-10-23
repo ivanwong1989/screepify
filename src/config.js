@@ -35,6 +35,9 @@
  * @property {{enabled: boolean, maxStock: number, minStorageFree: number}} minerals
  *           mineral mining (missions/mineral): stops at maxStock of that mineral
  *           in storage + terminal, or when storage has less than minStorageFree space
+ * @property {import('./services/labs').LabConfig} labs
+ *           lab reactions and boost stock (services/labs, plan.labs, act.labs);
+ *           reaction 'auto' or a product ('KO'); boosts: {resource: labId}
  * @property {import('./services/terminal').TerminalConfig} terminal
  *           terminal stock targets (lane hauler, services/terminal) and energy
  *           balancing between rooms (act.terminal)
@@ -67,6 +70,10 @@ const DEFAULTS = {
     traffic: { enabled: true },
     lanes: { enabled: true, mining: true, cpuPerTick: 10, rebuildEvery: 5000, checkEvery: 50 },
     minerals: { enabled: true, maxStock: 100000, minStorageFree: 50000 },
+    labs: {
+        enabled: true, reaction: 'auto', inputTarget: 2000, outputMax: 1500, boostTarget: 1000,
+        minReagent: 10000, keepReagent: 2000, productCap: 20000, boosts: {}, rooms: {}
+    },
     terminal: {
         energy: 20000,
         energyMargin: 2000,
@@ -77,7 +84,7 @@ const DEFAULTS = {
     },
     missions: {
         every: {
-            tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, fortify: 25, mineral: 31, upgrade: 11,
+            tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, fortify: 25, mineral: 31, labHaul: 11, upgrade: 11,
             build: 17, decongest: 31, idleUpgrade: 31, default: 31
         }
     },

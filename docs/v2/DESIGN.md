@@ -334,7 +334,7 @@ move.to(creep, target, { range = 1, priority = 0, avoidHostile = true, preferRoa
 | `sense.threat` (hostile scan, threat level) | SENSE | critical | 1 (cheap `find` from tick cache) |
 | `act.links` | ACT | normal | 5 |
 | `act.terminal` (energy balancing; stock is a lane side job) | ACT | low | 50 |
-| `act.labs` | ACT | low | 10 (phase 2+) |
+| `act.labs` (run reactions; plan in `plan.labs` every 100) | ACT | low | 1 |
 
 Safe mode is driven by config (`config.safeMode.rooms`, or automatic for all owned rooms) instead of the hard-coded `W44S28`.
 
@@ -414,6 +414,7 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | `mission.fortify` (one fortifier on the weakest wall) | `missions/fortify.js`, rules in `services/policyRules.js` + `services/repairScan.js` |
 | `manager.terminal` stock targets + lane stock jobs, zeadmin energy balancer | `services/terminal.js`, `missions/shared/laneStock.js`, `processes/act/terminal.js`, `console/terminal.js` |
 | `mission.mineral` + `role.mineralMiner` | `missions/mineral.js` |
+| `manager.labs` (reactions, boost stock) | `services/labs.js`, `processes/plan/labs.js`, `processes/act/labs.js`, `missions/labHaul.js` |
 | v1 creeps after the switch | `processes/sense/adopt.js` + `act.spawns` bindStrays |
 | `telemetry/*`, `screeps-profiler` | `kernel/telemetry.js` (always on) |
 | `heap.js`, `roomCache.js`, `global._*` | `services/cache` |

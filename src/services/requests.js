@@ -25,18 +25,20 @@ const ledger = require('./ledger');
 /** Structure types that can have a band (services/bands); everything else is skipped. */
 /** @type {Set<string>} */
 const BANDED = new Set([STRUCTURE_SPAWN, STRUCTURE_EXTENSION, STRUCTURE_TOWER, STRUCTURE_CONTAINER,
-    STRUCTURE_TERMINAL, STRUCTURE_STORAGE]);
+    STRUCTURE_TERMINAL, STRUCTURE_STORAGE, STRUCTURE_LAB]);
 
 /** Request priority by structure type (higher first). */
 const REQUEST_PRIO = {
     [STRUCTURE_SPAWN]: 100,
     [STRUCTURE_EXTENSION]: 95,
     [STRUCTURE_TOWER]: 80,
+    [STRUCTURE_LAB]: 60,
     [STRUCTURE_TERMINAL]: 40,
     [STRUCTURE_CONTAINER]: 30
 };
 /** Offer priority by structure type (higher first). */
 const OFFER_PRIO = {
+    [STRUCTURE_LAB]: 55,
     [STRUCTURE_CONTAINER]: 50,
     [STRUCTURE_TERMINAL]: 40
 };

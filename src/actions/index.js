@@ -192,6 +192,11 @@ const actions = {
     // Mining lane haulers too (missions/miningLane).
     mlane(creep) {
         return require('../missions/miningLane').run(creep);
+    },
+
+    // And the lab hauler, through committed logistics jobs (missions/labHaul).
+    haul(creep) {
+        return require('../missions/labHaul').run(creep);
     }
 };
 

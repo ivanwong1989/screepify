@@ -75,7 +75,7 @@ source files only.
 | P9 | Remotes: reserve / harvest / haul / build | `mission.remote*`, `role.remote*`, `overseer.remote*` (3,946) | `missions/remote/{reserve,harvest,haul,build}.js`, `services/remotePath.js`; room kind `remote` per DESIGN §18.1 | L |
 | P10 ✅ | Minerals | `mission.mineral`, `role.mineralMiner` (378) | `missions/mineral.js` (miner carries its own loads, as v1); stock cap in `config.minerals` | S |
 | P11 ✅ | Terminal | `manager.terminal.js` (1,156) | `services/terminal.js` (rules), `missions/shared/laneStock.js` (lane side job), `processes/act/terminal.js` (balancing), `console/terminal.js`. Market trading not ported | M |
-| P12 | Labs (auto in/out, clear, reverse, boost stock) | `manager.labs.js`, `labs.reverse.js` (1,226) | `processes/plan/labs.js` (pick reaction) + `act/labs.js` (run) + lab fill/clear missions | M |
+| P12 ✅ | Labs (auto in/out, clear, reverse, boost stock) | `manager.labs.js`, `labs.reverse.js` (1,226) | `services/labs.js`, `plan/labs.js`, `act/labs.js`, lab bands, `missions/labHaul.js` ([LOGISTICS.md](LOGISTICS.md) L4). Reverse mode not ported | M |
 | P13 | Ramparts | `manager.ramparts.js` (29) | Fold into `plan/construction.js` | S |
 | P14 | Telemetry / console extras | `telemetry/*`, `console/*` (2,908) | Only the missing commands; telemetry is already in `kernel/telemetry.js` | S |
 | P15 | Empire layer (zeadmin) | `managers/zeadmin/*` (1,816) | Shard-scope processes, DESIGN §16 phase 4 | L, later |

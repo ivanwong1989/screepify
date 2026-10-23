@@ -25,6 +25,7 @@
  * @property {Set<string>|null} [to]         allowed destination ids (null: any)
  * @property {string|null} [res]             only this resource
  * @property {number} [min]                  ignore jobs smaller than this (default 1)
+ * @property {Set<string>|null} [touch]      job must start or end at one of these ids
  */
 
 /** Offers to the buffer rank below every real request. */
@@ -50,6 +51,7 @@ function pick(reqs, o) {
     /** @param {number} score @param {number} d @param {string} res @param {number} q @param {Entry|null} src @param {Entry|null} dst */
     const consider = (score, d, res, q, src, dst) => {
         if (q < min) return;
+        if (o.touch && !((src && o.touch.has(src.id)) || (dst && o.touch.has(dst.id)))) return;
         if (!best || score > best.score || (score === best.score && (d < best.d || (d === best.d && q > best.q)))) {
             best = { score, d, res, q, src, dst };
         }

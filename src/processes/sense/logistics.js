@@ -7,6 +7,7 @@ const requests = require('../../services/requests');
 const flipGuard = require('../../services/flipGuard');
 const cache = require('../../services/cache');
 const board = require('../../services/requestBoard');
+const labs = require('../../services/labs');
 
 /**
  * Publishes `rc.requests` (docs/v2/LOGISTICS.md): what each store asks for or
@@ -31,13 +32,15 @@ function buildFor(ctx, rc) {
     const miningContainers = new Set();
     for (const src of intel.sources) if (src.containerId) miningContainers.add(src.containerId);
     const l = ledger.build(/** @type {any} */ (rc.census).active);
+    const labPlan = labs.current(rc.name);
     const latches = cache.store('logistics.latch');
     const stats = cache.store('logistics.builds');
     stats[rc.name] = (stats[rc.name] || 0) + 1;
     return requests.build(stores, l, {
         terminal: ctx.config.terminal, roomName: rc.name, miningContainers, blocked: flipGuard.blocked(rc.name),
         controllerContainer: intel.controllerContainerId || null, hasBuffer: !!(room.storage && room.storage.my),
-        exclude: (rc.lanes && rc.lanes.core) || undefined
+        exclude: (rc.lanes && rc.lanes.core) || undefined,
+        labs: labPlan ? labPlan.roles : undefined, labCfg: labs.configFor(ctx.config.labs, rc.name)
     }, latches[rc.name] || (latches[rc.name] = {}));
 }
 

@@ -23,12 +23,14 @@ module.exports = [
     require('../processes/plan/assignment'),
     require('../processes/plan/construction'),
     require('../processes/plan/lanes'),
+    require('../processes/plan/labs'),
     // ACT
     require('../processes/act/defense'),
     require('../processes/act/spawns'),
     require('../processes/act/towers'),
     require('../processes/act/links'),
     require('../processes/act/terminal'),
+    require('../processes/act/labs'),
     require('../processes/act/creeps'),
     require('../processes/act/traffic'),
     // REPORT
