@@ -28,6 +28,8 @@
  * @property {{enabled: boolean, rooms: string[]}} safeMode   rooms: [] = all owned rooms
  * @property {{enabled: boolean}} construction                automatic layout + sites
  * @property {{stockpileTargets: Record<string, number>, stockpileHysteresis: number}} policy
+ * @property {{every: Record<string, number>}} missions   refresh interval per generator, in ticks
+ *           (v1 missionThrottle; the planner itself runs every 2 ticks)
  *           room policy: storage energy target per RCL for STOCKPILE (sense.policy)
  * @property {Record<string, any>} shards
  */
@@ -51,6 +53,12 @@ const DEFAULTS = {
     policy: {
         stockpileTargets: { 1: 0, 2: 0, 3: 20000, 4: 50000, 5: 100000, 6: 150000, 7: 250000, 8: 350000 },
         stockpileHysteresis: 0.10
+    },
+    missions: {
+        every: {
+            tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, upgrade: 11,
+            build: 17, decongest: 31, idleUpgrade: 31, default: 31
+        }
     },
     shards: {}
 };

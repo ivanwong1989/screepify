@@ -21,14 +21,20 @@ const transfer = require('./transfer');
 
 /** @typedef {(plan: import('../contracts/mission').PlanContext, out: import('../contracts/mission').Mission[]) => void} Generator */
 
-/** @type {Array<{name: string, generate: Generator}>} */
+/**
+ * `key` (optional): extra state that forces this generator to refresh as soon
+ * as it changes, on top of the planner's room key (plan/missions.js).
+ * Refresh intervals per name: config.missions.every.
+ * @type {Array<{name: string, generate: Generator, key?: (plan: import('../contracts/mission').PlanContext) => string}>}
+ */
 const generators = [
     { name: 'tower', generate: tower.generate },
     // phase 2: scout, remote build/harvest/haul, reserve, claim, move2flag
     { name: 'harvest', generate: harvest.generate },
     // phase 2: mineral
     { name: 'fleet', generate: fleet.generate },
-    { name: 'logistics', generate: logistics.generate },
+    // Refill missions must appear as soon as spawning empties the extensions.
+    { name: 'logistics', generate: logistics.generate, key: p => (p.intel.energyAvailable < p.intel.energyCapacityAvailable ? 'refill' : 'full') },
     // phase 2: labs
     { name: 'repair', generate: repair.generate },
     { name: 'upgrade', generate: upgrade.generate },

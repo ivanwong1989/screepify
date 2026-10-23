@@ -13,6 +13,11 @@ const registry = require('../../missions/index');
  * between, so planning can run on a cadence (config: processes.plan.missions.every).
  *
  * A generator that throws is skipped for that pass; the others still run.
+ *
+ * Each generator also has its own refresh interval (v1 missionThrottle,
+ * config.missions.every). Between refreshes its last output is reused. All
+ * generators refresh at once when the room changes in a way that matters
+ * (see `roomKey`), and a generator can add its own key (`registry` entry `key`).
  */
 
 /**
@@ -49,6 +54,20 @@ function efficientSources(intel, budget) {
 }
 
 /**
+ * Changes that make every generator refresh right away: room state, policy,
+ * RCL, energy capacity (body budgets), construction sites, hostiles present.
+ * @param {import('../../contracts/ctx').RoomCtx} rc
+ */
+function roomKey(rc) {
+    const i = /** @type {import('../sense/intel').RoomIntel} */ (rc.intel);
+    const s = /** @type {import('../sense/intel').RoomState} */ (rc.state);
+    const p = rc.policy;
+    const rcl = rc.room.controller ? rc.room.controller.level : 0;
+    return `${s.op}|${s.economy}|${p ? p.state : ''}|${p ? p.phase : ''}|${rcl}|` +
+        `${i.energyCapacityAvailable}|${i.sites.length}|${i.hostiles.length > 0 ? 1 : 0}`;
+}
+
+/**
  * Builds the room's missions now.
  * @param {import('../../contracts/ctx').TickContext} ctx
  * @param {import('../../contracts/ctx').RoomCtx} rc
@@ -68,15 +87,32 @@ function plan(ctx, rc) {
             return t ? { count: t.count, work: t.work, carry: t.carry } : { count: 0, work: 0, carry: 0 };
         }
     };
+    const every = ctx.config.missions.every;
+    const last = cache.store('plan.generators');
+    const roomLast = last[rc.name] || (last[rc.name] = {});
+    const rk = roomKey(rc);
     /** @type {import('../../contracts/mission').Mission[]} */
     const out = [];
     for (const g of registry.generators) {
+        const key = g.key ? `${rk}|${g.key(planCtx)}` : rk;
+        const prev = roomLast[g.name];
+        const interval = every[g.name] || every.default || 1;
+        if (prev && prev.key === key && ctx.time - prev.t < interval) {
+            for (const m of prev.out) out.push(m);
+            continue;
+        }
+        /** @type {import('../../contracts/mission').Mission[]} */
+        const mine = [];
         try {
-            g.generate(planCtx, out);
+            g.generate(planCtx, mine);
         } catch (e) {
             log.throttled(`gen:${rc.name}:${g.name}`, 100, () =>
                 log.error(`mission generator ${g.name} failed in ${rc.name}:`, (e && /** @type {any} */ (e).stack) || e));
+            delete roomLast[g.name];
+            continue;
         }
+        roomLast[g.name] = { t: ctx.time, key, out: mine };
+        for (const m of mine) out.push(m);
     }
     return out;
 }
@@ -108,6 +144,7 @@ module.exports = {
         publish(rc, plan(ctx, rc));
     },
     plan,
+    roomKey,
     publish,
     stored,
     efficientSources
