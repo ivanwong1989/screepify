@@ -156,6 +156,14 @@ Undoing each fix makes the soak fail with concrete reversals (`energy <spare>: i
 
 **Gap noted, not fixed:** nothing refills the controller container once mining lanes take over (from phase STORAGE); upgraders get their energy from storage instead. It isn't a loop. When logistics moves onto the matcher, the controller container's band request will cover it.
 
+## 4e. CPU after the first deploy
+
+Live on 2026-10-23, `sense.logistics` cost **0.8 CPU per tick** for three rooms, about 13% of the bot, against ~0.1–0.2 estimated from Node. Store reads are much costlier in the game VM. Changes:
+
+- **Built on demand** (`services/requestBoard`): `sense.logistics` only publishes a builder; the list is built the first time someone asks in a tick and reused after that. In the 6,000-tick soak it was built on 1,079 ticks, down from 6,000 (`test/economyFlow` keeps that under 1,800).
+- Only structure types that can have a band are looked at (`requests.BANDED`: no links, labs, factory, ramparts…). Energy-only stores skip the walk over their store's keys.
+- A lane hauler with nothing to do at the head looks again after 5 ticks, not every tick.
+
 ## 5. Plan
 
 | Step | Scope |

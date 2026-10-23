@@ -130,6 +130,9 @@ test('soak: 6000 ticks of the whole economy, no store passes resources back and 
     assert.ok(moves.some(m => m.from === sim.spare.id), 'spare container drained');
     assert.deepEqual(moves.filter(m => m.to === sim.spare.id).map(m => m.t), [], 'spare container never refilled');
     assert.deepEqual(sim.logs.filter(l => /ERROR/.test(l)), [], 'no errors, flip guard never fired');
+    // Built on demand only (sense.logistics): about 1 tick in 6 in this room.
+    const builds = require('../src/services/cache').store('logistics.builds').W1N1;
+    assert.ok(builds < 1800, `request list built ${builds} times in 6000 ticks`);
 });
 
 test('soak: fleet hauling (no mining lanes), controller container next to a source', () => {

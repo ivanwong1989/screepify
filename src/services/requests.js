@@ -22,6 +22,11 @@ const ledger = require('./ledger');
  * offers, and a draining one is ≥ target ≥ min, so it never requests.
  */
 
+/** Structure types that can have a band (services/bands); everything else is skipped. */
+/** @type {Set<string>} */
+const BANDED = new Set([STRUCTURE_SPAWN, STRUCTURE_EXTENSION, STRUCTURE_TOWER, STRUCTURE_CONTAINER,
+    STRUCTURE_TERMINAL, STRUCTURE_STORAGE]);
+
 /** Request priority by structure type (higher first). */
 const REQUEST_PRIO = {
     [STRUCTURE_SPAWN]: 100,
@@ -89,4 +94,4 @@ function build(structures, l, info, latch) {
     return out;
 }
 
-module.exports = { build, REQUEST_PRIO, OFFER_PRIO };
+module.exports = { build, BANDED, REQUEST_PRIO, OFFER_PRIO };

@@ -89,6 +89,10 @@ function band(s, res, info) {
  * @returns {ResourceConstant[]}
  */
 function resourcesOf(s, info) {
+    // Energy-only stores: no walk over the store's keys (costly in game).
+    if (s.structureType === STRUCTURE_EXTENSION || s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_TOWER) {
+        return [RESOURCE_ENERGY];
+    }
     const out = new Set(/** @type {ResourceConstant[]} */ (Object.keys(s.store).filter(r => (s.store[r] || 0) > 0)));
     if (s.structureType !== STRUCTURE_CONTAINER || band(s, RESOURCE_ENERGY, info) !== OFFER_ALL) out.add(RESOURCE_ENERGY);
     if (s.structureType === STRUCTURE_TERMINAL) {

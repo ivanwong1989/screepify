@@ -1,7 +1,7 @@
 // @ts-check
 'use strict';
 
-const cache = require('../../services/cache');
+const board = require('../../services/requestBoard');
 const matcher = require('../../services/matcher');
 const flipGuard = require('../../services/flipGuard');
 const movement = require('../../services/movement');
@@ -18,10 +18,13 @@ const movement = require('../../services/movement');
  * - stash(): commit leftover cargo (after a lane run, a link drain) to the
  *            best request for it, else storage.
  * - start(): when idle and empty, take one job between the head's stores
- *            (storage ↔ terminal: terminal band, P11 stock targets).
+ *            (storage ↔ terminal: terminal band, P11 stock targets). With
+ *            nothing to do it looks again after IDLE_RECHECK ticks (memory.sn).
  *
  * Every committed job is recorded by services/flipGuard.
  */
+
+const IDLE_RECHECK = 5;
 
 /**
  * This tick's request list for a room (built by sense.logistics), or null.
@@ -29,8 +32,7 @@ const movement = require('../../services/movement');
  * @returns {import('../../services/requests').Requests|null}
  */
 function requestsFor(room) {
-    const e = cache.store('logistics.requests')[room.name];
-    return e && e.t === Game.time ? e.reqs : null;
+    return board.get(room.name);
 }
 
 /** Storage and terminal next to the creep. @param {Creep} creep */
@@ -135,13 +137,20 @@ function stash(creep, keep) {
  * @param {Creep} creep
  */
 function start(creep) {
-    if (/** @type {any} */ (creep.memory).j || creep.store.getUsedCapacity() > 0) return false;
+    const mem = /** @type {any} */ (creep.memory);
+    if (mem.j || creep.store.getUsedCapacity() > 0) return false;
+    if (mem.sn && Game.time < mem.sn) return false;
     const reqs = requestsFor(creep.room);
     if (!reqs) return false;
     const head = headStores(creep);
     if (head.size < 2) return false;
     const j = matcher.pick(reqs, { cap: creep.store.getFreeCapacity(), from: head, to: head, pos: creep.pos });
-    if (!j) return false;
+    if (!j) {
+        // Nothing to do at the head: look again in a few ticks, not every tick.
+        mem.sn = Game.time + IDLE_RECHECK;
+        return false;
+    }
+    delete mem.sn;
     commit(creep, j, reqs);
     return job(creep);
 }
