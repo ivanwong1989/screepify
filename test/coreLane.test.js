@@ -158,7 +158,8 @@ test('sim: an idle lane hauler renews at the spawn next to the head', () => {
     assert.ok(hauler, 'lane hauler');
     hauler.ticksToLive = 900;
     const before = sim.world.stats.renewed || 0;
-    sim.run(60);
+    // The only spawn may be busy spawning first (it can't renew meanwhile).
+    sim.run(250);
     assert.ok((sim.world.stats.renewed || 0) > before, 'renewed');
     assert.ok(hauler.ticksToLive > 900, `ttl ${hauler.ticksToLive}`);
 });

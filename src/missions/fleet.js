@@ -3,6 +3,7 @@
 
 const cache = require('../services/cache');
 const roomData = require('../services/roomData');
+const miningLane = require('./miningLane');
 
 /**
  * Hauler fleet sizing (port of v1 mission.fleet_logistic).
@@ -68,9 +69,14 @@ function generate(plan, out) {
         (storage && l.pos.inRangeTo(storage.pos, 3)) || spawns.some(s => l.pos.inRangeTo(s.pos, 3)));
     const signature = storage ? `storage:${storage.id}` : `spawns:${spawns.map(s => s.id).sort().join(',')}`;
 
+    // Sources whose mining lane has a live hauler need no fleet carry.
+    const laneContainers = miningLane.covered(rc);
     let required = 0;
+    let fleetSources = 0;
     for (const source of intel.sources) {
         if (!efficientSources.has(source.id)) continue;
+        if (source.containerId && laneContainers.has(source.containerId)) continue;
+        fleetSources++;
         const linked = hasReceiver && links.some(l => l.pos.inRangeTo(source.pos, 2));
         let need = LINKED_SOURCE_MIN_CARRY;
         if (!linked) {
@@ -92,7 +98,9 @@ function generate(plan, out) {
     const early = (room.controller && room.controller.level < 2) ||
         (!storage && intel.energyCapacityAvailable <= EARLY_GAME_ENERGY_CAP);
     const scaled = early ? Math.ceil(required * EARLY_GAME_HAULER_MULTIPLIER) : required;
-    const minHaulers = Math.max(2, efficientSources.size);
+    // With mining lanes running, the fleet only refills off-lane structures
+    // and scavenges: one hauler is the floor (v1 phase-gated the fleet off).
+    const minHaulers = laneContainers.size > 0 ? Math.max(1, fleetSources) : Math.max(2, efficientSources.size);
     const desired = Math.max(minHaulers, Math.ceil(scaled / carryParts));
 
     out.push({

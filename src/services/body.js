@@ -12,6 +12,7 @@ const cache = require('./cache');
 const BUDGET_CAP = {
     worker: 3000,
     hauler: 4000,
+    miningHauler: 4000,
     remote_worker: 3000,
     remote_hauler: 3000
 };
@@ -159,6 +160,7 @@ function build(archetype, budget, opts) {
         case 'miner': return o.mode === 'mobile' ? mobileMiner(capped) : miner(capped);
         case 'hauler': return hauler(capped, o.maxCarry);
         case 'laneHauler': return roadHauler(capped, o.maxCarry);
+        case 'miningHauler': return hauler(capped, o.maxCarry);
         case 'scout': return scout();
         case 'worker':
         default: return worker(capped);

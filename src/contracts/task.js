@@ -5,7 +5,7 @@
  * Task contract (DESIGN §9), stored in `creep.memory.t`. Types only + status codes.
  *
  * @typedef {'harvest'|'transfer'|'withdraw'|'pickup'|'upgrade'|'build'|'repair'
- *   |'dismantle'|'reserve'|'claim'|'move'|'drop'|'wait'|'lane'} Action
+ *   |'dismantle'|'reserve'|'claim'|'move'|'drop'|'wait'|'lane'|'mlane'} Action
  *
  * @typedef {Object} Task
  * @property {Action} a    action

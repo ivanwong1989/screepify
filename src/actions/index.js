@@ -187,6 +187,11 @@ const actions = {
     // The core lane hauler decides every tick itself (missions/coreLane).
     lane(creep) {
         return require('../missions/coreLane').run(creep);
+    },
+
+    // Mining lane haulers too (missions/miningLane).
+    mlane(creep) {
+        return require('../missions/miningLane').run(creep);
     }
 };
 

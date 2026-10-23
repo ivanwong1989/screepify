@@ -68,7 +68,7 @@ source files only.
 | P2 ✅ | Mission refresh throttling | `board/utils/missionThrottle.js` (56) | Per-generator interval in `config.missions.every`, reuse in `plan/missions.js` | S |
 | P3 ✅ | Traffic manager | `traffic/*`, `utils/movement.js` (1,019) | `services/traffic.js` + `act/traffic.js` (after all creeps act) | M |
 | P4 ✅ | Core lane logistics | `mission.logisticsCoreV2.js`, `role.coreLaneHauler.js` (3,469) | `services/lanes*.js`, `laneStore.js`, `plan/lanes.js` (burst), `missions/coreLane.js`, action `lane` (~1,200 lines in total) | L |
-| P5 | Mining lane logistics | `mission.logisticsMiningV2.js`, `role.miningLaneHauler.js`, `utils/creepLaneMovement.js` (1,367) | Reuse `services/lanes.js`, then `missions/miningLane.js`; replaces `fleet.js` haul routes from phase STORAGE | M |
+| P5 ✅ | Mining lane logistics | `mission.logisticsMiningV2.js`, `role.miningLaneHauler.js`, `utils/creepLaneMovement.js` (1,367) | Reuse `services/lanes.js`, then `missions/miningLane.js`; replaces `fleet.js` haul routes from phase STORAGE | M |
 | P6 | Early-game "simple" variants | `logisticsSimple*`, `simpleHarvest`, `role.simple*` (2,635) | **Not ported as code.** Covered by v2's existing harvest/logistics plus P1 phase settings | S |
 | P7 | Fortify | `mission.fortify.js` (498) | Merge into `missions/repair.js` as a fortify mode, gated by P1 state | S |
 | P8 | Scout | `mission.scout`, `role.scout`, `overseer.scout` (651) | `missions/scout.js`, writes to `sense/intel` | S |
@@ -176,11 +176,14 @@ Original plan for P4, kept for reference:
 - Use the same `CORE_END` / `CORE_LABS` flag names until the room planner (DESIGN §12.1) places the lane itself.
 - Target is about 800 lines in total, down from 3,469.
 
-**P5 Mining lane.**
-- Same lane service.
-- Keep the blocked ring around each source (cost 255) and avoiding the core lane's start (cost 200).
-- 1–3 haulers per source from a supply of 10 energy per tick.
-- Hand over from `fleet.js` when the room reaches phase STORAGE.
+**P5 Mining lane. ✅ Done** (`missions/miningLane.js`, action `mlane`, `test/miningLane.test.js`).
+- From phase STORAGE (not CRITICAL), every source with a container gets mission `mlane:<source>`, archetype `miningHauler` (normal hauler body).
+- Fixed path from the container to the nearest sink (storage, else a non-mining container). Costs: plain 10, swamp 30, road 2. The core lane head costs 200 and tiles next to sources are blocked.
+- 1–3 haulers sized for 10 energy per tick over the round trip. They wait at the container for a full load (part-full only at TTL ≤ 80), walk the path, and unload into the sink.
+- Link sources (a link within 2 and another link away from all sources): one 1-CARRY hauler stands next to both the container and the link and moves energy from one to the other.
+- Once a lane has a live hauler, fleet sizing skips that source (fleet minimum becomes 1) and logistics drops its mining routes. Policy and spawning count `miningHauler` and `laneHauler` as haulers.
+- Changes from v1: the path is cached on heap with a signature (v1 rebuilt every 100 ticks); moves go through `services/traffic`; on/off switch `config.lanes.mining`.
+- Simulator, two remote-ish sources at RCL 4, 500 ticks: with the fleet, storage went down 3,550 while the containers sat close to full (3,125 on average). With mining lanes, storage went up 4,427 and the containers averaged 1,737.
 
 **P6 Simple variants.**
 - Diff v1's simple missions against v2's harvest/logistics.

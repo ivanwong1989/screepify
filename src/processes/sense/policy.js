@@ -29,7 +29,8 @@ const roomData = require('../../services/roomData');
  *   GROW        healthy
  *
  * Differences from v1:
- * - Creep counts come from census archetypes (miner/hauler), not roles.
+ * - Creep counts come from census archetypes, not roles (haulers = hauler +
+ *   miningHauler + laneHauler).
  * - DEFENSIVE ignores hostiles with no ATTACK/RANGED_ATTACK/HEAL/WORK/CLAIM
  *   (scouts passing through no longer stop upgrading).
  * - RECOVER's spawn-energy check only counts once the room has extensions,
@@ -196,7 +197,7 @@ function facts(room, intel, census) {
         energyCapacity: intel.energyCapacityAvailable,
         creeps: census ? census.creeps.length : intel.myCreeps.length,
         miners: (byArch.miner || []).length,
-        haulers: (byArch.hauler || []).length,
+        haulers: (byArch.hauler || []).length + (byArch.miningHauler || []).length + (byArch.laneHauler || []).length,
         threats: intel.hostiles.filter(isThreat).length
     };
 }

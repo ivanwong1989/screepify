@@ -38,6 +38,9 @@ const MAX_CONSECUTIVE = 5;
  * @property {'pool'|'slots'|'mission'} mode
  */
 
+/** Archetypes that carry energy for the room (any of them counts as "has haulers"). */
+const HAULERS = new Set(['hauler', 'miningHauler', 'laneHauler']);
+
 /**
  * v1 getDesiredCount.
  * @param {import('../../contracts/mission').Mission} m
@@ -116,7 +119,7 @@ function spawnBusyTicks(spawns) {
  */
 function nearDeath(creep, lead, busy) {
     const a = creep.memory.a;
-    if (a !== 'miner' && a !== 'hauler') return false;
+    if (a !== 'miner' && a !== 'hauler' && a !== 'miningHauler') return false;
     if (!Number.isFinite(creep.ticksToLive)) return false;
     return /** @type {number} */ (creep.ticksToLive) <= creep.body.length * CREEP_SPAWN_TIME + (lead || NEAR_DEATH_BUFFER) + busy;
 }
@@ -177,7 +180,7 @@ function budget(rc, mem, contractKey) {
     const avail = room.energyAvailable;
     const active = rc.census ? rc.census.active : [];
     const hasMiners = active.some(c => c.memory.a === 'miner');
-    const hasHaulers = active.some(c => c.memory.a === 'hauler');
+    const hasHaulers = active.some(c => HAULERS.has(/** @type {string} */ (c.memory.a)));
     // v1: the first lane hauler is sized from the energy there is now. A
     // replacement waits for full size; the current one keeps the lane filled.
     if (contractKey === 'coreLane') return active.some(c => c.memory.a === 'laneHauler') ? cap : Math.max(avail, 100);

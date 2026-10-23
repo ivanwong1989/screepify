@@ -5,6 +5,7 @@ const cache = require('../services/cache');
 const roomData = require('../services/roomData');
 const { closest } = require('../services/pos');
 const coreLane = require('./coreLane');
+const miningLane = require('./miningLane');
 
 /**
  * Logistics missions (port of v1 mission.logistics, energy routes).
@@ -266,7 +267,9 @@ function generate(plan, out) {
             const sink = closest(s.pos, sinks);
             if (sink) addRoute(s, sink, 'scavenge');
         }
+        const laneContainers = miningLane.covered(rc);
         for (const c of miningContainers) {
+            if (laneContainers.has(c.id)) continue;
             if ((c.store[RESOURCE_ENERGY] || 0) < carryParts * 50) continue;
             const sink = closest(c.pos, sinks);
             if (sink) addRoute(c, sink, 'mining');
