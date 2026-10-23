@@ -14,6 +14,7 @@ const telemetry = require('../kernel/telemetry');
  *   proc.enable(id) / proc.disable(id) / proc.every(id, n) / proc.reset(id)
  *   config.get(path?) / config.set(path, value) / config.reset(path) / config.reload()
  *   policy.show() / policy.set(room, state) / policy.clear(room)
+ *   terminal.show() / terminal.send(from, to, res, amount)   (console/terminal.js)
  */
 
 /**
@@ -57,7 +58,9 @@ function register(kernel) {
         'proc.every(id, n) / proc.reset(id)',
         'config.get(path?) / config.set(path, value) / config.reset(path) / config.reload()',
         'policy.show()                   room phase, state and why',
-        'policy.set(room, state) / policy.clear(room)   override a room\'s state'
+        'policy.set(room, state) / policy.clear(room)   override a room\'s state',
+        'terminal.show()                 terminal energy vs target, next stock move',
+        'terminal.send(from, to, res, amount)   one manual send'
     ].join('\n');
 
     g.stats = () => {
@@ -167,6 +170,8 @@ function register(kernel) {
             return `${room} policy override cleared`;
         }
     };
+
+    require('./terminal').register();
 }
 
 module.exports = { register };

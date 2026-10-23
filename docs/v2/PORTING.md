@@ -74,7 +74,7 @@ source files only.
 | P8 | Scout | `mission.scout`, `role.scout`, `overseer.scout` (651) | `missions/scout.js`, writes to `sense/intel` | S |
 | P9 | Remotes: reserve / harvest / haul / build | `mission.remote*`, `role.remote*`, `overseer.remote*` (3,946) | `missions/remote/{reserve,harvest,haul,build}.js`, `services/remotePath.js`; room kind `remote` per DESIGN §18.1 | L |
 | P10 | Minerals | `mission.mineral`, `role.mineralMiner` (378) | `missions/mineral.js` + storage routes in `logistics.js` | S |
-| P11 | Terminal | `manager.terminal.js` (1,156) | `processes/act/terminal.js` (balancing) + terminal jobs on the core lane | M |
+| P11 ✅ | Terminal | `manager.terminal.js` (1,156) | `services/terminal.js` (rules), `missions/shared/laneStock.js` (lane side job), `processes/act/terminal.js` (balancing), `console/terminal.js`. Market trading not ported | M |
 | P12 | Labs (auto in/out, clear, reverse, boost stock) | `manager.labs.js`, `labs.reverse.js` (1,226) | `processes/plan/labs.js` (pick reaction) + `act/labs.js` (run) + lab fill/clear missions | M |
 | P13 | Ramparts | `manager.ramparts.js` (29) | Fold into `plan/construction.js` | S |
 | P14 | Telemetry / console extras | `telemetry/*`, `console/*` (2,908) | Only the missing commands; telemetry is already in `kernel/telemetry.js` | S |
@@ -148,7 +148,7 @@ So the core lane hauler only works if it follows the loop in one direction and f
 
 Before v2 runs in those rooms, check `plan.construction` (the phase-1 stamp builder). Extensions, towers and storage are capped per RCL and will already be at the cap there, so only roads and containers are at risk. It could still add roads from the spawn to the sources and controller, and a container at the end of each road. If that's unwanted, set `config.set('construction.enabled', false)` until the planner understands the lane layout.
 
-**P4 Core lane. ✅ Done for refilling** (`test/coreLane.test.js`). Side jobs on the lane are still to do: terminal stock (P11) and lab hauling (P12).
+**P4 Core lane. ✅ Done for refilling** (`test/coreLane.test.js`). Terminal stock is done as a side job (P11); lab hauling (P12) is still to do.
 - **Lane discovery** (`services/lanes.js`, `laneSearch.js`, `laneGeo.js`) is v1's algorithm with v1's constants: the same head rules, candidate ends (service roads, bridge roads, the farthest road), routes through one or two waypoints, coverage scoring, and the loop join. A `CORE_END*` flag in the room still overrides the end. Like the live rooms, no flag is needed.
 - **Building** (`plan.lanes`) is a burst process. It works on one room at a time at `config.lanes.cpuPerTick` (10), resumes across ticks, and saves the lane to `Memory.rooms[n].ln`. It rebuilds when the room signature changes (checked every 50 ticks) or every 5,000 ticks (v1: every 500, because v1 kept the lane only on heap). Simulator room with 40 extensions: about 800 PathFinder searches per full search.
 - **Lane hauler** (`missions/coreLane.js`, archetype `laneHauler`, road body of 2 CARRY per MOVE up to 33 CARRY, one per room, priority 92):
@@ -201,6 +201,14 @@ Original plan for P4, kept for reference:
 - `census.parts` moved to `services/body.activeParts`.
 - `coreLane.js` is back under 400 lines.
 - `test/architecture.test.js` checks the import rules and file size on every run.
+
+**P11 Terminal. ✅ Done** (`test/terminal.test.js`).
+- What v1 had: market auto-trading (off by default), per-room terminal stock targets moved by the core lane hauler, and console sends. Energy balancing between rooms was in zeadmin (P15).
+- **Stock** (`services/terminal.nextMove`, `missions/shared/laneStock.js`): while idle at the head, next to storage and terminal, the lane hauler moves one load per two ticks. Energy is kept at `config.terminal.energy` (default 20k), the same both ways as v1. Other resources follow `config.terminal.stock` and `config.terminal.rooms[room].stock` within v1's deadband (5% of target, 50–2000). Unlike v1, resources with no target stay in the terminal unless `flushUntargeted` is set, so stock left for manual market orders isn't moved.
+- **Balance** (`act.terminal`, low tier, every 50): the room with the most energy above its policy stockpile target × 1.1 sends up to `balance.batch` (10k) to the room furthest below its own target. Terminals on cooldown are left out. The amount is halved until amount plus fee fits in the donor's terminal. The receiving terminal's surplus goes back to storage through the stock job.
+- **Console:** `terminal.show()`, `terminal.send(from, to, res, amount)`.
+- **Not ported:** automatic market trading (DESIGN §1 non-goal) and v1's manual order tracking.
+- The simulator now has terminals.
 
 **P6 Simple variants.**
 - Diff v1's simple missions against v2's harvest/logistics.

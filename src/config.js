@@ -32,6 +32,9 @@
  * @property {{enabled: boolean, mining: boolean, cpuPerTick: number, rebuildEvery: number, checkEvery: number}} lanes
  *           core lane search (plan.lanes) and the lane hauler (missions/coreLane);
  *           `mining` switches mining lanes (missions/miningLane) on or off
+ * @property {import('./services/terminal').TerminalConfig} terminal
+ *           terminal stock targets (lane hauler, services/terminal) and energy
+ *           balancing between rooms (act.terminal)
  * @property {{every: Record<string, number>}} missions   refresh interval per generator, in ticks
  *           (v1 missionThrottle; the planner itself runs every 2 ticks)
  *           room policy: storage energy target per RCL for STOCKPILE (sense.policy)
@@ -60,6 +63,13 @@ const DEFAULTS = {
     },
     traffic: { enabled: true },
     lanes: { enabled: true, mining: true, cpuPerTick: 10, rebuildEvery: 5000, checkEvery: 50 },
+    terminal: {
+        energy: 20000,
+        stock: {},
+        flushUntargeted: false,
+        rooms: {},
+        balance: { enabled: true, batch: 10000 }
+    },
     missions: {
         every: {
             tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, fortify: 25, upgrade: 11,

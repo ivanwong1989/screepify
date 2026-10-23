@@ -3,6 +3,7 @@
 
 const laneStore = require('../services/laneStore');
 const laneClaims = require('../services/laneClaims');
+const laneStock = require('./shared/laneStock');
 const movement = require('../services/movement');
 const traffic = require('../services/traffic');
 const roomData = require('../services/roomData');
@@ -26,9 +27,9 @@ const { CONTINUE, SKIP } = require('../contracts/task');
  *
  * Creep memory: ls = state ('L'|'D'|'R'), ld = loop direction, lr = renewing.
  *
- * Not ported yet: v1's side jobs on the lane (terminal stock P11, labs P12,
- * and off-lane "core service" refills, which v2's logistics supply missions
- * already cover).
+ * Side jobs while idle at the head: terminal stock (missions/shared/laneStock,
+ * P11). Not ported yet: labs (P12) and off-lane "core service" refills, which
+ * v2's logistics supply missions already cover.
  *
  * Differences from v1:
  * - The lane mission stays up in CRITICAL while a lane hauler is alive (it is
@@ -311,6 +312,8 @@ function run(creep) {
             return CONTINUE;
         }
         traffic.working(creep, posOf(room.name, lane.head), 0);
+        // Side job: finish a terminal stock load before other cargo handling.
+        if (mem.sj && laneStock.step(creep, room)) return CONTINUE;
         const storage = room.storage;
         if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
             if ((creep.store[RESOURCE_ENERGY] || 0) > 0) {
@@ -318,9 +321,10 @@ function run(creep) {
                 return CONTINUE;
             }
             const link = headLink(room, lane);
-            if (link && creep.pos.isNearTo(link)) creep.withdraw(link, RESOURCE_ENERGY);
+            if (link && creep.pos.isNearTo(link) && creep.withdraw(link, RESOURCE_ENERGY) === OK) return CONTINUE;
         }
-        dumpCargo(creep, RESOURCE_ENERGY);
+        if (dumpCargo(creep, RESOURCE_ENERGY)) return CONTINUE;
+        laneStock.step(creep, room);
         return CONTINUE;
     }
     if (mem.ls === 'D') return deliver(creep, lane, opts);

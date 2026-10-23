@@ -533,7 +533,7 @@ function createWorld(spec) {
         controller,
         memory: undefined,
         get storage() { return structures.find(s => s.structureType === 'storage'); },
-        get terminal() { return undefined; },
+        get terminal() { return structures.find(s => s.structureType === 'terminal'); },
         get energyAvailable() { return world.energyAvailable(); },
         get energyCapacityAvailable() {
             return structures.filter(s => s.structureType === 'spawn' || s.structureType === 'extension')
@@ -589,11 +589,12 @@ function createWorld(spec) {
 
     world.addStructure = (type, x, y) => {
         let s;
-        const cap = { extension: C.EXTENSION_ENERGY_CAPACITY[controller.level], container: C.CONTAINER_CAPACITY, storage: C.STORAGE_CAPACITY, tower: C.TOWER_CAPACITY }[type];
+        const cap = { extension: C.EXTENSION_ENERGY_CAPACITY[controller.level], container: C.CONTAINER_CAPACITY, storage: C.STORAGE_CAPACITY, terminal: 300000, tower: C.TOWER_CAPACITY }[type];
         if (type === 'tower') s = new StructureTower(world, x, y, type, 3000, cap, true);
         else if (type === 'link') s = new StructureLink(world, x, y);
-        else if (cap) s = new StoreStructure(world, x, y, type, type === 'container' ? C.CONTAINER_HITS : 1000, cap, type !== 'storage' && type !== 'container');
+        else if (cap) s = new StoreStructure(world, x, y, type, type === 'container' ? C.CONTAINER_HITS : 1000, cap, type !== 'storage' && type !== 'container' && type !== 'terminal');
         else s = new Structure(world, x, y, type, type === 'road' ? C.ROAD_HITS : 1000);
+        if (type === 'terminal') s.cooldown = 0;
         structures.push(s);
         return s;
     };
