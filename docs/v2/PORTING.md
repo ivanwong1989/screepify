@@ -1,0 +1,159 @@
+# Screepify v2 — Porting plan from `dev_make_missions_missions`
+
+v2 was cut from `master` at `4fa726e` (2026-03-14). The newest v1 work lives on
+`dev_make_missions_missions` (36 commits after that point, up to `12f11c4`,
+2026-03-28, about 20.8k lines added). None of it is in v2 yet.
+
+This document says what to take from that branch, what v2 shape it becomes, the
+order, and a rough effort per item. It extends [DESIGN.md](DESIGN.md) §15 (v1 → v2
+mapping) and §16 (migration plan).
+
+## 1. Assessment that drives this plan
+
+Scores come from a code read and pattern counts, not in-game profiling.
+
+| | v1 branch | v2 |
+|---|---|---|
+| Size | ~46k lines, 15 files > 700 lines | ~5.8k lines, largest file 310 |
+| Modularity | 5/10 | 8/10 |
+| CPU efficiency | 6/10 | 8/10 (design, not yet proven in game) |
+| Testability | 2/10, no tests | 8/10, sim and economy tests |
+| Features | 9/10 | 4/10 |
+
+**v1 problems we must not bring over**
+
+- Very large files. Core lane hauling is 3.5k lines (1,910-line mission + 1,559-line role).
+- "Simple" and "V2" variants are copy-paste forks. `harvest` and `simpleHarvest` share about 415 lines.
+- Roles call `missionBoard`, `missionRuntime`, `manager.terminal` and the remote utilities directly, so the two layers depend on each other.
+- A hard-coded 24-role switch in `main.js`.
+- No CPU budget. The only bucket check is `bucket >= 10000`.
+- 130 `room.find(FIND_*)` calls (16 in the core lane mission alone) and 82 uncached `Game.getObjectById` calls.
+- 9 different `isWalkable*` helpers.
+- More than 15 top-level `Memory.*` keys, 6 of them debug flags.
+
+**v1 ideas worth keeping**
+
+- Room phases and states (`room.policy.constants.js`).
+- Refresh throttling per mission type.
+- Persistent missions instead of rebuilding every tick.
+- The lane-building algorithm and its PathFinder cost model.
+- Lab automation.
+- Remote-haul pathing.
+- Traffic manager.
+
+## 2. Porting rules
+
+1. **Port logic, not files.** Read the v1 code, then rewrite it as v2 parts:
+   - `processes/<phase>/*` for room-level sense, plan and act
+   - `missions/*` for the work units
+   - `actions/*` for what a creep does
+   - `services/*` for shared helpers
+2. **No roles.** What a creep does comes from its mission type. A creep's body is chosen by archetype (`memory.a`). New body recipes go in `services/body.js`.
+3. **One mission per job, with settings by phase.** No `simpleX` / `xV2` pairs. Room phase (item P1 below) chooses the parameters.
+4. **File size limit.** Aim for under 400 lines per file. Split pathing, planning and execution.
+5. **Room objects come from `ctx` / `roomData` / `cache`.** No `room.find` inside missions or actions.
+6. **Every process declares a cadence and tier** so the kernel budget can shed it.
+7. **Tests come with the port.** Each item adds or extends a `test/sim.test.js` scenario or a unit test before it is called done.
+8. **Memory.** No new top-level `Memory.*` keys. Use `Memory.rooms[name]` and the existing schema in `kernel/memory.js`. Debug flags go in `config.js` / console.
+9. **One shared walkability helper** in `services/pos.js`, used everywhere.
+
+## 3. Inventory and target shape
+
+Effort: **S** ≈ 1 session, **M** ≈ 2–3, **L** ≈ 4+. v1 line counts are for the
+source files only.
+
+| # | Feature | v1 source (lines) | v2 target | Effort |
+|---|---|---|---|---|
+| P1 | Room policy (phase + state) | `overseer/policy/*` (279) | `processes/plan/policy.js`, constants in `config.js`, result in `ctx.rooms[name].policy` | S |
+| P2 | Mission refresh throttling | `board/utils/missionThrottle.js` (56) | `cadence` field on each MissionType, read by `plan/missions.js` | S |
+| P3 | Traffic manager | `traffic/*`, `utils/movement.js` (1,019) | `services/traffic.js` + one call in `act/creeps.js` after all moves | M |
+| P4 | Core lane logistics | `mission.logisticsCoreV2.js`, `role.coreLaneHauler.js` (3,469) | `services/lanes.js` (path + cache), `missions/coreLane.js`, actions `load` / `deliver` | L |
+| P5 | Mining lane logistics | `mission.logisticsMiningV2.js`, `role.miningLaneHauler.js`, `utils/creepLaneMovement.js` (1,367) | Reuse `services/lanes.js`, then `missions/miningLane.js`; replaces `fleet.js` haul routes from phase STORAGE | M |
+| P6 | Early-game "simple" variants | `logisticsSimple*`, `simpleHarvest`, `role.simple*` (2,635) | **Not ported as code.** Covered by v2's existing harvest/logistics plus P1 phase settings | S |
+| P7 | Fortify | `mission.fortify.js` (498) | Merge into `missions/repair.js` as a fortify mode, gated by P1 state | S |
+| P8 | Scout | `mission.scout`, `role.scout`, `overseer.scout` (651) | `missions/scout.js`, writes to `sense/intel` | S |
+| P9 | Remotes: reserve / harvest / haul / build | `mission.remote*`, `role.remote*`, `overseer.remote*` (3,946) | `missions/remote/{reserve,harvest,haul,build}.js`, `services/remotePath.js`; room kind `remote` per DESIGN §18.1 | L |
+| P10 | Minerals | `mission.mineral`, `role.mineralMiner` (378) | `missions/mineral.js` + storage routes in `logistics.js` | S |
+| P11 | Terminal | `manager.terminal.js` (1,156) | `processes/act/terminal.js` (balancing) + terminal jobs on the core lane | M |
+| P12 | Labs (auto in/out, clear, reverse, boost stock) | `manager.labs.js`, `labs.reverse.js` (1,226) | `processes/plan/labs.js` (pick reaction) + `act/labs.js` (run) + lab fill/clear missions | M |
+| P13 | Ramparts | `manager.ramparts.js` (29) | Fold into `plan/construction.js` | S |
+| P14 | Telemetry / console extras | `telemetry/*`, `console/*` (2,908) | Only the missing commands; telemetry is already in `kernel/telemetry.js` | S |
+| P15 | Empire layer (zeadmin) | `managers/zeadmin/*` (1,816) | Shard-scope processes, DESIGN §16 phase 4 | L, later |
+| P16 | Military (admiral, assault, defender) | `managers/admiral/*`, roles (12,412) | Still on hold; DESIGN §13 / phase 3 | L, later |
+
+Already in v2 with no port needed: harvest, build, repair, upgrade, tower,
+links (`act/links.js`), spawning contracts, safe mode, census, intel.
+
+## 4. Order
+
+```
+Wave A (foundations)        Wave B (economy depth)       Wave C (growth)          Later
+P1 policy ─┬─► P7 fortify   P4 core lane ─► P11 terminal  P8 scout ─► P9 remotes   P15 empire
+P2 cadence │   P6 settings  P5 mining lane               P10 minerals             P16 military
+P3 traffic ┘   P13 ramparts                              P12 labs
+```
+
+- **Wave A** is small and every later item needs it. P1 decides the bootstrap → full-economy switch, and P3 is a dependency of the lanes.
+- **Wave B** does what the core lane hauler did. P11 depends on P4 because v1 runs terminal jobs on the core lane.
+- **Wave C** matches DESIGN §16 phase 2's exit criteria (2 remotes per room within 20 CPU).
+
+## 5. Item notes
+
+**P1 Room policy.**
+- Port `derivePhase` almost as-is: BOOTSTRAP → EARLY → BASIC_INFRA → STORAGE → LINKS → TERMINAL → LABS.
+- State is CRITICAL / RECOVER / GROW / STOCKPILE / DEFENSIVE / SIEGE. Keep the 10% stockpile hysteresis.
+- Read from `roomData`, not `room.find`.
+- Replace v1's `countRoles` with census counts by archetype and mission.
+- Consumers read `ctx.rooms[name].policy`: upgrade and fortify are held back in CRITICAL / RECOVER, and phase chooses the logistics mode.
+
+**P3 Traffic.**
+- Keep the vendored `screeps-traffic-manager` as is, in `services/traffic/vendor.js`.
+- Write one small adapter. Creeps register through `services/movement.js` only, and `act/creeps.js` resolves all moves once per room after every creep has acted.
+- Drop the `.ori.js` copy.
+
+**P4 Core lane.**
+- Split into:
+  - `services/lanes.js` (lane search with v1's costs PLAIN 20, SWAMP 45, ROAD 4; candidate limits; rebuild every 500 ticks; cached in a heap/segment store)
+  - `missions/coreLane.js` (job queue with v1's `CORE_SERVICE_JOB_PRIORITY`)
+  - actions (`load`, `deliver`, `return`)
+- Renewing at the spawn becomes a shared `renew` action, gated by TTL (1100 / 1450).
+- Use the same `CORE_END` / `CORE_LABS` flag names until the room planner (DESIGN §12.1) places the lane itself.
+- Target is about 800 lines in total, down from 3,469.
+
+**P5 Mining lane.**
+- Same lane service.
+- Keep the blocked ring around each source (cost 255) and avoiding the core lane's start (cost 200).
+- 1–3 haulers per source from a supply of 10 energy per tick.
+- Hand over from `fleet.js` when the room reaches phase STORAGE.
+
+**P6 Simple variants.**
+- Diff v1's simple missions against v2's harvest/logistics.
+- Any early-game behaviour v2 is missing becomes a setting by phase, not a new mission.
+
+**P9 Remotes.**
+- Reuse v1's `overseer.remoteHaulPathing` cost model inside `services/remotePath.js`.
+- Mission `home` is the parent room and `room` is the remote, per DESIGN §18.1.
+- Reserve renews below 2000 ticks, as in v1.
+
+**P12 Labs.**
+- Keep v1's stable mission names, so a hauler isn't released halfway through a fill or clear.
+- Keep boost-lab stocking separate from the reaction mode.
+- Keep the "empty but wrong mineral is fine" rule.
+
+## 6. Done means
+
+For each item:
+1. `npm test` passes, with a new or extended test covering it.
+2. Its CPU shows up under its own process name in `kernel/telemetry`.
+3. No file goes over 400 lines.
+4. No new `room.find` in missions or actions.
+5. A row is added to the DESIGN §15 mapping, and this table is marked ✅.
+
+## 7. Risks
+
+| Risk | Mitigation |
+|---|---|
+| Lane logic depends on v1 flag placement | Keep flag names; replace with the planner in phase 2 |
+| Traffic manager adds CPU per creep | Measure in sim with and without it; let only moving creeps opt in |
+| Hidden behaviour in 3.5k lines of core lane code | Before porting, write the v1 job list and states down as a test table |
+| v1 branch keeps changing | Port from `12f11c4`; any newer v1 commits get a separate diff review |

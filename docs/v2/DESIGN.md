@@ -420,6 +420,8 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | **3 — Defense+** | defend missions, threat-driven tower/rampart policy; optional military plugin port | Survives NPC invaders and small player raids |
 | **4 — Empire** | Expansion/claim, cross-room spawning, resource balancing | Second room claimed and bootstrapped automatically |
 
+Features from the newer v1 branch `dev_make_missions_missions` (room policy, traffic, lane logistics, remotes, labs, terminal) are scheduled into phase 2 in [PORTING.md](PORTING.md).
+
 Phase 1 is verified in a single-room simulator against v1 (`test/sim.test.js`, [ECONOMY.md](ECONOMY.md)); the in-game exit criteria are still open.
 
 Switchover can happen as early as the end of phase 1 if v2 outperforms v1 for the current colony size. `master` and v1 stay deployable on branch `default` until v2 is merged.
