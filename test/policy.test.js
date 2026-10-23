@@ -78,7 +78,6 @@ test('state: stockpile hysteresis (±10% of the RCL target)', () => {
 test('upgrade and fortify follow the policy state', () => {
     fresh();
     const upgrade = require('../src/missions/upgrade');
-    const repair = require('../src/missions/repair');
     const room = Game.rooms.W1N1;
     const intel = {
         controller: room.controller, sites: [], availableControllerSpaces: 8, energySourceIds: [],
@@ -101,7 +100,8 @@ test('upgrade and fortify follow the policy state', () => {
     assert.deepEqual([stock.demand.minCreeps, stock.demand.maxCreeps], [2, 2], 'but keeps the 2 it has');
     assert.equal(gen('CRITICAL').spawn, false);
 
-    const mode = (st, phase = 'STORAGE') => repair.fortifyMode({ phase, state: st, reasons: [] });
+    const policyRules = require('../src/services/policyRules');
+    const mode = (st, phase = 'STORAGE') => policyRules.fortifyMode({ phase, state: st, reasons: [] });
     assert.equal(mode('GROW'), 'on');
     assert.equal(mode('GROW', 'BASIC_INFRA'), 'off', 'no fortifying before storage');
     assert.equal(mode('RECOVER'), 'noSpawn');

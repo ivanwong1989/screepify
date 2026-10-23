@@ -6,6 +6,7 @@ const actions = require('../../actions/index');
 const registry = require('../../missions/index');
 const state = require('../../missions/shared/state');
 const oppRepair = require('../../missions/shared/oppRepair');
+const policyRules = require('../../services/policyRules');
 const { CONTINUE, DONE } = require('../../contracts/task');
 
 /**
@@ -42,7 +43,7 @@ function runCreep(creep, rc, ctx) {
         }
         if (!triedRepair && !actions.WORK_PIPE.has(task.a)) {
             triedRepair = true;
-            const allowFortify = !!(rc.state && rc.state.economy === 'UPGRADING') ||
+            const allowFortify = policyRules.fortifyMode(rc.policy) !== 'off' ||
                 !!(rc.intel && rc.intel.hostiles.length > 0);
             oppRepair.tryRepair(creep, allowFortify);
         }

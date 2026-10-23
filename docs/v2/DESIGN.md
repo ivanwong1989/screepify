@@ -410,6 +410,7 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | `traffic/*` (screeps-traffic-manager + adapter) | `services/traffic.js`, `processes/act/traffic.js` |
 | `mission.logisticsMiningV2` + `role.miningLaneHauler` (mining lanes) | `missions/miningLane.js` |
 | `mission.logisticsCoreV2` + `role.coreLaneHauler` (core lane) | `services/lanes*.js`, `services/laneStore.js`, `processes/plan/lanes.js`, `missions/coreLane.js` |
+| `mission.fortify` (one fortifier on the weakest wall) | `missions/fortify.js`, rules in `services/policyRules.js` + `services/repairScan.js` |
 | v1 creeps after the switch | `processes/sense/adopt.js` + `act.spawns` bindStrays |
 | `telemetry/*`, `screeps-profiler` | `kernel/telemetry.js` (always on) |
 | `heap.js`, `roomCache.js`, `global._*` | `services/cache` |

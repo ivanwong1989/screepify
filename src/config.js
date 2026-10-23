@@ -62,7 +62,7 @@ const DEFAULTS = {
     lanes: { enabled: true, mining: true, cpuPerTick: 10, rebuildEvery: 5000, checkEvery: 50 },
     missions: {
         every: {
-            tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, upgrade: 11,
+            tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, fortify: 25, upgrade: 11,
             build: 17, decongest: 31, idleUpgrade: 31, default: 31
         }
     },

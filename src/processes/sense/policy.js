@@ -3,6 +3,7 @@
 
 const cache = require('../../services/cache');
 const roomData = require('../../services/roomData');
+const { PHASES, STATES, rank, atLeast } = require('../../services/policyRules');
 
 /**
  * Room policy: phase + state (port of v1 overseer/policy, dev_make_missions_missions).
@@ -45,10 +46,6 @@ const roomData = require('../../services/roomData');
 /** @typedef {'CRITICAL'|'RECOVER'|'GROW'|'STOCKPILE'|'DEFENSIVE'|'SIEGE'} PolicyState */
 /** @typedef {{phase: Phase, state: PolicyState, reasons: string[]}} RoomPolicy */
 
-/** @type {Phase[]} */
-const PHASES = ['BOOTSTRAP', 'EARLY', 'BASIC_INFRA', 'STORAGE', 'LINKS', 'TERMINAL', 'LABS'];
-/** @type {PolicyState[]} */
-const STATES = ['CRITICAL', 'RECOVER', 'GROW', 'STOCKPILE', 'DEFENSIVE', 'SIEGE'];
 /** @type {string[]} */
 const THREAT_PARTS = [ATTACK, RANGED_ATTACK, HEAL, WORK, CLAIM];
 
@@ -75,21 +72,6 @@ const THREAT_PARTS = [ATTACK, RANGED_ATTACK, HEAL, WORK, CLAIM];
  * @property {number} haulers
  * @property {number} threats           hostile creeps that can hurt us
  */
-
-/** @param {string} p */
-function rank(p) {
-    const i = PHASES.indexOf(/** @type {Phase} */ (p));
-    return i < 0 ? 0 : i;
-}
-
-/**
- * True when the room has reached `phase` or later.
- * @param {{phase: string}|undefined} policy
- * @param {Phase} phase
- */
-function atLeast(policy, phase) {
-    return !!policy && rank(policy.phase) >= rank(phase);
-}
 
 /**
  * @param {PolicyFacts} f

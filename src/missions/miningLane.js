@@ -6,7 +6,7 @@ const laneStore = require('../services/laneStore');
 const movement = require('../services/movement');
 const traffic = require('../services/traffic');
 const roomData = require('../services/roomData');
-const policyRules = require('../processes/sense/policy');
+const policyRules = require('../services/policyRules');
 const { CONTINUE, SKIP } = require('../contracts/task');
 
 /**

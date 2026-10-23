@@ -70,7 +70,7 @@ source files only.
 | P4 ✅ | Core lane logistics | `mission.logisticsCoreV2.js`, `role.coreLaneHauler.js` (3,469) | `services/lanes*.js`, `laneStore.js`, `plan/lanes.js` (burst), `missions/coreLane.js`, action `lane` (~1,200 lines in total) | L |
 | P5 ✅ | Mining lane logistics | `mission.logisticsMiningV2.js`, `role.miningLaneHauler.js`, `utils/creepLaneMovement.js` (1,367) | Reuse `services/lanes.js`, then `missions/miningLane.js`; replaces `fleet.js` haul routes from phase STORAGE | M |
 | P6 | Early-game "simple" variants | `logisticsSimple*`, `simpleHarvest`, `role.simple*` (2,635) | **Not ported as code.** Covered by v2's existing harvest/logistics plus P1 phase settings | S |
-| P7 | Fortify | `mission.fortify.js` (498) | Merge into `missions/repair.js` as a fortify mode, gated by P1 state | S |
+| P7 ✅ | Fortify | `mission.fortify.js` (498) | `missions/fortify.js` (one mission per room), gated by P1 state; rules in `services/policyRules.js` | S |
 | P8 | Scout | `mission.scout`, `role.scout`, `overseer.scout` (651) | `missions/scout.js`, writes to `sense/intel` | S |
 | P9 | Remotes: reserve / harvest / haul / build | `mission.remote*`, `role.remote*`, `overseer.remote*` (3,946) | `missions/remote/{reserve,harvest,haul,build}.js`, `services/remotePath.js`; room kind `remote` per DESIGN §18.1 | L |
 | P10 | Minerals | `mission.mineral`, `role.mineralMiner` (378) | `missions/mineral.js` + storage routes in `logistics.js` | S |
@@ -184,6 +184,16 @@ Original plan for P4, kept for reference:
 - Once a lane has a live hauler, fleet sizing skips that source (fleet minimum becomes 1) and logistics drops its mining routes. Policy and spawning count `miningHauler` and `laneHauler` as haulers.
 - Changes from v1: the path is cached on heap with a signature (v1 rebuilt every 100 ticks); moves go through `services/traffic`; on/off switch `config.lanes.mining`.
 - Simulator, two remote-ish sources at RCL 4, 500 ticks: with the fleet, storage went down 3,550 while the containers sat close to full (3,125 on average). With mining lanes, storage went up 4,427 and the containers averaged 1,737.
+
+**P7 Fortify. ✅ Done** (`missions/fortify.js`, `test/fortify.test.js`).
+- Ported from v1's newer `mission.fortify`, not master's fortify mode, which v2 had until now (up to 3 targets, only while the economy was UPGRADING, so in practice never in stockpiling rooms).
+- One mission per room, `fortify:<room>`, always on the weakest wall or rampart below the RCL target (RCL 8: 5M). When its wall reaches the target, the worker moves straight on to the next weakest (kept in `m.data.cur`; the planner's `targetId` is left alone).
+- One worker asking for 12 WORK; two while hostiles are in the room. Priority 55, or 35 when it may not spawn.
+- When: `policyRules.fortifyMode` (P1). No economy-state gate, as in v1.
+- Backlog gate: a fortifier is only spawned when the missing hits add up to at least max(50k, 12 WORK × 100 × 150 ticks). A fortifier already working carries on until the queue is empty.
+- Critical walls (< 5k hits) stay with the repair mission. `repair.js` no longer does fortifying and no longer writes into the scanner's results.
+- Opportunistic wall repair by passing creeps uses the same policy gate instead of "economy UPGRADING".
+- Architecture fixes on the way: the scanner's rules and heap store moved to `services/repairScan.js` and the pure policy rules to `services/policyRules.js`, so missions and `plan.lanes` no longer import processes.
 
 **P6 Simple variants.**
 - Diff v1's simple missions against v2's harvest/logistics.

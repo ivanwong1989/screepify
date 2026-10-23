@@ -1,14 +1,14 @@
 // @ts-check
 'use strict';
 
-const scanner = require('../../processes/sense/repairScan');
+const scanner = require('../../services/repairScan');
 
 /**
  * Opportunistic repair while travelling (port of v1 utils/creepOpportunisticRepair).
  *
  * A creep with WORK and more than half its energy repairs the most damaged
  * scanned structure within range 3, every other tick (staggered per creep).
- * Walls/ramparts only while UPGRADING or under attack.
+ * Walls/ramparts only while the room policy allows fortifying, or under attack.
  */
 
 /** @param {string} name */

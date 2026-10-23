@@ -14,6 +14,7 @@ const harvest = require('./harvest');
 const fleet = require('./fleet');
 const logistics = require('./logistics');
 const repair = require('./repair');
+const fortify = require('./fortify');
 const upgrade = require('./upgrade');
 const build = require('./build');
 const decongest = require('./decongest');
@@ -46,6 +47,7 @@ const generators = [
     },
     // phase 2: labs
     { name: 'repair', generate: repair.generate },
+    { name: 'fortify', generate: fortify.generate },
     { name: 'upgrade', generate: upgrade.generate },
     { name: 'build', generate: build.generate },
     { name: 'decongest', generate: decongest.generate },
@@ -60,6 +62,7 @@ const executors = {
     upgrade: upgrade.nextTask,
     build: build.nextTask,
     repair: repair.nextTask,
+    fortify: fortify.nextTask,
     decongest: decongest.nextTask,
     coreLane: coreLane.nextTask,
     miningLane: miningLane.nextTask
@@ -72,7 +75,7 @@ const UNASSIGNABLE = new Set(['hauler_fleet', 'tower_attack', 'tower_heal', 'tow
 /** @param {string} type */
 function needs(type) {
     if (type === 'harvest' || type === 'mineral' || type === 'dismantle') return { work: true, carry: false, claim: false };
-    if (type === 'upgrade' || type === 'build' || type === 'repair') return { work: true, carry: true, claim: false };
+    if (type === 'upgrade' || type === 'build' || type === 'repair' || type === 'fortify') return { work: true, carry: true, claim: false };
     if (type === 'transfer' || type === 'coreLane' || type === 'miningLane') return { work: false, carry: true, claim: false };
     if (type === 'reserve' || type === 'claim') return { work: false, carry: false, claim: true };
     return { work: false, carry: false, claim: false };

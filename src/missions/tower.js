@@ -2,7 +2,7 @@
 'use strict';
 
 const roomData = require('../services/roomData');
-const scanner = require('../processes/sense/repairScan');
+const scanner = require('../services/repairScan');
 
 /**
  * Tower missions (port of v1 mission.tower, without the defender-assist

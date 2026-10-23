@@ -14,7 +14,7 @@ lists what was kept, what deliberately changed, and what isn't ported yet.
 | Logistics | `mission.logistics`, `exec/transfer` → `missions/logistics.js`, `missions/transfer.js` | supply missions; haul routes with slots (≤3), route policies (min amount / max age), route continuity, local top-up, anti ping-pong, dump non-energy first |
 | Upgrade | `mission.upgrade`, `mission.idleUpgrade` → `missions/upgrade.js` | 15 WORK while UPGRADING, trickle while STOCKPILING (spawn only near downgrade), 1 WORK while anything is being built, idle catch-all at −100 |
 | Build | `mission.build` → `missions/build.js` | FIFO by first seen, 5 WORK (+2/RCL above 3), max 5 workers |
-| Repair / fortify | `mission.repair`, opportunistic scanner → `missions/repair.js`, `sense/repairScan.js` | decay-based worker count, critical/attack boosts, sticky targets, RCL fortify targets, fortify only while UPGRADING or under attack |
+| Repair / fortify | `mission.repair`, opportunistic scanner → `missions/repair.js`, `services/repairScan.js` (run by `sense/repairScan.js`) | decay-based worker count, critical/attack boosts, sticky targets. Fortifying moved to `missions/fortify.js` (P7, newer v1 rules) |
 | Opportunistic repair | `utils/creepOpportunisticRepair` → `missions/shared/oppRepair.js` | every other tick, > 50% energy, range 3, most damaged first |
 | Vacate source | `_policy_vacate_source` → `missions/shared/vacate.js` | workers step off source tiles before working |
 | Parking | `mission.decongest` → `missions/decongest.js` | `Parking*` flags, rings 1–3, −200 priority |

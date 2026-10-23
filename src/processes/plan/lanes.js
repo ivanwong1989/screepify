@@ -5,7 +5,7 @@ const cache = require('../../services/cache');
 const lanes = require('../../services/lanes');
 const laneStore = require('../../services/laneStore');
 const log = require('../../services/log');
-const policyRules = require('../sense/policy');
+const policyRules = require('../../services/policyRules');
 
 /**
  * Builds core lanes (services/lanes) in the background.

@@ -3,9 +3,8 @@
 
 const cache = require('../services/cache');
 const roomData = require('../services/roomData');
-const scanner = require('../processes/sense/repairScan');
+const scanner = require('../services/repairScan');
 const state = require('./shared/state');
-const policyRules = require('../processes/sense/policy');
 const { gather } = require('./shared/gather');
 const { vacate } = require('./shared/vacate');
 
@@ -15,8 +14,8 @@ const { vacate } = require('./shared/vacate');
  * repair:<id>   roads/containers, then other structures, then critical walls.
  *               Worker count from the room's decay rate (+8 WORK if something is
  *               critical, +6 under attack), 4 WORK per worker, max 20 WORK.
- * fortify:<id>  walls/ramparts toward the RCL target, up to 3 targets; only while
- *               UPGRADING or under attack; no spawning while > 15 repairs wait.
+ *
+ * Raising walls/ramparts toward the RCL target is missions/fortify.js.
  */
 
 const BASELINE_TTL = 1000;
@@ -49,23 +48,6 @@ function baselineWork(room) {
 }
 
 /**
- * Fortifying (walls/ramparts above critical) by room policy (v1 rules):
- * always under threat; off while CRITICAL / STOCKPILE; no new spawns while
- * RECOVER (spawn energy dips after every big spawn, so existing fortifiers
- * keep going); otherwise only once the room has storage.
- * Critical forts are repairs and are always allowed.
- * @param {import('../processes/sense/policy').RoomPolicy|undefined} policy
- * @returns {'on'|'noSpawn'|'off'}
- */
-function fortifyMode(policy) {
-    if (!policy) return 'on';
-    if (policy.state === 'DEFENSIVE' || policy.state === 'SIEGE') return 'on';
-    if (policy.state === 'CRITICAL' || policy.state === 'STOCKPILE') return 'off';
-    if (!policyRules.atLeast(policy, 'STORAGE')) return 'off';
-    return policy.state === 'RECOVER' ? 'noSpawn' : 'on';
-}
-
-/**
  * @param {import('../contracts/mission').PlanContext} plan
  * @param {import('../contracts/mission').Mission[]} out
  */
@@ -74,29 +56,13 @@ function generate(plan, out) {
     if (rs.op === 'EMERGENCY') return;
     const room = rc.room;
     const scan = scanner.get(room.name);
-    const policy = scanner.fortifyPolicy(room);
-    const prevFort = new Set(scan.fortifyIds);
     const hostiles = intel.hostiles.length > 0;
 
-    /** @param {any} s */
-    const activeFort = (s) => scanner.isFort(s) &&
-        (s.hits < policy.start || (prevFort.has(s.id) && s.hits < policy.target));
-
-    // Re-validate scanner ids against live objects.
-    const live = scan.repairIds.concat(scan.fortifyIds)
+    // Re-validate scanner ids against live objects (the scan can be 7 ticks old).
+    const repairTargets = scan.repairIds
         .map(id => /** @type {any} */ (Game.getObjectById(/** @type {any} */ (id))))
-        .filter(s => s && (scanner.needsRepair(s) || scanner.isCritical(s) || activeFort(s)));
-    const decayables = live.filter(s => (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && scanner.needsRepair(s));
-    const others = live.filter(s => !scanner.isFort(s) && s.structureType !== STRUCTURE_ROAD &&
-        s.structureType !== STRUCTURE_CONTAINER && scanner.needsRepair(s));
-    const forts = live.filter(activeFort);
-    const criticalForts = forts.filter(s => scanner.isCritical(s));
-    const repairTargets = decayables.concat(others, criticalForts);
-    const fortifyTargets = forts.filter(s => !scanner.isCritical(s));
+        .filter(s => s && (scanner.needsRepair(s) || scanner.isCritical(s)));
     const critical = repairTargets.some(s => scanner.isCritical(s));
-    scan.repairIds = repairTargets.map(s => s.id);
-    scan.fortifyIds = forts.map(s => s.id);
-    scan.critical = critical;
 
     const sourceIds = intel.energySourceIds;
 
@@ -122,30 +88,6 @@ function generate(plan, out) {
             });
         }
     }
-
-    const fortMode = fortifyMode(plan.policy);
-    if (fortifyTargets.length > 0 && fortMode !== 'off') {
-        const dire = hostiles;
-        if (!dire && rs.economy !== 'UPGRADING') return;
-        const workTarget = dire ? 20 : Math.floor(20 * 0.6);
-        const desiredWorkers = Math.max(1, Math.ceil(workTarget / 4));
-        const allowSpawn = repairTargets.length <= 15 && fortMode === 'on';
-        const sorted = fortifyTargets.slice().sort((a, b) => (a.hits / a.hitsMax) - (b.hits / b.hitsMax));
-        const sticky = sorted.filter(s => census(`fortify:${s.id}`).count > 0);
-        const stickyIds = new Set(sticky.map(s => s.id));
-        const count = Math.min(sorted.length, Math.max(3, sticky.length));
-        const selected = sticky.concat(sorted.filter(s => !stickyIds.has(s.id)).slice(0, Math.max(0, count - sticky.length)));
-        const perTarget = Math.max(1, Math.min(4, selected.length > 0 ? Math.ceil(desiredWorkers / selected.length) : 1));
-        for (const t of selected) {
-            out.push({
-                id: `fortify:${t.id}`, type: 'repair', home: rc.name, room: rc.name, archetype: 'worker',
-                demand: { work: perTarget, minCreeps: 1, maxCreeps: perTarget }, spawn: allowSpawn ? 'pool' : false,
-                targetId: t.id, pos: t.pos,
-                data: { sourceIds, fortify: true, allowPartial: true },
-                priority: allowSpawn ? 55 : 35
-            });
-        }
-    }
 }
 
 /** @type {import('../contracts/mission').MissionType['nextTask']} */
@@ -160,4 +102,4 @@ function nextTask(creep, m, rc) {
     return gather(creep, rc, { allowedIds: data.sourceIds || null, allowPartial: !!data.allowPartial });
 }
 
-module.exports = { type: 'repair', generate, nextTask, fortifyMode };
+module.exports = { type: 'repair', generate, nextTask };
