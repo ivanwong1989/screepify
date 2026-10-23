@@ -66,7 +66,7 @@
    (one folder/type)     (harvest, build…)        movement, cache, body
 ```
 
-**Plugins never import each other.** They meet only in `ctx`, through the mission/task contracts, and through shared *services* (pure helpers with no tick state).
+**Plugins never import each other.** They meet only in `ctx`, through the mission/task contracts, and through shared *services* (pure helpers with no tick state). `test/architecture.test.js` enforces this: no process → process, mission/action → process, mission type → mission type, or service → plugin imports, and no file over 400 lines. A rule several plugins need lives in a service (e.g. `services/policyRules`, `services/laneClaims`); a result several plugins read is published on `ctx` by one SENSE process (e.g. `rc.lanes` by `sense.lanes`).
 
 ## 4. Source layout
 
@@ -119,6 +119,7 @@ Folders are real folders. esbuild resolves `require('./x')` normally, which remo
  * @property {number}  [priority=100] lower runs first within a phase
  * @property {number}  [every=1]   cadence in ticks (staggered per room)
  * @property {(ctx: TickContext, room?: RoomCtx) => void} run
+ * @property {(ctx: TickContext, room?: RoomCtx) => boolean} [force]  run now even if not due
  * @property {(ctx: TickContext) => void} [init]  once per VM boot
  */
 ```
@@ -144,7 +145,7 @@ module.exports = [
 | `≥ burst job's threshold` | all + one `burst` job | e.g. room planner; each job declares the bucket it needs |
 | `= 10,000`, no burst job queued | all, then **generate a pixel** (D8) | — |
 
-Order of checks per process: **due → tier allowed → fits remaining budget (EMA cost) → run**. `low` tier only runs while the bucket is ≥ 1,000.
+Order of checks per process: **due (or `force()` true, e.g. no mission list after a VM reset) → tier allowed → fits remaining budget (EMA cost) → run**. `low` tier only runs while the bucket is ≥ 1,000.
 
 - A process skipped for budget is marked **owed**. Owed processes jump the queue next tick, so nothing starves.
 - **Critical** processes (spawning, harvest/fill execution, towers, defense) always run, even over budget.

@@ -84,6 +84,21 @@ test('cadence: every N runs once per N ticks, staggered per key', (t) => {
     assert.equal(isDue(0, 'x', 7), true);
 });
 
+test('force: a room process runs off cadence while force() is true', (t) => {
+    const w = setup({ rooms: { W1N1: makeRoom('W1N1') } });
+    t.after(() => w.restore());
+    const ran = [];
+    let needed = true;
+    const k = load().createKernel([
+        proc({ id: 'r', scope: 'room', every: 1000, force: () => needed, run: (ctx) => { ran.push(ctx.time); needed = false; } })
+    ]);
+    for (let i = 0; i < 5; i++) {
+        k.tick();
+        w.nextTick();
+    }
+    assert.equal(ran.length, 1, 'forced once, then back on its 1000-tick cadence');
+});
+
 test('over budget: normal is skipped and owed, critical always runs', (t) => {
     const w = setup({ bucket: 5000, limit: 20 }); // soft limit = 19
     t.after(() => w.restore());

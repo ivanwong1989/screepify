@@ -140,6 +140,10 @@ module.exports = {
     tier: 'normal',
     priority: 10,
     every: 2,
+    // After a VM reset there is no stored list: plan at once, not on cadence.
+    force(ctx, rc) {
+        return !rc.missions;
+    },
     run(ctx, rc) {
         publish(rc, plan(ctx, rc));
     },

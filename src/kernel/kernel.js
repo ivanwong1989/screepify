@@ -221,7 +221,7 @@ function createKernel(processes) {
                     if (p.kinds && p.kinds.indexOf(room.kind) === -1) continue;
                     const key = `${p.id}@${room.name}`;
                     if (s.owed.has(key)) owedFirst.push({ p, room, key });
-                    else if (isDue(every, key, ctx.time)) rest.push({ p, room, key });
+                    else if (isDue(every, key, ctx.time) || (p.force && p.force(ctx, room))) rest.push({ p, room, key });
                 }
             }
         }

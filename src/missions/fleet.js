@@ -3,7 +3,7 @@
 
 const cache = require('../services/cache');
 const roomData = require('../services/roomData');
-const miningLane = require('./miningLane');
+const laneClaims = require('../services/laneClaims');
 
 /**
  * Hauler fleet sizing (port of v1 mission.fleet_logistic).
@@ -70,7 +70,7 @@ function generate(plan, out) {
     const signature = storage ? `storage:${storage.id}` : `spawns:${spawns.map(s => s.id).sort().join(',')}`;
 
     // Sources whose mining lane has a live hauler need no fleet carry.
-    const laneContainers = miningLane.covered(rc);
+    const laneContainers = laneClaims.of(rc).mining;
     let required = 0;
     let fleetSources = 0;
     for (const source of intel.sources) {

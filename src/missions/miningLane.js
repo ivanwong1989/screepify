@@ -6,7 +6,7 @@ const laneStore = require('../services/laneStore');
 const movement = require('../services/movement');
 const traffic = require('../services/traffic');
 const roomData = require('../services/roomData');
-const policyRules = require('../services/policyRules');
+const laneClaims = require('../services/laneClaims');
 const { CONTINUE, SKIP } = require('../contracts/task');
 
 /**
@@ -31,7 +31,7 @@ const { CONTINUE, SKIP } = require('../contracts/task');
  * and the link and moves energy from one to the other.
  *
  * While a lane has a live hauler, fleet sizing and logistics mining routes
- * leave that source to it (`covered`).
+ * leave that source to it (`rc.lanes.mining`, services/laneClaims).
  *
  * Differences from v1: the path is cached on heap with a signature (v1
  * rebuilt every 100 ticks regardless); moves go through services/traffic.
@@ -54,15 +54,6 @@ const EOL_TTL = 80;
 /** @param {number} p @param {string} room */
 function posOf(p, room) {
     return new RoomPosition(p % 50, (p - (p % 50)) / 50, room);
-}
-
-/** @param {import('../contracts/ctx').RoomCtx} rc */
-function enabled(rc) {
-    const room = rc.room;
-    if (!require('../config').get().lanes.mining) return false;
-    if (!room.controller || !room.controller.my) return false;
-    if (!policyRules.atLeast(rc.policy, 'STORAGE') || (rc.policy && rc.policy.state === 'CRITICAL')) return false;
-    return true;
 }
 
 /**
@@ -215,26 +206,6 @@ function lanePath(room, from, to, key) {
 }
 
 /** @param {import('../contracts/ctx').RoomCtx} rc @param {string} id */
-function liveCount(rc, id) {
-    const t = rc.census && rc.census.byMission[id];
-    return t ? t.count : 0;
-}
-
-/**
- * Mining containers whose lane has a live hauler (fleet/logistics skip them).
- * @param {import('../contracts/ctx').RoomCtx} rc
- * @returns {Set<string>}
- */
-function covered(rc) {
-    /** @type {Set<string>} */
-    const out = new Set();
-    if (!rc.intel || !enabled(rc)) return out;
-    for (const s of rc.intel.sources) {
-        if (s.containerId && liveCount(rc, `mlane:${s.id}`) > 0) out.add(s.containerId);
-    }
-    return out;
-}
-
 /**
  * @param {import('../contracts/mission').PlanContext} plan
  * @param {import('../contracts/mission').Mission[]} out
@@ -242,7 +213,7 @@ function covered(rc) {
 function generate(plan, out) {
     const { rc, intel } = plan;
     const room = rc.room;
-    if (!enabled(rc)) return;
+    if (!laneClaims.miningEnabled(rc)) return;
     const estCarry = Math.max(2, Math.min(25, Math.floor(Math.max(300, intel.energyCapacityAvailable) / 100)));
     for (const src of intel.sources) {
         if (!src.containerId) continue;
@@ -386,4 +357,4 @@ function runLink(creep, container, data) {
     return CONTINUE;
 }
 
-module.exports = { type: 'miningLane', generate, nextTask, run, covered, lanePath, sourceLink, station };
+module.exports = { type: 'miningLane', generate, nextTask, run, lanePath, sourceLink, station };

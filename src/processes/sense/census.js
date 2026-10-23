@@ -2,6 +2,7 @@
 'use strict';
 
 const cache = require('../../services/cache');
+const { activeParts: parts } = require('../../services/body');
 
 /**
  * Census: who belongs to this room and what they're doing.
@@ -36,26 +37,6 @@ function creepsByHome() {
             (out[home] || (out[home] = [])).push(c);
         }
         return out;
-    });
-}
-
-/**
- * Active parts by type, per tick.
- * @param {Creep} creep
- * @returns {{work: number, carry: number, claim: number}}
- */
-function parts(creep) {
-    return cache.perTick(`parts:${creep.name}`, () => {
-        let work = 0;
-        let carry = 0;
-        let claim = 0;
-        for (const p of creep.body) {
-            if (p.hits <= 0) continue;
-            if (p.type === WORK) work++;
-            else if (p.type === CARRY) carry++;
-            else if (p.type === CLAIM) claim++;
-        }
-        return { work, carry, claim };
     });
 }
 
@@ -96,7 +77,7 @@ function build(roomName) {
     return c;
 }
 
-/** @type {import('../../contracts/process').Process & {build: typeof build, parts: typeof parts}} */
+/** @type {import('../../contracts/process').Process & {build: typeof build}} */
 module.exports = {
     id: 'sense.census',
     phase: 'SENSE',
@@ -107,6 +88,5 @@ module.exports = {
     run(ctx, rc) {
         rc.census = build(rc.name);
     },
-    build,
-    parts
+    build
 };

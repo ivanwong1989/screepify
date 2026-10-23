@@ -105,6 +105,26 @@ function hauler(budget, maxCarry) {
     return sortBody(body);
 }
 
+/**
+ * Active parts by type, per tick.
+ * @param {Creep} creep
+ * @returns {{work: number, carry: number, claim: number}}
+ */
+function activeParts(creep) {
+    return cache.perTick(`parts:${creep.name}`, () => {
+        let work = 0;
+        let carry = 0;
+        let claim = 0;
+        for (const p of creep.body) {
+            if (p.hits <= 0) continue;
+            if (p.type === WORK) work++;
+            else if (p.type === CARRY) carry++;
+            else if (p.type === CLAIM) claim++;
+        }
+        return { work, carry, claim };
+    });
+}
+
 /** Worker: (W C M) segments. */
 /** @param {number} budget */
 function worker(budget) {
@@ -195,4 +215,4 @@ function stats(archetype, budget, opts) {
     });
 }
 
-module.exports = { build, stats, cost, sortBody, miner, mobileMiner, hauler, roadHauler, worker, BUDGET_CAP };
+module.exports = { activeParts, build, stats, cost, sortBody, miner, mobileMiner, hauler, roadHauler, worker, BUDGET_CAP };

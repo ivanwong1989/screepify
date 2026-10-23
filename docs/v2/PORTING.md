@@ -195,6 +195,13 @@ Original plan for P4, kept for reference:
 - Opportunistic wall repair by passing creeps uses the same policy gate instead of "economy UPGRADING".
 - Architecture fixes on the way: the scanner's rules and heap store moved to `services/repairScan.js` and the pure policy rules to `services/policyRules.js`, so missions and `plan.lanes` no longer import processes.
 
+**Architecture cleanup (after P7).**
+- `rc.lanes` (`sense.lanes`, rules in `services/laneClaims.js`) replaces `coreLane.covered()` / `miningLane.covered()`, so logistics and fleet no longer import the lane missions.
+- Kernel hook `force(ctx, rc)`: `plan.missions` plans off cadence when there is no stored list (after a VM reset), so `plan.assignment` no longer calls into it.
+- `census.parts` moved to `services/body.activeParts`.
+- `coreLane.js` is back under 400 lines.
+- `test/architecture.test.js` checks the import rules and file size on every run.
+
 **P6 Simple variants.**
 - Diff v1's simple missions against v2's harvest/logistics.
 - Any early-game behaviour v2 is missing becomes a setting by phase, not a new mission.

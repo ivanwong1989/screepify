@@ -21,6 +21,7 @@ const decongest = require('./decongest');
 const transfer = require('./transfer');
 const coreLane = require('./coreLane');
 const miningLane = require('./miningLane');
+const laneClaims = require('../services/laneClaims');
 
 /** @typedef {(plan: import('../contracts/mission').PlanContext, out: import('../contracts/mission').Mission[]) => void} Generator */
 
@@ -36,14 +37,14 @@ const generators = [
     { name: 'harvest', generate: harvest.generate },
     // phase 2: mineral
     { name: 'miningLane', generate: miningLane.generate },
-    { name: 'fleet', generate: fleet.generate, key: p => `${miningLane.covered(p.rc).size}` },
+    { name: 'fleet', generate: fleet.generate, key: p => `${laneClaims.of(p.rc).mining.size}` },
     { name: 'coreLane', generate: coreLane.generate },
     // Refill missions must appear as soon as spawning empties the extensions,
     // and come back at once if the lane hauler dies.
     {
         name: 'logistics', generate: logistics.generate,
         key: p => `${p.intel.energyAvailable < p.intel.energyCapacityAvailable ? 'refill' : 'full'}:` +
-            `${coreLane.covered(p.rc) ? 'lane' : '-'}:${miningLane.covered(p.rc).size}`
+            `${laneClaims.of(p.rc).core ? 'lane' : '-'}:${laneClaims.of(p.rc).mining.size}`
     },
     // phase 2: labs
     { name: 'repair', generate: repair.generate },

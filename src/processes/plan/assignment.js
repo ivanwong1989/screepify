@@ -1,8 +1,7 @@
 // @ts-check
 'use strict';
 
-const census = require('../sense/census');
-const missionsProc = require('./missions');
+const { activeParts } = require('../../services/body');
 const registry = require('../../missions/index');
 const state = require('../../missions/shared/state');
 const { pack, range } = require('../../services/pos');
@@ -53,7 +52,7 @@ function underfilled(st) {
  * @param {number} sign
  */
 function count(st, creep, sign) {
-    const p = census.parts(creep);
+    const p = activeParts(creep);
     st.count += sign;
     st.work += sign * p.work;
     st.carry += sign * p.carry;
@@ -93,7 +92,7 @@ function fits(creep, m, home) {
     if (m.archetype && m.archetype !== creep.memory.a) return false;
     const away = creep.room.name !== home;
     if (away && m.room === home) return false;
-    const p = census.parts(creep);
+    const p = activeParts(creep);
     const n = registry.needs(m.type);
     if ((n.work && p.work === 0) || (n.carry && p.carry === 0) || (n.claim && p.claim === 0)) return false;
     return true;
@@ -152,7 +151,6 @@ function assign(creep, m, status) {
  * @param {import('../../contracts/ctx').RoomCtx} rc
  */
 function run(ctx, rc) {
-    if (!rc.missions) missionsProc.publish(rc, missionsProc.plan(ctx, rc));
     const missions = rc.missions || [];
     const c = rc.census;
     if (!c) return;

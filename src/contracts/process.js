@@ -26,6 +26,9 @@
  * @property {number} [bucketNeeded]     burst only: minimum bucket before it may run
  * @property {(ctx: import('./ctx').TickContext) => boolean} [pending]
  *                                       burst only: true while it still has work
+ * @property {(ctx: import('./ctx').TickContext, room: import('./ctx').RoomCtx) => boolean} [force]
+ *                                       room scope only: run this tick even when not due
+ *                                       (e.g. nothing is on heap after a VM reset)
  * @property {(ctx: import('./ctx').TickContext) => void} [init]   once per VM boot
  * @property {(ctx: import('./ctx').TickContext, room: import('./ctx').RoomCtx) => void} run
  *                                       `room` is undefined for shard-scope processes

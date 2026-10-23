@@ -4,8 +4,7 @@
 const cache = require('../services/cache');
 const roomData = require('../services/roomData');
 const { closest } = require('../services/pos');
-const coreLane = require('./coreLane');
-const miningLane = require('./miningLane');
+const laneClaims = require('../services/laneClaims');
 
 /**
  * Logistics missions (port of v1 mission.logistics, energy routes).
@@ -121,7 +120,7 @@ function generate(plan, out) {
     const active = new Map();
     const coveredTargets = new Set();
     // Spawns/extensions/towers on the core lane are the lane hauler's while it lives.
-    const laneTargets = coreLane.covered(rc);
+    const laneTargets = laneClaims.of(rc).core;
     if (laneTargets) for (const id of laneTargets) coveredTargets.add(id);
 
     /**
@@ -267,7 +266,7 @@ function generate(plan, out) {
             const sink = closest(s.pos, sinks);
             if (sink) addRoute(s, sink, 'scavenge');
         }
-        const laneContainers = miningLane.covered(rc);
+        const laneContainers = laneClaims.of(rc).mining;
         for (const c of miningContainers) {
             if (laneContainers.has(c.id)) continue;
             if ((c.store[RESOURCE_ENERGY] || 0) < carryParts * 50) continue;

@@ -19,6 +19,7 @@
  *                                         (census.reserved is also updated by mission
  *                                          types when they hand out gather tasks)
  * @property {import('../processes/sense/policy').RoomPolicy} [policy]  writer: sense.policy
+ * @property {import('../services/laneClaims').LaneClaims} [lanes]    writer: sense.lanes
  * @property {import('./mission').Mission[]} [missions]               writer: plan.missions
  * @property {Record<string, import('./mission').Mission>} [missionsById]  writer: plan.missions
  *

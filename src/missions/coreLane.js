@@ -2,6 +2,7 @@
 'use strict';
 
 const laneStore = require('../services/laneStore');
+const laneClaims = require('../services/laneClaims');
 const movement = require('../services/movement');
 const traffic = require('../services/traffic');
 const roomData = require('../services/roomData');
@@ -40,34 +41,10 @@ const { CONTINUE, SKIP } = require('../contracts/task');
 const MISSION_ID = 'coreLane';
 const RENEW_START = 1100;
 const RENEW_STOP = 1450;
-/** Storage energy below which logistics also refills the lane targets. */
-const STORAGE_MIN = 1000;
 
 /** Road hauler CARRY parts for this room (v1: 2 CARRY per MOVE, ≤ 33). @param {Room} room */
 function intendedCarry(room) {
     return Math.max(1, Math.min(33, Math.floor((room.energyCapacityAvailable * 2) / 150)));
-}
-
-/** Live lane haulers homed in the room. @param {import('../contracts/ctx').RoomCtx} rc */
-function haulers(rc) {
-    const list = rc.census && rc.census.byArchetype.laneHauler;
-    return list ? list.filter(c => !c.spawning) : [];
-}
-
-/**
- * Targets the lane hauler serves right now, or null when the lane isn't
- * running (logistics then keeps its own supply missions for them).
- * @param {import('../contracts/ctx').RoomCtx} rc
- * @returns {Set<string>|null}
- */
-function covered(rc) {
-    if (haulers(rc).length === 0) return null;
-    // With storage nearly empty the lane hauler has nothing to carry; let the
-    // fleet refill spawns/extensions straight from mining.
-    const storage = rc.room.storage;
-    if (!storage || storage.store[RESOURCE_ENERGY] < STORAGE_MIN) return null;
-    const lane = laneStore.get(rc.room);
-    return lane ? lane.covered : null;
 }
 
 /**
@@ -80,7 +57,7 @@ function generate(plan, out) {
     if (!ctx.config.lanes.enabled || !room.storage) return;
     const lane = laneStore.get(room);
     if (!lane) return;
-    const live = haulers(rc);
+    const live = laneClaims.coreHaulers(rc);
     if (live.length === 0 && policy && policy.state === 'CRITICAL') return;
     const carry = intendedCarry(room);
     // A bootstrap-sized hauler (under half the CARRY the room can afford) gets
@@ -415,4 +392,4 @@ function deliver(creep, lane, opts) {
     return CONTINUE;
 }
 
-module.exports = { type: 'coreLane', generate, nextTask, run, covered, intendedCarry, demandAt, MISSION_ID };
+module.exports = { type: 'coreLane', generate, nextTask, run, intendedCarry, demandAt, MISSION_ID };
