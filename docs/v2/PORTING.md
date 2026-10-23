@@ -67,7 +67,7 @@ source files only.
 | P1 ✅ | Room policy (phase + state) | `overseer/policy/*` (279) | `processes/sense/policy.js`, targets in `config.policy`, result in `rc.policy`; upgrade + fortify gated | S |
 | P2 ✅ | Mission refresh throttling | `board/utils/missionThrottle.js` (56) | Per-generator interval in `config.missions.every`, reuse in `plan/missions.js` | S |
 | P3 ✅ | Traffic manager | `traffic/*`, `utils/movement.js` (1,019) | `services/traffic.js` + `act/traffic.js` (after all creeps act) | M |
-| P4 | Core lane logistics | `mission.logisticsCoreV2.js`, `role.coreLaneHauler.js` (3,469) | `services/lanes.js` (path + cache), `missions/coreLane.js`, actions `load` / `deliver` | L |
+| P4 ✅ | Core lane logistics | `mission.logisticsCoreV2.js`, `role.coreLaneHauler.js` (3,469) | `services/lanes*.js`, `laneStore.js`, `plan/lanes.js` (burst), `missions/coreLane.js`, action `lane` (~1,200 lines in total) | L |
 | P5 | Mining lane logistics | `mission.logisticsMiningV2.js`, `role.miningLaneHauler.js`, `utils/creepLaneMovement.js` (1,367) | Reuse `services/lanes.js`, then `missions/miningLane.js`; replaces `fleet.js` haul routes from phase STORAGE | M |
 | P6 | Early-game "simple" variants | `logisticsSimple*`, `simpleHarvest`, `role.simple*` (2,635) | **Not ported as code.** Covered by v2's existing harvest/logistics plus P1 phase settings | S |
 | P7 | Fortify | `mission.fortify.js` (498) | Merge into `missions/repair.js` as a fortify mode, gated by P1 state | S |
@@ -148,7 +148,26 @@ So the core lane hauler only works if it follows the loop in one direction and f
 
 Before v2 runs in those rooms, check `plan.construction` (the phase-1 stamp builder). Extensions, towers and storage are capped per RCL and will already be at the cap there, so only roads and containers are at risk. It could still add roads from the spawn to the sources and controller, and a container at the end of each road. If that's unwanted, set `config.set('construction.enabled', false)` until the planner understands the lane layout.
 
-**P4 Core lane.**
+**P4 Core lane. ✅ Done for refilling** (`test/coreLane.test.js`). Side jobs on the lane are still to do: terminal stock (P11) and lab hauling (P12).
+- **Lane discovery** (`services/lanes.js`, `laneSearch.js`, `laneGeo.js`) is v1's algorithm with v1's constants: the same head rules, candidate ends (service roads, bridge roads, the farthest road), routes through one or two waypoints, coverage scoring, and the loop join. A `CORE_END*` flag in the room still overrides the end. Like the live rooms, no flag is needed.
+- **Building** (`plan.lanes`) is a burst process. It works on one room at a time at `config.lanes.cpuPerTick` (10), resumes across ticks, and saves the lane to `Memory.rooms[n].ln`. It rebuilds when the room signature changes (checked every 50 ticks) or every 5,000 ticks (v1: every 500, because v1 kept the lane only on heap). Simulator room with 40 extensions: about 800 PathFinder searches per full search.
+- **Lane hauler** (`missions/coreLane.js`, archetype `laneHauler`, road body of 2 CARRY per MOVE up to 33 CARRY, one per room, priority 92):
+  - LOAD: withdraw at the head from storage, or the head link.
+  - DELIVER: fill the stop at each lane index. A straight lane is walked to its end. On a loop the hauler goes to the nearest stop that needs energy, either way round.
+  - RETURN: walk back to the head and empty into storage.
+  - When idle it parks at the head, drains the head link, and renews at the adjacent spawn between TTL 1100 and 1450.
+- **Logistics** leaves the lane's targets and the head link to the lane hauler while one is alive and storage holds at least 1,000 energy. Otherwise the fleet refills them as before.
+- Changes from v1:
+  - The lane mission stays up in CRITICAL while a lane hauler is alive.
+  - After a transfer that satisfies a stop, the hauler steps on in the same tick, and it starts walking in the same tick it withdraws.
+  - A bootstrap-sized hauler (under half the target CARRY) gets a full-size replacement and then retires. v1 kept it for its whole life.
+  - Lane-local yield/swap is replaced by `services/traffic`.
+- Bugs found while testing and fixed:
+  - The hauler set off without refilling the spawn next to the head.
+  - The spawn's demand, ignored while renewing (v1 rule), was also skipped on the way out, so renews drained extensions.
+- Simulator now has `renewCreep` and `suicide`, and deterministic runs seed `Math.random`. That fixed a 1-in-10 flaky test that was there before P4.
+
+Original plan for P4, kept for reference:
 - Split into:
   - `services/lanes.js` (lane search with v1's costs PLAIN 20, SWAMP 45, ROAD 4; candidate limits; rebuild every 500 ticks; cached in a heap/segment store)
   - `missions/coreLane.js` (job queue with v1's `CORE_SERVICE_JOB_PRIORITY`)

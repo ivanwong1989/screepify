@@ -19,6 +19,7 @@ module.exports = [
     require('../processes/plan/missions'),
     require('../processes/plan/assignment'),
     require('../processes/plan/construction'),
+    require('../processes/plan/lanes'),
     // ACT
     require('../processes/act/defense'),
     require('../processes/act/spawns'),

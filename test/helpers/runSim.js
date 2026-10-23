@@ -12,12 +12,24 @@ const DEFAULT_ROOM = {
     walls: [[11, 11], [9, 13], [39, 35]], swamps: [[30, 30], [31, 30]]
 };
 
+/** Small seeded PRNG (mulberry32). @param {number} a */
+function seeded(a) {
+    return () => {
+        a |= 0;
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
 /**
  * Boots the bot in a fresh simulated room and returns a runner.
  * - `bundle: true` runs dist/main.js (build first) instead of src/main.js
- * - `deterministic: true` makes Game.cpu.getUsed() return 0 (no budget skips)
+ * - `deterministic: true` makes Game.cpu.getUsed() return 0 (no budget skips) and
+ *   seeds Math.random (`seed`, default 1)
  * @param {Parameters<typeof createWorld>[0]} [spec]
- * @param {{bundle?: boolean, deterministic?: boolean, config?: object}} [opts]
+ * @param {{bundle?: boolean, deterministic?: boolean, seed?: number, config?: object}} [opts]
  */
 function boot(spec, opts) {
     spec = spec || DEFAULT_ROOM;
@@ -32,6 +44,8 @@ function boot(spec, opts) {
     console.log = (...a) => logs.push(a.join(' '));
     let tickStart = 0;
     global.Game.cpu.getUsed = opts.deterministic ? () => 0 : () => performance.now() - tickStart;
+    // Deterministic runs also fix Math.random (creep names decide creep order).
+    if (opts.deterministic) Math.random = seeded(opts.seed || 1);
     if (opts.config) global.Memory.config = opts.config;
     let main;
     try {

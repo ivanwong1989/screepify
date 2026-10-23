@@ -407,6 +407,8 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | Admiral, military tasks, `role.assault`, `role.defender` | Shelved → future `act/military` + `missions/assault` |
 | Zeadmin empire board/tasker/executor | Shard-scope processes (phase 4) |
 | `overseer/policy/*` (room phase + state, dev_make_missions_missions) | `processes/sense/policy.js` |
+| `traffic/*` (screeps-traffic-manager + adapter) | `services/traffic.js`, `processes/act/traffic.js` |
+| `mission.logisticsCoreV2` + `role.coreLaneHauler` (core lane) | `services/lanes*.js`, `services/laneStore.js`, `processes/plan/lanes.js`, `missions/coreLane.js` |
 | `telemetry/*`, `screeps-profiler` | `kernel/telemetry.js` (always on) |
 | `heap.js`, `roomCache.js`, `global._*` | `services/cache` |
 | Grunt flatten-copy | esbuild bundle |

@@ -29,6 +29,8 @@
  * @property {{enabled: boolean}} construction                automatic layout + sites
  * @property {{stockpileTargets: Record<string, number>, stockpileHysteresis: number}} policy
  * @property {{enabled: boolean}} traffic       swap/shove creeps in the way (act.traffic)
+ * @property {{enabled: boolean, cpuPerTick: number, rebuildEvery: number, checkEvery: number}} lanes
+ *           core lane search (plan.lanes) and the lane hauler (missions/coreLane)
  * @property {{every: Record<string, number>}} missions   refresh interval per generator, in ticks
  *           (v1 missionThrottle; the planner itself runs every 2 ticks)
  *           room policy: storage energy target per RCL for STOCKPILE (sense.policy)
@@ -56,6 +58,7 @@ const DEFAULTS = {
         stockpileHysteresis: 0.10
     },
     traffic: { enabled: true },
+    lanes: { enabled: true, cpuPerTick: 10, rebuildEvery: 5000, checkEvery: 50 },
     missions: {
         every: {
             tower: 1, harvest: 21, fleet: 11, logistics: 7, repair: 25, upgrade: 11,

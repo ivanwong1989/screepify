@@ -4,6 +4,7 @@
 const cache = require('../services/cache');
 const roomData = require('../services/roomData');
 const { closest } = require('../services/pos');
+const coreLane = require('./coreLane');
 
 /**
  * Logistics missions (port of v1 mission.logistics, energy routes).
@@ -82,6 +83,15 @@ function ageStore(roomName) {
     return root.rooms[roomName] || (root.rooms[roomName] = Object.create(null));
 }
 
+/** True when the link is next to the core lane head. @param {Room} room @param {StructureLink} link */
+function laneHeadNear(room, link) {
+    const lane = require('../services/laneStore').get(room);
+    if (!lane) return false;
+    const hx = lane.head % 50;
+    const hy = (lane.head - hx) / 50;
+    return Math.max(Math.abs(link.pos.x - hx), Math.abs(link.pos.y - hy)) <= 1;
+}
+
 /** @param {any} o */
 function amountOf(o) {
     if (!o) return 0;
@@ -109,6 +119,9 @@ function generate(plan, out) {
     /** @type {Map<string, import('../contracts/mission').Mission>} */
     const active = new Map();
     const coveredTargets = new Set();
+    // Spawns/extensions/towers on the core lane are the lane hauler's while it lives.
+    const laneTargets = coreLane.covered(rc);
+    if (laneTargets) for (const id of laneTargets) coveredTargets.add(id);
 
     /**
      * @param {string} routeKey
@@ -271,6 +284,8 @@ function generate(plan, out) {
             const nearCore = link.pos.inRangeTo(storage.pos, 3) || spawns.some(s => link.pos.inRangeTo(s.pos, 3));
             if (!nearCore) continue;
             if (ctrl && link.pos.inRangeTo(ctrl.pos, 3)) continue;
+            // The lane hauler drains the link at its head (v1).
+            if (laneTargets && link.pos.inRangeTo(storage.pos, 2) && laneHeadNear(room, link)) continue;
             addRoute(link, storage, 'link_out');
         }
     }

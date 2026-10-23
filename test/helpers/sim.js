@@ -198,6 +198,18 @@ class StructureSpawn extends Structure {
         this._world.stats.spawned.push({ name, body: body.slice(), cost, time: global.Game.time });
         return C.OK;
     }
+    renewCreep(creep) {
+        if (this.spawning) return C.ERR_BUSY;
+        if (!creep || !this.pos.isNearTo(creep.pos)) return C.ERR_NOT_IN_RANGE;
+        const add = Math.floor(600 / creep.body.length);
+        if (creep.ticksToLive + add > C.CREEP_LIFE_TIME) return C.ERR_FULL;
+        const cost = Math.ceil(creep.body.reduce((t, p) => t + C.BODYPART_COST[p.type], 0) / 2.5 / creep.body.length);
+        if (this._world.energyAvailable() < cost) return C.ERR_NOT_ENOUGH_ENERGY;
+        this._world.spendEnergy(cost);
+        creep.ticksToLive += add;
+        this._world.stats.renewed = (this._world.stats.renewed || 0) + 1;
+        return C.OK;
+    }
 }
 
 class StoreStructure extends Structure {
@@ -258,6 +270,10 @@ class Creep extends RoomObject {
         return this.body.filter(p => p.type === type && p.hits > 0).length;
     }
     say() {}
+    suicide() {
+        this.ticksToLive = 1; // removed at the end of this tick
+        return C.OK;
+    }
     _need(part) {
         return this.getActiveBodyparts(part) > 0;
     }

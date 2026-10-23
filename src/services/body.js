@@ -118,6 +118,28 @@ function worker(budget) {
     return sortBody(body);
 }
 
+/**
+ * Road hauler for the core lane: 2 CARRY per MOVE, up to `maxCarry` (≤ 33)
+ * (v1 generateRoadHaulerBody).
+ * @param {number} budget
+ * @param {number} [maxCarry]
+ * @returns {BodyPartConstant[]}
+ */
+function roadHauler(budget, maxCarry) {
+    const cap = Math.min(33, Number.isFinite(maxCarry) && /** @type {number} */ (maxCarry) > 0 ? /** @type {number} */ (maxCarry) : 33);
+    for (let c = cap; c >= 1; c--) {
+        const m = Math.ceil(c / 2);
+        if (c + m <= 50 && (c + m) * 50 <= budget) {
+            /** @type {BodyPartConstant[]} */
+            const out = [];
+            for (let i = 0; i < c; i++) out.push(CARRY);
+            for (let i = 0; i < m; i++) out.push(MOVE);
+            return out;
+        }
+    }
+    return [CARRY, MOVE];
+}
+
 /** @returns {BodyPartConstant[]} */
 function scout() {
     return [MOVE];
@@ -136,6 +158,7 @@ function build(archetype, budget, opts) {
     switch (archetype) {
         case 'miner': return o.mode === 'mobile' ? mobileMiner(capped) : miner(capped);
         case 'hauler': return hauler(capped, o.maxCarry);
+        case 'laneHauler': return roadHauler(capped, o.maxCarry);
         case 'scout': return scout();
         case 'worker':
         default: return worker(capped);
@@ -170,4 +193,4 @@ function stats(archetype, budget, opts) {
     });
 }
 
-module.exports = { build, stats, cost, sortBody, miner, mobileMiner, hauler, worker, BUDGET_CAP };
+module.exports = { build, stats, cost, sortBody, miner, mobileMiner, hauler, roadHauler, worker, BUDGET_CAP };

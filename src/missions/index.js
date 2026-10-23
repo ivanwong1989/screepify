@@ -18,6 +18,7 @@ const upgrade = require('./upgrade');
 const build = require('./build');
 const decongest = require('./decongest');
 const transfer = require('./transfer');
+const coreLane = require('./coreLane');
 
 /** @typedef {(plan: import('../contracts/mission').PlanContext, out: import('../contracts/mission').Mission[]) => void} Generator */
 
@@ -33,8 +34,13 @@ const generators = [
     { name: 'harvest', generate: harvest.generate },
     // phase 2: mineral
     { name: 'fleet', generate: fleet.generate },
-    // Refill missions must appear as soon as spawning empties the extensions.
-    { name: 'logistics', generate: logistics.generate, key: p => (p.intel.energyAvailable < p.intel.energyCapacityAvailable ? 'refill' : 'full') },
+    { name: 'coreLane', generate: coreLane.generate },
+    // Refill missions must appear as soon as spawning empties the extensions,
+    // and come back at once if the lane hauler dies.
+    {
+        name: 'logistics', generate: logistics.generate,
+        key: p => `${p.intel.energyAvailable < p.intel.energyCapacityAvailable ? 'refill' : 'full'}:${coreLane.covered(p.rc) ? 'lane' : '-'}`
+    },
     // phase 2: labs
     { name: 'repair', generate: repair.generate },
     { name: 'upgrade', generate: upgrade.generate },
@@ -51,7 +57,8 @@ const executors = {
     upgrade: upgrade.nextTask,
     build: build.nextTask,
     repair: repair.nextTask,
-    decongest: decongest.nextTask
+    decongest: decongest.nextTask,
+    coreLane: coreLane.nextTask
 };
 
 /** Mission types creeps are never assigned to (spawn-only or structure-driven). */
@@ -62,7 +69,7 @@ const UNASSIGNABLE = new Set(['hauler_fleet', 'tower_attack', 'tower_heal', 'tow
 function needs(type) {
     if (type === 'harvest' || type === 'mineral' || type === 'dismantle') return { work: true, carry: false, claim: false };
     if (type === 'upgrade' || type === 'build' || type === 'repair') return { work: true, carry: true, claim: false };
-    if (type === 'transfer') return { work: false, carry: true, claim: false };
+    if (type === 'transfer' || type === 'coreLane') return { work: false, carry: true, claim: false };
     if (type === 'reserve' || type === 'claim') return { work: false, carry: false, claim: true };
     return { work: false, carry: false, claim: false };
 }

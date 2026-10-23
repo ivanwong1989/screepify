@@ -178,6 +178,9 @@ function budget(rc, mem, contractKey) {
     const active = rc.census ? rc.census.active : [];
     const hasMiners = active.some(c => c.memory.a === 'miner');
     const hasHaulers = active.some(c => c.memory.a === 'hauler');
+    // v1: the first lane hauler is sized from the energy there is now. A
+    // replacement waits for full size; the current one keeps the lane filled.
+    if (contractKey === 'coreLane') return active.some(c => c.memory.a === 'laneHauler') ? cap : Math.max(avail, 100);
     if (mem.last !== contractKey) {
         mem.last = contractKey;
         mem.wait = 0;

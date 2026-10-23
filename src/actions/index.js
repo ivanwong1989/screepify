@@ -182,6 +182,11 @@ const actions = {
 
     wait(creep, t) {
         return Game.time >= (t.q || 0) ? SKIP : CONTINUE;
+    },
+
+    // The core lane hauler decides every tick itself (missions/coreLane).
+    lane(creep) {
+        return require('../missions/coreLane').run(creep);
     }
 };
 
