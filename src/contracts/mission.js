@@ -45,6 +45,7 @@
  * @property {import('./ctx').TickContext} ctx
  * @property {import('../processes/sense/intel').RoomIntel} intel
  * @property {import('../processes/sense/intel').RoomState} state
+ * @property {import('../processes/sense/policy').RoomPolicy|undefined} policy
  * @property {number} budget                  energy budget for body estimates
  * @property {Set<string>} efficientSources
  * @property {(missionId: string) => {count: number, work: number, carry: number}} census

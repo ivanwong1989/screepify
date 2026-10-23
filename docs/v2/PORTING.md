@@ -64,7 +64,7 @@ source files only.
 
 | # | Feature | v1 source (lines) | v2 target | Effort |
 |---|---|---|---|---|
-| P1 | Room policy (phase + state) | `overseer/policy/*` (279) | `processes/plan/policy.js`, constants in `config.js`, result in `ctx.rooms[name].policy` | S |
+| P1 ✅ | Room policy (phase + state) | `overseer/policy/*` (279) | `processes/sense/policy.js`, targets in `config.policy`, result in `rc.policy`; upgrade + fortify gated | S |
 | P2 | Mission refresh throttling | `board/utils/missionThrottle.js` (56) | `cadence` field on each MissionType, read by `plan/missions.js` | S |
 | P3 | Traffic manager | `traffic/*`, `utils/movement.js` (1,019) | `services/traffic.js` + one call in `act/creeps.js` after all moves | M |
 | P4 | Core lane logistics | `mission.logisticsCoreV2.js`, `role.coreLaneHauler.js` (3,469) | `services/lanes.js` (path + cache), `missions/coreLane.js`, actions `load` / `deliver` | L |
@@ -99,17 +99,36 @@ P3 traffic ┘   P13 ramparts                              P12 labs
 
 ## 5. Item notes
 
-**P1 Room policy.**
-- Port `derivePhase` almost as-is: BOOTSTRAP → EARLY → BASIC_INFRA → STORAGE → LINKS → TERMINAL → LABS.
-- State is CRITICAL / RECOVER / GROW / STOCKPILE / DEFENSIVE / SIEGE. Keep the 10% stockpile hysteresis.
-- Read from `roomData`, not `room.find`.
-- Replace v1's `countRoles` with census counts by archetype and mission.
-- Consumers read `ctx.rooms[name].policy`: upgrade and fortify are held back in CRITICAL / RECOVER, and phase chooses the logistics mode.
+**P1 Room policy. ✅ Done** (`processes/sense/policy.js`, `test/policy.test.js`).
+- SENSE process after census. Writes `rc.policy = {phase, state, reasons}`. Previous state is kept in `Memory.rooms[n].ps` for hysteresis.
+- Phase is ported as-is: BOOTSTRAP → EARLY → BASIC_INFRA → STORAGE → LINKS → TERMINAL → LABS. `policy.atLeast(p, phase)` compares phases.
+- State: DEFENSIVE / CRITICAL / RECOVER / STOCKPILE / GROW. SIEGE can only be set from the console until a combat layer exists.
+- Stockpile targets per RCL and the ±10% hysteresis are in `config.policy`.
+- Creep counts come from census archetypes, not roles.
+- Changes from v1, all to stop the state flipping back and forth:
+  - Hostiles with no ATTACK, RANGED_ATTACK, HEAL, WORK or CLAIM parts don't count as a threat.
+  - Low spawn energy only means RECOVER once the room has extensions.
+  - Phase BOOTSTRAP alone doesn't mean RECOVER. A drop-mining room with a healthy workforce keeps upgrading.
+- Upgrade:
+  - GROW: full upgrade, still subject to v2's UPGRADING/STOCKPILING economy state.
+  - RECOVER / DEFENSIVE / SIEGE: 1 WORK.
+  - CRITICAL / STOCKPILE: keep existing upgraders but spawn none, unless the controller is close to downgrading.
+- Fortify:
+  - DEFENSIVE / SIEGE: always on.
+  - CRITICAL / STOCKPILE: off.
+  - RECOVER: existing fortifiers keep going, but no new spawns.
+  - Otherwise: only from phase STORAGE.
+- Console: `policy.show()`, `policy.set(room, state)`, `policy.clear(room)`. The phase and state are also in the stats segment.
+- Still to do in later items: phase choosing the logistics mode (P4/P5/P6).
 
 **P3 Traffic.**
 - Keep the vendored `screeps-traffic-manager` as is, in `services/traffic/vendor.js`.
 - Write one small adapter. Creeps register through `services/movement.js` only, and `act/creeps.js` resolves all moves once per room after every creep has acted.
 - Drop the `.ori.js` copy.
+
+**Existing rooms (decided 2026-10-23).** Three live rooms are already built around a core lane, with extensions placed along it, which the lane hauler keeps supplied. The design exists to cut traffic. P4/P5 port the **behaviour** first: they run on the lanes and flags already in those rooms and don't move or add structures. Whether the automatic stamp/room planner (DESIGN §12.1) can produce the same layout is a separate later question.
+
+Before v2 runs in those rooms, check `plan.construction` (the phase-1 stamp builder). Extensions, towers and storage are capped per RCL and will already be at the cap there, so only roads and containers are at risk. It could still add roads from the spawn to the sources and controller, and a container at the end of each road. If that's unwanted, set `config.set('construction.enabled', false)` until the planner understands the lane layout.
 
 **P4 Core lane.**
 - Split into:

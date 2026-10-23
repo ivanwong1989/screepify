@@ -27,6 +27,8 @@
  * @property {string[]} allies           usernames never treated as hostile
  * @property {{enabled: boolean, rooms: string[]}} safeMode   rooms: [] = all owned rooms
  * @property {{enabled: boolean}} construction                automatic layout + sites
+ * @property {{stockpileTargets: Record<string, number>, stockpileHysteresis: number}} policy
+ *           room policy: storage energy target per RCL for STOCKPILE (sense.policy)
  * @property {Record<string, any>} shards
  */
 
@@ -46,6 +48,10 @@ const DEFAULTS = {
     allies: [],
     safeMode: { enabled: true, rooms: [] },
     construction: { enabled: true },
+    policy: {
+        stockpileTargets: { 1: 0, 2: 0, 3: 20000, 4: 50000, 5: 100000, 6: 150000, 7: 250000, 8: 350000 },
+        stockpileHysteresis: 0.10
+    },
     shards: {}
 };
 

@@ -61,7 +61,7 @@ function plan(ctx, rc) {
     const census = rc.census;
     /** @type {import('../../contracts/mission').PlanContext} */
     const planCtx = {
-        rc, ctx, intel, state: rs, budget,
+        rc, ctx, intel, state: rs, policy: rc.policy, budget,
         efficientSources: efficientSources(intel, budget),
         census(id) {
             const t = census && census.byMissionAll[id];

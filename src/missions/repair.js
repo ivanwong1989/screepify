@@ -5,6 +5,7 @@ const cache = require('../services/cache');
 const roomData = require('../services/roomData');
 const scanner = require('../processes/sense/repairScan');
 const state = require('./shared/state');
+const policyRules = require('../processes/sense/policy');
 const { gather } = require('./shared/gather');
 const { vacate } = require('./shared/vacate');
 
@@ -45,6 +46,23 @@ function baselineWork(room) {
     const work = (decay / REPAIR_POWER) * SAFETY;
     store[room.name] = { work, expires: Game.time + BASELINE_TTL };
     return work;
+}
+
+/**
+ * Fortifying (walls/ramparts above critical) by room policy (v1 rules):
+ * always under threat; off while CRITICAL / STOCKPILE; no new spawns while
+ * RECOVER (spawn energy dips after every big spawn, so existing fortifiers
+ * keep going); otherwise only once the room has storage.
+ * Critical forts are repairs and are always allowed.
+ * @param {import('../processes/sense/policy').RoomPolicy|undefined} policy
+ * @returns {'on'|'noSpawn'|'off'}
+ */
+function fortifyMode(policy) {
+    if (!policy) return 'on';
+    if (policy.state === 'DEFENSIVE' || policy.state === 'SIEGE') return 'on';
+    if (policy.state === 'CRITICAL' || policy.state === 'STOCKPILE') return 'off';
+    if (!policyRules.atLeast(policy, 'STORAGE')) return 'off';
+    return policy.state === 'RECOVER' ? 'noSpawn' : 'on';
 }
 
 /**
@@ -105,12 +123,13 @@ function generate(plan, out) {
         }
     }
 
-    if (fortifyTargets.length > 0) {
+    const fortMode = fortifyMode(plan.policy);
+    if (fortifyTargets.length > 0 && fortMode !== 'off') {
         const dire = hostiles;
         if (!dire && rs.economy !== 'UPGRADING') return;
         const workTarget = dire ? 20 : Math.floor(20 * 0.6);
         const desiredWorkers = Math.max(1, Math.ceil(workTarget / 4));
-        const allowSpawn = repairTargets.length <= 15;
+        const allowSpawn = repairTargets.length <= 15 && fortMode === 'on';
         const sorted = fortifyTargets.slice().sort((a, b) => (a.hits / a.hitsMax) - (b.hits / b.hitsMax));
         const sticky = sorted.filter(s => census(`fortify:${s.id}`).count > 0);
         const stickyIds = new Set(sticky.map(s => s.id));
@@ -141,4 +160,4 @@ function nextTask(creep, m, rc) {
     return gather(creep, rc, { allowedIds: data.sourceIds || null, allowPartial: !!data.allowPartial });
 }
 
-module.exports = { type: 'repair', generate, nextTask };
+module.exports = { type: 'repair', generate, nextTask, fortifyMode };

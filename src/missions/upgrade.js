@@ -8,8 +8,10 @@ const { vacate } = require('./shared/vacate');
 /**
  * Controller upgrading (port of v1 mission.upgrade + mission.idleUpgrade + exec/upgrade).
  *
- * upgrade:controller  15 WORK while UPGRADING; trickle (spawn only if downgrade
- *                     is near) while STOCKPILING; 1 WORK while anything is being built
+ * upgrade:controller  15 WORK while UPGRADING and policy GROW; trickle (spawn only
+ *                     if downgrade is near) while STOCKPILING or policy CRITICAL /
+ *                     STOCKPILE; 1 WORK in RECOVER / DEFENSIVE / SIEGE or while
+ *                     anything is being built
  * idle:upgrade        catch-all for workers with nothing better (never spawns)
  */
 
@@ -20,18 +22,28 @@ const CRITICAL_DOWNGRADE_TICKS = 5000;
  * @param {import('../contracts/mission').Mission[]} out
  */
 function generate(plan, out) {
-    const { rc, intel, state: rs, census } = plan;
+    const { rc, intel, state: rs, policy, census } = plan;
     const ctrl = intel.controller;
     if (!ctrl || !ctrl.my || rs.op === 'EMERGENCY') return;
 
     const critical = (ctrl.ticksToDowngrade || 0) < CRITICAL_DOWNGRADE_TICKS;
+    const ps = policy ? policy.state : 'GROW';
     let prio = 50;
     let desiredWork = 15;
     let spawnAllowed = true;
-    if (rs.economy === 'STOCKPILING') {
+    // Hold upgraders we have but spawn none (unless the controller is about to downgrade).
+    let holdOnly = false;
+    if (ps === 'CRITICAL' || ps === 'STOCKPILE' || rs.economy === 'STOCKPILING') {
         desiredWork = 1;
-        prio = critical ? 100 : 10;
+        prio = critical ? 100 : (ps === 'CRITICAL' ? 30 : ps === 'STOCKPILE' ? 5 : 10);
         spawnAllowed = critical;
+        holdOnly = !critical;
+    } else if (ps === 'RECOVER') {
+        desiredWork = 1;
+        prio = 20;
+    } else if (ps === 'DEFENSIVE' || ps === 'SIEGE') {
+        desiredWork = 1;
+        prio = 25;
     }
     if (intel.sites.length > 0) {
         desiredWork = 1;
@@ -41,7 +53,7 @@ function generate(plan, out) {
     let work = desiredWork;
     let minCount = desiredWork > 0 ? 1 : 0;
     let maxCount = intel.availableControllerSpaces;
-    if (rs.economy === 'STOCKPILING' && !critical) {
+    if (holdOnly) {
         // Keep existing upgraders, spawn none.
         work = 0;
         minCount = Math.min(census('upgrade:controller').count, intel.availableControllerSpaces);

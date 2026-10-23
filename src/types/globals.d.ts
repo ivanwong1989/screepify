@@ -17,6 +17,10 @@ interface Memory {
 interface RoomMemory {
     /** Room kind (DESIGN §18.1). */
     k?: import('../contracts/ctx').RoomKind;
+    /** Room policy state last tick (sense.policy, for hysteresis). */
+    ps?: string;
+    /** Room policy state override, set from the console. */
+    po?: string;
 }
 
 interface CreepMemory {

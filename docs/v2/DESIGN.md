@@ -406,6 +406,7 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | `structures/*` | `act/links`, `act/terminal`, `act/labs`, `act/towers` |
 | Admiral, military tasks, `role.assault`, `role.defender` | Shelved → future `act/military` + `missions/assault` |
 | Zeadmin empire board/tasker/executor | Shard-scope processes (phase 4) |
+| `overseer/policy/*` (room phase + state, dev_make_missions_missions) | `processes/sense/policy.js` |
 | `telemetry/*`, `screeps-profiler` | `kernel/telemetry.js` (always on) |
 | `heap.js`, `roomCache.js`, `global._*` | `services/cache` |
 | Grunt flatten-copy | esbuild bundle |

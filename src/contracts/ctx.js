@@ -18,6 +18,7 @@
  * @property {import('../processes/sense/census').Census} [census]    writer: sense.census
  *                                         (census.reserved is also updated by mission
  *                                          types when they hand out gather tasks)
+ * @property {import('../processes/sense/policy').RoomPolicy} [policy]  writer: sense.policy
  * @property {import('./mission').Mission[]} [missions]               writer: plan.missions
  * @property {Record<string, import('./mission').Mission>} [missionsById]  writer: plan.missions
  *

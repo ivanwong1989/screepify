@@ -39,6 +39,8 @@ function buildRooms(ctx) {
             storage: room.storage ? room.storage.store.getUsedCapacity(RESOURCE_ENERGY) : null,
             op: rc.state ? rc.state.op : null,
             economy: rc.state ? rc.state.economy : null,
+            phase: rc.policy ? rc.policy.phase : null,
+            policy: rc.policy ? rc.policy.state : null,
             missions: rc.missions ? rc.missions.length : 0,
             sites: rc.intel ? rc.intel.sites.length : 0,
             cpu: round(roomCpu[rc.name] || 0)

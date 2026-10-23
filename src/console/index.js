@@ -1,6 +1,7 @@
 // @ts-check
 'use strict';
 
+const cache = require('../services/cache');
 const config = require('../config');
 const telemetry = require('../kernel/telemetry');
 
@@ -12,6 +13,7 @@ const telemetry = require('../kernel/telemetry');
  *   proc.list()                   processes with tier/cadence/state
  *   proc.enable(id) / proc.disable(id) / proc.every(id, n) / proc.reset(id)
  *   config.get(path?) / config.set(path, value) / config.reset(path) / config.reload()
+ *   policy.show() / policy.set(room, state) / policy.clear(room)
  */
 
 /**
@@ -53,7 +55,9 @@ function register(kernel) {
         'proc.list()                     processes and their state',
         'proc.enable(id) / proc.disable(id)',
         'proc.every(id, n) / proc.reset(id)',
-        'config.get(path?) / config.set(path, value) / config.reset(path) / config.reload()'
+        'config.get(path?) / config.set(path, value) / config.reset(path) / config.reload()',
+        'policy.show()                   room phase, state and why',
+        'policy.set(room, state) / policy.clear(room)   override a room\'s state'
     ].join('\n');
 
     g.stats = () => {
@@ -133,6 +137,34 @@ function register(kernel) {
         reload() {
             config.load();
             return 'config reloaded';
+        }
+    };
+
+    g.policy = {
+        show() {
+            const last = cache.store('policy.last');
+            const names = Object.keys(last).sort();
+            if (!names.length) return 'no room policy yet';
+            const lines = [`${pad('room', 10)}${pad('phase', 13)}${pad('state', 11)}why`];
+            for (const n of names) {
+                const p = last[n];
+                const o = Memory.rooms[n] && Memory.rooms[n].po ? ' (override)' : '';
+                lines.push(`${pad(n, 10)}${pad(p.phase, 13)}${pad(p.state, 11)}${p.reasons.join('; ')}${o}`);
+            }
+            return lines.join('\n');
+        },
+        /** @param {string} room @param {string} st */
+        set(room, st) {
+            const states = require('../processes/sense/policy').STATES;
+            const v = String(st || '').trim().toUpperCase();
+            if (states.indexOf(v) === -1) return `unknown state ${st}; use one of ${states.join(', ')}`;
+            (Memory.rooms[room] || (Memory.rooms[room] = {})).po = v;
+            return `${room} policy state forced to ${v}`;
+        },
+        /** @param {string} room */
+        clear(room) {
+            if (Memory.rooms[room]) delete Memory.rooms[room].po;
+            return `${room} policy override cleared`;
         }
     };
 }

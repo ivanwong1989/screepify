@@ -13,6 +13,7 @@ module.exports = [
     require('../processes/sense/memoryGC'),
     require('../processes/sense/intel'),
     require('../processes/sense/census'),
+    require('../processes/sense/policy'),
     require('../processes/sense/repairScan'),
     // PLAN
     require('../processes/plan/missions'),
