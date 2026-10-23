@@ -1,0 +1,94 @@
+// @ts-check
+'use strict';
+
+/**
+ * Store bands (docs/v2/LOGISTICS.md §2.1). For each (structure, resource):
+ * min ≤ target ≤ max. Below min the store requests up to target; above max it
+ * offers down to target; in between nothing moves. Storage is the buffer and
+ * has no band. Pure: reads the structure and config only.
+ *
+ * @typedef {{min: number, target: number, max: number}} Band
+ * @typedef {{terminal: import('./terminal').TerminalConfig, roomName: string,
+ *            miningContainers: Set<string>}} BandInfo
+ */
+
+const TOWER_MIN = 0.7;
+const CONTAINER_MIN = 0.5;
+
+/** @param {number} min @param {number} target @param {number} max @returns {Band} */
+function mk(min, target, max) {
+    const t = Math.max(0, target);
+    return { min: Math.min(Math.max(0, min), t), target: t, max: Math.max(max, t) };
+}
+
+/** Offer everything (mining containers, unwanted cargo). */
+const OFFER_ALL = mk(0, 0, 0);
+
+/** v1 deadband: 5% of the target, between 50 and 2000. @param {number} target */
+function deadband(target) {
+    return Math.max(50, Math.min(2000, Math.ceil(target * 0.05)));
+}
+
+/** True when this structure is the room's buffer (storage). @param {any} s */
+function isBuffer(s) {
+    return s.structureType === STRUCTURE_STORAGE;
+}
+
+/**
+ * The band for one resource in one store, or null when the store takes no part
+ * for that resource (it neither asks for it nor gives it away).
+ * @param {any} s  structure with a store
+ * @param {ResourceConstant} res
+ * @param {BandInfo} info
+ * @returns {Band|null}
+ */
+function band(s, res, info) {
+    const cap = s.store.getCapacity(res) || 0;
+    switch (s.structureType) {
+        case STRUCTURE_SPAWN:
+        case STRUCTURE_EXTENSION:
+            return res === RESOURCE_ENERGY ? mk(cap, cap, cap) : null;
+        case STRUCTURE_TOWER:
+            return res === RESOURCE_ENERGY ? mk(Math.floor(cap * TOWER_MIN), cap, cap) : null;
+        case STRUCTURE_CONTAINER:
+            if (info.miningContainers.has(s.id)) return OFFER_ALL;
+            return res === RESOURCE_ENERGY ? mk(Math.floor(cap * CONTAINER_MIN), cap, cap) : OFFER_ALL;
+        case STRUCTURE_TERMINAL: {
+            const cfg = info.terminal;
+            const room = (cfg.rooms && cfg.rooms[info.roomName]) || {};
+            if (res === RESOURCE_ENERGY) {
+                const t = Number.isFinite(room.energy) ? /** @type {number} */ (room.energy) : cfg.energy;
+                const m = cfg.energyMargin || 0;
+                return mk(t - m, t, t + m);
+            }
+            const stock = Object.assign({}, cfg.stock || {}, room.stock || {});
+            const t = Math.max(0, Number(stock[res]) || 0);
+            if (t > 0) {
+                const d = deadband(t);
+                return mk(t - d, t, t + d);
+            }
+            return cfg.flushUntargeted ? OFFER_ALL : null;
+        }
+        default:
+            return null;
+    }
+}
+
+/**
+ * Resources a store has a band for: everything it holds, plus what it may ask for.
+ * @param {any} s
+ * @param {BandInfo} info
+ * @returns {ResourceConstant[]}
+ */
+function resourcesOf(s, info) {
+    const out = new Set(/** @type {ResourceConstant[]} */ (Object.keys(s.store).filter(r => (s.store[r] || 0) > 0)));
+    if (s.structureType !== STRUCTURE_CONTAINER || !info.miningContainers.has(s.id)) out.add(RESOURCE_ENERGY);
+    if (s.structureType === STRUCTURE_TERMINAL) {
+        const cfg = info.terminal;
+        const room = (cfg.rooms && cfg.rooms[info.roomName]) || {};
+        for (const r of Object.keys(Object.assign({}, cfg.stock || {}, room.stock || {}))) out.add(/** @type {ResourceConstant} */ (r));
+    }
+    return Array.from(out);
+}
+
+module.exports = { band, resourcesOf, isBuffer, deadband, mk, OFFER_ALL };

@@ -69,6 +69,7 @@ const DEFAULTS = {
     minerals: { enabled: true, maxStock: 100000, minStorageFree: 50000 },
     terminal: {
         energy: 20000,
+        energyMargin: 2000,
         stock: {},
         flushUntargeted: false,
         rooms: {},

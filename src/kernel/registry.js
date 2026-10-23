@@ -17,6 +17,7 @@ module.exports = [
     require('../processes/sense/policy'),
     require('../processes/sense/repairScan'),
     require('../processes/sense/lanes'),
+    require('../processes/sense/logistics'),
     // PLAN
     require('../processes/plan/missions'),
     require('../processes/plan/assignment'),

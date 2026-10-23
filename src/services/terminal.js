@@ -19,7 +19,7 @@
  */
 
 /**
- * @typedef {{energy: number, stock: Record<string, number>, flushUntargeted: boolean,
+ * @typedef {{energy: number, energyMargin?: number, stock: Record<string, number>, flushUntargeted: boolean,
  *            rooms: Record<string, {energy?: number, stock?: Record<string, number>}>,
  *            balance: {enabled: boolean, batch: number}}} TerminalConfig
  * @typedef {{from: 'storage'|'terminal', res: ResourceConstant, amount: number}} StockMove

@@ -20,6 +20,8 @@
  *                                          types when they hand out gather tasks)
  * @property {import('../processes/sense/policy').RoomPolicy} [policy]  writer: sense.policy
  * @property {import('../services/laneClaims').LaneClaims} [lanes]    writer: sense.lanes
+ * @property {import('../services/requests').Requests} [requests]    writer: sense.logistics
+ *                                         (services/matcher commits taken jobs into it)
  * @property {import('./mission').Mission[]} [missions]               writer: plan.missions
  * @property {Record<string, import('./mission').Mission>} [missionsById]  writer: plan.missions
  *

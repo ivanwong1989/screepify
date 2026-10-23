@@ -1,6 +1,6 @@
 # Screepify v2 — Logistics: requests, bands and the ledger
 
-> Status: **proposal**. It replaces the per-feature storage/terminal rules from P4, P10 and P11 before any of them is deployed. It extends [DESIGN.md](DESIGN.md) §6 (ctx) and §9 (tasks).
+> Status: **L1 done** (model, no behaviour change yet); L2–L4 to do. It replaces the per-feature storage/terminal rules from P4, P10 and P11 before any of them is deployed. It extends [DESIGN.md](DESIGN.md) §6 (ctx) and §9 (tasks).
 
 ## 1. The problem
 
@@ -107,11 +107,19 @@ Request priority (high first): spawns/extensions → towers → boost labs → r
 - **Unit:** `min ≤ target ≤ max` for every band rule and config; move amounts never cross the other side's target.
 - **Sim:** existing lane, terminal and mineral tests keep passing with the matcher in place of the old rules.
 
+## 4b. What L1 showed
+
+- **The property test needs a reversal check per store, not per pair.** A store that gave a resource away must not then be filled with it (or the reverse) unless something outside changed it. A pair-only check (A→B then B→A) missed loops through a third store (terminal → extension, then container → terminal).
+- **Mutation checks** confirm the test bites. Ignoring the ledger, or letting the matcher fill past a request's target, both fail it with concrete reversals (`X terminal: out at t401, in at t405`).
+- **Bands alone absorb small overshoots.** With three small haulers (2.1k carry in total) the 2k terminal margin hid a missing ledger. With six (6.8k, like a busy RCL 8 room) it didn't. Both layers are needed.
+- **Cost:** `requests.build` for an RCL 8 room (60 extensions, 6 towers, 15 creeps, full terminal) takes about 31 µs in Node.
+- Terminal energy band: `config.terminal.energy` ± `energyMargin` (20k ± 2k).
+
 ## 5. Plan
 
 | Step | Scope |
 |---|---|
-| L1 | `bands`, `ledger`, `sense.logistics` (`rc.requests`), `matcher`; property test. No behaviour change yet |
+| L1 ✅ | `services/bands.js`, `services/ledger.js`, `services/requests.js`, `services/matcher.js`, `sense.logistics` (`rc.requests`); `test/logistics.test.js`. No behaviour change yet |
 | L2 | Core lane hauler: head side jobs (terminal, head link) and leftover cargo through the matcher; drop `laneStock` and `dumpCargo` rules |
 | L3 | `transfer.js`, mineral miner delivery and logistics supply through the matcher |
 | L4 | P12 labs as bands (reagent requests, product offers, boost stock), with no new hauling rules |
