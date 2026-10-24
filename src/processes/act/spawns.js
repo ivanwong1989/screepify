@@ -276,7 +276,11 @@ function run(ctx, rc) {
             log.debug('spawner', `${room.name} spawn ${pick.key} failed: ${r}`);
             return;
         }
-        log.debug('spawner', `${room.name} spawning ${name} for ${pick.key} cost=${stats.cost}`);
+        // Always logged: spawns are rare, and "why was this spawned?" is the
+        // first question when a creep turns out idle.
+        const why = /** @type {any} */ (pick.mission.data || {}).why;
+        log.info(`[spawn] ${room.name} ${name} for ${pick.key} (have ${counts[pick.key]}, want ${pick.desired}; ` +
+            `mission ${pick.mission.id} prio ${pick.priority}, ${stats.body.length} parts, ${stats.cost} energy)${why ? ` — ${why}` : ''}`);
         energy -= stats.cost;
         counts[pick.key]++;
         mem.hist.push(pick.archetype);

@@ -57,3 +57,13 @@ test('sim: a hauler without a mission puts its cargo away where it is wanted', (
     const into = sim.w.carryLog.filter(e => e.creep === h.name && e.a === 'transfer');
     assert.ok(into.length > 0 && into.reduce((t, e) => t + e.n, 0) >= 150, JSON.stringify(into));
 });
+
+test('sim: every spawn is logged with why, the fleet with its reason', () => {
+    const sim = laneRoom();
+    sim.run(1500);
+    const lines = sim.logs.filter(l => /\[spawn\]/.test(l));
+    assert.ok(lines.length > 3, `spawn lines: ${lines.length}`);
+    assert.ok(lines.every(l => /for \S+ \(have \d+, want \d+; mission \S+ prio -?\d+/.test(l)), lines[0]);
+    const fleetLine = lines.find(l => /pool:hauler/.test(l));
+    assert.ok(fleetLine && /uncovered \d+\/\d+ sources, lanes \d+, off-lane work (yes|no), hostiles \d+, carry \d+/.test(fleetLine), fleetLine);
+});

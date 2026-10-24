@@ -119,8 +119,9 @@ function generate(plan, out) {
     // such work in the last DEMAND_WINDOW ticks or hostiles are around
     // (services/haulDemand). Otherwise the last one isn't replaced when it
     // dies; new demand brings the floor back at once.
+    const offLane = haulDemand.recent(room.name, DEMAND_WINDOW);
     const minHaulers = floor(laneContainers.size > 0, fleetSources, efficientSources.size,
-        haulDemand.recent(room.name, DEMAND_WINDOW) || intel.hostiles.length > 0);
+        offLane || intel.hostiles.length > 0);
     const desired = Math.max(minHaulers, Math.ceil(scaled / carryParts));
 
     out.push({
@@ -132,6 +133,11 @@ function generate(plan, out) {
         demand: { carry: scaled, minCreeps: minHaulers, maxCreeps: desired },
         spawn: 'pool',
         bodyOpts: { maxCarry: MAX_HAULER_CARRY_PARTS },
+        // Why the fleet wants what it wants (logged by act.spawns when it spawns).
+        data: {
+            why: `uncovered ${fleetSources}/${efficientSources.size} sources, lanes ${laneContainers.size}, ` +
+                `off-lane work ${offLane ? 'yes' : 'no'}, hostiles ${intel.hostiles.length}, carry ${scaled}`
+        },
         priority: 85
     });
 }
