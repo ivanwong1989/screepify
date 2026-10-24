@@ -64,3 +64,17 @@ regen, death). The same room was run with v1 (`master` dist) and v2.
 The time column is wall time in Node, not game CPU, and the simulator's
 `moveTo` has no path reuse, which inflates v1's number. Real CPU still has to be
 measured in game; `stats()` and the dashboard's v2 tab show it per process.
+
+## Idle creeps (live review 2026-10-24)
+
+After a night on the logistics model the colony grew only about +12 energy per tick (of about 50 gross). Idle creeps were a large part of that.
+
+| Seen live | Cause | Fix | Test |
+|---|---|---|---|
+| Workers' tasks wiped all the time | Assignment step 3 released **every** upgrader whenever any higher-priority mission looked short, of any archetype (a hauler supply run was enough): ~340 releases in 40 ticks in the simulator | Only creeps that fit a short mission move, only as many as it's short, and directly; everyone else keeps mission and task | `test/assignment.test.js` (old code: 352 releases) |
+| A mission keeps catching and dropping creeps | A mission whose `nextTask` has nothing stays listed until its generator refreshes (up to 25 ticks) and still looks short | `services/missionMarks`: the creep runner marks it finished; assignment and spawning skip it until the generator emits a new object | `test/assignment.test.js` |
+| One idle general hauler per room (W44S28, W44S29) | With mining lanes covering every source, the fleet still kept a floor of one hauler at all times: a 4,000-energy body every 1,500 ticks, ~2.7 energy/tick per room | Floor of one only while there was off-lane hauling work in the last 300 ticks, or hostiles (`services/haulDemand`); otherwise the last one isn't replaced | `test/spawnBurst.test.js` |
+| An idle hauler sitting on 1,100 energy | A creep with no mission gets no task, so its cargo stays put | After 5 ticks without a mission, a hauler (or a creep holding minerals) puts its cargo where the request list wants it; workers keep energy for their next mission | `test/spawnBurst.test.js` |
+| A miner without a mission after a Memory wipe | It was still spawning at the wipe, came out unbound, and its source's WORK was already covered | When nothing short-handed fits, a creep joins a fitting mission that still has room (below maxCreeps) | `test/adopt.test.js` |
+
+Correction to the first diagnosis: the extra haulers were **not** spawned by short bursts of demand. Creep names (spawn tick in base 36) showed each was its predecessor's on-time replacement. The waste was the floor itself.

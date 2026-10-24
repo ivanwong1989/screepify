@@ -2,6 +2,7 @@
 'use strict';
 
 const { activeParts } = require('../../services/body');
+const missionMarks = require('../../services/missionMarks');
 const registry = require('../../missions/index');
 const state = require('../../missions/shared/state');
 const { pack, range } = require('../../services/pos');
@@ -89,6 +90,7 @@ function missionPos(m) {
  */
 function fits(creep, m, home) {
     if (registry.UNASSIGNABLE.has(m.type)) return false;
+    if (missionMarks.isFinished(m)) return false;
     if (m.archetype && m.archetype !== creep.memory.a) return false;
     const away = creep.room.name !== home;
     if (away && m.room === home) return false;
@@ -100,6 +102,7 @@ function fits(creep, m, home) {
 
 /**
  * v1 findBestMission: first priority band with an underfilled mission that fits; closest wins.
+ * If none, a fitting mission that still has room (below maxCreeps).
  * @param {Creep} creep
  * @param {import('../../contracts/mission').Mission[]} sorted
  * @param {Record<string, Status>} status
@@ -116,6 +119,20 @@ function bestMission(creep, sorted, status, home) {
         if (!st || !underfilled(st)) continue;
         if (band === null) band = prio;
         candidates.push(m);
+    }
+    if (candidates.length === 0) {
+        // Nothing short-handed fits: join a fitting mission that still has
+        // room (below maxCreeps), e.g. a miner adopted after a Memory wipe
+        // with its source's WORK already covered, instead of idling for life.
+        for (const m of sorted) {
+            if (!fits(creep, m, home)) continue;
+            const st = status[m.id];
+            if (st && Number.isFinite(m.demand.maxCreeps) && st.count < /** @type {number} */ (m.demand.maxCreeps)) {
+                if (band === null) band = m.priority || 0;
+                else if ((m.priority || 0) < band) break;
+                candidates.push(m);
+            }
+        }
     }
     if (candidates.length <= 1) return candidates[0] || null;
     let best = candidates[0];
@@ -143,6 +160,8 @@ function assign(creep, m, status) {
     creep.memory.m = m.id;
     creep.memory.s = 'init';
     delete creep.memory.t;
+    // An idle creep's cargo job (act.creeps) ends with the new mission.
+    delete /** @type {any} */ (creep.memory).j;
     count(status[m.id], creep, +1);
 }
 
@@ -217,38 +236,27 @@ function run(ctx, rc) {
         }
     }
 
-    // 3) Preemption: idle:upgrade, then upgrade missions, yield to underfilled higher-priority work.
-    /**
-     * @param {number} floor
-     * @param {Set<string>} exclude
-     */
-    const higherUnderfilled = (floor, exclude) => {
-        for (const id in status) {
-            if (exclude.has(id)) continue;
-            const st = status[id];
-            if ((st.mission.priority || 0) <= floor) continue;
-            if (registry.UNASSIGNABLE.has(st.mission.type)) continue;
-            if (underfilled(st)) return true;
-        }
-        return false;
-    };
-    /** @param {Set<string>} ids */
-    const releaseAll = (ids) => {
-        for (const creep of c.active) {
-            const id = creep.memory.m;
-            if (!id || !ids.has(id)) continue;
-            count(status[id], creep, -1);
-            state.release(creep);
-        }
-    };
-    const idle = status['idle:upgrade'];
-    if (idle && higherUnderfilled(idle.mission.priority, new Set(['idle:upgrade']))) releaseAll(new Set(['idle:upgrade']));
-    const upgradeIds = new Set(missions.filter(m => m.type === 'upgrade' && m.id !== 'idle:upgrade').map(m => m.id));
-    if (upgradeIds.size > 0) {
-        for (const id of upgradeIds) {
-            if (higherUnderfilled(status[id].mission.priority || 0, upgradeIds)) {
-                releaseAll(upgradeIds);
-                break;
+    // 3) Preemption: creeps on idle:upgrade, then on upgrade missions, move to
+    //    short-handed higher-priority work, but only creeps that fit it and
+    //    only as many as it is short. Everyone else keeps mission and task
+    //    (releasing them all every tick, as before, wiped their tasks each
+    //    tick: ~340 releases in 40 ticks in test/assignment).
+    const upgradeIds = new Set(missions.filter(m => m.type === 'upgrade').map(m => m.id));
+    const movable = c.active.filter(cr => cr.memory.m && upgradeIds.has(cr.memory.m))
+        // idle:upgrade first (lowest priority), then the other upgraders.
+        .sort((x, y) => ((status[/** @type {string} */ (x.memory.m)].mission.priority || 0) -
+            (status[/** @type {string} */ (y.memory.m)].mission.priority || 0)));
+    if (movable.length > 0) {
+        for (const m of byPriority(missions)) {
+            if (movable.length === 0) break;
+            if (upgradeIds.has(m.id) || registry.UNASSIGNABLE.has(m.type)) continue;
+            const st = status[m.id];
+            while (underfilled(st)) {
+                const i = movable.findIndex(cr => fits(cr, m, home) &&
+                    (m.priority || 0) > (status[/** @type {string} */ (cr.memory.m)].mission.priority || 0));
+                if (i === -1) break;
+                assign(movable[i], m, status);
+                movable.splice(i, 1);
             }
         }
     }

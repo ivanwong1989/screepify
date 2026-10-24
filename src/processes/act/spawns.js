@@ -2,6 +2,7 @@
 'use strict';
 
 const body = require('../../services/body');
+const missionMarks = require('../../services/missionMarks');
 const log = require('../../services/log');
 const roomData = require('../../services/roomData');
 
@@ -85,6 +86,8 @@ function contracts(missions, capacity) {
     };
     for (const m of missions) {
         if (!m.spawn || !m.archetype) continue;
+        // Found finished by its creeps: no spawning for it (services/missionMarks).
+        if (missionMarks.isFinished(m)) continue;
         const desired = desiredCount(m, capacity);
         const base = { archetype: m.archetype, priority: m.priority || 0, lead: m.leadTicks || 0, mission: m };
         if (m.spawn === 'pool') {

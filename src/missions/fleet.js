@@ -2,8 +2,12 @@
 'use strict';
 
 const cache = require('../services/cache');
+const haulDemand = require('../services/haulDemand');
 const roomData = require('../services/roomData');
 const laneClaims = require('../services/laneClaims');
+
+/** Ticks after the last off-lane hauling job that the fleet keeps a hauler. */
+const DEMAND_WINDOW = 300;
 
 /**
  * Hauler fleet sizing (port of v1 mission.fleet_logistic).
@@ -48,6 +52,18 @@ function cachedLength(roomName, signature, key, compute) {
 function pathLength(from, to) {
     const ret = PathFinder.search(from, { pos: to, range: 1 }, { maxOps: 2000, plainCost: 2, swampCost: 10 });
     return ret.incomplete ? from.getRangeTo(to) : ret.path.length;
+}
+
+/**
+ * Minimum fleet haulers.
+ * @param {boolean} lanes          mining lanes cover at least one source
+ * @param {number} fleetSources    efficient sources the fleet still hauls for
+ * @param {number} efficient       efficient sources in the room
+ * @param {boolean} offLaneWork    off-lane hauling work recently, or hostiles around
+ */
+function floor(lanes, fleetSources, efficient, offLaneWork) {
+    if (!lanes) return Math.max(2, efficient);
+    return Math.max(offLaneWork ? 1 : 0, fleetSources);
 }
 
 /**
@@ -99,8 +115,12 @@ function generate(plan, out) {
         (!storage && intel.energyCapacityAvailable <= EARLY_GAME_ENERGY_CAP);
     const scaled = early ? Math.ceil(required * EARLY_GAME_HAULER_MULTIPLIER) : required;
     // With mining lanes running, the fleet only refills off-lane structures
-    // and scavenges: one hauler is the floor (v1 phase-gated the fleet off).
-    const minHaulers = laneContainers.size > 0 ? Math.max(1, fleetSources) : Math.max(2, efficientSources.size);
+    // and scavenges: one hauler is the floor, but only while there has been
+    // such work in the last DEMAND_WINDOW ticks or hostiles are around
+    // (services/haulDemand). Otherwise the last one isn't replaced when it
+    // dies; new demand brings the floor back at once.
+    const minHaulers = floor(laneContainers.size > 0, fleetSources, efficientSources.size,
+        haulDemand.recent(room.name, DEMAND_WINDOW) || intel.hostiles.length > 0);
     const desired = Math.max(minHaulers, Math.ceil(scaled / carryParts));
 
     out.push({
@@ -116,4 +136,4 @@ function generate(plan, out) {
     });
 }
 
-module.exports = { type: 'hauler_fleet', generate, spawnOnly: true };
+module.exports = { type: 'hauler_fleet', generate, floor, spawnOnly: true };

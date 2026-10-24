@@ -2,6 +2,7 @@
 'use strict';
 
 const cache = require('../services/cache');
+const haulDemand = require('../services/haulDemand');
 const roomData = require('../services/roomData');
 const { closest } = require('../services/pos');
 const laneClaims = require('../services/laneClaims');
@@ -300,6 +301,7 @@ function generate(plan, out) {
     }
 
     for (const m of active.values()) out.push(m);
+    if (active.size > 0) haulDemand.note(room.name);
 }
 
 module.exports = { type: 'logistics', generate, routePolicy, priority, MAX_HAULER_CARRY_PARTS };

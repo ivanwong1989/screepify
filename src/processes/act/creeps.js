@@ -2,11 +2,14 @@
 'use strict';
 
 const log = require('../../services/log');
+const cache = require('../../services/cache');
 const actions = require('../../actions/index');
 const registry = require('../../missions/index');
 const state = require('../../missions/shared/state');
 const oppRepair = require('../../missions/shared/oppRepair');
 const policyRules = require('../../services/policyRules');
+const missionMarks = require('../../services/missionMarks');
+const jobs = require('../../missions/shared/jobs');
 const { CONTINUE, DONE } = require('../../contracts/task');
 
 /**
@@ -18,6 +21,8 @@ const { CONTINUE, DONE } = require('../../contracts/task');
  */
 
 const MAX_STEPS = 3;
+/** Ticks without a mission before an idle creep puts its cargo away. */
+const IDLE_STASH = 5;
 
 /**
  * @param {Creep} creep
@@ -31,11 +36,32 @@ function runCreep(creep, rc, ctx) {
     let task = mem.t || null;
     let triedRepair = false;
 
+    // Still without a mission after IDLE_STASH ticks: a hauler (or anyone
+    // holding minerals) puts its cargo away where the request list wants it,
+    // usually storage, instead of carrying it around (live: an idle hauler
+    // sat on 1,100 energy). Workers keep energy for their next mission.
+    // Assignment clears the job when it hands out a mission.
+    const idle = cache.store('creep.idleSince');
+    if (mission || task) {
+        delete idle[creep.name];
+    } else {
+        if (idle[creep.name] === undefined) idle[creep.name] = Game.time;
+        const minerals = creep.store.getUsedCapacity() > (creep.store[RESOURCE_ENERGY] || 0);
+        if (/** @type {any} */ (mem).j || (Game.time - idle[creep.name] >= IDLE_STASH &&
+            (mem.a === 'hauler' || minerals) && creep.store.getUsedCapacity() > 0)) {
+            jobs.stash(creep, null);
+        }
+        return;
+    }
+
     for (let step = 0; step < MAX_STEPS; step++) {
         if (!task) {
             if (!exec || !mission) return;
             task = exec(creep, mission, rc, ctx);
             if (!task) {
+                // Nothing left to do on it: don't let assignment hand it out
+                // again until it's refreshed (services/missionMarks).
+                missionMarks.markFinished(mission);
                 state.release(creep);
                 return;
             }
@@ -58,6 +84,7 @@ function runCreep(creep, rc, ctx) {
         if (!exec || !mission) return;
         const next = exec(creep, mission, rc, ctx);
         if (!next) {
+            missionMarks.markFinished(mission);
             state.release(creep);
             return;
         }
