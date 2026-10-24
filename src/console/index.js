@@ -84,6 +84,18 @@ function register(kernel) {
         return lines.join('\n');
     };
 
+    /**
+     * Quarantine and failure keys for a process: `id` (shard scope) or
+     * `id@room` (room scope; the kernel counts those per room).
+     * @param {Record<string, number>} map @param {string} id
+     */
+    const keysOf = (map, id) => Object.keys(map).filter(k => k === id || k.startsWith(`${id}@`));
+    /** @param {string} id */
+    const clearQuarantine = (id) => {
+        const q = kernel.state().quarantine;
+        for (const k of keysOf(q, id)) delete q[k];
+    };
+
     g.proc = {
         list() {
             const cfg = config.get();
@@ -91,10 +103,11 @@ function register(kernel) {
             const lines = [`${pad('process', 24)}${pad('phase', 8)}${pad('scope', 7)}${pad('tier', 10)}${pad('every', 7)}state`];
             for (const p of kernel.processes) {
                 const o = cfg.processes[p.id] || {};
-                const q = s.quarantine[p.id];
+                const q = keysOf(s.quarantine, p.id).filter(k => Game.time < s.quarantine[k]);
+                const f = keysOf(s.fails, p.id).filter(k => s.fails[k] > 0);
                 const st = o.enabled === false ? 'disabled'
-                    : q !== undefined && Game.time < q ? `quarantined until ${q}`
-                        : s.fails[p.id] ? `failing (${s.fails[p.id]})` : 'ok';
+                    : q.length ? `quarantined: ${q.map(k => `${k.split('@')[1] || 'all'} until ${s.quarantine[k]}`).join(', ')}`
+                        : f.length ? `failing: ${f.map(k => `${k.split('@')[1] || 'all'} (${s.fails[k]})`).join(', ')}` : 'ok';
                 lines.push(`${pad(p.id, 24)}${pad(p.phase, 8)}${pad(p.scope, 7)}${pad(p.tier, 10)}${pad(o.every || p.every || 1, 7)}${st}`);
             }
             return lines.join('\n');
@@ -102,7 +115,7 @@ function register(kernel) {
         /** @param {string} id */
         enable(id) {
             config.set(`processes.${id}.enabled`, true);
-            delete kernel.state().quarantine[id];
+            clearQuarantine(id);
             return `${id} enabled`;
         },
         /** @param {string} id */
@@ -119,7 +132,7 @@ function register(kernel) {
         reset(id) {
             config.reset(`processes.${id}.enabled`);
             config.reset(`processes.${id}.every`);
-            delete kernel.state().quarantine[id];
+            clearQuarantine(id);
             return `${id} reset to defaults`;
         }
     };

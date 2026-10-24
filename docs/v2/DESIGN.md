@@ -147,7 +147,8 @@ module.exports = [
 
 Order of checks per process: **due (or `force()` true, e.g. no mission list after a VM reset) → tier allowed → fits remaining budget (EMA cost) → run**. `low` tier only runs while the bucket is ≥ 1,000.
 
-- A process skipped for budget is marked **owed**. Owed processes jump the queue next tick, so nothing starves.
+- A process skipped for budget is marked **owed**. Processes always run in phase priority order, owed or not, so a supplier of this tick's data runs before its readers. Owed work gets precedence on the **budget** instead: a non-owed, non-critical process only runs if the owed ones still to come in the phase fit as well (low-tier work blocked by the bucket floor reserves nothing). After `maxOwedTicks` an owed process runs regardless.
+- A **forced** run (`force()` true, e.g. `plan.missions` after a VM reset) is never skipped for budget, like critical work.
 - **Critical** processes (spawning, harvest/fill execution, towers, defense) always run, even over budget.
 
 **Pixels vs bursts (D8).** `Game.cpu.generatePixel()` empties the bucket, so the bot must keep working normally from a near-empty bucket. That's why the low-bucket band still runs `normal` work when it fits within the limit. Burst jobs don't need a full bucket: they run as soon as the bucket reaches their declared threshold, before it ever gets to 10,000. A pixel is generated only when the bucket is full **and** no burst job is waiting, so pixels never starve the planner. Pixel generation can be switched off per shard in config.
@@ -159,7 +160,7 @@ A room process with `every: N` runs when `(Game.time + hash(roomName)) % N === 0
 ### 5.4 Fault isolation
 
 - Each `run` is wrapped in `try/catch`. On error the kernel logs it once per 100 ticks with the stack, increments `errors[id]`, and continues with the next process.
-- After K consecutive failures (config, default 20) the process is **quarantined** for 500 ticks.
+- Failures are counted **per process and room**: after K consecutive failures (config, default 20) in a room, the process is **quarantined** for 500 ticks **in that room only**. A success in one room does not reset another room's count. `proc.list()` shows quarantine and failures per room.
 - The creep runner isolates **per creep**: one bad creep cannot stop the others.
 
 ### 5.5 Telemetry (built in)

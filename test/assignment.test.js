@@ -127,3 +127,33 @@ test('a mission found finished is not handed out or spawned for until it is refr
     assert.equal(w[0].memory.m, 'repair:done', 'and is handed out again');
 });
 
+
+test('no mission list (planning skipped this tick): nobody is released', () => {
+    const assignment = fresh();
+    const w = [creep('w1', 'worker', 'idle:upgrade'), creep('w2', 'worker', 'repair:wall')];
+    const rc = { name: 'W1N1', room: global.Game.rooms.W1N1, missions: undefined, census: { active: w, creeps: w } };
+    assignment.run({}, rc);
+    assert.deepEqual(w.map(c => c.memory.m), ['idle:upgrade', 'repair:wall'], 'missions kept');
+    assert.ok(w.every(c => c.memory.t), 'tasks kept');
+});
+
+test('sim: after a code reload with mission planning held back, creeps keep their missions', () => {
+    const { boot } = require('./helpers/runSim');
+    const sim = boot({ spawn: [24, 20], sources: [[5, 5], [44, 44]], controller: [10, 40] }, {
+        deterministic: true, config: { construction: { enabled: false } }
+    });
+    sim.world.controller.level = 5;
+    sim.world.addStructure('storage', 26, 20).store.energy = 200000;
+    sim.run(800);
+    const before = Object.fromEntries(Object.values(Game.creeps).filter(c => c.memory.m).map(c => [c.name, c.memory.m]));
+    assert.ok(Object.keys(before).length > 5, 'creeps on missions');
+    sim.reload();
+    // Same effect as plan.missions being skipped for budget on the first ticks.
+    require('../src/config').set('processes.plan.missions.enabled', false);
+    sim.run(3);
+    const kept = Object.entries(before).filter(([n, m]) => Game.creeps[n] && Game.creeps[n].memory.m === m).length;
+    assert.equal(kept, Object.keys(before).filter(n => Game.creeps[n]).length, 'no creep lost its mission');
+    require('../src/config').set('processes.plan.missions.enabled', true);
+    sim.run(5);
+    assert.ok(Object.values(Game.creeps).filter(c => c.memory.m).length >= Object.keys(before).length - 2, 'back to work');
+});

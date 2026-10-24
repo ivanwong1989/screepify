@@ -42,8 +42,11 @@ function runCreep(creep, rc, ctx) {
     // sat on 1,100 energy). Workers keep energy for their next mission.
     // Assignment clears the job when it hands out a mission.
     const idle = cache.store('creep.idleSince');
-    if (mission || task) {
+    if (mission || task || mem.m) {
+        // (A mission id with no mission object: the list is missing this
+        // tick, e.g. planning was skipped. Not idle; wait for it.)
         delete idle[creep.name];
+        if (!mission && !task) return;
     } else {
         if (idle[creep.name] === undefined) idle[creep.name] = Game.time;
         const minerals = creep.store.getUsedCapacity() > (creep.store[RESOURCE_ENERGY] || 0);

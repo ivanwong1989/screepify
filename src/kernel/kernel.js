@@ -131,13 +131,21 @@ function createKernel(processes) {
      * @param {number} time
      */
     function isActive(p, cfg, time) {
-        if (override(p, cfg).enabled === false) return false;
-        const until = state().quarantine[p.id];
-        if (until !== undefined) {
-            if (time < until) return false;
-            delete state().quarantine[p.id];
-        }
-        return true;
+        return override(p, cfg).enabled !== false;
+    }
+
+    /**
+     * Quarantine is per invocation key (process, or process@room), so one
+     * failing room doesn't stop the process in the others.
+     * @param {string} key
+     * @param {number} time
+     */
+    function quarantined(key, time) {
+        const until = state().quarantine[key];
+        if (until === undefined) return false;
+        if (time < until) return true;
+        delete state().quarantine[key];
+        return false;
     }
 
     /**
@@ -150,9 +158,10 @@ function createKernel(processes) {
     function invoke(p, ctx, room) {
         const s = state();
         const start = Game.cpu.getUsed();
+        const key = room ? `${p.id}@${room.name}` : p.id;
         try {
             p.run(ctx, /** @type {any} */ (room));
-            s.fails[p.id] = 0;
+            if (s.fails[key]) delete s.fails[key];
         } catch (e) {
             onError(p, ctx, room, e);
         }
@@ -170,14 +179,16 @@ function createKernel(processes) {
     function onError(p, ctx, room, e) {
         const s = state();
         const k = ctx.config.kernel;
-        s.fails[p.id] = (s.fails[p.id] || 0) + 1;
+        // Counted per process and room: a success in another room must not
+        // reset a room that keeps failing.
         const where = room ? `${p.id}@${room.name}` : p.id;
+        s.fails[where] = (s.fails[where] || 0) + 1;
         log.throttled(`err:${where}`, k.errorLogInterval, () =>
-            log.error(`process ${where} threw (${s.fails[p.id]}x):`, (e && e.stack) || e));
-        if (s.fails[p.id] >= k.quarantineAfter) {
-            s.quarantine[p.id] = ctx.time + k.quarantineTicks;
-            s.fails[p.id] = 0;
-            log.error(`process ${p.id} quarantined until tick ${s.quarantine[p.id]}`);
+            log.error(`process ${where} threw (${s.fails[where]}x):`, (e && e.stack) || e));
+        if (s.fails[where] >= k.quarantineAfter) {
+            s.quarantine[where] = ctx.time + k.quarantineTicks;
+            delete s.fails[where];
+            log.error(`process ${where} quarantined until tick ${s.quarantine[where]}`);
         }
     }
 
@@ -204,37 +215,53 @@ function createKernel(processes) {
     function runPhase(phase, ctx) {
         const s = state();
         const cfg = ctx.config;
-        /** @type {Array<{p: Process, room: import('../contracts/ctx').RoomCtx|undefined, key: string}>} */
-        const owedFirst = [];
-        /** @type {typeof owedFirst} */
-        const rest = [];
+        /** @type {Array<{p: Process, room: import('../contracts/ctx').RoomCtx|undefined, key: string, owed: boolean, forced: boolean}>} */
+        const entries = [];
 
+        // Phase priority order, always: a process that supplies this tick's
+        // data runs before the ones that read it, owed or not.
         for (const p of byPhase[phase]) {
             if (!isActive(p, cfg, ctx.time)) continue;
             const every = override(p, cfg).every || p.every || 1;
             if (p.scope === 'shard') {
                 const key = p.id;
-                if (s.owed.has(key)) owedFirst.push({ p, room: undefined, key });
-                else if (isDue(every, key, ctx.time)) rest.push({ p, room: undefined, key });
+                if (quarantined(key, ctx.time)) continue;
+                const owed = s.owed.has(key);
+                if (owed || isDue(every, key, ctx.time)) entries.push({ p, room: undefined, key, owed, forced: false });
             } else {
                 for (const room of ctx.roomList) {
                     if (p.kinds && p.kinds.indexOf(room.kind) === -1) continue;
                     const key = `${p.id}@${room.name}`;
-                    if (s.owed.has(key)) owedFirst.push({ p, room, key });
-                    else if (isDue(every, key, ctx.time) || (p.force && p.force(ctx, room))) rest.push({ p, room, key });
+                    if (quarantined(key, ctx.time)) continue;
+                    const owed = s.owed.has(key);
+                    const forced = !!(p.force && p.force(ctx, room));
+                    if (owed || forced || isDue(every, key, ctx.time)) entries.push({ p, room, key, owed, forced });
                 }
             }
         }
 
+        // Owed work keeps precedence on the budget instead of on the order:
+        // a non-owed entry only runs if the owed ones still to come fit too.
+        // (Low-tier work that the bucket floor blocks reserves nothing.)
+        const lowFloor = ctx.cpu.bucket < cfg.kernel.lowBucketFloor;
+        const reserves = (/** @type {{p: Process, owed: boolean}} */ e) =>
+            e.owed && e.p.tier !== 'critical' && !(e.p.tier === 'low' && lowFloor);
+        let owedAhead = 0;
+        for (const e of entries) if (reserves(e)) owedAhead += telemetry.estimate(e.p.id);
+
         let used = 0;
-        const entries = owedFirst.length ? owedFirst.concat(rest) : rest;
-        for (const { p, room, key } of entries) {
-            if (p.tier !== 'critical') {
+        for (const { p, room, key, owed, forced } of entries) {
+            const est = telemetry.estimate(p.id);
+            if (reserves({ p, owed })) owedAhead -= est;
+            // Critical and forced runs (e.g. plan.missions after a VM reset,
+            // which everything after it depends on) are never skipped.
+            if (p.tier !== 'critical' && !forced) {
                 const since = s.owed.get(key);
                 // Never starve: after maxOwedTicks of skipping, run regardless of budget.
                 const starving = since !== undefined && ctx.time - since >= cfg.kernel.maxOwedTicks;
                 const lowBlocked = p.tier === 'low' && ctx.cpu.bucket < cfg.kernel.lowBucketFloor;
-                const over = Game.cpu.getUsed() + telemetry.estimate(p.id) > ctx.kernel.softLimit;
+                const reserve = owed ? 0 : owedAhead;
+                const over = Game.cpu.getUsed() + est + reserve > ctx.kernel.softLimit;
                 if (!starving && (lowBlocked || over)) {
                     if (since === undefined) s.owed.set(key, ctx.time);
                     s.lastTick.skipped++;

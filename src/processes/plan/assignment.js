@@ -170,7 +170,11 @@ function assign(creep, m, status) {
  * @param {import('../../contracts/ctx').RoomCtx} rc
  */
 function run(ctx, rc) {
-    const missions = rc.missions || [];
+    // No mission list this tick (planning skipped for budget, e.g. right after
+    // a VM reset): change nothing. Treating "no list" as "every mission is
+    // gone" released every creep (0 of 29 kept in test/assignment).
+    if (!rc.missions) return;
+    const missions = rc.missions;
     const c = rc.census;
     if (!c) return;
     const home = rc.name;
