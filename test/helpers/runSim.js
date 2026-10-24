@@ -65,6 +65,14 @@ function boot(spec, opts) {
         world,
         logs,
         times,
+        /** Like a code upload: every src module and the heap start fresh; Memory stays. */
+        reload() {
+            for (const key of Object.keys(require.cache)) {
+                if (key.startsWith(path.join(ROOT, 'src'))) delete require.cache[key];
+            }
+            delete global.__v2heap;
+            main = require(path.join(ROOT, 'src', 'main.js'));
+        },
         run(ticks, onTick) {
             console.log = (...a) => logs.push(`[${global.Game.time}] ` + a.join(' '));
             try {
