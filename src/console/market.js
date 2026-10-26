@@ -18,15 +18,32 @@ function register() {
     g.market = {
         show() {
             const cfg = config.get().market;
-            const lines = [`market ${cfg.enabled ? 'ON' : 'OFF'}  floor ${cfg.floorFactor} × recent avg (${cfg.historyDays} days)`];
+            const value = market.valuer(cfg);
+            const lines = [`market ${cfg.enabled ? 'ON' : 'OFF'}  floor = max(minPrice, ${cfg.floorFactor} × reference, reagents), ` +
+                `falls ≤ ${cfg.maxDropPerDay * 100}%/day`];
             const rooms = Object.values(Game.rooms).filter(r => r.controller && r.controller.my && r.terminal);
             for (const res of Object.keys(cfg.sell || {})) {
                 const spec = cfg.sell[res];
                 if (!spec) continue;
-                const avg = market.avgPrice(Game.market.getHistory(/** @type {any} */ (res)) || [], cfg.historyDays);
-                const fl = market.floor(spec, avg, cfg.floorFactor);
-                const surplus = rooms.map(r => `${r.name} ${Math.max(0, market.roomStock(r, res) - spec.keep)}`).join(', ');
-                lines.push(`${res}  ${spec.mode} keep ${spec.keep}  avg ${avg === null ? '-' : avg.toFixed(3)}  floor ${fl === null ? 'none (not selling)' : fl.toFixed(3)}  surplus: ${surplus}`);
+                const ref = market.reference(market.historyOf(res), cfg);
+                const intr = market.intrinsic(res, value);
+                const raw = market.rawFloor(spec, ref.ref, intr, cfg.floorFactor);
+                const f = (/** @type {number|null} */ n) => (n === null ? '-' : n.toFixed(3));
+                lines.push(`${res}  ${spec.mode}, keep ${spec.keep}`);
+                lines.push(`   trades ${ref.trades} in ${cfg.longDays}d (${ref.liquid ? 'liquid' : 'THIN: no market price'}), ` +
+                    `recent ${f(ref.recent)}, median ${f(ref.median)} → reference ${f(ref.ref)}; reagents ${f(intr)}; floor ${raw === null ? 'none (not selling)' : f(raw)}`);
+                for (const r of rooms) {
+                    const mk = (Memory.rooms[r.name] && /** @type {any} */ (Memory.rooms[r.name]).mk) || {};
+                    const surplus = Math.max(0, market.roomStock(r, res) - spec.keep);
+                    if (surplus > 0 || mk[res]) lines.push(`   ${r.name}: surplus ${surplus}${mk[res] ? `, floor anchor ${mk[res].p.toFixed(3)} @ ${mk[res].t}` : ''}`);
+                }
+                const all = Game.market.getAllOrders({ type: ORDER_SELL, resourceType: /** @type {any} */ (res) });
+                const clean = market.cleanBook(all, ref.ref, {
+                    bandLow: cfg.bandLow, bandHigh: cfg.bandHigh, minAmount: Math.max(cfg.minListing, Math.floor(cfg.orderSize * 0.1)),
+                    mine: new Set(Object.keys(Game.market.orders || {}))
+                });
+                lines.push(`   sell listings ${all.length}, ${all.length - clean.length} ignored (spam/bait/duplicate), ` +
+                    `depth price for ${cfg.orderSize}: ${f(market.depthPrice(clean, cfg.orderSize))}`);
             }
             for (const o of Object.values(Game.market.orders || {})) {
                 lines.push(`  order ${o.type} ${o.resourceType} @ ${o.price}  left ${o.remainingAmount}/${o.totalAmount}  ${o.roomName}  ${o.active ? 'active' : 'inactive'}`);

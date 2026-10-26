@@ -20,7 +20,9 @@ const cache = require('./cache');
  * counts), with both at least `minReagent` and the product below `productCap`.
  * The current reaction is kept while its reagents last (above `keepReagent`)
  * and the product is below its cap, so the plan doesn't flip between two
- * reactions with similar stocks.
+ * reactions with similar stocks. Auto only picks products worth making
+ * (`worth`, the market profit check in plan.labs: the product's trade price
+ * beats its reagents' by config.market.productMargin; unpriced products don't).
  *
  * @typedef {{enabled: boolean, reaction: string, inputTarget: number, outputMax: number,
  *            boostTarget: number, minReagent: number, keepReagent: number, productCap: number,
@@ -103,9 +105,12 @@ function reagentsOf(product) {
  * @param {Record<string, number>} have   room stock (storage + terminal + labs)
  * @param {LabConfig} cfg
  * @param {string|null} current            product of the current plan
+ * @param {(product: string) => boolean} [worth]  auto only: is making it worth it
+ *                                         (market profit check, plan.labs); default yes
  * @returns {{reagents: string[], product: string}|null}
  */
-function chooseReaction(have, cfg, current) {
+function chooseReaction(have, cfg, current, worth) {
+    const ok = worth || (() => true);
     const n = (/** @type {string} */ r) => have[r] || 0;
     if (cfg.reaction && cfg.reaction !== 'auto') {
         const r = reagentsOf(cfg.reaction);
@@ -113,14 +118,14 @@ function chooseReaction(have, cfg, current) {
     }
     if (current) {
         const r = reagentsOf(current);
-        if (r && n(r[0]) >= cfg.keepReagent && n(r[1]) >= cfg.keepReagent && n(current) < cfg.productCap) {
+        if (r && n(r[0]) >= cfg.keepReagent && n(r[1]) >= cfg.keepReagent && n(current) < cfg.productCap && ok(current)) {
             return { reagents: r, product: current };
         }
     }
     let best = null;
     let bestScore = 0;
     for (const [a, b, p] of reactions()) {
-        if (n(a) < cfg.minReagent || n(b) < cfg.minReagent || n(p) >= cfg.productCap) continue;
+        if (n(a) < cfg.minReagent || n(b) < cfg.minReagent || n(p) >= cfg.productCap || !ok(p)) continue;
         const score = Math.min(n(a), n(b));
         if (score > bestScore || (score === bestScore && best && p < best.product)) {
             bestScore = score;
@@ -136,9 +141,10 @@ function chooseReaction(have, cfg, current) {
  * @param {Record<string, number>} have
  * @param {LabConfig} cfg
  * @param {string|null} current
+ * @param {(product: string) => boolean} [worth]
  * @returns {LabPlan}
  */
-function plan(labs, have, cfg, current) {
+function plan(labs, have, cfg, current, worth) {
     /** @type {Record<string, LabRole>} */
     const roles = {};
     const boostIds = new Set();
@@ -150,7 +156,7 @@ function plan(labs, have, cfg, current) {
         }
     }
     const lay = layout(labs.filter(l => !boostIds.has(l.id)));
-    const r = lay ? chooseReaction(have, cfg, current) : null;
+    const r = lay ? chooseReaction(have, cfg, current, worth) : null;
     if (!lay || !r) return { inputs: [], outputs: [], reagents: null, product: null, roles };
     roles[lay.inputs[0]] = { kind: 'in', res: r.reagents[0] };
     roles[lay.inputs[1]] = { kind: 'in', res: r.reagents[1] };

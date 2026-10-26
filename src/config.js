@@ -73,7 +73,7 @@ const DEFAULTS = {
     lanes: { enabled: true, mining: true, cpuPerTick: 10, rebuildEvery: 5000, checkEvery: 50 },
     minerals: { enabled: true, maxStock: 100000, minStorageFree: 50000 },
     market: {
-        enabled: true,
+        enabled: false,
         sell: {
             // Own sell orders: the buyer pays the transfer energy. Deals made
             // by us pay it, and with every buyer 40-80 rooms away and energy
@@ -83,7 +83,16 @@ const DEFAULTS = {
             O: { mode: 'order', keep: 100000 },
             K: { mode: 'order', keep: 100000 }
         },
+        // Off until the live prices have been reviewed (market.show()).
         floorFactor: 0.9, energyValue: 'auto', historyDays: 3,
+        // Trade reference: median of daily averages over longDays; the recent
+        // average counts only above longShare × median; < minTrades: no price.
+        longDays: 14, longShare: 0.85, minTrades: 50,
+        // Order book: listings outside [bandLow, bandHigh] × reference are
+        // spam, under minListing are bait; the floor falls ≤ maxDropPerDay.
+        bandLow: 0.5, bandHigh: 2, minListing: 1000, maxDropPerDay: 0.05,
+        // Labs only make a product worth productMargin more than its reagents.
+        productMargin: 0.05,
         minTerminalEnergy: 10000, terminalStock: 10000, orderSize: 5000, orderRefresh: 500
     },
     labs: {

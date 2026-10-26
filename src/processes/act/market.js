@@ -7,37 +7,44 @@ const market = require('../../services/market');
 
 /**
  * Auto market (docs/v2/MARKET.md; v1 manager.terminal trySell, plus own sell
- * orders for products nobody is buying). Rules in services/market.
+ * orders and guards against manipulation). Rules in services/market.
  *
  * Each run (every 50 ticks), for every resource in config.market.sell:
- *   deal   sell the surplus above `keep` into the best buy order whose price
- *          after the energy fee is at least the floor; one deal per room per run
  *   order  keep one sell order (in the room with the largest surplus), priced
- *          just under the cheapest competing seller, never below the floor;
- *          topped up as it sells, re-priced every `orderRefresh` ticks
+ *          just under the depth price of the cleaned order book, never below
+ *          the floor; topped up as it sells, re-priced every `orderRefresh`
+ *   deal   sell the surplus above `keep` into the best (cleaned) buy order
+ *          whose price after the energy fee clears the floor; one per room
+ * The floor per room: max(minPrice, floorFactor × trade reference, intrinsic
+ * value for compounds), falling at most maxDropPerDay per day
+ * (Memory.rooms[room].mk[resource] = {p, t}).
  * Rooms in CRITICAL and terminals on cooldown or short of energy are skipped.
- * Goods are moved into the terminal by the logistics bands (services/market
- * stockFor, used by sense.logistics).
+ * Goods are stocked in the terminal by the logistics bands (stockFor).
  */
 
-/** Ticks a price history is reused. */
-const HISTORY_TTL = 1000;
-
-/** @param {string} res */
-function history(res) {
-    const store = cache.store('market.history');
-    const e = store[res];
-    if (e && Game.time - e.t < HISTORY_TTL) return e.h;
-    const h = Game.market.getHistory(/** @type {any} */ (res)) || [];
-    store[res] = { t: Game.time, h };
-    return h;
+/** @param {import('../../services/market').MarketConfig} cfg @param {(r: string) => number|null} value */
+function energyValue(cfg, value) {
+    if (typeof cfg.energyValue === 'number') return cfg.energyValue;
+    const v = value(RESOURCE_ENERGY);
+    return v !== null ? v : 1;
 }
 
-/** @param {import('../../services/market').MarketConfig} cfg */
-function energyValue(cfg) {
-    if (typeof cfg.energyValue === 'number') return cfg.energyValue;
-    const avg = market.avgPrice(history(RESOURCE_ENERGY), cfg.historyDays);
-    return avg !== null ? avg : 1;
+/**
+ * Floor for selling `res` from `roomName`, with the daily-drop anchor kept in
+ * that room's memory.
+ * @param {import('../../services/market').MarketConfig} cfg
+ * @param {(r: string) => number|null} value
+ * @param {string} res @param {import('../../services/market').SellSpec} spec @param {string} roomName
+ */
+function floorFor(cfg, value, res, spec, roomName) {
+    const ref = value(res);
+    const intr = market.intrinsic(res, value);
+    const raw = market.rawFloor(spec, ref, intr, cfg.floorFactor);
+    const mem = /** @type {any} */ (Memory.rooms[roomName] || (Memory.rooms[roomName] = {}));
+    const mk = mem.mk || (mem.mk = {});
+    const r = market.limitDrop(raw, mk[res], Game.time, cfg.maxDropPerDay);
+    if (r.anchor) mk[res] = r.anchor;
+    return { floor: r.floor, ref, intr };
 }
 
 /** @param {string} res */
@@ -47,19 +54,16 @@ function myOrders(res) {
 }
 
 /**
- * @param {import('../../contracts/ctx').TickContext} ctx
- * @param {string} res
- * @param {import('../../services/market').SellSpec} spec
- * @param {any[]} rooms
- * @param {Set<string>} used rooms that dealt this run
+ * @param {import('../../services/market').MarketConfig} cfg
+ * @param {(r: string) => number|null} value
+ * @param {string} res @param {import('../../services/market').SellSpec} spec
+ * @param {any[]} rooms @param {Set<string>} used rooms that dealt this run
  */
-function sellByDeal(ctx, res, spec, rooms, used) {
-    const cfg = /** @type {import('../../services/market').MarketConfig} */ (ctx.config.market);
-    const fl = market.floor(spec, market.avgPrice(history(res), cfg.historyDays), cfg.floorFactor);
-    if (fl === null) return;
-    const ev = energyValue(cfg);
+function sellByDeal(cfg, value, res, spec, rooms, used) {
+    const ev = energyValue(cfg, value);
     const mine = new Set(Object.keys(Game.market.orders || {}));
-    let orders = null;
+    /** @type {any[]|null} */
+    let book = null;
     for (const r of rooms) {
         if (used.has(r.name)) continue;
         const t = r.terminal;
@@ -67,8 +71,13 @@ function sellByDeal(ctx, res, spec, rooms, used) {
         const inTerminal = t.store[res] || 0;
         const energyAvail = (t.store[RESOURCE_ENERGY] || 0) - cfg.minTerminalEnergy;
         if (surplus <= 0 || inTerminal <= 0 || energyAvail <= 0) continue;
-        if (!orders) orders = Game.market.getAllOrders({ type: ORDER_BUY, resourceType: /** @type {any} */ (res) });
-        const best = market.bestDeal(orders, {
+        const { floor: fl, ref } = floorFor(cfg, value, res, spec, r.name);
+        if (fl === null) continue;
+        if (!book) {
+            book = market.cleanBook(Game.market.getAllOrders({ type: ORDER_BUY, resourceType: /** @type {any} */ (res) }), ref,
+                { bandLow: cfg.bandLow, bandHigh: cfg.bandHigh, minAmount: cfg.minListing, mine });
+        }
+        const best = market.bestDeal(book, {
             amount: Math.min(spec.batch || 5000, surplus, inTerminal), floor: fl, energyValue: ev, energyAvail, mine,
             cost: (n, to) => Game.market.calcTransactionCost(n, r.name, to)
         });
@@ -77,41 +86,42 @@ function sellByDeal(ctx, res, spec, rooms, used) {
         used.add(r.name);
         log.info(`[market] ${r.name} sold ${best.amount} ${res} @ ${best.order.price} to ${best.order.roomName} ` +
             `(after fee ${best.effective.toFixed(3)}, floor ${fl.toFixed(3)}, fee ${best.energyCost} energy) → ${code}`);
-        if (code === OK) {
-            best.order.remainingAmount = (best.order.remainingAmount || best.order.amount) - best.amount;
-        }
+        if (code === OK) best.order.remainingAmount = (best.order.remainingAmount || best.order.amount) - best.amount;
     }
 }
 
 /**
- * @param {import('../../contracts/ctx').TickContext} ctx
- * @param {string} res
- * @param {import('../../services/market').SellSpec} spec
- * @param {any[]} rooms
+ * @param {import('../../services/market').MarketConfig} cfg
+ * @param {(r: string) => number|null} value
+ * @param {string} res @param {import('../../services/market').SellSpec} spec @param {any[]} rooms
  */
-function sellByOrder(ctx, res, spec, rooms) {
-    const cfg = /** @type {import('../../services/market').MarketConfig} */ (ctx.config.market);
-    const avg = market.avgPrice(history(res), cfg.historyDays);
-    const fl = market.floor(spec, avg, cfg.floorFactor);
-    if (fl === null) return;
+function sellByOrder(cfg, value, res, spec, rooms) {
     const own = myOrders(res);
     const best = rooms.map(r => ({ r, surplus: market.roomStock(r, res) - spec.keep }))
         .filter(x => x.surplus > 0).sort((a, b) => b.surplus - a.surplus)[0];
+    const roomName = own.length ? own[0].roomName : best && best.r.name;
+    if (!roomName) return;
+    const { floor: fl, ref, intr } = floorFor(cfg, value, res, spec, roomName);
+    if (fl === null) return;
     const refresh = cache.store('market.orderRefresh');
     const due = !refresh[res] || Game.time - refresh[res] >= cfg.orderRefresh;
     const price = () => {
-        const mineIds = new Set(Object.keys(Game.market.orders || {}));
-        const sells = Game.market.getAllOrders({ type: ORDER_SELL, resourceType: /** @type {any} */ (res) })
-            .filter(o => !mineIds.has(o.id));
-        return market.orderPrice(sells, fl, avg);
+        const mine = new Set(Object.keys(Game.market.orders || {}));
+        const book = market.cleanBook(Game.market.getAllOrders({ type: ORDER_SELL, resourceType: /** @type {any} */ (res) }), ref, {
+            bandLow: cfg.bandLow, bandHigh: cfg.bandHigh, mine,
+            minAmount: Math.max(cfg.minListing, Math.floor(cfg.orderSize * 0.1))
+        });
+        return market.orderPrice(book, cfg.orderSize, fl, ref);
     };
+    const why = `floor ${fl.toFixed(3)} = max(min ${spec.minPrice === undefined ? '-' : spec.minPrice}, ` +
+        `${cfg.floorFactor}×ref ${ref === null ? 'none' : ref.toFixed(3)}, reagents ${intr === null ? '-' : intr.toFixed(3)})`;
     if (own.length === 0) {
         if (!best || (best.r.terminal.store[res] || 0) <= 0) return;
         const amount = Math.min(cfg.orderSize, best.surplus);
         const p = price();
         const code = Game.market.createOrder({ type: ORDER_SELL, resourceType: /** @type {any} */ (res), price: p, totalAmount: amount, roomName: best.r.name });
         refresh[res] = Game.time;
-        log.info(`[market] ${best.r.name} new sell order ${amount} ${res} @ ${p} (floor ${fl.toFixed(3)}) → ${code}`);
+        log.info(`[market] ${best.r.name} new sell order ${amount} ${res} @ ${p} (${why}) → ${code}`);
         return;
     }
     const o = own[0];
@@ -127,7 +137,7 @@ function sellByOrder(ctx, res, spec, rooms) {
         const p = price();
         if (Math.abs(p - o.price) > o.price * 0.005) {
             const code = Game.market.changeOrderPrice(o.id, p);
-            log.info(`[market] sell order ${res} ${o.price} → ${p} (floor ${fl.toFixed(3)}) → ${code}`);
+            log.info(`[market] sell order ${res} ${o.price} → ${p} (${why}) → ${code}`);
         }
     }
 }
@@ -139,12 +149,12 @@ module.exports = {
     scope: 'shard',
     tier: 'low',
     priority: 85,
-    // getAllOrders on a busy resource costs real CPU: every 50 ticks is plenty
-    // (one deal of up to `batch` per room per run).
+    // getAllOrders on a busy resource costs real CPU: every 50 ticks is plenty.
     every: 50,
     run(ctx) {
         const cfg = /** @type {import('../../services/market').MarketConfig} */ (ctx.config.market);
         if (!cfg || !cfg.enabled || !Game.market) return;
+        const value = market.valuer(cfg);
         const rooms = ctx.roomList.filter(rc => rc.kind === 'owned' && rc.room && rc.room.terminal && rc.room.terminal.my &&
             !(rc.policy && rc.policy.state === 'CRITICAL')).map(rc => rc.room);
         const ready = rooms.filter(r => r.terminal.cooldown === 0);
@@ -153,8 +163,9 @@ module.exports = {
         for (const res of Object.keys(cfg.sell || {})) {
             const spec = cfg.sell[res];
             if (!spec) continue; // stopped (market.stop)
-            if (spec.mode === 'order') sellByOrder(ctx, res, spec, rooms);
-            else sellByDeal(ctx, res, spec, ready, used);
+            if (spec.mode === 'order') sellByOrder(cfg, value, res, spec, rooms);
+            else sellByDeal(cfg, value, res, spec, ready, used);
         }
-    }
+    },
+    floorFor
 };

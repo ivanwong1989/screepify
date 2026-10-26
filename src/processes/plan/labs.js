@@ -4,6 +4,7 @@
 const labs = require('../../services/labs');
 const roomData = require('../../services/roomData');
 const log = require('../../services/log');
+const market = require('../../services/market');
 
 /**
  * Lab plan per room (P12): layout, reaction and roles (services/labs), kept on
@@ -43,7 +44,11 @@ module.exports = {
             return;
         }
         const prev = labs.current(rc.name);
-        const p = labs.plan(list, stock(rc.room, list), cfg, prev ? prev.product : null);
+        // Auto: only products worth more than their reagents on the market.
+        const mcfg = ctx.config.market;
+        const value = market.valuer(mcfg);
+        const worth = (/** @type {string} */ product) => market.profitable(product, value, mcfg.productMargin);
+        const p = labs.plan(list, stock(rc.room, list), cfg, prev ? prev.product : null, worth);
         if (!prev || prev.product !== p.product) log.info(`[labs] ${rc.name}: ${p.product ? `${p.reagents && p.reagents.join(' + ')} → ${p.product}` : 'no reaction'}`);
         labs.setCurrent(rc.name, p);
     }
