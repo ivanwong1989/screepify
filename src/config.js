@@ -73,7 +73,7 @@ const DEFAULTS = {
     lanes: { enabled: true, mining: true, cpuPerTick: 10, rebuildEvery: 5000, checkEvery: 50 },
     minerals: { enabled: true, maxStock: 100000, minStorageFree: 50000 },
     market: {
-        enabled: false,
+        enabled: true,
         sell: {
             // Own sell orders: the buyer pays the transfer energy. Deals made
             // by us pay it, and with every buyer 40-80 rooms away and energy
