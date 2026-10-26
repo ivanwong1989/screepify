@@ -238,6 +238,6 @@ test('kernel migrates v1 Memory before running processes', (t) => {
     let seenVersion = null;
     const k = load().createKernel([proc({ id: 'p', run: () => { seenVersion = Memory.v; } })]);
     k.tick();
-    assert.equal(seenVersion, 2);
+    assert.equal(seenVersion, 3);
     assert.equal(Memory.military, undefined);
 });

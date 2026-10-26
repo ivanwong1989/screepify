@@ -61,3 +61,26 @@ Defaults: **market off** until live prices are reviewed with `market.show()`; KO
 ## Console
 
 `market.show()`, `market.sell(res, keep, mode?, minPrice?)`, `market.stop(res)`, `market.on()`, `market.off()`. Every deal and order change is logged as `[market] …`.
+
+## Buying
+
+`act.marketBuy` (ACT, shard, low, every 100), rules in `services/marketBuy.js`.
+Off by default (`market.buy.enabled`). Buying is for a purpose, never
+speculation:
+
+| Why | When | How |
+| --- | --- | --- |
+| Emergency energy | a room is under `emergencyEnergy` and **no** room is above its stockpile target × (1 + hysteresis), so balancing can't help | deal, up to `energyBatch` |
+| Boost stock | the total across rooms of a `stock` entry is under 80% of its minimum | deal, into the first lab room |
+| Complement | a lab room holds ≥ `anchorMin` of A, and the product of A + B sells for ≥ (A + cost of B) × (1 + `margin`) | one buy order for B per room, at most the A held |
+
+The complement rule never buys both reagents. It buys only the partner of
+something already in the stockpile, and only when reacting beats selling the
+anchor as it is.
+
+Guards mirror selling:
+- **Ceiling.** min(`maxPrice`, `ceilingFactor` × reference). It rises at most `maxRisePerDay` (anchors in `Memory.e.mc`) and falls at once.
+- **Thin markets.** Without a reference, nothing is bought unless you set a `maxPrice`.
+- **Order book.** Cleaned with `cleanBook`: bait (below `minListing`) and duplicates are dropped. When buying, cheap listings are bargains, so only the top of the band is cut. The ceiling rejects spam.
+- **Fees.** Deals are judged after the energy fee we pay.
+- **Credits.** `creditReserve` is never spent. Spending is capped at `dailyCap` per day (ledger in `Memory.e.mb`, schema v3).

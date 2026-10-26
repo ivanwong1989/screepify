@@ -93,7 +93,14 @@ const DEFAULTS = {
         bandLow: 0.5, bandHigh: 2, minListing: 1000, maxDropPerDay: 0.05,
         // Labs only make a product worth productMargin more than its reagents.
         productMargin: 0.05,
-        minTerminalEnergy: 10000, terminalStock: 10000, orderSize: 5000, orderRefresh: 500
+        minTerminalEnergy: 10000, terminalStock: 10000, orderSize: 5000, orderRefresh: 500,
+        // Buying (act.marketBuy): off until reviewed. Never below creditReserve,
+        // at most dailyCap credits a day, never above min(maxPrice, 1.1 × reference).
+        buy: {
+            enabled: false, creditReserve: 100000, dailyCap: 30000, ceilingFactor: 1.1, maxRisePerDay: 0.05,
+            stock: {}, maxPrice: {}, emergencyEnergy: 20000, energyBatch: 20000,
+            complement: { enabled: true, margin: 0.10, anchorMin: 20000 }
+        }
     },
     labs: {
         enabled: true, reaction: 'auto', inputTarget: 2000, outputMax: 1500, boostTarget: 1000,

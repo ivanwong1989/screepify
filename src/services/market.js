@@ -28,7 +28,7 @@ const labs = require('./labs');
  *            terminalStock: number, orderSize: number, orderRefresh: number,
  *            historyDays: number, longDays: number, longShare: number, minTrades: number,
  *            bandLow: number, bandHigh: number, minListing: number, maxDropPerDay: number,
- *            productMargin: number}} MarketConfig
+ *            productMargin: number, buy?: import('./marketBuy').BuyConfig}} MarketConfig
  * @typedef {{date: string, avgPrice: number, volume: number, transactions?: number}} HistoryDay
  * @typedef {{id: string, price: number, amount: number, remainingAmount?: number, roomName?: string}} Order
  * @typedef {{ref: number|null, recent: number|null, median: number|null, trades: number, liquid: boolean}} Reference

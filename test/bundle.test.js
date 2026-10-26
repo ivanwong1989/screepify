@@ -16,7 +16,7 @@ test('bundle boots a colony: migrates Memory, spawns, exports stats', async () =
     global.Memory.military = { stale: true };
     sim.run(400);
 
-    assert.equal(global.Memory.v, 2);
+    assert.equal(global.Memory.v, 3);
     assert.equal(global.Memory.military, undefined);
     assert.ok(sim.world.stats.spawned.length > 0, 'spawned creeps');
     assert.ok(sim.world.segStore && sim.world.segStore[90], 'stats segment written');

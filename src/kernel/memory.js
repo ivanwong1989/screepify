@@ -11,7 +11,7 @@ const log = require('../services/log');
  * the kernel does it every tick (it also catches a manual Memory wipe).
  */
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * @typedef {Object} Migration
@@ -33,6 +33,13 @@ const MIGRATIONS = [
             mem.rooms = {};
             mem.flags = {};
             mem.spawns = {};
+        }
+    },
+    {
+        to: 3,
+        name: 'shard-level state: Memory.e (market spending ledger, price anchors)',
+        run(mem) {
+            if (!mem.e || typeof mem.e !== 'object') mem.e = {};
         }
     }
 ];
@@ -67,6 +74,7 @@ function migrate(mem = Memory) {
 function ensureShape(mem) {
     if (!mem.creeps) mem.creeps = {};
     if (!mem.rooms) mem.rooms = {};
+    if (!mem.e) mem.e = {};
 }
 
 /** @param {any} [mem] */

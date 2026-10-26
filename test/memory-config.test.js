@@ -11,8 +11,8 @@ test('v1 → v2 migration wipes everything but config, and is idempotent', (t) =
     t.after(() => w.restore());
     const memory = require('../src/kernel/memory');
     const ran = memory.migrate(Memory);
-    assert.equal(ran.length, 1);
-    assert.deepEqual(Memory, { v: 2, config: { pixel: { enabled: false } }, creeps: {}, rooms: {}, flags: {}, spawns: {} });
+    assert.equal(ran.length, 2, 'v1 → v2 (wipe) → v3 (Memory.e)');
+    assert.deepEqual(Memory, { v: 3, config: { pixel: { enabled: false } }, creeps: {}, rooms: {}, flags: {}, spawns: {}, e: {} });
     assert.deepEqual(memory.migrate(Memory), []);
     assert.ok(memory.isCurrent(Memory));
 });
