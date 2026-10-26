@@ -121,6 +121,7 @@ function buyWorld(opts) {
     if (!(opts && opts.off)) config.set('market.buy.enabled', true);
     if (opts && opts.stock) config.set('market.buy.stock', opts.stock);
     config.set('market.buy.dailyCap', (opts && opts.dailyCap) || 1e6);
+    config.set('market.buy.creditReserve', 100000);
     const ctx = {
         config: config.get(),
         roomList: [labRoom, poor].map(r => ({ name: r.name, room: r, kind: 'owned' }))
