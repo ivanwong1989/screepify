@@ -97,7 +97,7 @@ const DEFAULTS = {
         // Buying (act.marketBuy): off until reviewed. Never below creditReserve,
         // at most dailyCap credits a day, never above min(maxPrice, 1.1 × reference).
         buy: {
-            enabled: false, creditReserve: 270000000, dailyCap: 30000, ceilingFactor: 1.1, maxRisePerDay: 0.05,
+            enabled: true, creditReserve: 270000000, dailyCap: 30000, ceilingFactor: 1.1, maxRisePerDay: 0.05,
             stock: {}, maxPrice: {}, emergencyEnergy: 20000, energyBatch: 20000,
             complement: { enabled: true, margin: 0.10, anchorMin: 20000 }
         }

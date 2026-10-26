@@ -118,7 +118,7 @@ function buyWorld(opts) {
     };
     global.Memory.e = {};
     const config = require('../src/config');
-    if (!(opts && opts.off)) config.set('market.buy.enabled', true);
+    config.set('market.buy.enabled', !(opts && opts.off));
     if (opts && opts.stock) config.set('market.buy.stock', opts.stock);
     config.set('market.buy.dailyCap', (opts && opts.dailyCap) || 1e6);
     config.set('market.buy.creditReserve', 100000);
@@ -130,7 +130,7 @@ function buyWorld(opts) {
     return { calls, ctx, proc: require('../src/processes/act/marketBuy') };
 }
 
-test('act.marketBuy: off by default, nothing happens', () => {
+test('act.marketBuy: switched off, nothing happens', () => {
     const w = buyWorld({ off: true });
     w.proc.run(w.ctx);
     assert.deepEqual(w.calls, []);
