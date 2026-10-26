@@ -31,6 +31,7 @@ module.exports = [
     require('../processes/act/links'),
     require('../processes/act/terminal'),
     require('../processes/act/labs'),
+    require('../processes/act/market'),
     require('../processes/act/creeps'),
     require('../processes/act/traffic'),
     // REPORT

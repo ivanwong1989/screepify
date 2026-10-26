@@ -207,7 +207,7 @@ Original plan for P4, kept for reference:
 - **Stock** (`services/terminal.nextMove`, `missions/shared/laneStock.js`): while idle at the head, next to storage and terminal, the lane hauler moves one load per two ticks. Energy is kept at `config.terminal.energy` (default 20k), the same both ways as v1. Other resources follow `config.terminal.stock` and `config.terminal.rooms[room].stock` within v1's deadband (5% of target, 50–2000). Unlike v1, resources with no target stay in the terminal unless `flushUntargeted` is set, so stock left for manual market orders isn't moved.
 - **Balance** (`act.terminal`, low tier, every 50): the room with the most energy above its policy stockpile target × 1.1 sends up to `balance.batch` (10k) to the room furthest below its own target. Terminals on cooldown are left out. The amount is halved until amount plus fee fits in the donor's terminal. The receiving terminal's surplus goes back to storage through the stock job.
 - **Console:** `terminal.show()`, `terminal.send(from, to, res, amount)`.
-- **Not ported:** automatic market trading (DESIGN §1 non-goal) and v1's manual order tracking.
+- **Market:** ported later as its own process, with own sell orders added ([MARKET.md](MARKET.md)). v1's manual order tracking is not ported.
 - The simulator now has terminals.
 
 **P10 Minerals. ✅ Done** (`missions/mineral.js`, `test/mineral.test.js`).

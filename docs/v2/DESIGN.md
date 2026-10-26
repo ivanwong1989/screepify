@@ -27,7 +27,7 @@
 
 **Non-goals (for now)**
 
-- Offensive military, market trading AI, multi-shard play, automated base layout.
+- Offensive military, multi-shard play, automated base layout. (Market trading was a non-goal; a rule-based seller was added on request: [MARKET.md](MARKET.md).)
 - Feature parity with v1 before switchover. v2 replaces v1 when it runs the economy better, not when it does everything v1 does.
 
 ## 2. Constraints
@@ -416,6 +416,7 @@ npm scripts: `build`, `check`, `test`, `deploy` (= check + test + build + upload
 | `manager.terminal` stock targets + lane stock jobs, zeadmin energy balancer | `services/terminal.js`, `missions/shared/laneStock.js`, `processes/act/terminal.js`, `console/terminal.js` |
 | `mission.mineral` + `role.mineralMiner` | `missions/mineral.js` |
 | `manager.labs` (reactions, boost stock) | `services/labs.js`, `processes/plan/labs.js`, `processes/act/labs.js`, `missions/labHaul.js` |
+| `manager.terminal` sell path (market) | `services/market.js`, `processes/act/market.js`, `console/market.js` ([MARKET.md](MARKET.md)) |
 | v1 creeps after the switch | `processes/sense/adopt.js` + `act.spawns` bindStrays |
 | `telemetry/*`, `screeps-profiler` | `kernel/telemetry.js` (always on) |
 | `heap.js`, `roomCache.js`, `global._*` | `services/cache` |

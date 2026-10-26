@@ -8,6 +8,7 @@ const flipGuard = require('../../services/flipGuard');
 const cache = require('../../services/cache');
 const board = require('../../services/requestBoard');
 const labs = require('../../services/labs');
+const market = require('../../services/market');
 
 /**
  * Publishes `rc.requests` (docs/v2/LOGISTICS.md): what each store asks for or
@@ -36,8 +37,15 @@ function buildFor(ctx, rc) {
     const latches = cache.store('logistics.latch');
     const stats = cache.store('logistics.builds');
     stats[rc.name] = (stats[rc.name] || 0) + 1;
+    // Goods the market sells from this room are stocked in its terminal.
+    const sellStock = market.stockFor(room, ctx.config.market);
+    const tcfg = ctx.config.terminal;
+    const roomT = (tcfg.rooms && tcfg.rooms[rc.name]) || {};
+    const terminal = Object.keys(sellStock).length === 0 ? tcfg : Object.assign({}, tcfg, {
+        rooms: Object.assign({}, tcfg.rooms, { [rc.name]: Object.assign({}, roomT, { stock: Object.assign({}, sellStock, roomT.stock || {}) }) })
+    });
     return requests.build(stores, l, {
-        terminal: ctx.config.terminal, roomName: rc.name, miningContainers, blocked: flipGuard.blocked(rc.name),
+        terminal, roomName: rc.name, miningContainers, blocked: flipGuard.blocked(rc.name),
         controllerContainer: intel.controllerContainerId || null, hasBuffer: !!(room.storage && room.storage.my),
         exclude: (rc.lanes && rc.lanes.core) || undefined,
         labs: labPlan ? labPlan.roles : undefined, labCfg: labs.configFor(ctx.config.labs, rc.name)

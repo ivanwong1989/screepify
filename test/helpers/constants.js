@@ -71,6 +71,7 @@ module.exports = {
         'terminal', 'nuker', 'factory', 'invaderCore'],
     RESOURCE_ENERGY: 'energy',
     BOOSTS: {},
+    ORDER_SELL: 'sell', ORDER_BUY: 'buy',
     LAB_REACTION_AMOUNT: 5, LAB_MINERAL_CAPACITY: 3000, LAB_ENERGY_CAPACITY: 2000,
     // Base reactions (tier 0 → tier 1, and G); the game's table is bigger.
     REACTIONS: {
