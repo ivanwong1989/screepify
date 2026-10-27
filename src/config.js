@@ -27,6 +27,9 @@
  * @property {string[]} allies           usernames never treated as hostile
  * @property {{enabled: boolean, rooms: string[]}} safeMode   rooms: [] = all owned rooms
  * @property {{enabled: boolean}} construction                automatic layout + sites
+ * @property {{enabled: boolean, maxSites: number, rooms: string[]}} laneFit
+ *           spawns/towers/extensions next to the core lane (plan.laneFit, services/laneFit);
+ *           maxSites = open sites of those types at once; rooms: [] = all owned rooms
  * @property {{stockpileTargets: Record<string, number>, stockpileHysteresis: number}} policy
  * @property {{enabled: boolean}} traffic       swap/shove creeps in the way (act.traffic)
  * @property {{enabled: boolean, mining: boolean, cpuPerTick: number, rebuildEvery: number, checkEvery: number}} lanes
@@ -65,6 +68,7 @@ const DEFAULTS = {
     allies: [],
     safeMode: { enabled: true, rooms: [] },
     construction: { enabled: true },
+    laneFit: { enabled: false, maxSites: 2, rooms: [] },
     policy: {
         stockpileTargets: { 1: 0, 2: 0, 3: 20000, 4: 50000, 5: 100000, 6: 150000, 7: 250000, 8: 350000 },
         stockpileHysteresis: 0.10

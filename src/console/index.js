@@ -17,6 +17,7 @@ const telemetry = require('../kernel/telemetry');
  *   terminal.show() / terminal.send(from, to, res, amount)   (console/terminal.js)
  *   logistics.show(room)          requests/offers and blocked stores (console/logistics.js)
  *   market.show() / market.sell(res, keep, mode?, minPrice?) / market.stop(res) / market.on() / market.off()
+ *   laneFit.show(room)            dry run of lane fit sites (console/laneFit.js)
  */
 
 /**
@@ -65,6 +66,7 @@ function register(kernel) {
         'terminal.send(from, to, res, amount)   one manual send',
         'logistics.show(room)            what each store wants or gives this tick',
         'market.show()                   orders, surplus and price floors',
+        'laneFit.show(room)              dry run: spawns/towers/extensions next to the lane',
         'market.sell(res, keep, mode?, minPrice?) / market.stop(res) / market.on() / market.off()'
     ].join('\n');
 
@@ -192,6 +194,7 @@ function register(kernel) {
     require('./terminal').register();
     require('./logistics').register();
     require('./market').register();
+    require('./laneFit').register();
 }
 
 module.exports = { register };

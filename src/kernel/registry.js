@@ -22,6 +22,7 @@ module.exports = [
     require('../processes/plan/missions'),
     require('../processes/plan/assignment'),
     require('../processes/plan/construction'),
+    require('../processes/plan/laneFit'),
     require('../processes/plan/lanes'),
     require('../processes/plan/labs'),
     // ACT
