@@ -1,0 +1,1651 @@
+{
+  "room": "W43S28",
+  "time": 83973502,
+  "terrain": "1111111111111111111111111111111111111111111111111111111110000000001111111111111111111111111111111111111111000000000000111111111111111111111111111111111111100000000000000001111110011111111111111111111111111000000022200000000220000001111111111111111111111110000002222000000002200000000111111111111111110000000000022220000000022220000000111111221111111100000000001110000200000022222000000111122211111111000000000111111111111000022200000200110222111100110000000001111111111111000000000022001022221111001100000000011111111111111000000222220112222111100011000000000111111111111111111112222211122221111000110000000001111111111111111111112220111222111100011100000000001111111111110001111112200002211111002111000111000011111110011000001111112000001111100011110011111001111111000000000000111110000111111000111111111110011111110000000000000011100011111100011111111111102111111100000000000000000000011112001111111111111021111111000000000000220000000002222011111111111112211111110000000001111112222200022222111111111111122111111100000001111111112222222222220111111111110021111111000001111111111112222212222200111111111100111111110220111111111111110021112222001111111111111111111022211111111111111110111122220011111111111111111002222211111111111111111111222201111111111111111002221112011111111111111111112220111111111111111100222111111111111111111111111122211111111111111111122221111111111111112011111112220111111111111111111111111111111111111100111111222011111111110011111111111111111111111110001111112200111111110000001111111111111111111111200011111000001111111100110001111111111111111111120001111110200011111111001100011111111111111111112200011111222200111111110000000011111111111122222222200111112222001111111100000000111111111112222222222001111122222011111111000000000111111111002202222220011111222221111111110000000001111111110000002222200011112222111111111100000000011111111122200022222000002222211111111111000000000111111111222200022200000002001111111111110000002211111111122222000000000000000221111111111100000221111111111222220000000000000002221111211111000002111111111110222200000000222200222222222211110000021111111111100220000001122222222222222221111100000011111111110000000000111122222222222222211111112000211110222200000000011111122222220002221111111111002222222222000000001111111122222000021111111111111122222222222000022211111111222200001111111111111111022222221111111222111111112220111111111111111110000000000111111111000000000000011111111111111111100000000001111111111000000000001111111111111111",
+  "objects": [
+    {
+      "_id": "5bbcaab19099fc012e632010",
+      "type": "source",
+      "x": 35,
+      "y": 11,
+      "energy": 1558,
+      "energyCapacity": 3000
+    },
+    {
+      "_id": "5bbcaab19099fc012e632012",
+      "type": "source",
+      "x": 8,
+      "y": 40,
+      "energy": 1628,
+      "energyCapacity": 3000
+    },
+    {
+      "_id": "5fa2e650f175ab9b6a911229",
+      "type": "constructedWall",
+      "x": 7,
+      "y": 47
+    },
+    {
+      "_id": "5fa2e656cd47313e6e858230",
+      "type": "constructedWall",
+      "x": 8,
+      "y": 47
+    },
+    {
+      "_id": "5fa2e65995fc7324f7e97f78",
+      "type": "constructedWall",
+      "x": 9,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f0bb5ee5308075aa1c73",
+      "type": "constructedWall",
+      "x": 10,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f0c18472ad182c14abe0",
+      "type": "constructedWall",
+      "x": 11,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f0c740ca0894f7e1fbeb",
+      "type": "constructedWall",
+      "x": 12,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f0cde925bee55c8c65d3",
+      "type": "constructedWall",
+      "x": 13,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f0f058dc96087768fbab",
+      "type": "constructedWall",
+      "x": 21,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f135275002cb6292afc3",
+      "type": "constructedWall",
+      "x": 34,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f13bf49aca697f07bc75",
+      "type": "constructedWall",
+      "x": 35,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f163cbd926be0fd4398c",
+      "type": "constructedWall",
+      "x": 23,
+      "y": 47
+    },
+    {
+      "_id": "5fa2f1ca0232ee30f18fda07",
+      "type": "constructedWall",
+      "x": 22,
+      "y": 47
+    },
+    {
+      "_id": "5fa372ee870cbca078967fc6",
+      "type": "constructedWall",
+      "x": 2,
+      "y": 44
+    },
+    {
+      "_id": "698606694649564cd704d08e",
+      "type": "road",
+      "x": 6,
+      "y": 45
+    },
+    {
+      "_id": "6986067edbd78d595903aeb0",
+      "type": "road",
+      "x": 7,
+      "y": 45
+    },
+    {
+      "_id": "6986087297f5e0a0d5a1eaed",
+      "type": "road",
+      "x": 8,
+      "y": 45
+    },
+    {
+      "_id": "698609d0031863572b462470",
+      "type": "road",
+      "x": 9,
+      "y": 45
+    },
+    {
+      "_id": "69860b074060f385d0a708e8",
+      "type": "road",
+      "x": 10,
+      "y": 45
+    },
+    {
+      "_id": "69860c87239cafd7e3c18e1f",
+      "type": "road",
+      "x": 11,
+      "y": 45
+    },
+    {
+      "_id": "69860dc94596f86de2987337",
+      "type": "road",
+      "x": 12,
+      "y": 45
+    },
+    {
+      "_id": "69860eb3da65e3596dd83dd1",
+      "type": "road",
+      "x": 13,
+      "y": 45
+    },
+    {
+      "_id": "698610119e9d5c344d9f3993",
+      "type": "road",
+      "x": 14,
+      "y": 45
+    },
+    {
+      "_id": "698611c2fd2f13e2d3cd1b7b",
+      "type": "road",
+      "x": 15,
+      "y": 45
+    },
+    {
+      "_id": "69861fafa0188407d9362ef3",
+      "type": "road",
+      "x": 24,
+      "y": 38
+    },
+    {
+      "_id": "698623cd157f28d157c49804",
+      "type": "road",
+      "x": 23,
+      "y": 42
+    },
+    {
+      "_id": "698624ca2188b668074f8c74",
+      "type": "road",
+      "x": 23,
+      "y": 41
+    },
+    {
+      "_id": "698624ec36dc747d17652972",
+      "type": "road",
+      "x": 22,
+      "y": 43
+    },
+    {
+      "_id": "69862520ba23c845d2fb785d",
+      "type": "road",
+      "x": 21,
+      "y": 44
+    },
+    {
+      "_id": "6986255a7584192dbfa2c701",
+      "type": "road",
+      "x": 23,
+      "y": 40
+    },
+    {
+      "_id": "69862740708fa2f32ebb8bb2",
+      "type": "road",
+      "x": 20,
+      "y": 45
+    },
+    {
+      "_id": "6986276ff222f45859aff79e",
+      "type": "road",
+      "x": 19,
+      "y": 45
+    },
+    {
+      "_id": "698628c16814ae89cf927d2b",
+      "type": "road",
+      "x": 18,
+      "y": 45
+    },
+    {
+      "_id": "69862afa99cbef8698c3aad7",
+      "type": "road",
+      "x": 17,
+      "y": 45
+    },
+    {
+      "_id": "69862c1b6814ae370e927e0c",
+      "type": "road",
+      "x": 16,
+      "y": 45
+    },
+    {
+      "_id": "69864281ba23c80c69fb7ff5",
+      "type": "road",
+      "x": 10,
+      "y": 46
+    },
+    {
+      "_id": "6986481174e5dceaab89275a",
+      "type": "road",
+      "x": 29,
+      "y": 38
+    },
+    {
+      "_id": "69864c839f75b52cdcd44833",
+      "type": "road",
+      "x": 34,
+      "y": 38
+    },
+    {
+      "_id": "6986512980c5ef7151243801",
+      "type": "road",
+      "x": 35,
+      "y": 38
+    },
+    {
+      "_id": "698653ed1e450e420a0fcc8f",
+      "type": "road",
+      "x": 36,
+      "y": 37
+    },
+    {
+      "_id": "6986559f4a454f026a956377",
+      "type": "road",
+      "x": 33,
+      "y": 10
+    },
+    {
+      "_id": "698656f1d78dbfe2040c1620",
+      "type": "road",
+      "x": 37,
+      "y": 36
+    },
+    {
+      "_id": "698658eba61db804cb4c2beb",
+      "type": "road",
+      "x": 33,
+      "y": 11
+    },
+    {
+      "_id": "6986591a6344bd14186d3338",
+      "type": "road",
+      "x": 33,
+      "y": 12
+    },
+    {
+      "_id": "6986594cf66af03187f9100e",
+      "type": "road",
+      "x": 33,
+      "y": 13
+    },
+    {
+      "_id": "69865a288084032b75ba0324",
+      "type": "road",
+      "x": 37,
+      "y": 35
+    },
+    {
+      "_id": "69865be1464956df7d04e57f",
+      "type": "road",
+      "x": 34,
+      "y": 14
+    },
+    {
+      "_id": "69865c35417129bcc288c94f",
+      "type": "road",
+      "x": 35,
+      "y": 15
+    },
+    {
+      "_id": "69865c79f10abdccf09936d1",
+      "type": "road",
+      "x": 35,
+      "y": 16
+    },
+    {
+      "_id": "69865d0f27c96af42a79af34",
+      "type": "road",
+      "x": 36,
+      "y": 17
+    },
+    {
+      "_id": "69865dbb61d8da861d2255dd",
+      "type": "road",
+      "x": 37,
+      "y": 34
+    },
+    {
+      "_id": "69865dc413e85bc2f028cdff",
+      "type": "road",
+      "x": 37,
+      "y": 18
+    },
+    {
+      "_id": "69865e76d4fd7d9d3d2b2afb",
+      "type": "road",
+      "x": 38,
+      "y": 19
+    },
+    {
+      "_id": "6986602cba23c8269bfb8777",
+      "type": "road",
+      "x": 37,
+      "y": 33
+    },
+    {
+      "_id": "6986608edc8d7f3b6f8d262f",
+      "type": "road",
+      "x": 39,
+      "y": 20
+    },
+    {
+      "_id": "698662ff4a454f2f229566d8",
+      "type": "road",
+      "x": 40,
+      "y": 21
+    },
+    {
+      "_id": "69866434149131051f0e0141",
+      "type": "road",
+      "x": 37,
+      "y": 32
+    },
+    {
+      "_id": "6986665b13e85bca8a28d08b",
+      "type": "road",
+      "x": 40,
+      "y": 23
+    },
+    {
+      "_id": "69866737ad15cb2eaa60af07",
+      "type": "road",
+      "x": 38,
+      "y": 31
+    },
+    {
+      "_id": "6986684db720b73cd1479565",
+      "type": "road",
+      "x": 40,
+      "y": 22
+    },
+    {
+      "_id": "6986688c1e3bb02ba681c67a",
+      "type": "road",
+      "x": 38,
+      "y": 30
+    },
+    {
+      "_id": "69866a2707d3e8da3fda0737",
+      "type": "road",
+      "x": 40,
+      "y": 24
+    },
+    {
+      "_id": "69866cf811c6df49dcda50ae",
+      "type": "road",
+      "x": 40,
+      "y": 25
+    },
+    {
+      "_id": "69866f6e9e9d5cbd3d9f524f",
+      "type": "road",
+      "x": 40,
+      "y": 26
+    },
+    {
+      "_id": "6986b1cc6b88d4cd7dbe7cde",
+      "type": "road",
+      "x": 31,
+      "y": 38
+    },
+    {
+      "_id": "6986b21575417c8103075644",
+      "type": "road",
+      "x": 32,
+      "y": 38
+    },
+    {
+      "_id": "6986b26c98977ece7eab8b55",
+      "type": "road",
+      "x": 33,
+      "y": 38
+    },
+    {
+      "_id": "6986b29b239cafb3fcc1b7ab",
+      "type": "road",
+      "x": 24,
+      "y": 39
+    },
+    {
+      "_id": "6986df739e9d5c94a19f6e93",
+      "type": "road",
+      "x": 27,
+      "y": 40
+    },
+    {
+      "_id": "6986dfa42188b649524fbb74",
+      "type": "road",
+      "x": 28,
+      "y": 39
+    },
+    {
+      "_id": "6987296ddc8d7f0a588d592c",
+      "type": "road",
+      "x": 30,
+      "y": 37
+    },
+    {
+      "_id": "69872d7793af7394dc27fff8",
+      "type": "road",
+      "x": 19,
+      "y": 35
+    },
+    {
+      "_id": "6987de37cc6e3265c8eeafb0",
+      "type": "road",
+      "x": 29,
+      "y": 36
+    },
+    {
+      "_id": "69880394a01884045536aad9",
+      "type": "road",
+      "x": 24,
+      "y": 41
+    },
+    {
+      "_id": "698803fddf3b5d04695b3ad7",
+      "type": "road",
+      "x": 25,
+      "y": 42
+    },
+    {
+      "_id": "698804258753c81c3e2416de",
+      "type": "road",
+      "x": 26,
+      "y": 41
+    },
+    {
+      "_id": "6988180d61d8daaee922c6c2",
+      "type": "road",
+      "x": 28,
+      "y": 35
+    },
+    {
+      "_id": "698840e62429e5430cb85b3f",
+      "type": "road",
+      "x": 28,
+      "y": 41
+    },
+    {
+      "_id": "698c1b3707d3e82ac9db7e6c",
+      "type": "road",
+      "x": 27,
+      "y": 34
+    },
+    {
+      "_id": "698c1bcf368a436e4cbec88c",
+      "type": "road",
+      "x": 26,
+      "y": 35
+    },
+    {
+      "_id": "698c1c2b1079c79e95fa0050",
+      "type": "road",
+      "x": 25,
+      "y": 36
+    },
+    {
+      "_id": "698c1c808c45ad76ca5be4ee",
+      "type": "road",
+      "x": 24,
+      "y": 37
+    },
+    {
+      "_id": "698c1e7f36dc74265166ba01",
+      "type": "road",
+      "x": 23,
+      "y": 36
+    },
+    {
+      "_id": "698c1e9d57c2b3cf2f0af74a",
+      "type": "road",
+      "x": 22,
+      "y": 35
+    },
+    {
+      "_id": "698c1f19005043d66602e674",
+      "type": "road",
+      "x": 21,
+      "y": 34
+    },
+    {
+      "_id": "698c1facbf3f8de467e1f88c",
+      "type": "road",
+      "x": 20,
+      "y": 35
+    },
+    {
+      "_id": "698c2c5cde22963069a7c67d",
+      "type": "road",
+      "x": 5,
+      "y": 44
+    },
+    {
+      "_id": "698c2d3aa61db8b4374da7e8",
+      "type": "road",
+      "x": 5,
+      "y": 43
+    },
+    {
+      "_id": "698c2d77ba23c84febfd0cfd",
+      "type": "road",
+      "x": 4,
+      "y": 42
+    },
+    {
+      "_id": "698c2df1253ec8fbea63674f",
+      "type": "road",
+      "x": 4,
+      "y": 41
+    },
+    {
+      "_id": "698c2e18473870be24fcd66c",
+      "type": "road",
+      "x": 4,
+      "y": 40
+    },
+    {
+      "_id": "698c2edb4649566c98065e29",
+      "type": "road",
+      "x": 5,
+      "y": 39
+    },
+    {
+      "_id": "698c34477928071da349b004",
+      "type": "container",
+      "x": 7,
+      "y": 39,
+      "store": {
+        "energy": 0
+      },
+      "storeCapacity": 2000
+    },
+    {
+      "_id": "698c3500305dbf05cf20d46b",
+      "type": "road",
+      "x": 6,
+      "y": 39
+    },
+    {
+      "_id": "698c4271450c9eb77c8da069",
+      "type": "road",
+      "x": 33,
+      "y": 46
+    },
+    {
+      "_id": "698c4b33f10abd1afd9abeb5",
+      "type": "container",
+      "x": 34,
+      "y": 10,
+      "store": {
+        "energy": 0
+      },
+      "storeCapacity": 2000
+    },
+    {
+      "_id": "698dfbd01e450e549011bb19",
+      "type": "road",
+      "x": 32,
+      "y": 47
+    },
+    {
+      "_id": "698f1b5f0f8991595e7ea6cc",
+      "type": "road",
+      "x": 33,
+      "y": 48
+    },
+    {
+      "_id": "698f1beca378832720312a93",
+      "type": "road",
+      "x": 33,
+      "y": 47
+    },
+    {
+      "_id": "699143974b04d8f28fe9e6b1",
+      "type": "road",
+      "x": 11,
+      "y": 46
+    },
+    {
+      "_id": "699145eb80c5ef78c526fb2c",
+      "type": "road",
+      "x": 6,
+      "y": 46
+    },
+    {
+      "_id": "69914659af91ac8f941166cf",
+      "type": "road",
+      "x": 6,
+      "y": 47
+    },
+    {
+      "_id": "6991521c708fa29b9abe6052",
+      "type": "road",
+      "x": 29,
+      "y": 42
+    },
+    {
+      "_id": "6991531a4a454f911d983820",
+      "type": "road",
+      "x": 30,
+      "y": 43
+    },
+    {
+      "_id": "6991543bdbf58c9390792c28",
+      "type": "road",
+      "x": 31,
+      "y": 44
+    },
+    {
+      "_id": "6991559e3ff0c1dbad57e25b",
+      "type": "road",
+      "x": 32,
+      "y": 45
+    },
+    {
+      "_id": "6991570757c2b382980c5116",
+      "type": "road",
+      "x": 32,
+      "y": 46
+    },
+    {
+      "_id": "699284987928072c734b5675",
+      "type": "road",
+      "x": 1,
+      "y": 33
+    },
+    {
+      "_id": "699285e8bbc434813d74a356",
+      "type": "road",
+      "x": 2,
+      "y": 34
+    },
+    {
+      "_id": "69928616f056ed0c1f689e9f",
+      "type": "road",
+      "x": 3,
+      "y": 35
+    },
+    {
+      "_id": "6992867deadee90efd8ae432",
+      "type": "road",
+      "x": 3,
+      "y": 36
+    },
+    {
+      "_id": "699286e178330d963f9e1876",
+      "type": "road",
+      "x": 3,
+      "y": 37
+    },
+    {
+      "_id": "6992875b647c0c7d50ff210e",
+      "type": "road",
+      "x": 4,
+      "y": 39
+    },
+    {
+      "_id": "699287c06814ae372b95bf3c",
+      "type": "road",
+      "x": 4,
+      "y": 38
+    },
+    {
+      "_id": "6995c7b6f10abd89c99d3d35",
+      "type": "road",
+      "x": 38,
+      "y": 34
+    },
+    {
+      "_id": "6995c9d59e9d5c28a1a35773",
+      "type": "road",
+      "x": 39,
+      "y": 33
+    },
+    {
+      "_id": "6995ca447584195e4fa6cc02",
+      "type": "road",
+      "x": 40,
+      "y": 33
+    },
+    {
+      "_id": "6995caffe426a45766d64f74",
+      "type": "road",
+      "x": 41,
+      "y": 32
+    },
+    {
+      "_id": "69b9a4a639b1d1c2a08b7088",
+      "type": "road",
+      "x": 40,
+      "y": 28
+    },
+    {
+      "_id": "69b9a5bf85177304d6f4a687",
+      "type": "road",
+      "x": 39,
+      "y": 29
+    },
+    {
+      "_id": "69b9a6fdd662bc4d150b8abb",
+      "type": "road",
+      "x": 40,
+      "y": 27
+    },
+    {
+      "_id": "69bb5958dec0d2701f5b8bae",
+      "type": "road",
+      "x": 32,
+      "y": 39
+    },
+    {
+      "_id": "69bb598d1d09d00a69225910",
+      "type": "road",
+      "x": 34,
+      "y": 41
+    },
+    {
+      "_id": "69bb5a7e84812d9454478eee",
+      "type": "road",
+      "x": 35,
+      "y": 42
+    },
+    {
+      "_id": "69bb5b37fbcf42896b5e099f",
+      "type": "road",
+      "x": 36,
+      "y": 43
+    },
+    {
+      "_id": "69bb5c06fbcf422fa05e09e3",
+      "type": "road",
+      "x": 37,
+      "y": 44
+    },
+    {
+      "_id": "69bb5ce874686364908b98e3",
+      "type": "road",
+      "x": 38,
+      "y": 45
+    },
+    {
+      "_id": "69bb5cfadd1c5863d177871b",
+      "type": "road",
+      "x": 39,
+      "y": 44
+    },
+    {
+      "_id": "69bb5f42d383d3a98af95b6e",
+      "type": "road",
+      "x": 40,
+      "y": 43
+    },
+    {
+      "_id": "69bb607f8cc123b7f6cbe462",
+      "type": "road",
+      "x": 41,
+      "y": 42
+    },
+    {
+      "_id": "69bb7356d314ceeafac133b7",
+      "type": "road",
+      "x": 33,
+      "y": 40
+    },
+    {
+      "_id": "69c0a183e275d584e7b41664",
+      "type": "constructedWall",
+      "x": 29,
+      "y": 11
+    },
+    {
+      "_id": "69c0a24fd79a877ce2a5b4c2",
+      "type": "constructedWall",
+      "x": 29,
+      "y": 10
+    },
+    {
+      "_id": "69c0a2beeeff4a642879fb3e",
+      "type": "constructedWall",
+      "x": 29,
+      "y": 9
+    },
+    {
+      "_id": "69c0a329975077cd71972ba3",
+      "type": "constructedWall",
+      "x": 29,
+      "y": 8
+    },
+    {
+      "_id": "69c0a3af79c679159bd58ca5",
+      "type": "constructedWall",
+      "x": 29,
+      "y": 6
+    },
+    {
+      "_id": "69c0a3f979c6791a69d58cb4",
+      "type": "constructedWall",
+      "x": 29,
+      "y": 7
+    },
+    {
+      "_id": "69c0a469530d1bcf561c2845",
+      "type": "constructedWall",
+      "x": 29,
+      "y": 5
+    },
+    {
+      "_id": "69c0a4d0d39a6da600d65190",
+      "type": "constructedWall",
+      "x": 29,
+      "y": 4
+    },
+    {
+      "_id": "5bbcaab19099fc012e632011",
+      "type": "controller",
+      "x": 19,
+      "y": 32,
+      "level": 8
+    },
+    {
+      "_id": "698647af80c5ef4deb2435ae",
+      "type": "extension",
+      "x": 28,
+      "y": 38,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69864c29b0d143743ce8ccf4",
+      "type": "extension",
+      "x": 29,
+      "y": 37,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "6986d5c3090d538d872222df",
+      "type": "extension",
+      "x": 27,
+      "y": 39,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "6986daa6a378834bd02f0cef",
+      "type": "extension",
+      "x": 28,
+      "y": 40,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "6986de5dd78dbf2f600c370b",
+      "type": "extension",
+      "x": 26,
+      "y": 40,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "6987254a8e57bc17447c3f89",
+      "type": "extension",
+      "x": 29,
+      "y": 39,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "6987291d8c45ad2cb25a9e03",
+      "type": "extension",
+      "x": 30,
+      "y": 38,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "6987dcabbf3f8dd2e1e0ddd0",
+      "type": "extension",
+      "x": 30,
+      "y": 36,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "6987e137dbd78d494d042678",
+      "type": "extension",
+      "x": 31,
+      "y": 37,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "6988037ccc6e320f81eeb921",
+      "type": "storage",
+      "x": 24,
+      "y": 40,
+      "store": {
+        "energy": 440073,
+        "GO": 1540,
+        "ZH": 289,
+        "UH": 83,
+        "KO": 191,
+        "O": 99827
+      },
+      "storeCapacity": 1000000
+    },
+    {
+      "_id": "6988079b652ae0ad91af6ae9",
+      "type": "extension",
+      "x": 25,
+      "y": 41,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "698c3ecc6c93e142994360da",
+      "type": "rampart",
+      "x": 32,
+      "y": 47
+    },
+    {
+      "_id": "698c3fa7b70254520b5f17e2",
+      "type": "rampart",
+      "x": 6,
+      "y": 47
+    },
+    {
+      "_id": "698d495174e5dc10dc8af42d",
+      "type": "tower",
+      "x": 27,
+      "y": 41,
+      "store": {
+        "energy": 1000
+      }
+    },
+    {
+      "_id": "698f1db9072d4f48f86e5cce",
+      "type": "rampart",
+      "x": 33,
+      "y": 47
+    },
+    {
+      "_id": "6991336f97f5e03f2ea4c27e",
+      "type": "link",
+      "x": 33,
+      "y": 10,
+      "store": {
+        "energy": 482
+      }
+    },
+    {
+      "_id": "6995c59074e5dc6b038d30de",
+      "type": "extractor",
+      "x": 42,
+      "y": 32
+    },
+    {
+      "_id": "69a267b3d53d251c83852aed",
+      "type": "rampart",
+      "x": 10,
+      "y": 45
+    },
+    {
+      "_id": "69a267b6fdb9d956477490c2",
+      "type": "rampart",
+      "x": 10,
+      "y": 46
+    },
+    {
+      "_id": "69b0d2c8f9a3ce77ba2b76a5",
+      "type": "terminal",
+      "x": 22,
+      "y": 39,
+      "store": {
+        "energy": 20000,
+        "O": 173
+      },
+      "storeCapacity": 300000
+    },
+    {
+      "_id": "69b3d2a0dec0d2243c599874",
+      "type": "tower",
+      "x": 26,
+      "y": 42,
+      "store": {
+        "energy": 1000
+      }
+    },
+    {
+      "_id": "69b3d8972bd45832b6a0871b",
+      "type": "link",
+      "x": 6,
+      "y": 40,
+      "store": {
+        "energy": 370
+      }
+    },
+    {
+      "_id": "69b95def84812da150470cc0",
+      "type": "link",
+      "x": 22,
+      "y": 40,
+      "store": {
+        "energy": 0
+      }
+    },
+    {
+      "_id": "69b9622184812d7266470de5",
+      "type": "spawn",
+      "x": 23,
+      "y": 39,
+      "store": {
+        "energy": 300
+      },
+      "name": "Spawn5",
+      "spawning": null
+    },
+    {
+      "_id": "69b96605dab5c50c02821e6a",
+      "type": "spawn",
+      "x": 23,
+      "y": 41,
+      "store": {
+        "energy": 300
+      },
+      "name": "Spawn1",
+      "spawning": null
+    },
+    {
+      "_id": "69b96c08433a7d0c754bc742",
+      "type": "extension",
+      "x": 29,
+      "y": 40,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b96ce3abf9f30fe96a0c40",
+      "type": "extension",
+      "x": 30,
+      "y": 39,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b96dd872f26d0cc512a7a9",
+      "type": "extension",
+      "x": 31,
+      "y": 39,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b97002df1d1ea1133c9d9b",
+      "type": "extension",
+      "x": 33,
+      "y": 39,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b97142b906f179b50476a8",
+      "type": "extension",
+      "x": 34,
+      "y": 39,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b9a22ce8d18bcf38c058ab",
+      "type": "extension",
+      "x": 31,
+      "y": 36,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b9a2c2ff3a82d2f4f6d8d8",
+      "type": "extension",
+      "x": 25,
+      "y": 43,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b9a80f2cc8cc62df48cf1b",
+      "type": "extension",
+      "x": 28,
+      "y": 37,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b9a89dd662bc43ff0b8b1d",
+      "type": "extension",
+      "x": 27,
+      "y": 38,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b9a9279f9fcb4871bd4a17",
+      "type": "extension",
+      "x": 26,
+      "y": 39,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b9a9b3641886488e048123",
+      "type": "extension",
+      "x": 25,
+      "y": 40,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69b9aac9add9c6260592d120",
+      "type": "extension",
+      "x": 32,
+      "y": 37,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb659afb6c14214a853fce",
+      "type": "extension",
+      "x": 34,
+      "y": 40,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb66fd2622ed9aacfd058f",
+      "type": "extension",
+      "x": 35,
+      "y": 40,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb68d2f63f960809aa05ed",
+      "type": "extension",
+      "x": 35,
+      "y": 41,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb6a6dd314ce3d11c1316e",
+      "type": "extension",
+      "x": 36,
+      "y": 41,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb6c7f14cfb37fd52f1c9f",
+      "type": "extension",
+      "x": 36,
+      "y": 42,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb6f7314cfb310352f1d89",
+      "type": "extension",
+      "x": 32,
+      "y": 40,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb7079906c1fd345ecf717",
+      "type": "extension",
+      "x": 31,
+      "y": 40,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb724b5fec2961a89bc429",
+      "type": "extension",
+      "x": 32,
+      "y": 41,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb7666d79a877af7a4601c",
+      "type": "extension",
+      "x": 33,
+      "y": 41,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb782d7c5df8e43b264037",
+      "type": "extension",
+      "x": 33,
+      "y": 42,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb7982e22b3cb135e5d791",
+      "type": "extension",
+      "x": 34,
+      "y": 42,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb7aebc42a452ba15074c3",
+      "type": "extension",
+      "x": 34,
+      "y": 43,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb7ca32bd458c80ea27ece",
+      "type": "extension",
+      "x": 35,
+      "y": 44,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb7f6d54bd667ef4b96519",
+      "type": "extension",
+      "x": 35,
+      "y": 43,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb97cca85b1a25c083d19b",
+      "type": "extension",
+      "x": 37,
+      "y": 42,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb99cc66e251b8b900ce64",
+      "type": "extension",
+      "x": 37,
+      "y": 43,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb9b9c9f9fcb3faebdc68b",
+      "type": "extension",
+      "x": 36,
+      "y": 44,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb9d517468639b0a8ba96b",
+      "type": "extension",
+      "x": 36,
+      "y": 45,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bb9ed77b192771e8c568d6",
+      "type": "extension",
+      "x": 37,
+      "y": 45,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bba14036f813260fa05f49",
+      "type": "extension",
+      "x": 38,
+      "y": 46,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bba3804e57af14c71c7dd6",
+      "type": "extension",
+      "x": 37,
+      "y": 46,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bba57c54bd66310db96f11",
+      "type": "extension",
+      "x": 38,
+      "y": 44,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bba725f8da016232ebe619",
+      "type": "extension",
+      "x": 38,
+      "y": 43,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bbab2f069fad7b758cb620",
+      "type": "extension",
+      "x": 39,
+      "y": 43,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bbacf8ff3a824087f75a89",
+      "type": "extension",
+      "x": 39,
+      "y": 45,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bbaf2497507786e995db42",
+      "type": "extension",
+      "x": 40,
+      "y": 45,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bbb10fc092743e6e1a0a7c",
+      "type": "extension",
+      "x": 40,
+      "y": 44,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69bbb3dc2cc8ccd58b495428",
+      "type": "extension",
+      "x": 39,
+      "y": 46,
+      "store": {
+        "energy": 200
+      }
+    },
+    {
+      "_id": "69c001dfa0a4e9305380b087",
+      "type": "tower",
+      "x": 24,
+      "y": 42,
+      "store": {
+        "energy": 1000
+      }
+    },
+    {
+      "_id": "6ae520bc3899322b31451a29",
+      "type": "creep",
+      "x": 6,
+      "y": 39,
+      "store": {
+        "energy": 0
+      },
+      "storeCapacity": 50,
+      "name": "miningHauler_1dzt8z_8",
+      "spawning": false,
+      "memory": {
+        "a": "miningHauler",
+        "h": "W43S28",
+        "s": "init",
+        "b": "mlane:5bbcaab19099fc012e632012",
+        "m": "mlane:5bbcaab19099fc012e632012",
+        "t": {
+          "a": "mlane",
+          "i": "mlane:5bbcaab19099fc012e632012"
+        }
+      },
+      "body": [
+        "carry",
+        "move"
+      ],
+      "ttl": 54
+    },
+    {
+      "_id": "6ae523286cc493f95242b0db",
+      "type": "creep",
+      "x": 33,
+      "y": 11,
+      "store": {
+        "energy": 0
+      },
+      "storeCapacity": 50,
+      "name": "miningHauler_1dztde_97",
+      "spawning": false,
+      "memory": {
+        "a": "miningHauler",
+        "h": "W43S28",
+        "s": "init",
+        "b": "mlane:5bbcaab19099fc012e632010",
+        "m": "mlane:5bbcaab19099fc012e632010",
+        "t": {
+          "a": "mlane",
+          "i": "mlane:5bbcaab19099fc012e632010"
+        }
+      },
+      "body": [
+        "carry",
+        "move"
+      ],
+      "ttl": 213
+    },
+    {
+      "_id": "6ae5292d00d62bb38cc0ba96",
+      "type": "creep",
+      "x": 25,
+      "y": 39,
+      "store": {
+        "energy": 0
+      },
+      "storeCapacity": 1250,
+      "name": "hauler_1dzto9_87",
+      "spawning": false,
+      "memory": {
+        "a": "hauler",
+        "h": "W43S28"
+      },
+      "body": [
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "carry",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move",
+        "move"
+      ],
+      "ttl": 748
+    },
+    {
+      "_id": "6ae52f528297c6657a32f76f",
+      "type": "creep",
+      "x": 7,
+      "y": 39,
+      "store": {
+        "energy": 14
+      },
+      "storeCapacity": 50,
+      "name": "miner_1dztze_29",
+      "spawning": false,
+      "memory": {
+        "a": "miner",
+        "h": "W43S28",
+        "s": "gathering",
+        "b": "harvest:W43S28:5bbcaab19099fc012e632012:0",
+        "m": "harvest:5bbcaab19099fc012e632012",
+        "t": {
+          "a": "harvest",
+          "i": "5bbcaab19099fc012e632012"
+        }
+      },
+      "body": [
+        "work",
+        "work",
+        "work",
+        "work",
+        "work",
+        "work",
+        "work",
+        "carry",
+        "move"
+      ],
+      "ttl": 1026
+    },
+    {
+      "_id": "6ae5333e06b34797f5557c95",
+      "type": "creep",
+      "x": 31,
+      "y": 10,
+      "store": {
+        "energy": 0
+      },
+      "storeCapacity": 50,
+      "name": "miner_1dzu6d_78",
+      "spawning": false,
+      "memory": {
+        "a": "miner",
+        "h": "W43S28",
+        "s": "init",
+        "b": "harvest:W43S28:5bbcaab19099fc012e632010:0",
+        "m": "harvest:5bbcaab19099fc012e632010",
+        "t": {
+          "a": "move",
+          "i": "698c4b33f10abd1afd9abeb5",
+          "n": 1
+        }
+      },
+      "body": [
+        "work",
+        "work",
+        "work",
+        "work",
+        "work",
+        "work",
+        "work",
+        "carry",
+        "move"
+      ],
+      "ttl": 1277
+    }
+  ],
+  "provenance": "Read-only Screeps API snapshot, 2026-10-31 ~08:32 MYT; terrain captured separately."
+}

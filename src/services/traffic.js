@@ -3,6 +3,7 @@
 
 const cache = require('./cache');
 const roomData = require('./roomData');
+const miningStations = require('./miningStations');
 
 /**
  * Traffic management (port of v1 traffic/screeps-traffic-manager + trafficAdapter,
@@ -66,6 +67,8 @@ function register(creep, dir) {
     if (d) {
         const x = creep.pos.x + d[0];
         const y = creep.pos.y + d[1];
+        const owner = miningStations.reserved(creep.pos.roomName)[`${x}:${y}:${creep.pos.roomName}`];
+        if (owner && owner !== creep.name) return ERR_BUSY;
         if (x >= 0 && x <= 49 && y >= 0 && y <= 49) roomState(creep.pos.roomName).intent.set(creep.name, pack(x, y));
     }
     return creep.move(dir);
@@ -126,8 +129,10 @@ function resolve(room) {
     const canMove = (c) => c.fatigue === 0 && !st.pinned.has(c.name) && c.getActiveBodyparts(MOVE) > 0;
 
     /** @param {number} x @param {number} y */
-    const valid = (x, y) => x > 0 && x < 49 && y > 0 && y < 49 &&
-        terrain.get(x, y) !== TERRAIN_MASK_WALL && costs.get(x, y) < 255;
+    const reserved = miningStations.reserved(room.name);
+    const valid = (x, y, c) => x > 0 && x < 49 && y > 0 && y < 49 &&
+        terrain.get(x, y) !== TERRAIN_MASK_WALL && costs.get(x, y) < 255 &&
+        (!reserved[`${x}:${y}:${room.name}`] || reserved[`${x}:${y}:${room.name}`] === c.name);
 
     /** @param {Creep} c @returns {number[]} */
     const possibleMoves = (c) => {
@@ -138,7 +143,7 @@ function resolve(room) {
         if (canMove(c)) {
             const want = st.intent.get(c.name);
             if (want !== undefined) {
-                out.push(want);
+                if (valid(want % 50, Math.floor(want / 50), c)) out.push(want);
             } else {
                 const area = st.area.get(c.name);
                 const later = [];
@@ -147,7 +152,7 @@ function resolve(room) {
                     const d = /** @type {number[]} */ (DELTA[1 + ((start + i) % 8)]);
                     const x = c.pos.x + d[0];
                     const y = c.pos.y + d[1];
-                    if (!valid(x, y)) continue;
+                    if (!valid(x, y, c)) continue;
                     if (area && Math.max(Math.abs(area.x - x), Math.abs(area.y - y)) > area.range) later.push(pack(x, y));
                     else out.push(pack(x, y));
                 }
