@@ -1,6 +1,7 @@
 // @ts-check
 'use strict';
 
+const ledger = require('./ledger');
 const cache = require('./cache');
 const labs = require('./labs');
 
@@ -28,7 +29,7 @@ const labs = require('./labs');
  *            terminalStock: number, orderSize: number, orderRefresh: number,
  *            historyDays: number, longDays: number, longShare: number, minTrades: number,
  *            bandLow: number, bandHigh: number, minListing: number, maxDropPerDay: number,
- *            productMargin: number, buy?: import('./marketBuy').BuyConfig}} MarketConfig
+ *            productMargin: number, energyExport?: import('./energyExport').ExportConfig, buy?: import('./marketBuy').BuyConfig}} MarketConfig
  * @typedef {{date: string, avgPrice: number, volume: number, transactions?: number}} HistoryDay
  * @typedef {{id: string, price: number, amount: number, remainingAmount?: number, roomName?: string}} Order
  * @typedef {{ref: number|null, recent: number|null, median: number|null, trades: number, liquid: boolean}} Reference
@@ -266,22 +267,35 @@ function roomStock(room, res) {
 /**
  * Terminal stock targets a room needs for what it sells: {resource: amount}.
  * @param {Room} room @param {MarketConfig} cfg
+ * @param {import('./ledger').Ledger} [inFlight]
+ * @param {import('./labs').LabConfig} [labCfg]
  * @returns {Record<string, number>}
  */
-function stockFor(room, cfg) {
+function stockFor(room, cfg, inFlight, labCfg) {
     /** @type {Record<string, number>} */
     const out = {};
     if (!cfg || !cfg.enabled || !room.terminal) return out;
     for (const res of Object.keys(cfg.sell || {})) {
         const spec = cfg.sell[res];
         if (res === RESOURCE_ENERGY || !spec) continue;
-        const n = terminalStock(roomStock(room, res) - spec.keep, cfg.terminalStock);
+        const have = inFlight ? [room.storage, room.terminal].reduce((n, s) => n + (s ? ledger.effective(inFlight, s, res) : 0), 0) : roomStock(room, res);
+        const n = terminalStock(have - sellKeep(spec, res, room.name, labCfg), cfg.terminalStock);
         if (n > 0) out[res] = n;
     }
     return out;
 }
 
+/** Retain purposeful production stock when advertising or executing sales.
+ * @param {SellSpec} spec @param {string} res @param {string} room
+ * @param {import('./labs').LabConfig} [labCfg]
+ */
+function sellKeep(spec, res, room, labCfg) {
+    const p = labCfg && labs.configFor(labCfg, room).production;
+    return Math.max(spec.keep, p && p.stock[res] || 0);
+}
+
 module.exports = {
+    sellKeep,
     historyOf, avgPrice, median, reference, intrinsic, rawFloor, limitDrop, cleanBook, depthPrice,
     orderPrice, bestDeal, profitable, valuer, terminalStock, roomStock, stockFor, UNDERCUT, TICKS_PER_DAY
 };
