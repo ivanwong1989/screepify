@@ -3,6 +3,7 @@
 
 const movement = require('../services/movement');
 const traffic = require('../services/traffic');
+const miningHealth = require('../services/miningHealth');
 const { unpack } = require('../services/pos');
 const { CONTINUE, DONE, SKIP } = require('../contracts/task');
 
@@ -82,6 +83,7 @@ const actions = {
         traffic.pin(creep);
         const r = creep.harvest(src);
         if (r === OK) {
+            if (creep.memory.a === 'miner') miningHealth.harvested(src.id, work(creep) * HARVEST_POWER, src.energy);
             const cap = creep.store.getCapacity();
             if (cap > 0 && creep.store.getFreeCapacity() <= work(creep) * HARVEST_POWER) return DONE;
             return CONTINUE;

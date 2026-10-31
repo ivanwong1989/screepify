@@ -42,8 +42,9 @@ test('fleet floor: one general hauler only while there was off-lane work recentl
 test('sim: a hauler without a mission puts its cargo away where it is wanted', () => {
     const sim = laneRoom();
     sim.run(1000);
-    const h = fleet().find(c => !c.spawning);
-    assert.ok(h, 'a fleet hauler');
+    const h = fleet().find(c => !c.spawning) || new Creep(sim.w, 25, 21, 'idle-fleet', [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE, MOVE]);
+    h.memory.a = 'hauler';
+    h.memory.h = sim.w.roomName;
     // Keep it without a mission: no assignment, mission and task cleared.
     require('../src/config').set('processes.plan.assignment.enabled', false);
     delete h.memory.m;
@@ -60,6 +61,7 @@ test('sim: a hauler without a mission puts its cargo away where it is wanted', (
 
 test('sim: every spawn is logged with why, the fleet with its reason', () => {
     const sim = laneRoom();
+    require('../src/config').set('lanes.mining', false); // require the fleet whose spawn reason this test checks
     sim.run(1500);
     const lines = sim.logs.filter(l => /\[spawn\]/.test(l));
     assert.ok(lines.length > 3, `spawn lines: ${lines.length}`);

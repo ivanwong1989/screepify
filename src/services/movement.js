@@ -5,6 +5,7 @@ const cache = require('./cache');
 const roomData = require('./roomData');
 const { isExit } = require('./pos');
 const traffic = require('./traffic');
+const miningStations = require('./miningStations');
 
 /**
  * Movement library (DESIGN §11.1), built on Traveler's ideas:
@@ -128,7 +129,19 @@ function findPath(origin, dest, range, withCreeps) {
             if (allowed && !allowed.has(roomName)) return false;
             const room = Game.rooms[roomName];
             if (!room) return undefined;
-            return withCreeps && roomName === origin.roomName ? creepMatrix(room) : structureMatrix(room);
+            const base = withCreeps && roomName === origin.roomName ? creepMatrix(room) : structureMatrix(room);
+                const reserved = miningStations.reserved(roomName);
+                const keys = Object.keys(reserved);
+                if (!keys.length) return base;
+                const matrix = base.clone();
+                for (const key of keys) {
+                    const parts = key.split(':');
+                    const x = Number(parts[0]), y = Number(parts[1]);
+                    if ((roomName === origin.roomName && origin.x === x && origin.y === y) ||
+                        (roomName === dest.roomName && dest.x === x && dest.y === y)) continue;
+                    matrix.set(x, y, 255);
+                }
+                return matrix;
         }
     });
     return serialize(origin, ret.path);

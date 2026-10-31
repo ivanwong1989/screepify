@@ -95,13 +95,13 @@ function staticInfo(room) {
 }
 
 /**
- * Container/link placement, recomputed when the structure count changes.
+ * Container/link placement, recomputed when relevant objects change identity.
  * @param {Room} room
  */
 function placementInfo(room) {
     const store = cache.store('intel.placement');
-    const structs = roomData.structures(room);
-    const sig = structs.length;
+    const relevant = roomData.byType(room, STRUCTURE_CONTAINER).concat(/** @type {any} */ (roomData.byType(room, STRUCTURE_LINK)));
+    const sig = relevant.map(s => `${s.id}:${s.pos.x}:${s.pos.y}`).sort().join('|');
     const cached = store[room.name];
     if (cached && cached.sig === sig) return cached;
 
