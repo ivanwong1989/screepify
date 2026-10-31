@@ -1,0 +1,5316 @@
+{
+  "provenance": "Read-only Screeps shard3 snapshot, 31 October 2026 ~15:41 MYT; market books fetched separately. Replay only; no network writes.",
+  "tick": 83979988,
+  "credits": 297584639.032,
+  "rooms": {
+    "W43S28": [
+      {
+        "_id": "6988037ccc6e320f81eeb921",
+        "type": "storage",
+        "x": 24,
+        "y": 40,
+        "store": {
+          "energy": 470809,
+          "GO": 1540,
+          "ZH": 289,
+          "UH": 83,
+          "KO": 191,
+          "O": 99827
+        },
+        "storeCapacity": 1000000
+      },
+      {
+        "_id": "69b0d2c8f9a3ce77ba2b76a5",
+        "type": "terminal",
+        "x": 22,
+        "y": 39,
+        "store": {
+          "energy": 20000,
+          "O": 173
+        },
+        "storeCapacity": 300000,
+        "cooldownTime": 83979732
+      }
+    ],
+    "W44S28": [
+      {
+        "_id": "698587656c93e1e4b241a6a9",
+        "type": "storage",
+        "x": 29,
+        "y": 22,
+        "store": {
+          "energy": 467159,
+          "O": 99085,
+          "LO": 5500,
+          "L": 0,
+          "G": 0,
+          "GO": 1,
+          "ZH": 0,
+          "H": 0,
+          "Z": 0,
+          "OH": 4635,
+          "GHO2": 17545,
+          "LHO2": 1865,
+          "ZO": 33526,
+          "XLHO2": 6835,
+          "XGHO2": 7310,
+          "X": 0,
+          "UO": 40000,
+          "UH": 684,
+          "K": 91780,
+          "KO": 10350,
+          "KHO2": 12120,
+          "ZK": 500
+        },
+        "storeCapacity": 1000000
+      },
+      {
+        "_id": "698c06ef98977e00dface3bc",
+        "type": "terminal",
+        "x": 31,
+        "y": 22,
+        "store": {
+          "energy": 18750,
+          "O": 915,
+          "L": 5000,
+          "G": 5000,
+          "LO": 0,
+          "GO": 0,
+          "H": 7358,
+          "ZH": 5000,
+          "Z": 10360,
+          "OH": 0,
+          "GHO2": 0,
+          "LHO2": 0,
+          "XLHO2": 0,
+          "XGHO2": 0,
+          "X": 5000,
+          "ZO": 0,
+          "UO": 0,
+          "UH": 0,
+          "K": 5250,
+          "KO": 10000
+        },
+        "storeCapacity": 300000,
+        "cooldownTime": 83978332
+      },
+      {
+        "_id": "6996237db70254a13c61b0c8",
+        "type": "lab",
+        "x": 35,
+        "y": 18,
+        "store": {
+          "energy": 2000,
+          "L": 0,
+          "G": 0,
+          "ZH": 0,
+          "LO": 0,
+          "H": 0,
+          "GO": 0,
+          "O": 0,
+          "Z": 0,
+          "UH": 0,
+          "X": 0,
+          "K": 1000,
+          "KO": 0
+        },
+        "storeCapacity": null,
+        "storeCapacityResource": {
+          "energy": 2000,
+          "L": null,
+          "G": null,
+          "ZH": null,
+          "LO": null,
+          "H": null,
+          "GO": null,
+          "O": null,
+          "Z": null,
+          "UH": null,
+          "X": null,
+          "K": 3000,
+          "KO": null
+        },
+        "cooldownTime": 78928240
+      },
+      {
+        "_id": "699645fe4596f843109cb04b",
+        "type": "lab",
+        "x": 35,
+        "y": 17,
+        "store": {
+          "energy": 2000,
+          "LO": 0,
+          "GO": 0,
+          "H": 0,
+          "OH": 0,
+          "GHO2": 0,
+          "LHO2": 0,
+          "ZO": 0,
+          "Z": 0,
+          "XGHO2": 0,
+          "XLHO2": 0,
+          "ZH": 0,
+          "O": 0
+        },
+        "storeCapacity": 5000,
+        "storeCapacityResource": {
+          "energy": 2000,
+          "LO": null,
+          "GO": null,
+          "H": null,
+          "OH": null,
+          "GHO2": null,
+          "LHO2": null,
+          "ZO": null,
+          "Z": null,
+          "XGHO2": null,
+          "XLHO2": null,
+          "ZH": null,
+          "O": null
+        },
+        "cooldownTime": 78928885
+      },
+      {
+        "_id": "6996db7f31789b4f3eb76e00",
+        "type": "lab",
+        "x": 36,
+        "y": 17,
+        "store": {
+          "energy": 2000,
+          "O": 0,
+          "Z": 0,
+          "OH": 0,
+          "H": 0,
+          "LHO2": 0,
+          "GHO2": 0,
+          "ZH": 0,
+          "KO": 0,
+          "KHO2": 0,
+          "LO": 0,
+          "ZK": 0
+        },
+        "storeCapacity": 5000,
+        "storeCapacityResource": {
+          "energy": 2000,
+          "O": null,
+          "Z": null,
+          "OH": null,
+          "H": null,
+          "LHO2": null,
+          "GHO2": null,
+          "ZH": null,
+          "KO": null,
+          "KHO2": null,
+          "LO": null,
+          "ZK": null
+        },
+        "cooldownTime": 83963643
+      },
+      {
+        "_id": "69a01e8850c5d1671cc6ff92",
+        "type": "lab",
+        "x": 36,
+        "y": 19,
+        "store": {
+          "energy": 2000,
+          "LO": 0,
+          "GO": 0,
+          "GHO2": 0,
+          "LHO2": 0,
+          "OH": 0,
+          "H": 0,
+          "ZO": 0,
+          "XLHO2": 0,
+          "ZH": 0,
+          "XGHO2": 0,
+          "KO": 0,
+          "KHO2": 0,
+          "ZK": 0
+        },
+        "storeCapacity": 5000,
+        "storeCapacityResource": {
+          "energy": 2000,
+          "LO": null,
+          "GO": null,
+          "GHO2": null,
+          "LHO2": null,
+          "OH": null,
+          "H": null,
+          "ZO": null,
+          "XLHO2": null,
+          "ZH": null,
+          "XGHO2": null,
+          "KO": null,
+          "KHO2": null,
+          "ZK": null
+        },
+        "cooldownTime": 83963641
+      },
+      {
+        "_id": "69a03086d48d03d02d03bc29",
+        "type": "lab",
+        "x": 37,
+        "y": 19,
+        "store": {
+          "energy": 2000,
+          "GO": 0,
+          "LO": 0,
+          "GHO2": 0,
+          "LHO2": 0,
+          "OH": 0,
+          "Z": 0,
+          "ZO": 0,
+          "XGHO2": 0,
+          "ZH": 0,
+          "XLHO2": 0,
+          "KO": 0,
+          "KHO2": 0,
+          "ZK": 0
+        },
+        "storeCapacity": 5000,
+        "storeCapacityResource": {
+          "energy": 2000,
+          "GO": null,
+          "LO": null,
+          "GHO2": null,
+          "LHO2": null,
+          "OH": null,
+          "Z": null,
+          "ZO": null,
+          "XGHO2": null,
+          "ZH": null,
+          "XLHO2": null,
+          "KO": null,
+          "KHO2": null,
+          "ZK": null
+        },
+        "cooldownTime": 83963645
+      },
+      {
+        "_id": "69a043ddd42f855c45903156",
+        "type": "lab",
+        "x": 37,
+        "y": 18,
+        "store": {
+          "energy": 2000,
+          "OH": 0,
+          "LO": 0,
+          "GHO2": 0,
+          "ZO": 0,
+          "Z": 0,
+          "GO": 0,
+          "XGHO2": 0,
+          "XLHO2": 0,
+          "KO": 0,
+          "KHO2": 0,
+          "ZK": 0
+        },
+        "storeCapacity": 5000,
+        "storeCapacityResource": {
+          "energy": 2000,
+          "OH": null,
+          "LO": null,
+          "GHO2": null,
+          "ZO": null,
+          "Z": null,
+          "GO": null,
+          "XGHO2": null,
+          "XLHO2": null,
+          "KO": null,
+          "KHO2": null,
+          "ZK": null
+        },
+        "cooldownTime": 83963644
+      }
+    ],
+    "W44S29": [
+      {
+        "_id": "69bd4cd67f4c36b2d1dc4138",
+        "type": "storage",
+        "x": 31,
+        "y": 9,
+        "store": {
+          "energy": 329602,
+          "K": 447965
+        },
+        "storeCapacity": 1000000
+      },
+      {
+        "_id": "69c133edadd9c6846c94a631",
+        "type": "terminal",
+        "x": 32,
+        "y": 9,
+        "store": {
+          "energy": 21940,
+          "K": 10000
+        },
+        "storeCapacity": 300000,
+        "cooldownTime": 81335065
+      }
+    ]
+  },
+  "orders": [
+    {
+      "_id": "6adf812e03f2d30013b5dd04",
+      "type": "sell",
+      "resourceType": "KO",
+      "price": 33.672,
+      "remainingAmount": 5000,
+      "amount": 5000,
+      "roomName": "W44S28",
+      "created": 83886898
+    },
+    {
+      "_id": "6ae41c8103f2d30013ceb212",
+      "type": "sell",
+      "resourceType": "K",
+      "price": 11.403,
+      "remainingAmount": 5000,
+      "amount": 5000,
+      "roomName": "W44S29",
+      "created": 83955448
+    }
+  ],
+  "histories": {
+    "energy": [
+      {
+        "_id": "6ae597e45fc238e6e13ead2a",
+        "resourceType": "energy",
+        "date": "2026-10-31",
+        "transactions": 7022,
+        "volume": 53001038,
+        "avgPrice": 33.583,
+        "stddevPrice": 1373.344
+      },
+      {
+        "_id": "6ae597e45fc23862fc3ead29",
+        "resourceType": "energy",
+        "date": "2026-10-30",
+        "transactions": 21152,
+        "volume": 164864556,
+        "avgPrice": 14.373,
+        "stddevPrice": 14.968
+      },
+      {
+        "_id": "6ae597e45fc23895b33ead28",
+        "resourceType": "energy",
+        "date": "2026-10-29",
+        "transactions": 17512,
+        "volume": 146990748,
+        "avgPrice": 15.345,
+        "stddevPrice": 16.213
+      },
+      {
+        "_id": "6ae597e45fc238046a3ead27",
+        "resourceType": "energy",
+        "date": "2026-10-28",
+        "transactions": 17489,
+        "volume": 148572304,
+        "avgPrice": 18.24,
+        "stddevPrice": 19.715
+      },
+      {
+        "_id": "6ae597e45fc2389ac53ead26",
+        "resourceType": "energy",
+        "date": "2026-10-27",
+        "transactions": 17960,
+        "volume": 150703917,
+        "avgPrice": 18.469,
+        "stddevPrice": 19.301
+      },
+      {
+        "_id": "6ae597e45fc2388bd83ead25",
+        "resourceType": "energy",
+        "date": "2026-10-26",
+        "transactions": 17698,
+        "volume": 148594842,
+        "avgPrice": 24.736,
+        "stddevPrice": 820.407
+      },
+      {
+        "_id": "6ae597e45fc23840a83ead24",
+        "resourceType": "energy",
+        "date": "2026-10-25",
+        "transactions": 18796,
+        "volume": 154154503,
+        "avgPrice": 18.575,
+        "stddevPrice": 19.739
+      },
+      {
+        "_id": "6ae597e45fc23802803ead23",
+        "resourceType": "energy",
+        "date": "2026-10-24",
+        "transactions": 18738,
+        "volume": 150831496,
+        "avgPrice": 18.133,
+        "stddevPrice": 19.369
+      },
+      {
+        "_id": "6ae597e45fc238cad13ead22",
+        "resourceType": "energy",
+        "date": "2026-10-23",
+        "transactions": 18390,
+        "volume": 150176630,
+        "avgPrice": 24.513,
+        "stddevPrice": 816.07
+      },
+      {
+        "_id": "6ae597e45fc238972d3ead21",
+        "resourceType": "energy",
+        "date": "2026-10-22",
+        "transactions": 18324,
+        "volume": 148169902,
+        "avgPrice": 17.928,
+        "stddevPrice": 19.168
+      },
+      {
+        "_id": "6ae597e45fc2381d123ead20",
+        "resourceType": "energy",
+        "date": "2026-10-21",
+        "transactions": 18125,
+        "volume": 144570739,
+        "avgPrice": 17.523,
+        "stddevPrice": 19.407
+      },
+      {
+        "_id": "6ae597e45fc238bea03ead1f",
+        "resourceType": "energy",
+        "date": "2026-10-20",
+        "transactions": 17975,
+        "volume": 150844072,
+        "avgPrice": 22.836,
+        "stddevPrice": 814.232
+      },
+      {
+        "_id": "6ae597e45fc238e4073ead1e",
+        "resourceType": "energy",
+        "date": "2026-10-19",
+        "transactions": 19289,
+        "volume": 155169816,
+        "avgPrice": 16.583,
+        "stddevPrice": 17.952
+      },
+      {
+        "_id": "6ae597e45fc238a7893ead1d",
+        "resourceType": "energy",
+        "date": "2026-10-18",
+        "transactions": 18685,
+        "volume": 149861049,
+        "avgPrice": 15.47,
+        "stddevPrice": 16.787
+      },
+      {
+        "_id": "6ae597e45fc2384bf13ead1c",
+        "resourceType": "energy",
+        "date": "2026-10-17",
+        "transactions": 14157,
+        "volume": 113223140,
+        "avgPrice": 17.65,
+        "stddevPrice": 18.398
+      }
+    ],
+    "K": [
+      {
+        "_id": "6ae597e45fc238a6a73eadce",
+        "resourceType": "K",
+        "date": "2026-10-31",
+        "transactions": 192,
+        "volume": 293356,
+        "avgPrice": 9.039,
+        "stddevPrice": 5.299
+      },
+      {
+        "_id": "6ae597e45fc23818773eadcd",
+        "resourceType": "K",
+        "date": "2026-10-30",
+        "transactions": 1097,
+        "volume": 1211459,
+        "avgPrice": 10.718,
+        "stddevPrice": 4.781
+      },
+      {
+        "_id": "6ae597e45fc238940d3eadcc",
+        "resourceType": "K",
+        "date": "2026-10-29",
+        "transactions": 880,
+        "volume": 1092906,
+        "avgPrice": 10.003,
+        "stddevPrice": 4.836
+      },
+      {
+        "_id": "6ae597e45fc2387b2c3eadcb",
+        "resourceType": "K",
+        "date": "2026-10-28",
+        "transactions": 956,
+        "volume": 1008453,
+        "avgPrice": 13.144,
+        "stddevPrice": 5.549
+      },
+      {
+        "_id": "6ae597e45fc238089f3eadca",
+        "resourceType": "K",
+        "date": "2026-10-27",
+        "transactions": 1074,
+        "volume": 1458984,
+        "avgPrice": 14.54,
+        "stddevPrice": 4.037
+      },
+      {
+        "_id": "6ae597e45fc2384c5c3eadc9",
+        "resourceType": "K",
+        "date": "2026-10-26",
+        "transactions": 1160,
+        "volume": 1267439,
+        "avgPrice": 14.529,
+        "stddevPrice": 4.609
+      },
+      {
+        "_id": "6ae597e45fc2387aa23eadc8",
+        "resourceType": "K",
+        "date": "2026-10-25",
+        "transactions": 1157,
+        "volume": 938816,
+        "avgPrice": 14.625,
+        "stddevPrice": 4.447
+      },
+      {
+        "_id": "6ae597e45fc23864483eadc7",
+        "resourceType": "K",
+        "date": "2026-10-24",
+        "transactions": 1208,
+        "volume": 1284136,
+        "avgPrice": 16.632,
+        "stddevPrice": 4.611
+      },
+      {
+        "_id": "6ae597e45fc23821d73eadc6",
+        "resourceType": "K",
+        "date": "2026-10-23",
+        "transactions": 1129,
+        "volume": 1392618,
+        "avgPrice": 13.861,
+        "stddevPrice": 5.159
+      },
+      {
+        "_id": "6ae597e45fc2385b833eadc5",
+        "resourceType": "K",
+        "date": "2026-10-22",
+        "transactions": 954,
+        "volume": 1063598,
+        "avgPrice": 11.766,
+        "stddevPrice": 3.644
+      },
+      {
+        "_id": "6ae597e45fc238a1ec3eadc4",
+        "resourceType": "K",
+        "date": "2026-10-21",
+        "transactions": 1186,
+        "volume": 1103641,
+        "avgPrice": 13.433,
+        "stddevPrice": 4.762
+      },
+      {
+        "_id": "6ae597e45fc238337b3eadc3",
+        "resourceType": "K",
+        "date": "2026-10-20",
+        "transactions": 1183,
+        "volume": 1358427,
+        "avgPrice": 16.476,
+        "stddevPrice": 5.738
+      },
+      {
+        "_id": "6ae597e45fc2382c2f3eadc2",
+        "resourceType": "K",
+        "date": "2026-10-19",
+        "transactions": 1165,
+        "volume": 1208808,
+        "avgPrice": 17.473,
+        "stddevPrice": 5.67
+      },
+      {
+        "_id": "6ae597e45fc23819ea3eadc1",
+        "resourceType": "K",
+        "date": "2026-10-18",
+        "transactions": 1537,
+        "volume": 1454940,
+        "avgPrice": 15.18,
+        "stddevPrice": 4.616
+      },
+      {
+        "_id": "6ae597e45fc238b8c93eadc0",
+        "resourceType": "K",
+        "date": "2026-10-17",
+        "transactions": 927,
+        "volume": 1064081,
+        "avgPrice": 13.548,
+        "stddevPrice": 4.667
+      }
+    ],
+    "O": [
+      {
+        "_id": "6ae597e45fc23802443ead83",
+        "resourceType": "O",
+        "date": "2026-10-31",
+        "transactions": 868,
+        "volume": 676362,
+        "avgPrice": 23.309,
+        "stddevPrice": 12.249
+      },
+      {
+        "_id": "6ae597e45fc238c7793ead82",
+        "resourceType": "O",
+        "date": "2026-10-30",
+        "transactions": 3170,
+        "volume": 2816092,
+        "avgPrice": 21.722,
+        "stddevPrice": 9.459
+      },
+      {
+        "_id": "6ae597e45fc238af373ead81",
+        "resourceType": "O",
+        "date": "2026-10-29",
+        "transactions": 2743,
+        "volume": 2611001,
+        "avgPrice": 20.94,
+        "stddevPrice": 9.554
+      },
+      {
+        "_id": "6ae597e45fc23841683ead80",
+        "resourceType": "O",
+        "date": "2026-10-28",
+        "transactions": 1881,
+        "volume": 2079485,
+        "avgPrice": 17.04,
+        "stddevPrice": 10.037
+      },
+      {
+        "_id": "6ae597e45fc23808723ead7f",
+        "resourceType": "O",
+        "date": "2026-10-27",
+        "transactions": 2473,
+        "volume": 2490004,
+        "avgPrice": 17.17,
+        "stddevPrice": 8.95
+      },
+      {
+        "_id": "6ae597e45fc238007c3ead7e",
+        "resourceType": "O",
+        "date": "2026-10-26",
+        "transactions": 1966,
+        "volume": 2789447,
+        "avgPrice": 17.768,
+        "stddevPrice": 9.861
+      },
+      {
+        "_id": "6ae597e45fc23837493ead7d",
+        "resourceType": "O",
+        "date": "2026-10-25",
+        "transactions": 1834,
+        "volume": 2332932,
+        "avgPrice": 14.218,
+        "stddevPrice": 10.344
+      },
+      {
+        "_id": "6ae597e45fc23873d23ead7c",
+        "resourceType": "O",
+        "date": "2026-10-24",
+        "transactions": 2296,
+        "volume": 2961948,
+        "avgPrice": 17.322,
+        "stddevPrice": 10.42
+      },
+      {
+        "_id": "6ae597e45fc23838023ead7b",
+        "resourceType": "O",
+        "date": "2026-10-23",
+        "transactions": 1761,
+        "volume": 2829560,
+        "avgPrice": 15.902,
+        "stddevPrice": 10.509
+      },
+      {
+        "_id": "6ae597e45fc23865253ead7a",
+        "resourceType": "O",
+        "date": "2026-10-22",
+        "transactions": 1332,
+        "volume": 2258429,
+        "avgPrice": 13.752,
+        "stddevPrice": 12.649
+      },
+      {
+        "_id": "6ae597e45fc2386b103ead79",
+        "resourceType": "O",
+        "date": "2026-10-21",
+        "transactions": 1822,
+        "volume": 2432057,
+        "avgPrice": 17.827,
+        "stddevPrice": 13.713
+      },
+      {
+        "_id": "6ae597e45fc238987f3ead78",
+        "resourceType": "O",
+        "date": "2026-10-20",
+        "transactions": 2232,
+        "volume": 2660848,
+        "avgPrice": 20.782,
+        "stddevPrice": 12.65
+      },
+      {
+        "_id": "6ae597e45fc23819783ead77",
+        "resourceType": "O",
+        "date": "2026-10-19",
+        "transactions": 2498,
+        "volume": 2568489,
+        "avgPrice": 21.921,
+        "stddevPrice": 14.85
+      },
+      {
+        "_id": "6ae597e45fc238d5483ead76",
+        "resourceType": "O",
+        "date": "2026-10-18",
+        "transactions": 2784,
+        "volume": 2932708,
+        "avgPrice": 24.334,
+        "stddevPrice": 16.05
+      },
+      {
+        "_id": "6ae597e45fc23887763ead75",
+        "resourceType": "O",
+        "date": "2026-10-17",
+        "transactions": 1853,
+        "volume": 1998841,
+        "avgPrice": 27.992,
+        "stddevPrice": 16.395
+      }
+    ],
+    "KO": [
+      {
+        "_id": "6ae597e45fc238682e3eb162",
+        "resourceType": "KO",
+        "date": "2026-10-30",
+        "transactions": 11,
+        "volume": 10000,
+        "avgPrice": 5.848,
+        "stddevPrice": 0.411
+      },
+      {
+        "_id": "6ae597e45fc2384f4b3eb161",
+        "resourceType": "KO",
+        "date": "2026-10-29",
+        "transactions": 5,
+        "volume": 193,
+        "avgPrice": 20.299,
+        "stddevPrice": 5.482
+      },
+      {
+        "_id": "6ae597e45fc238f1903eb160",
+        "resourceType": "KO",
+        "date": "2026-10-28",
+        "transactions": 2,
+        "volume": 629,
+        "avgPrice": 17.658,
+        "stddevPrice": 1.672
+      },
+      {
+        "_id": "6ae597e45fc23806cb3eb15f",
+        "resourceType": "KO",
+        "date": "2026-10-27",
+        "transactions": 1,
+        "volume": 500,
+        "avgPrice": 35.22,
+        "stddevPrice": 0
+      },
+      {
+        "_id": "6ae597e45fc23827e63eb15e",
+        "resourceType": "KO",
+        "date": "2026-10-23",
+        "transactions": 1,
+        "volume": 51,
+        "avgPrice": 34.871,
+        "stddevPrice": 0
+      },
+      {
+        "_id": "6ae597e45fc23861543eb15d",
+        "resourceType": "KO",
+        "date": "2026-10-22",
+        "transactions": 1,
+        "volume": 119,
+        "avgPrice": 35.537,
+        "stddevPrice": 0
+      },
+      {
+        "_id": "6ae597e45fc238c13a3eb15c",
+        "resourceType": "KO",
+        "date": "2026-10-19",
+        "transactions": 3,
+        "volume": 252,
+        "avgPrice": 42.418,
+        "stddevPrice": 0.02
+      }
+    ],
+    "Z": [
+      {
+        "_id": "6ae597e45fc238521f3ead39",
+        "resourceType": "Z",
+        "date": "2026-10-31",
+        "transactions": 523,
+        "volume": 300613,
+        "avgPrice": 17.534,
+        "stddevPrice": 3.974
+      },
+      {
+        "_id": "6ae597e45fc23876183ead38",
+        "resourceType": "Z",
+        "date": "2026-10-30",
+        "transactions": 1506,
+        "volume": 1213966,
+        "avgPrice": 15.633,
+        "stddevPrice": 4.205
+      },
+      {
+        "_id": "6ae597e45fc2380c193ead37",
+        "resourceType": "Z",
+        "date": "2026-10-29",
+        "transactions": 1108,
+        "volume": 1043764,
+        "avgPrice": 17.412,
+        "stddevPrice": 3.265
+      },
+      {
+        "_id": "6ae597e45fc238a2c23ead36",
+        "resourceType": "Z",
+        "date": "2026-10-28",
+        "transactions": 1432,
+        "volume": 1132754,
+        "avgPrice": 17.987,
+        "stddevPrice": 4.44
+      },
+      {
+        "_id": "6ae597e45fc238aae93ead35",
+        "resourceType": "Z",
+        "date": "2026-10-27",
+        "transactions": 1517,
+        "volume": 1239010,
+        "avgPrice": 17.208,
+        "stddevPrice": 3.435
+      },
+      {
+        "_id": "6ae597e45fc23805243ead34",
+        "resourceType": "Z",
+        "date": "2026-10-26",
+        "transactions": 1329,
+        "volume": 962766,
+        "avgPrice": 16.883,
+        "stddevPrice": 3.627
+      },
+      {
+        "_id": "6ae597e45fc23827b73ead33",
+        "resourceType": "Z",
+        "date": "2026-10-25",
+        "transactions": 1399,
+        "volume": 1243412,
+        "avgPrice": 16.281,
+        "stddevPrice": 5.716
+      },
+      {
+        "_id": "6ae597e45fc238b6c63ead32",
+        "resourceType": "Z",
+        "date": "2026-10-24",
+        "transactions": 1403,
+        "volume": 1116553,
+        "avgPrice": 19.096,
+        "stddevPrice": 5.324
+      },
+      {
+        "_id": "6ae597e45fc238a4f73ead31",
+        "resourceType": "Z",
+        "date": "2026-10-23",
+        "transactions": 1487,
+        "volume": 1284503,
+        "avgPrice": 19.197,
+        "stddevPrice": 4.939
+      },
+      {
+        "_id": "6ae597e45fc23833f63ead30",
+        "resourceType": "Z",
+        "date": "2026-10-22",
+        "transactions": 1281,
+        "volume": 1275356,
+        "avgPrice": 17.805,
+        "stddevPrice": 4.694
+      },
+      {
+        "_id": "6ae597e45fc23878dc3ead2f",
+        "resourceType": "Z",
+        "date": "2026-10-21",
+        "transactions": 1534,
+        "volume": 1141506,
+        "avgPrice": 15.057,
+        "stddevPrice": 3.068
+      },
+      {
+        "_id": "6ae597e45fc2388b273ead2e",
+        "resourceType": "Z",
+        "date": "2026-10-20",
+        "transactions": 1432,
+        "volume": 1150546,
+        "avgPrice": 15.856,
+        "stddevPrice": 5.841
+      },
+      {
+        "_id": "6ae597e45fc2386f853ead2d",
+        "resourceType": "Z",
+        "date": "2026-10-19",
+        "transactions": 1648,
+        "volume": 1498310,
+        "avgPrice": 16.923,
+        "stddevPrice": 5.316
+      },
+      {
+        "_id": "6ae597e45fc238c1ab3ead2c",
+        "resourceType": "Z",
+        "date": "2026-10-18",
+        "transactions": 1589,
+        "volume": 1230286,
+        "avgPrice": 14.527,
+        "stddevPrice": 3.384
+      },
+      {
+        "_id": "6ae597e45fc238e2513ead2b",
+        "resourceType": "Z",
+        "date": "2026-10-17",
+        "transactions": 1455,
+        "volume": 959798,
+        "avgPrice": 15.027,
+        "stddevPrice": 5.784
+      }
+    ],
+    "U": [
+      {
+        "_id": "6ae597e45fc2382fd73eae73",
+        "resourceType": "U",
+        "date": "2026-10-31",
+        "transactions": 367,
+        "volume": 379280,
+        "avgPrice": 11.769,
+        "stddevPrice": 3.033
+      },
+      {
+        "_id": "6ae597e45fc23899ca3eae72",
+        "resourceType": "U",
+        "date": "2026-10-30",
+        "transactions": 1765,
+        "volume": 1587490,
+        "avgPrice": 10.706,
+        "stddevPrice": 6.364
+      },
+      {
+        "_id": "6ae597e45fc23812c43eae71",
+        "resourceType": "U",
+        "date": "2026-10-29",
+        "transactions": 1475,
+        "volume": 1406443,
+        "avgPrice": 9.884,
+        "stddevPrice": 6.072
+      },
+      {
+        "_id": "6ae597e45fc2386cf33eae70",
+        "resourceType": "U",
+        "date": "2026-10-28",
+        "transactions": 2086,
+        "volume": 1009215,
+        "avgPrice": 11.017,
+        "stddevPrice": 4.6
+      },
+      {
+        "_id": "6ae597e45fc23890a63eae6f",
+        "resourceType": "U",
+        "date": "2026-10-27",
+        "transactions": 2807,
+        "volume": 1231275,
+        "avgPrice": 11.247,
+        "stddevPrice": 6.554
+      },
+      {
+        "_id": "6ae597e45fc2386ca23eae6e",
+        "resourceType": "U",
+        "date": "2026-10-26",
+        "transactions": 2032,
+        "volume": 1279744,
+        "avgPrice": 10.619,
+        "stddevPrice": 5.785
+      },
+      {
+        "_id": "6ae597e45fc238c9273eae6d",
+        "resourceType": "U",
+        "date": "2026-10-25",
+        "transactions": 1280,
+        "volume": 1137581,
+        "avgPrice": 11.929,
+        "stddevPrice": 5.855
+      },
+      {
+        "_id": "6ae597e45fc2384ade3eae6c",
+        "resourceType": "U",
+        "date": "2026-10-24",
+        "transactions": 1524,
+        "volume": 1053638,
+        "avgPrice": 11.341,
+        "stddevPrice": 4.882
+      },
+      {
+        "_id": "6ae597e45fc23883ad3eae6b",
+        "resourceType": "U",
+        "date": "2026-10-23",
+        "transactions": 2504,
+        "volume": 1188644,
+        "avgPrice": 11.16,
+        "stddevPrice": 6.146
+      },
+      {
+        "_id": "6ae597e45fc23844303eae6a",
+        "resourceType": "U",
+        "date": "2026-10-22",
+        "transactions": 1855,
+        "volume": 1355223,
+        "avgPrice": 12.764,
+        "stddevPrice": 6.571
+      },
+      {
+        "_id": "6ae597e45fc238d6f43eae69",
+        "resourceType": "U",
+        "date": "2026-10-21",
+        "transactions": 1475,
+        "volume": 1158496,
+        "avgPrice": 13.996,
+        "stddevPrice": 7.198
+      },
+      {
+        "_id": "6ae597e45fc238aa673eae68",
+        "resourceType": "U",
+        "date": "2026-10-20",
+        "transactions": 1530,
+        "volume": 1282628,
+        "avgPrice": 13.352,
+        "stddevPrice": 8.499
+      },
+      {
+        "_id": "6ae597e45fc238096f3eae67",
+        "resourceType": "U",
+        "date": "2026-10-19",
+        "transactions": 3133,
+        "volume": 1457271,
+        "avgPrice": 15.776,
+        "stddevPrice": 9.091
+      },
+      {
+        "_id": "6ae597e45fc238cd953eae66",
+        "resourceType": "U",
+        "date": "2026-10-18",
+        "transactions": 3346,
+        "volume": 1569703,
+        "avgPrice": 16.353,
+        "stddevPrice": 8.563
+      },
+      {
+        "_id": "6ae597e45fc238caab3eae65",
+        "resourceType": "U",
+        "date": "2026-10-17",
+        "transactions": 1016,
+        "volume": 924101,
+        "avgPrice": 17.833,
+        "stddevPrice": 8.431
+      }
+    ],
+    "L": [
+      {
+        "_id": "6ae597e45fc23843493eada1",
+        "resourceType": "L",
+        "date": "2026-10-31",
+        "transactions": 523,
+        "volume": 462924,
+        "avgPrice": 122.369,
+        "stddevPrice": 35.49
+      },
+      {
+        "_id": "6ae597e45fc23843363eada0",
+        "resourceType": "L",
+        "date": "2026-10-30",
+        "transactions": 1768,
+        "volume": 1604964,
+        "avgPrice": 114.36,
+        "stddevPrice": 35.201
+      },
+      {
+        "_id": "6ae597e45fc238ee523ead9f",
+        "resourceType": "L",
+        "date": "2026-10-29",
+        "transactions": 2045,
+        "volume": 1564763,
+        "avgPrice": 117.112,
+        "stddevPrice": 40.842
+      },
+      {
+        "_id": "6ae597e45fc238b1a03ead9e",
+        "resourceType": "L",
+        "date": "2026-10-28",
+        "transactions": 2532,
+        "volume": 1332721,
+        "avgPrice": 124.151,
+        "stddevPrice": 35.242
+      },
+      {
+        "_id": "6ae597e45fc23855383ead9d",
+        "resourceType": "L",
+        "date": "2026-10-27",
+        "transactions": 1351,
+        "volume": 1751333,
+        "avgPrice": 130.516,
+        "stddevPrice": 35.834
+      },
+      {
+        "_id": "6ae597e45fc23853e93ead9c",
+        "resourceType": "L",
+        "date": "2026-10-26",
+        "transactions": 1782,
+        "volume": 1764506,
+        "avgPrice": 117.081,
+        "stddevPrice": 36.946
+      },
+      {
+        "_id": "6ae597e45fc238db643ead9b",
+        "resourceType": "L",
+        "date": "2026-10-25",
+        "transactions": 1523,
+        "volume": 1529123,
+        "avgPrice": 102.756,
+        "stddevPrice": 43.516
+      },
+      {
+        "_id": "6ae597e45fc238c3603ead9a",
+        "resourceType": "L",
+        "date": "2026-10-24",
+        "transactions": 1881,
+        "volume": 1781368,
+        "avgPrice": 115.588,
+        "stddevPrice": 41.975
+      },
+      {
+        "_id": "6ae597e45fc238325e3ead99",
+        "resourceType": "L",
+        "date": "2026-10-23",
+        "transactions": 1489,
+        "volume": 1668008,
+        "avgPrice": 130.409,
+        "stddevPrice": 36.348
+      },
+      {
+        "_id": "6ae597e45fc238255c3ead98",
+        "resourceType": "L",
+        "date": "2026-10-22",
+        "transactions": 1382,
+        "volume": 1654331,
+        "avgPrice": 120.443,
+        "stddevPrice": 36.835
+      },
+      {
+        "_id": "6ae597e45fc23806ed3ead97",
+        "resourceType": "L",
+        "date": "2026-10-21",
+        "transactions": 1424,
+        "volume": 1635003,
+        "avgPrice": 117.374,
+        "stddevPrice": 46.295
+      },
+      {
+        "_id": "6ae597e45fc2380d783ead96",
+        "resourceType": "L",
+        "date": "2026-10-20",
+        "transactions": 1385,
+        "volume": 1525722,
+        "avgPrice": 130.884,
+        "stddevPrice": 37.104
+      },
+      {
+        "_id": "6ae597e45fc23898fb3ead95",
+        "resourceType": "L",
+        "date": "2026-10-19",
+        "transactions": 1471,
+        "volume": 1625385,
+        "avgPrice": 145.21,
+        "stddevPrice": 39.305
+      },
+      {
+        "_id": "6ae597e45fc238e52a3ead94",
+        "resourceType": "L",
+        "date": "2026-10-18",
+        "transactions": 1990,
+        "volume": 1656865,
+        "avgPrice": 141.96,
+        "stddevPrice": 41.26
+      },
+      {
+        "_id": "6ae597e45fc2381b543ead93",
+        "resourceType": "L",
+        "date": "2026-10-17",
+        "transactions": 866,
+        "volume": 912235,
+        "avgPrice": 132.439,
+        "stddevPrice": 37.757
+      }
+    ],
+    "ZK": [
+      {
+        "_id": "6ae597e45fc2382ec63eadec",
+        "resourceType": "ZK",
+        "date": "2026-10-31",
+        "transactions": 7,
+        "volume": 2498,
+        "avgPrice": 124.447,
+        "stddevPrice": 16.529
+      },
+      {
+        "_id": "6ae597e45fc23810713eadeb",
+        "resourceType": "ZK",
+        "date": "2026-10-30",
+        "transactions": 25,
+        "volume": 9331,
+        "avgPrice": 161.511,
+        "stddevPrice": 76.538
+      },
+      {
+        "_id": "6ae597e45fc238acac3eadea",
+        "resourceType": "ZK",
+        "date": "2026-10-29",
+        "transactions": 17,
+        "volume": 12555,
+        "avgPrice": 116.982,
+        "stddevPrice": 21.254
+      },
+      {
+        "_id": "6ae597e45fc238d7c13eade9",
+        "resourceType": "ZK",
+        "date": "2026-10-28",
+        "transactions": 64,
+        "volume": 60001,
+        "avgPrice": 104,
+        "stddevPrice": 6.984
+      },
+      {
+        "_id": "6ae597e45fc238f7e93eade8",
+        "resourceType": "ZK",
+        "date": "2026-10-27",
+        "transactions": 42,
+        "volume": 32216,
+        "avgPrice": 64.711,
+        "stddevPrice": 34.853
+      },
+      {
+        "_id": "6ae597e45fc23838a83eade7",
+        "resourceType": "ZK",
+        "date": "2026-10-26",
+        "transactions": 9,
+        "volume": 6996,
+        "avgPrice": 103.699,
+        "stddevPrice": 4.043
+      },
+      {
+        "_id": "6ae597e45fc2386e2e3eade6",
+        "resourceType": "ZK",
+        "date": "2026-10-25",
+        "transactions": 24,
+        "volume": 12144,
+        "avgPrice": 90.901,
+        "stddevPrice": 12.257
+      },
+      {
+        "_id": "6ae597e45fc23867273eade5",
+        "resourceType": "ZK",
+        "date": "2026-10-24",
+        "transactions": 72,
+        "volume": 36787,
+        "avgPrice": 82.895,
+        "stddevPrice": 52.724
+      },
+      {
+        "_id": "6ae597e45fc238faae3eade4",
+        "resourceType": "ZK",
+        "date": "2026-10-23",
+        "transactions": 63,
+        "volume": 28473,
+        "avgPrice": 91.765,
+        "stddevPrice": 34.132
+      },
+      {
+        "_id": "6ae597e45fc238cc423eade3",
+        "resourceType": "ZK",
+        "date": "2026-10-22",
+        "transactions": 183,
+        "volume": 64833,
+        "avgPrice": 75.371,
+        "stddevPrice": 38.818
+      },
+      {
+        "_id": "6ae597e45fc23851b73eade2",
+        "resourceType": "ZK",
+        "date": "2026-10-21",
+        "transactions": 266,
+        "volume": 90283,
+        "avgPrice": 91.01,
+        "stddevPrice": 57.881
+      },
+      {
+        "_id": "6ae597e45fc23809493eade1",
+        "resourceType": "ZK",
+        "date": "2026-10-20",
+        "transactions": 188,
+        "volume": 62150,
+        "avgPrice": 103.421,
+        "stddevPrice": 61.113
+      },
+      {
+        "_id": "6ae597e45fc238ccc73eade0",
+        "resourceType": "ZK",
+        "date": "2026-10-19",
+        "transactions": 111,
+        "volume": 32218,
+        "avgPrice": 132.353,
+        "stddevPrice": 55.388
+      },
+      {
+        "_id": "6ae597e45fc2383eb73eaddf",
+        "resourceType": "ZK",
+        "date": "2026-10-18",
+        "transactions": 158,
+        "volume": 38714,
+        "avgPrice": 96.226,
+        "stddevPrice": 43.165
+      },
+      {
+        "_id": "6ae597e45fc23847843eadde",
+        "resourceType": "ZK",
+        "date": "2026-10-17",
+        "transactions": 114,
+        "volume": 52133,
+        "avgPrice": 97.998,
+        "stddevPrice": 39.292
+      }
+    ],
+    "UL": [
+      {
+        "_id": "6ae597e45fc2388f9e3eaf32",
+        "resourceType": "UL",
+        "date": "2026-10-31",
+        "transactions": 18,
+        "volume": 16627,
+        "avgPrice": 173.953,
+        "stddevPrice": 10.981
+      },
+      {
+        "_id": "6ae597e45fc2386e233eaf31",
+        "resourceType": "UL",
+        "date": "2026-10-30",
+        "transactions": 58,
+        "volume": 62548,
+        "avgPrice": 185.542,
+        "stddevPrice": 21.133
+      },
+      {
+        "_id": "6ae597e45fc238c74f3eaf30",
+        "resourceType": "UL",
+        "date": "2026-10-29",
+        "transactions": 42,
+        "volume": 51822,
+        "avgPrice": 181.723,
+        "stddevPrice": 4.833
+      },
+      {
+        "_id": "6ae597e45fc23806483eaf2f",
+        "resourceType": "UL",
+        "date": "2026-10-28",
+        "transactions": 123,
+        "volume": 98538,
+        "avgPrice": 158.379,
+        "stddevPrice": 16.474
+      },
+      {
+        "_id": "6ae597e45fc238f3243eaf2e",
+        "resourceType": "UL",
+        "date": "2026-10-27",
+        "transactions": 59,
+        "volume": 69305,
+        "avgPrice": 130.204,
+        "stddevPrice": 37.719
+      },
+      {
+        "_id": "6ae597e45fc23800da3eaf2d",
+        "resourceType": "UL",
+        "date": "2026-10-26",
+        "transactions": 22,
+        "volume": 26195,
+        "avgPrice": 129.505,
+        "stddevPrice": 38.447
+      },
+      {
+        "_id": "6ae597e45fc23840473eaf2c",
+        "resourceType": "UL",
+        "date": "2026-10-25",
+        "transactions": 44,
+        "volume": 32270,
+        "avgPrice": 149.996,
+        "stddevPrice": 42.078
+      },
+      {
+        "_id": "6ae597e45fc23878073eaf2b",
+        "resourceType": "UL",
+        "date": "2026-10-24",
+        "transactions": 108,
+        "volume": 69713,
+        "avgPrice": 147.493,
+        "stddevPrice": 40.852
+      },
+      {
+        "_id": "6ae597e45fc2385bb33eaf2a",
+        "resourceType": "UL",
+        "date": "2026-10-23",
+        "transactions": 84,
+        "volume": 49911,
+        "avgPrice": 172.18,
+        "stddevPrice": 18.99
+      },
+      {
+        "_id": "6ae597e45fc23872aa3eaf29",
+        "resourceType": "UL",
+        "date": "2026-10-22",
+        "transactions": 77,
+        "volume": 50165,
+        "avgPrice": 166.028,
+        "stddevPrice": 31.819
+      },
+      {
+        "_id": "6ae597e45fc2387d3e3eaf28",
+        "resourceType": "UL",
+        "date": "2026-10-21",
+        "transactions": 209,
+        "volume": 175958,
+        "avgPrice": 66.257,
+        "stddevPrice": 56.795
+      },
+      {
+        "_id": "6ae597e45fc238ca943eaf27",
+        "resourceType": "UL",
+        "date": "2026-10-20",
+        "transactions": 216,
+        "volume": 183510,
+        "avgPrice": 61.29,
+        "stddevPrice": 56.948
+      },
+      {
+        "_id": "6ae597e45fc23857873eaf26",
+        "resourceType": "UL",
+        "date": "2026-10-19",
+        "transactions": 157,
+        "volume": 49563,
+        "avgPrice": 164.705,
+        "stddevPrice": 18.521
+      },
+      {
+        "_id": "6ae597e45fc238781a3eaf25",
+        "resourceType": "UL",
+        "date": "2026-10-18",
+        "transactions": 255,
+        "volume": 55994,
+        "avgPrice": 133.647,
+        "stddevPrice": 54.488
+      },
+      {
+        "_id": "6ae597e45fc23814d93eaf24",
+        "resourceType": "UL",
+        "date": "2026-10-17",
+        "transactions": 130,
+        "volume": 113839,
+        "avgPrice": 107.669,
+        "stddevPrice": 60.942
+      }
+    ],
+    "G": [
+      {
+        "_id": "6ae597e45fc23808f43eafda",
+        "resourceType": "G",
+        "date": "2026-10-31",
+        "transactions": 86,
+        "volume": 12193,
+        "avgPrice": 1810.674,
+        "stddevPrice": 845.876
+      },
+      {
+        "_id": "6ae597e45fc238e5993eafd9",
+        "resourceType": "G",
+        "date": "2026-10-30",
+        "transactions": 250,
+        "volume": 65458,
+        "avgPrice": 962.496,
+        "stddevPrice": 546.102
+      },
+      {
+        "_id": "6ae597e45fc2387fd03eafd8",
+        "resourceType": "G",
+        "date": "2026-10-29",
+        "transactions": 180,
+        "volume": 53312,
+        "avgPrice": 557.103,
+        "stddevPrice": 122.25
+      },
+      {
+        "_id": "6ae597e45fc2383b323eafd7",
+        "resourceType": "G",
+        "date": "2026-10-28",
+        "transactions": 617,
+        "volume": 157809,
+        "avgPrice": 558.025,
+        "stddevPrice": 37.517
+      },
+      {
+        "_id": "6ae597e45fc23828b43eafd6",
+        "resourceType": "G",
+        "date": "2026-10-27",
+        "transactions": 76,
+        "volume": 57764,
+        "avgPrice": 450.002,
+        "stddevPrice": 17.803
+      },
+      {
+        "_id": "6ae597e45fc2385eb23eafd5",
+        "resourceType": "G",
+        "date": "2026-10-26",
+        "transactions": 56,
+        "volume": 36752,
+        "avgPrice": 561.415,
+        "stddevPrice": 87.719
+      },
+      {
+        "_id": "6ae597e45fc238ef573eafd4",
+        "resourceType": "G",
+        "date": "2026-10-25",
+        "transactions": 213,
+        "volume": 22988,
+        "avgPrice": 558.711,
+        "stddevPrice": 125.942
+      },
+      {
+        "_id": "6ae597e45fc238324f3eafd3",
+        "resourceType": "G",
+        "date": "2026-10-24",
+        "transactions": 243,
+        "volume": 23835,
+        "avgPrice": 718.883,
+        "stddevPrice": 229.701
+      },
+      {
+        "_id": "6ae597e45fc2381c4a3eafd2",
+        "resourceType": "G",
+        "date": "2026-10-23",
+        "transactions": 267,
+        "volume": 65707,
+        "avgPrice": 654.82,
+        "stddevPrice": 101.425
+      },
+      {
+        "_id": "6ae597e45fc23890c03eafd1",
+        "resourceType": "G",
+        "date": "2026-10-22",
+        "transactions": 63,
+        "volume": 39898,
+        "avgPrice": 585.85,
+        "stddevPrice": 265.628
+      },
+      {
+        "_id": "6ae597e45fc238f71c3eafd0",
+        "resourceType": "G",
+        "date": "2026-10-21",
+        "transactions": 230,
+        "volume": 94091,
+        "avgPrice": 693.928,
+        "stddevPrice": 219.724
+      },
+      {
+        "_id": "6ae597e45fc238ac5e3eafcf",
+        "resourceType": "G",
+        "date": "2026-10-20",
+        "transactions": 241,
+        "volume": 89925,
+        "avgPrice": 709.419,
+        "stddevPrice": 189.591
+      },
+      {
+        "_id": "6ae597e45fc238223e3eafce",
+        "resourceType": "G",
+        "date": "2026-10-19",
+        "transactions": 107,
+        "volume": 82349,
+        "avgPrice": 688.685,
+        "stddevPrice": 136.499
+      },
+      {
+        "_id": "6ae597e45fc2384d4d3eafcd",
+        "resourceType": "G",
+        "date": "2026-10-18",
+        "transactions": 169,
+        "volume": 41983,
+        "avgPrice": 615.083,
+        "stddevPrice": 66.365
+      },
+      {
+        "_id": "6ae597e45fc2383d623eafcc",
+        "resourceType": "G",
+        "date": "2026-10-17",
+        "transactions": 131,
+        "volume": 153701,
+        "avgPrice": 961.546,
+        "stddevPrice": 707.176
+      }
+    ]
+  },
+  "books": {
+    "energy": [
+      {
+        "_id": "6abe276e187672001368bfea",
+        "type": "buy",
+        "price": 23.922,
+        "remainingAmount": 1,
+        "amount": 1,
+        "roomName": "E28N29"
+      },
+      {
+        "_id": "6abe81aa3eccfc00136d310c",
+        "type": "buy",
+        "price": 1.115,
+        "remainingAmount": 206823,
+        "amount": 206823,
+        "roomName": "E53S16"
+      },
+      {
+        "_id": "6abf194e3eccfc0013972550",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 3740,
+        "amount": 3740,
+        "roomName": "E1S19"
+      },
+      {
+        "_id": "6abfe9943eccfc0013ceb452",
+        "type": "buy",
+        "price": 23.922,
+        "remainingAmount": 1,
+        "amount": 1,
+        "roomName": "E18N31"
+      },
+      {
+        "_id": "6ac286ec3eccfc001383f0b8",
+        "type": "buy",
+        "price": 22.524,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W37S23"
+      },
+      {
+        "_id": "6ac535253eccfc00133a3d7c",
+        "type": "buy",
+        "price": 29.106,
+        "remainingAmount": 12942,
+        "amount": 12942,
+        "roomName": "W11N32"
+      },
+      {
+        "_id": "6ac6276e3eccfc001379f717",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 20000,
+        "amount": 12687,
+        "roomName": "E29S5"
+      },
+      {
+        "_id": "6ac7b2b63eccfc0013df9ae9",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 6125,
+        "amount": 6125,
+        "roomName": "W2N27"
+      },
+      {
+        "_id": "6ac8a31a3eccfc00131ca88b",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E21S9"
+      },
+      {
+        "_id": "6ac971e93eccfc00135538a3",
+        "type": "buy",
+        "price": 28.463,
+        "remainingAmount": 25000,
+        "amount": 25000,
+        "roomName": "W29N51"
+      },
+      {
+        "_id": "6ac9a57b3eccfc0013631ccb",
+        "type": "buy",
+        "price": 23.922,
+        "remainingAmount": 1,
+        "amount": 1,
+        "roomName": "E18N32"
+      },
+      {
+        "_id": "6ac9b6063eccfc00136787c5",
+        "type": "buy",
+        "price": 29.909,
+        "remainingAmount": 25000,
+        "amount": 25000,
+        "roomName": "W11N38"
+      },
+      {
+        "_id": "6ac9f7173eccfc001378e3a5",
+        "type": "buy",
+        "price": 8,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W16S8"
+      },
+      {
+        "_id": "6aca366e3eccfc00138a1d53",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 25,
+        "amount": 25,
+        "roomName": "W9S16"
+      },
+      {
+        "_id": "6acb13fd3eccfc0013c4bbdd",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E22S9"
+      },
+      {
+        "_id": "6acbfd593eccfc00130334d9",
+        "type": "buy",
+        "price": 18.406,
+        "remainingAmount": 511,
+        "amount": 511,
+        "roomName": "E53S3"
+      },
+      {
+        "_id": "6ad142ee3eccfc001363b8ae",
+        "type": "buy",
+        "price": 22.524,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W37S22"
+      },
+      {
+        "_id": "6ad144843eccfc00136421ea",
+        "type": "buy",
+        "price": 22.524,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W36S23"
+      },
+      {
+        "_id": "6ad277923eccfc0013b151ea",
+        "type": "buy",
+        "price": 22,
+        "remainingAmount": 14758,
+        "amount": 14758,
+        "roomName": "E1N45"
+      },
+      {
+        "_id": "6ad489cf3eccfc0013340206",
+        "type": "buy",
+        "price": 29.478,
+        "remainingAmount": 25000,
+        "amount": 25000,
+        "roomName": "W1N42"
+      },
+      {
+        "_id": "6ad5c5963eccfc00137fa9af",
+        "type": "buy",
+        "price": 28.11,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ad5e59a3eccfc001387b4b2",
+        "type": "buy",
+        "price": 28.11,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad634e43eccfc00139b3339",
+        "type": "buy",
+        "price": 26.211,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad634e43eccfc00139b333b",
+        "type": "buy",
+        "price": 26.211,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ad65c7f3eccfc0013a5240d",
+        "type": "buy",
+        "price": 24.312,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad65c7f3eccfc0013a5240e",
+        "type": "buy",
+        "price": 24.312,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad682873eccfc0013ae9008",
+        "type": "buy",
+        "price": 24.312,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad698f3c460820013aca1bc",
+        "type": "buy",
+        "price": 24.312,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad6b232c460820013b2d6ad",
+        "type": "buy",
+        "price": 0.5,
+        "remainingAmount": 48000,
+        "amount": 48000,
+        "roomName": "E38N1"
+      },
+      {
+        "_id": "6ad6bffcc460820013b63c7a",
+        "type": "buy",
+        "price": 24.312,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad6bffcc460820013b63c7b",
+        "type": "buy",
+        "price": 20.514,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad6d38bc460820013bb0a90",
+        "type": "buy",
+        "price": 20.514,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad6f407c460820013c32fc6",
+        "type": "buy",
+        "price": 20.514,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad70793c460820013c81604",
+        "type": "buy",
+        "price": 20.514,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad70793c460820013c81605",
+        "type": "buy",
+        "price": 20.514,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad70e17c460820013c9bdb8",
+        "type": "buy",
+        "price": 18.615,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad70e17c460820013c9bdb9",
+        "type": "buy",
+        "price": 18.615,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad71b3cc460820013cd0776",
+        "type": "buy",
+        "price": 16.716,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad71b3cc460820013cd0777",
+        "type": "buy",
+        "price": 14.817,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad721c5c460820013ceb45a",
+        "type": "buy",
+        "price": 12.918,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad787f103f2d30013cfed69",
+        "type": "buy",
+        "price": 12.918,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad78eb303f2d30013d1806f",
+        "type": "buy",
+        "price": 12.918,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad78eb303f2d30013d18070",
+        "type": "buy",
+        "price": 12.918,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad79a1903f2d30013d4181c",
+        "type": "buy",
+        "price": 12.918,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad7a6f903f2d30013d70fb4",
+        "type": "buy",
+        "price": 12.918,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad7b85303f2d30013daf9a7",
+        "type": "buy",
+        "price": 12.918,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad7db4b03f2d30013e2d8db",
+        "type": "buy",
+        "price": 11.074,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad7db4b03f2d30013e2d8dc",
+        "type": "buy",
+        "price": 11.074,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad7efbe03f2d30013e790ca",
+        "type": "buy",
+        "price": 11.074,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad7fabe03f2d30013ea253c",
+        "type": "buy",
+        "price": 27.858,
+        "remainingAmount": 25000,
+        "amount": 25000,
+        "roomName": "W29N39"
+      },
+      {
+        "_id": "6ad80e1103f2d30013eeae12",
+        "type": "buy",
+        "price": 11.074,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad8410403f2d30013fa8c05",
+        "type": "buy",
+        "price": 9.23,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad8410403f2d30013fa8c06",
+        "type": "buy",
+        "price": 9.23,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad8857e03f2d300130b14d2",
+        "type": "buy",
+        "price": 9.23,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad8857e03f2d300130b14d4",
+        "type": "buy",
+        "price": 9.23,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ad8857e03f2d300130b14d5",
+        "type": "buy",
+        "price": 9.23,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N9"
+      },
+      {
+        "_id": "6ad88c6503f2d300130cbe86",
+        "type": "buy",
+        "price": 7.386,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad88c6503f2d300130cbe87",
+        "type": "buy",
+        "price": 7.386,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad88c6503f2d300130cbe89",
+        "type": "buy",
+        "price": 3.698,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ad89a2a03f2d30013101853",
+        "type": "buy",
+        "price": 3.698,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad8bce303f2d30013183ed0",
+        "type": "buy",
+        "price": 3.698,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad8e6a103f2d3001321eeda",
+        "type": "buy",
+        "price": 3.698,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad8ed8c03f2d3001323815f",
+        "type": "buy",
+        "price": 3.698,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9088903f2d30013298253",
+        "type": "buy",
+        "price": 0.001,
+        "remainingAmount": 1649,
+        "amount": 1649,
+        "roomName": "E23S6"
+      },
+      {
+        "_id": "6ad9576403f2d300133addc5",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad981ca03f2d30013443507",
+        "type": "buy",
+        "price": 26.285,
+        "remainingAmount": 25000,
+        "amount": 25000,
+        "roomName": "E11N39"
+      },
+      {
+        "_id": "6ad9822103f2d3001344471f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9a5d403f2d300134c4366",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9afdf03f2d300134e82d2",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9b0c303f2d300134eb6df",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9b44503f2d300134f8563",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9b72e03f2d300135031ff",
+        "type": "buy",
+        "price": 27.552,
+        "remainingAmount": 15000,
+        "amount": 15000,
+        "roomName": "W21N39"
+      },
+      {
+        "_id": "6ad9bb5503f2d300135123c5",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9c9b003f2d300135467d7",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9c9b003f2d300135467d8",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad9cb9d03f2d3001354de22",
+        "type": "buy",
+        "price": 0.001,
+        "remainingAmount": 1649,
+        "amount": 1649,
+        "roomName": "E22S5"
+      },
+      {
+        "_id": "6ad9d70703f2d30013577256",
+        "type": "buy",
+        "price": 0.9,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W19S54"
+      },
+      {
+        "_id": "6ad9d70b03f2d3001357735e",
+        "type": "buy",
+        "price": 0.9,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W19S54"
+      },
+      {
+        "_id": "6ad9eab403f2d300135bd7b3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9eab403f2d300135bd7b4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad9ed5303f2d300135c71c1",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9ed5303f2d300135c71c2",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ad9ed5303f2d300135c71c4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ad9f49b03f2d300135e0fde",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ad9f49b03f2d300135e0fdf",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ada23e203f2d30013694bbc",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ada23e203f2d30013694bbd",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ada285703f2d300136a6391",
+        "type": "buy",
+        "price": 7,
+        "remainingAmount": 270392,
+        "amount": 270392,
+        "roomName": "W28S11"
+      },
+      {
+        "_id": "6ada2a9403f2d300136af043",
+        "type": "buy",
+        "price": 0.001,
+        "remainingAmount": 114966,
+        "amount": 95831,
+        "roomName": "E28S1"
+      },
+      {
+        "_id": "6ada312d03f2d300136c91c3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ada452803f2d30013718572",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ada452803f2d30013718573",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ada4be803f2d30013732101",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ada529e03f2d3001374bfce",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ada529e03f2d3001374bfd0",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ada529e03f2d3001374bfd3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ada529e03f2d3001374bfd4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N9"
+      },
+      {
+        "_id": "6ada5fee03f2d30013780017",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ada5fee03f2d30013780018",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ada7de203f2d300137f45af",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ada7de203f2d300137f45b0",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adac2b503f2d30013906005",
+        "type": "buy",
+        "price": 0.02,
+        "remainingAmount": 50000,
+        "amount": 50000,
+        "roomName": "E29S26"
+      },
+      {
+        "_id": "6adad7ce03f2d3001395cff8",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adae1ee03f2d30013986072",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adb000303f2d30013a01bf5",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adb000303f2d30013a01bf6",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adb144603f2d30013a53dfd",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adb468503f2d30013b1b984",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adb5dc803f2d30013b76520",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adba0f303f2d30013c7b41e",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adbae4303f2d30013cafe3a",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adbc5d203f2d30013d0b8a6",
+        "type": "buy",
+        "price": 25.264,
+        "remainingAmount": 1,
+        "amount": 1,
+        "roomName": "E21N34"
+      },
+      {
+        "_id": "6adbdded03f2d30013d69207",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adbebbb03f2d30013d9e050",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adbf2ad03f2d30013db8959",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 5,
+        "amount": 5,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adbf2ad03f2d30013db895a",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adc1eb503f2d30013e524d3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adc2ce303f2d30013e8a033",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adc4e4c03f2d30013f0b800",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adc552003f2d30013f258e6",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adc6a6403f2d30013f777f4",
+        "type": "buy",
+        "price": 23.922,
+        "remainingAmount": 1,
+        "amount": 1,
+        "roomName": "E22N36"
+      },
+      {
+        "_id": "6adca9dd03f2d3001306e9ce",
+        "type": "buy",
+        "price": 27.106,
+        "remainingAmount": 18286,
+        "amount": 18286,
+        "roomName": "E53S3"
+      },
+      {
+        "_id": "6adcac8703f2d30013079034",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adcac8703f2d30013079035",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adcb33b03f2d30013092eb1",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adcc0d303f2d300130c6b89",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adcdf3403f2d3001313d129",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adcdf3403f2d3001313d12a",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adce29403f2d30013149f91",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adcf02703f2d3001317dd65",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add045a03f2d300131cc4a3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add045a03f2d300131cc4a4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6add18a603f2d30013219fd7",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add1f6003f2d30013233b8f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add26fc03f2d30013250506",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add2f6603f2d3001326ff55",
+        "type": "buy",
+        "price": 26.636,
+        "remainingAmount": 18523,
+        "amount": 18523,
+        "roomName": "E31N41"
+      },
+      {
+        "_id": "6add447703f2d300132bf4b0",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add47d003f2d300132cbc3c",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add47d003f2d300132cbc3d",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6add62bf03f2d30013330942",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add62bf03f2d30013330943",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6add697c03f2d30013349b3d",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add7dc903f2d300133950e8",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add7dc903f2d300133950e9",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6add848e03f2d300133ae9db",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add915203f2d300133ded0d",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add922c03f2d300133e201c",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add9faa03f2d3001341574e",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6add9faa03f2d3001341574f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adda9b003f2d3001343bdf5",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6addc15a03f2d30013495cdf",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6addcecc03f2d300134c978d",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6addd59b03f2d300134e33e9",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6addd59b03f2d300134e33ea",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adddc6503f2d300134fcda2",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adddc6503f2d300134fcda3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6addf08c03f2d3001354a0bb",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ade62f303f2d300137082bc",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ade62f303f2d300137082bd",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ade73d103f2d30013749599",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ade891803f2d30013792e49",
+        "type": "buy",
+        "price": 0.016,
+        "remainingAmount": 1000,
+        "amount": 1000,
+        "roomName": "W9N52"
+      },
+      {
+        "_id": "6adebc4803f2d3001385c07e",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adec2f903f2d300138768b7",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6aded05203f2d300138ac53c",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6aded05203f2d300138ac53d",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6aded9d503f2d300138d2561",
+        "type": "buy",
+        "price": 0.001,
+        "remainingAmount": 100000,
+        "amount": 100000,
+        "roomName": "E19S49"
+      },
+      {
+        "_id": "6adeddd403f2d300138e2a46",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adeddd403f2d300138e2a47",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adee49e03f2d300138fdf60",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adee49e03f2d300138fdf61",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adf0ce303f2d3001399fc25",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adf0ce303f2d3001399fc26",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adf20d003f2d300139f08a1",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 9803,
+        "amount": 9803,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adf64ff03f2d30013af4448",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adf72d503f2d30013b271bf",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 19228,
+        "amount": 19228,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adf805603f2d30013b5aa3c",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adf805603f2d30013b5aa3d",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adf905903f2d30013b9872f",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 40000,
+        "amount": 40000,
+        "roomName": "E1S52"
+      },
+      {
+        "_id": "6adf905903f2d30013b98730",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 40000,
+        "amount": 40000,
+        "roomName": "E5S53"
+      },
+      {
+        "_id": "6adf905903f2d30013b98731",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 40000,
+        "amount": 40000,
+        "roomName": "E7S55"
+      },
+      {
+        "_id": "6adf905903f2d30013b98732",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 40000,
+        "amount": 40000,
+        "roomName": "W3S55"
+      },
+      {
+        "_id": "6adf934203f2d30013ba3b15",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 40000,
+        "amount": 40000,
+        "roomName": "W7S55"
+      },
+      {
+        "_id": "6adf94f003f2d30013baa343",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adf9acd03f2d30013bc09b9",
+        "type": "buy",
+        "price": 0.001,
+        "remainingAmount": 3801,
+        "amount": 3801,
+        "roomName": "E36S7"
+      },
+      {
+        "_id": "6adfa2c103f2d30013bdf6da",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adfa62303f2d30013becd9e",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adfa62303f2d30013becd9f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6adfa99203f2d30013bfa255",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adfb72d03f2d30013c2fddd",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6adfc4ec03f2d30013c649c7",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae0022603f2d30013d49692",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 14995,
+        "amount": 14995,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae0022603f2d30013d49693",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae01d5c03f2d30013dae7c3",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 40000,
+        "amount": 40000,
+        "roomName": "W3S45"
+      },
+      {
+        "_id": "6ae0414303f2d30013e38b42",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae0465903f2d30013e4d063",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae0465903f2d30013e4d065",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ae0465903f2d30013e4d066",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N9"
+      },
+      {
+        "_id": "6ae0465903f2d30013e4d067",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W23N31"
+      },
+      {
+        "_id": "6ae04d1903f2d30013e67e2f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae05ab603f2d30013e9e0d2",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae0677d03f2d30013ed12e0",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E19S1"
+      },
+      {
+        "_id": "6ae06ae503f2d30013edeb15",
+        "type": "buy",
+        "price": 18,
+        "remainingAmount": 1000,
+        "amount": 1000,
+        "roomName": "W11N55"
+      },
+      {
+        "_id": "6ae0729f03f2d30013efd63c",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae08d5803f2d30013f686b1",
+        "type": "buy",
+        "price": 8.332,
+        "remainingAmount": 55418,
+        "amount": 55418,
+        "roomName": "E49S54"
+      },
+      {
+        "_id": "6ae0950603f2d30013f86415",
+        "type": "buy",
+        "price": 27.849,
+        "remainingAmount": 123,
+        "amount": 123,
+        "roomName": "W59S47"
+      },
+      {
+        "_id": "6ae0a55403f2d30013fc3f3d",
+        "type": "buy",
+        "price": 8.332,
+        "remainingAmount": 51377,
+        "amount": 51377,
+        "roomName": "E42S55"
+      },
+      {
+        "_id": "6ae0acc103f2d30013fe0f37",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae0b34f03f2d30013ff9d24",
+        "type": "buy",
+        "price": 8.332,
+        "remainingAmount": 80693,
+        "amount": 80693,
+        "roomName": "E43S56"
+      },
+      {
+        "_id": "6ae0b3bd03f2d30013ffb745",
+        "type": "buy",
+        "price": 0.001,
+        "remainingAmount": 414,
+        "amount": 414,
+        "roomName": "E23S3"
+      },
+      {
+        "_id": "6ae0b3bd03f2d30013ffb746",
+        "type": "buy",
+        "price": 3.62,
+        "remainingAmount": 1837,
+        "amount": 1837,
+        "roomName": "E38S9"
+      },
+      {
+        "_id": "6ae0d9e103f2d3001308a4f2",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae10e2003f2d3001314f201",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 1756,
+        "amount": 1756,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae12c7603f2d300131c602c",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E21S51"
+      },
+      {
+        "_id": "6ae14f0503f2d3001324e167",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E19S42"
+      },
+      {
+        "_id": "6ae155b503f2d300132683e0",
+        "type": "buy",
+        "price": 8.334,
+        "remainingAmount": 60562,
+        "amount": 60562,
+        "roomName": "E43S52"
+      },
+      {
+        "_id": "6ae18b2803f2d3001333272c",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae1993803f2d300133664c0",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae1993803f2d300133664c1",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae1a03a03f2d3001337ff58",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae1a03a03f2d3001337ff59",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae1aaad03f2d300133a6690",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae1aaad03f2d300133a6691",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae1aaad03f2d300133a6693",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ae1bb0903f2d300133e32d6",
+        "type": "buy",
+        "price": 10,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E21S19"
+      },
+      {
+        "_id": "6ae1c2da03f2d30013400301",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae1fa1c03f2d300134d3126",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae211f103f2d30013530527",
+        "type": "buy",
+        "price": 30,
+        "remainingAmount": 51199,
+        "amount": 51199,
+        "roomName": "E52S11"
+      },
+      {
+        "_id": "6ae2157203f2d3001353e795",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae2195203f2d3001354e01a",
+        "type": "buy",
+        "price": 30,
+        "remainingAmount": 64342,
+        "amount": 64342,
+        "roomName": "E53S11"
+      },
+      {
+        "_id": "6ae2206103f2d3001356a135",
+        "type": "buy",
+        "price": 0.05,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E33S49"
+      },
+      {
+        "_id": "6ae222c903f2d300135738a1",
+        "type": "buy",
+        "price": 30,
+        "remainingAmount": 71310,
+        "amount": 71310,
+        "roomName": "E52S12"
+      },
+      {
+        "_id": "6ae23d4403f2d300135d9e6d",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 18483,
+        "amount": 18483,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae23d4403f2d300135d9e6e",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae23d4403f2d300135d9e70",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N8"
+      },
+      {
+        "_id": "6ae23d4403f2d300135d9e71",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ae2420203f2d300135eb972",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 50000,
+        "amount": 49600,
+        "roomName": "W7S45"
+      },
+      {
+        "_id": "6ae243ef03f2d300135f2be2",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae243ef03f2d300135f2be4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ae24a9803f2d3001360b918",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae24aca03f2d3001360c51d",
+        "type": "buy",
+        "price": 8.334,
+        "remainingAmount": 21775,
+        "amount": 21775,
+        "roomName": "E43S57"
+      },
+      {
+        "_id": "6ae257f703f2d3001363d1d0",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 14445,
+        "amount": 14445,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae257f703f2d3001363d1d1",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae2760c03f2d300136af6a3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae2a8f603f2d30013773777",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae2a8f603f2d30013773778",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae2b69503f2d300137a7ca5",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 11052,
+        "amount": 11052,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae2bd7703f2d300137c1b02",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 8751,
+        "amount": 8751,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae2c43803f2d300137db8b5",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae2c43803f2d300137db8b6",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 18815,
+        "amount": 18815,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae2cb2303f2d300137f5697",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae308ec03f2d300138dd324",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae308ec03f2d300138dd325",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N8"
+      },
+      {
+        "_id": "6ae308ec03f2d300138dd326",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ae30ffe03f2d300138f76e1",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae3171303f2d300139116cc",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae3256d03f2d3001394609f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae32ccf03f2d30013960299",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae3329903f2d300139754c3",
+        "type": "buy",
+        "price": 14.762,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W47S24"
+      },
+      {
+        "_id": "6ae33b2003f2d30013994c46",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae33df003f2d3001399efa2",
+        "type": "buy",
+        "price": 14.762,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W43S24"
+      },
+      {
+        "_id": "6ae34b1a03f2d300139cb2f2",
+        "type": "buy",
+        "price": 23.717,
+        "remainingAmount": 21143,
+        "amount": 21143,
+        "roomName": "E34S1"
+      },
+      {
+        "_id": "6ae377c603f2d30013a71b60",
+        "type": "buy",
+        "price": 26.329,
+        "remainingAmount": 25000,
+        "amount": 25000,
+        "roomName": "W41N51"
+      },
+      {
+        "_id": "6ae37a6703f2d30013a7bd4b",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 19,
+        "amount": 19,
+        "roomName": "W1S21"
+      },
+      {
+        "_id": "6ae37c7103f2d30013a83d7f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ae38a7403f2d30013ab929f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae38a7403f2d30013ab92a0",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae38f1103f2d30013acaf45",
+        "type": "buy",
+        "price": 30,
+        "remainingAmount": 56172,
+        "amount": 56172,
+        "roomName": "E51S11"
+      },
+      {
+        "_id": "6ae3981703f2d30013aeee1f",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae3981703f2d30013aeee20",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae3a20f03f2d30013b14b10",
+        "type": "buy",
+        "price": 14.699,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W43S25"
+      },
+      {
+        "_id": "6ae3ab7303f2d30013b38c5d",
+        "type": "buy",
+        "price": 24.315,
+        "remainingAmount": 6458,
+        "amount": 6458,
+        "roomName": "E37S1"
+      },
+      {
+        "_id": "6ae3b3bb03f2d30013b58f5b",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 10356,
+        "amount": 10356,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae3c35903f2d30013b94edf",
+        "type": "buy",
+        "price": 29.94,
+        "remainingAmount": 25000,
+        "amount": 25000,
+        "roomName": "E1N31"
+      },
+      {
+        "_id": "6ae3cb5403f2d30013bb3953",
+        "type": "buy",
+        "price": 15.106,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E51S43"
+      },
+      {
+        "_id": "6ae3cb5403f2d30013bb3954",
+        "type": "buy",
+        "price": 15.106,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E51S51"
+      },
+      {
+        "_id": "6ae3d01903f2d30013bc6057",
+        "type": "buy",
+        "price": 14.672,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W42S24"
+      },
+      {
+        "_id": "6ae408e303f2d30013c9dfa5",
+        "type": "buy",
+        "price": 19.788,
+        "remainingAmount": 13730,
+        "amount": 13730,
+        "roomName": "E21S6"
+      },
+      {
+        "_id": "6ae408e303f2d30013c9dfa6",
+        "type": "buy",
+        "price": 24.719,
+        "remainingAmount": 10522,
+        "amount": 10522,
+        "roomName": "E39S4"
+      },
+      {
+        "_id": "6ae409a003f2d30013ca0d9a",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae412a703f2d30013cc42f4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae4257003f2d30013d0f372",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 5550,
+        "amount": 5550,
+        "roomName": "E9N51"
+      },
+      {
+        "_id": "6ae42f8303f2d30013d37a6d",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E11N56"
+      },
+      {
+        "_id": "6ae4339603f2d30013d48000",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae43d3203f2d30013d6ee71",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E11N59"
+      },
+      {
+        "_id": "6ae4429603f2d30013d850a6",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E11N51"
+      },
+      {
+        "_id": "6ae4482103f2d30013d9b3d3",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E13N58"
+      },
+      {
+        "_id": "6ae44e0503f2d30013db31dc",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae4523103f2d30013dc3d94",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 4690,
+        "amount": 4690,
+        "roomName": "E11N54"
+      },
+      {
+        "_id": "6ae4523603f2d30013dc3ea4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae452fe03f2d30013dc6fd9",
+        "type": "buy",
+        "price": 25.264,
+        "remainingAmount": 1,
+        "amount": 1,
+        "roomName": "E15N27"
+      },
+      {
+        "_id": "6ae4569303f2d30013dd58ce",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E13N56"
+      },
+      {
+        "_id": "6ae45b3e03f2d30013de8fbd",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae4746303f2d30013e5359b",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 16848,
+        "amount": 16848,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae480fb03f2d30013e88cb6",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae4821103f2d30013e8d71e",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E12N57"
+      },
+      {
+        "_id": "6ae493f603f2d30013ed8326",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 2903,
+        "amount": 2903,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae493f603f2d30013ed8327",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae4a6d78382f200135dd679",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E17N41"
+      },
+      {
+        "_id": "6ae4a6d78382f200135dd67a",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae4a6d78382f200135dd67b",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N8"
+      },
+      {
+        "_id": "6ae4b39e8382f200136156d0",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N8"
+      },
+      {
+        "_id": "6ae4b39e8382f200136156d1",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ae4b39e8382f200136156d2",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N9"
+      },
+      {
+        "_id": "6ae4b39e8382f200136156d3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W23N31"
+      },
+      {
+        "_id": "6ae4b39e8382f200136156d4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W29N18"
+      },
+      {
+        "_id": "6ae4b7568382f20013625831",
+        "type": "buy",
+        "price": 23.08,
+        "remainingAmount": 14021,
+        "amount": 14021,
+        "roomName": "E43N53"
+      },
+      {
+        "_id": "6ae4b7d98382f20013627bb4",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 50000,
+        "amount": 39000,
+        "roomName": "E25S7"
+      },
+      {
+        "_id": "6ae4b8ec8382f2001362c63e",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae4d6058382f200136a905f",
+        "type": "buy",
+        "price": 20,
+        "remainingAmount": 40863,
+        "amount": 40863,
+        "roomName": "E1S32"
+      },
+      {
+        "_id": "6ae4d7778382f200136af153",
+        "type": "buy",
+        "price": 18.133,
+        "remainingAmount": 1032,
+        "amount": 1032,
+        "roomName": "E12N51"
+      },
+      {
+        "_id": "6ae4e8988382f200136f726e",
+        "type": "buy",
+        "price": 15.986,
+        "remainingAmount": 50000,
+        "amount": 50000,
+        "roomName": "W6N2"
+      },
+      {
+        "_id": "6ae4e98d8382f200136fb2f9",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae502098382f2001375f573",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae52d028382f2001380dcfe",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae533338382f20013826e5b",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae545ce8382f20013873926",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae55e9b8382f200138da6c3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae55e9b8382f200138da6c4",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N8"
+      },
+      {
+        "_id": "6ae570688382f2001392410f",
+        "type": "buy",
+        "price": 25.919,
+        "remainingAmount": 15184,
+        "amount": 15184,
+        "roomName": "E57N28"
+      },
+      {
+        "_id": "6ae572ac8382f2001392d518",
+        "type": "buy",
+        "price": 27.483,
+        "remainingAmount": 42094,
+        "amount": 42094,
+        "roomName": "W57S46"
+      },
+      {
+        "_id": "6ae572d38382f2001392df86",
+        "type": "buy",
+        "price": 9.326,
+        "remainingAmount": 106,
+        "amount": 106,
+        "roomName": "W59S51"
+      },
+      {
+        "_id": "6ae575b78382f2001393a1ce",
+        "type": "buy",
+        "price": 25.614,
+        "remainingAmount": 12355,
+        "amount": 12355,
+        "roomName": "W1N18"
+      },
+      {
+        "_id": "6ae5837c8382f20013974598",
+        "type": "buy",
+        "price": 25.971,
+        "remainingAmount": 1523,
+        "amount": 1523,
+        "roomName": "W1N37"
+      },
+      {
+        "_id": "6ae5882a8382f2001398851c",
+        "type": "buy",
+        "price": 24.682,
+        "remainingAmount": 41057,
+        "amount": 41057,
+        "roomName": "W1N11"
+      },
+      {
+        "_id": "6ae58a648382f20013991dd4",
+        "type": "buy",
+        "price": 26.21,
+        "remainingAmount": 19113,
+        "amount": 19113,
+        "roomName": "W19N21"
+      },
+      {
+        "_id": "6ae58f118382f200139a624b",
+        "type": "buy",
+        "price": 30.194,
+        "remainingAmount": 49996,
+        "amount": 49996,
+        "roomName": "E38N45"
+      },
+      {
+        "_id": "6ae590358382f200139ab133",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae590358382f200139ab134",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N8"
+      },
+      {
+        "_id": "6ae590738382f200139ac257",
+        "type": "buy",
+        "price": 29.792,
+        "remainingAmount": 47903,
+        "amount": 47903,
+        "roomName": "E38N45"
+      },
+      {
+        "_id": "6ae5923d8382f200139b3cb9",
+        "type": "buy",
+        "price": 9.09,
+        "remainingAmount": 15768,
+        "amount": 15768,
+        "roomName": "W5S9"
+      },
+      {
+        "_id": "6ae594168382f200139bbb68",
+        "type": "buy",
+        "price": 23.5,
+        "remainingAmount": 5228,
+        "amount": 5228,
+        "roomName": "E17N51"
+      },
+      {
+        "_id": "6ae5946e8382f200139bd312",
+        "type": "buy",
+        "price": 21.626,
+        "remainingAmount": 32178,
+        "amount": 32178,
+        "roomName": "W19N11"
+      },
+      {
+        "_id": "6ae5946e8382f200139bd313",
+        "type": "buy",
+        "price": 24.388,
+        "remainingAmount": 41611,
+        "amount": 41611,
+        "roomName": "W9N9"
+      },
+      {
+        "_id": "6ae5959d8382f200139c23d8",
+        "type": "buy",
+        "price": 30.194,
+        "remainingAmount": 22554,
+        "amount": 22554,
+        "roomName": "W16N37"
+      },
+      {
+        "_id": "6ae595fa8382f200139c3cb6",
+        "type": "buy",
+        "price": 25.319,
+        "remainingAmount": 54000,
+        "amount": 54000,
+        "roomName": "E1N18"
+      },
+      {
+        "_id": "6ae5961d8382f200139c464a",
+        "type": "buy",
+        "price": 19.736,
+        "remainingAmount": 50000,
+        "amount": 50000,
+        "roomName": "E2N39"
+      },
+      {
+        "_id": "6ae5966c8382f200139c5ba1",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6ae5966c8382f200139c5ba2",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N8"
+      },
+      {
+        "_id": "6ae5966c8382f200139c5ba3",
+        "type": "buy",
+        "price": 0.01,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ae596938382f200139c6670",
+        "type": "buy",
+        "price": 30.194,
+        "remainingAmount": 20932,
+        "amount": 20932,
+        "roomName": "W23N33"
+      },
+      {
+        "_id": "6ae596938382f200139c6671",
+        "type": "buy",
+        "price": 30.194,
+        "remainingAmount": 22388,
+        "amount": 22388,
+        "roomName": "W22N42"
+      },
+      {
+        "_id": "6ae596ea8382f200139c7dca",
+        "type": "buy",
+        "price": 24.67,
+        "remainingAmount": 33692,
+        "amount": 33692,
+        "roomName": "E14S42"
+      },
+      {
+        "_id": "6ae597728382f200139ca249",
+        "type": "buy",
+        "price": 29.905,
+        "remainingAmount": 50000,
+        "amount": 50000,
+        "roomName": "E38N45"
+      },
+      {
+        "_id": "6ae597828382f200139ca672",
+        "type": "buy",
+        "price": 24.371,
+        "remainingAmount": 42373,
+        "amount": 42373,
+        "roomName": "E2N19"
+      },
+      {
+        "_id": "6ae598ad8382f200139cf650",
+        "type": "buy",
+        "price": 30.11,
+        "remainingAmount": 444,
+        "amount": 444,
+        "roomName": "W51N59"
+      },
+      {
+        "_id": "6ae599bf8382f200139d4068",
+        "type": "buy",
+        "price": 30,
+        "remainingAmount": 12704,
+        "amount": 12704,
+        "roomName": "W8N29"
+      },
+      {
+        "_id": "6ae59a2b8382f200139d5d5a",
+        "type": "buy",
+        "price": 30.658,
+        "remainingAmount": 580,
+        "amount": 580,
+        "roomName": "W16N28"
+      },
+      {
+        "_id": "6ae59bdb8382f200139dd247",
+        "type": "buy",
+        "price": 31.245,
+        "remainingAmount": 180614,
+        "amount": 151266,
+        "roomName": "W9S7"
+      },
+      {
+        "_id": "6ae59c7e8382f200139dfe74",
+        "type": "buy",
+        "price": 30,
+        "remainingAmount": 9282,
+        "amount": 9282,
+        "roomName": "E52S15"
+      },
+      {
+        "_id": "6ac283ec3eccfc0013831cdb",
+        "type": "sell",
+        "price": 31.81,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "E32S13"
+      },
+      {
+        "_id": "6ac66eb23eccfc00138cbcc3",
+        "type": "sell",
+        "price": 70.426,
+        "remainingAmount": 94790,
+        "amount": 51810,
+        "roomName": "W41S22"
+      },
+      {
+        "_id": "6ac6751e3eccfc00138e5c0b",
+        "type": "sell",
+        "price": 70.426,
+        "remainingAmount": 50532,
+        "amount": 38523,
+        "roomName": "W41S24"
+      },
+      {
+        "_id": "6ace00d63eccfc00138bbc79",
+        "type": "sell",
+        "price": 70.426,
+        "remainingAmount": 99785,
+        "amount": 60193,
+        "roomName": "W37S31"
+      },
+      {
+        "_id": "6ace00d63eccfc00138bbc7a",
+        "type": "sell",
+        "price": 70.426,
+        "remainingAmount": 99897,
+        "amount": 87887,
+        "roomName": "W38S34"
+      },
+      {
+        "_id": "6ace00d63eccfc00138bbc7b",
+        "type": "sell",
+        "price": 70.426,
+        "remainingAmount": 99772,
+        "amount": 97032,
+        "roomName": "W39S32"
+      },
+      {
+        "_id": "6adffa8703f2d30013d2d60f",
+        "type": "sell",
+        "price": 22.836,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "E28S28"
+      },
+      {
+        "_id": "6ae089aa03f2d30013f59d9b",
+        "type": "sell",
+        "price": 81.38,
+        "remainingAmount": 179023,
+        "amount": 152799,
+        "roomName": "E43S57"
+      },
+      {
+        "_id": "6ae089e303f2d30013f5abcd",
+        "type": "sell",
+        "price": 81.38,
+        "remainingAmount": 109735,
+        "amount": 109735,
+        "roomName": "E42S55"
+      },
+      {
+        "_id": "6ae08b2b03f2d30013f5fdb2",
+        "type": "sell",
+        "price": 244.141,
+        "remainingAmount": 173859,
+        "amount": 166750,
+        "roomName": "E48S53"
+      },
+      {
+        "_id": "6ae092db03f2d30013f7df71",
+        "type": "sell",
+        "price": 81.38,
+        "remainingAmount": 175343,
+        "amount": 151838,
+        "roomName": "E43S56"
+      },
+      {
+        "_id": "6ae094b703f2d30013f85223",
+        "type": "sell",
+        "price": 81.38,
+        "remainingAmount": 175803,
+        "amount": 152123,
+        "roomName": "E43S52"
+      },
+      {
+        "_id": "6ae096d003f2d30013f8cba8",
+        "type": "sell",
+        "price": 81.38,
+        "remainingAmount": 110877,
+        "amount": 110877,
+        "roomName": "E49S54"
+      },
+      {
+        "_id": "6ae0f31d03f2d300130e8ebb",
+        "type": "sell",
+        "price": 33.153,
+        "remainingAmount": 7386,
+        "amount": 7386,
+        "roomName": "E7S29"
+      },
+      {
+        "_id": "6ae1c77a03f2d30013411914",
+        "type": "sell",
+        "price": 301.865,
+        "remainingAmount": 98088,
+        "amount": 98088,
+        "roomName": "E43S53"
+      },
+      {
+        "_id": "6ae45f4203f2d30013dfa366",
+        "type": "sell",
+        "price": 32.731,
+        "remainingAmount": 2616,
+        "amount": 2616,
+        "roomName": "E43N53"
+      },
+      {
+        "_id": "6ae58e498382f200139a2b7f",
+        "type": "sell",
+        "price": 31.841,
+        "remainingAmount": 23700,
+        "amount": 23700,
+        "roomName": "W56N49"
+      },
+      {
+        "_id": "6ae597358382f200139c9216",
+        "type": "sell",
+        "price": 31.81,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W48S22"
+      },
+      {
+        "_id": "6ae59bdb8382f200139dd243",
+        "type": "sell",
+        "price": 31.8,
+        "remainingAmount": 50000,
+        "amount": 50000,
+        "roomName": "E44S31"
+      },
+      {
+        "_id": "6ae59bdb8382f200139dd244",
+        "type": "sell",
+        "price": 31.8,
+        "remainingAmount": 100000,
+        "amount": 100000,
+        "roomName": "E43S32"
+      }
+    ],
+    "K": [
+      {
+        "_id": "6ac77d5b3eccfc0013d1d551",
+        "type": "buy",
+        "price": 7.874,
+        "remainingAmount": 669,
+        "amount": 669,
+        "roomName": "W29N51"
+      },
+      {
+        "_id": "6ad348fa3eccfc0013e578d1",
+        "type": "buy",
+        "price": 10.02,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E59N55"
+      },
+      {
+        "_id": "6ae539788382f200138407c3",
+        "type": "buy",
+        "price": 0.001,
+        "remainingAmount": 2140,
+        "amount": 2140,
+        "roomName": "E38S36"
+      },
+      {
+        "_id": "6ae55dfc8382f200138d7d8a",
+        "type": "buy",
+        "price": 0.001,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E19S49"
+      },
+      {
+        "_id": "6ae587b38382f20013986517",
+        "type": "buy",
+        "price": 6.628,
+        "remainingAmount": 720,
+        "amount": 720,
+        "roomName": "W48N58"
+      },
+      {
+        "_id": "6ae59c7a8382f200139dfd50",
+        "type": "buy",
+        "price": 10.01,
+        "remainingAmount": 300,
+        "amount": 300,
+        "roomName": "E27S51"
+      },
+      {
+        "_id": "6abefb963eccfc00138f1714",
+        "type": "sell",
+        "price": 34.758,
+        "remainingAmount": 100,
+        "amount": 100,
+        "roomName": "W59N34"
+      },
+      {
+        "_id": "6ac00d343eccfc0013d87eae",
+        "type": "sell",
+        "price": 103.775,
+        "remainingAmount": 29899,
+        "amount": 29899,
+        "roomName": "E5S59"
+      },
+      {
+        "_id": "6ac0599a3eccfc0013ed97c5",
+        "type": "sell",
+        "price": 104.343,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "W9N39"
+      },
+      {
+        "_id": "6ac684ce3eccfc0013925982",
+        "type": "sell",
+        "price": 105,
+        "remainingAmount": 10390,
+        "amount": 10390,
+        "roomName": "W27S11"
+      },
+      {
+        "_id": "6ac732713eccfc0013be60e8",
+        "type": "sell",
+        "price": 30.244,
+        "remainingAmount": 3000,
+        "amount": 3000,
+        "roomName": "W51S39"
+      },
+      {
+        "_id": "6ac85e7a3eccfc00130b97ac",
+        "type": "sell",
+        "price": 25,
+        "remainingAmount": 2626,
+        "amount": 2626,
+        "roomName": "W47N18"
+      },
+      {
+        "_id": "6ac933aa3eccfc001343ef77",
+        "type": "sell",
+        "price": 25,
+        "remainingAmount": 583,
+        "amount": 583,
+        "roomName": "W47N16"
+      },
+      {
+        "_id": "6ac96a343eccfc0013530dbc",
+        "type": "sell",
+        "price": 25,
+        "remainingAmount": 642,
+        "amount": 642,
+        "roomName": "W46N18"
+      },
+      {
+        "_id": "6ac995653eccfc00135eca04",
+        "type": "sell",
+        "price": 103.775,
+        "remainingAmount": 20000,
+        "amount": 20000,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6accc80a3eccfc001339a138",
+        "type": "sell",
+        "price": 15.281,
+        "remainingAmount": 2000,
+        "amount": 2000,
+        "roomName": "W8N5"
+      },
+      {
+        "_id": "6ad07ca13eccfc0013311df1",
+        "type": "sell",
+        "price": 12.494,
+        "remainingAmount": 6000,
+        "amount": 6000,
+        "roomName": "E59N32"
+      },
+      {
+        "_id": "6ad0877d3eccfc001333e670",
+        "type": "sell",
+        "price": 16.747,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "W7N7"
+      },
+      {
+        "_id": "6ad9227603f2d300132f31b2",
+        "type": "sell",
+        "price": 9,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "E9N6"
+      },
+      {
+        "_id": "6adbebbb03f2d30013d9e04e",
+        "type": "sell",
+        "price": 15,
+        "remainingAmount": 7193,
+        "amount": 7193,
+        "roomName": "E8N9"
+      },
+      {
+        "_id": "6addab5c03f2d300134423da",
+        "type": "sell",
+        "price": 14,
+        "remainingAmount": 17200,
+        "amount": 17200,
+        "roomName": "E34N22"
+      },
+      {
+        "_id": "6ade308403f2d3001364331d",
+        "type": "sell",
+        "price": 15.6,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E57S7"
+      },
+      {
+        "_id": "6adff60d03f2d30013d1cb72",
+        "type": "sell",
+        "price": 17.766,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "W42S24"
+      },
+      {
+        "_id": "6ae082d203f2d30013f3e9e4",
+        "type": "sell",
+        "price": 12.475,
+        "remainingAmount": 1040,
+        "amount": 1040,
+        "roomName": "W38N28"
+      },
+      {
+        "_id": "6ae088db03f2d30013f56a39",
+        "type": "sell",
+        "price": 90.411,
+        "remainingAmount": 4000,
+        "amount": 4000,
+        "roomName": "E43S57"
+      },
+      {
+        "_id": "6ae0890f03f2d30013f57751",
+        "type": "sell",
+        "price": 90.503,
+        "remainingAmount": 4000,
+        "amount": 4000,
+        "roomName": "E43S56"
+      },
+      {
+        "_id": "6ae0893503f2d30013f58120",
+        "type": "sell",
+        "price": 39.552,
+        "remainingAmount": 4000,
+        "amount": 4000,
+        "roomName": "E48S53"
+      },
+      {
+        "_id": "6ae08bf903f2d30013f631d9",
+        "type": "sell",
+        "price": 39.828,
+        "remainingAmount": 3200,
+        "amount": 3200,
+        "roomName": "E43S53"
+      },
+      {
+        "_id": "6ae08c1f03f2d30013f63b9d",
+        "type": "sell",
+        "price": 85.048,
+        "remainingAmount": 4000,
+        "amount": 4000,
+        "roomName": "E43S52"
+      },
+      {
+        "_id": "6ae08d5803f2d30013f686b6",
+        "type": "sell",
+        "price": 85.048,
+        "remainingAmount": 3200,
+        "amount": 3200,
+        "roomName": "E49S54"
+      },
+      {
+        "_id": "6ae0db7c03f2d30013090442",
+        "type": "sell",
+        "price": 17.842,
+        "remainingAmount": 400,
+        "amount": 400,
+        "roomName": "W5S38"
+      },
+      {
+        "_id": "6ae1075b03f2d30013135aec",
+        "type": "sell",
+        "price": 85.048,
+        "remainingAmount": 6400,
+        "amount": 6400,
+        "roomName": "E42S55"
+      },
+      {
+        "_id": "6ae1303e03f2d300131d4d16",
+        "type": "sell",
+        "price": 30.244,
+        "remainingAmount": 2732,
+        "amount": 2732,
+        "roomName": "E2S59"
+      },
+      {
+        "_id": "6ae1528403f2d3001325bb44",
+        "type": "sell",
+        "price": 9.143,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E28S25"
+      },
+      {
+        "_id": "6ae187ac03f2d30013325702",
+        "type": "sell",
+        "price": 13,
+        "remainingAmount": 28,
+        "amount": 28,
+        "roomName": "E34N22"
+      },
+      {
+        "_id": "6ae1921d03f2d3001334c54a",
+        "type": "sell",
+        "price": 13,
+        "remainingAmount": 9958,
+        "amount": 9958,
+        "roomName": "E17N19"
+      },
+      {
+        "_id": "6ae23b9503f2d300135d39a6",
+        "type": "sell",
+        "price": 14.276,
+        "remainingAmount": 2250,
+        "amount": 2250,
+        "roomName": "W41N55"
+      },
+      {
+        "_id": "6ae27a4d03f2d300136bfec7",
+        "type": "sell",
+        "price": 14.554,
+        "remainingAmount": 477,
+        "amount": 477,
+        "roomName": "W38N28"
+      },
+      {
+        "_id": "6ae41c8103f2d30013ceb212",
+        "type": "sell",
+        "price": 11.403,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "W44S29"
+      },
+      {
+        "_id": "6ae46bb103f2d30013e2ee33",
+        "type": "sell",
+        "price": 10.839,
+        "remainingAmount": 1950,
+        "amount": 1950,
+        "roomName": "W49S5"
+      },
+      {
+        "_id": "6ae4976203f2d30013ee683f",
+        "type": "sell",
+        "price": 13.07,
+        "remainingAmount": 8831,
+        "amount": 8831,
+        "roomName": "W41S27"
+      },
+      {
+        "_id": "6ae4c9e78382f200136750ad",
+        "type": "sell",
+        "price": 8.3,
+        "remainingAmount": 2325,
+        "amount": 2325,
+        "roomName": "W24N1"
+      },
+      {
+        "_id": "6ae4f9d48382f2001373de31",
+        "type": "sell",
+        "price": 10.66,
+        "remainingAmount": 15336,
+        "amount": 15336,
+        "roomName": "W2N22"
+      },
+      {
+        "_id": "6ae527a18382f200137f8304",
+        "type": "sell",
+        "price": 5.94,
+        "remainingAmount": 3000,
+        "amount": 3000,
+        "roomName": "E51N26"
+      },
+      {
+        "_id": "6ae550038382f2001389df3d",
+        "type": "sell",
+        "price": 5,
+        "remainingAmount": 14000,
+        "amount": 14000,
+        "roomName": "E17S33"
+      },
+      {
+        "_id": "6ae555518382f200138b3d45",
+        "type": "sell",
+        "price": 5,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E49S47"
+      },
+      {
+        "_id": "6ae560078ab4e99906b97633",
+        "type": "sell",
+        "price": 14.743,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W0S20"
+      },
+      {
+        "_id": "6ae564b48382f200138f3b31",
+        "type": "sell",
+        "price": 4.95,
+        "remainingAmount": 3617,
+        "amount": 3617,
+        "roomName": "E49S42"
+      },
+      {
+        "_id": "6ae567cb3d07cb91ad601e68",
+        "type": "sell",
+        "price": 17.839,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W0N0"
+      },
+      {
+        "_id": "6ae569d08382f20013908e24",
+        "type": "sell",
+        "price": 4.95,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E49S45"
+      },
+      {
+        "_id": "6ae577efb84dbf6f099c68a5",
+        "type": "sell",
+        "price": 20.902,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "W40N30"
+      },
+      {
+        "_id": "6ae57a7f8382f2001394e1bc",
+        "type": "sell",
+        "price": 5,
+        "remainingAmount": 15000,
+        "amount": 15000,
+        "roomName": "W33N29"
+      },
+      {
+        "_id": "6ae57c268bcf76b3afafc127",
+        "type": "sell",
+        "price": 16.015,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E10S0"
+      },
+      {
+        "_id": "6ae59b018382f200139d9780",
+        "type": "sell",
+        "price": 15.598,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E41N31"
+      }
+    ],
+    "KO": [
+      {
+        "_id": "6ac24dba3eccfc001375b51e",
+        "type": "sell",
+        "price": 56.571,
+        "remainingAmount": 21,
+        "amount": 21,
+        "roomName": "E41N16"
+      },
+      {
+        "_id": "6ac292673eccfc0013871732",
+        "type": "sell",
+        "price": 192.175,
+        "remainingAmount": 725,
+        "amount": 725,
+        "roomName": "W12N29"
+      },
+      {
+        "_id": "6ac8305d3eccfc0013ffef0c",
+        "type": "sell",
+        "price": 190.597,
+        "remainingAmount": 20000,
+        "amount": 6693,
+        "roomName": "W9N39"
+      },
+      {
+        "_id": "6ac8947b3eccfc00131900e6",
+        "type": "sell",
+        "price": 192.509,
+        "remainingAmount": 6551,
+        "amount": 6551,
+        "roomName": "E1N39"
+      },
+      {
+        "_id": "6aca49dd3eccfc00138f4c49",
+        "type": "sell",
+        "price": 33.036,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "E26S42"
+      },
+      {
+        "_id": "6acb75703eccfc0013dfa0c5",
+        "type": "sell",
+        "price": 52.382,
+        "remainingAmount": 633,
+        "amount": 633,
+        "roomName": "E26S11"
+      },
+      {
+        "_id": "6accd56a3eccfc00133d2010",
+        "type": "sell",
+        "price": 52.383,
+        "remainingAmount": 795,
+        "amount": 795,
+        "roomName": "W41S33"
+      },
+      {
+        "_id": "6acdb2da3eccfc001376e692",
+        "type": "sell",
+        "price": 8.262,
+        "remainingAmount": 33973,
+        "amount": 3000,
+        "roomName": "E44S3"
+      },
+      {
+        "_id": "6ace50b83eccfc00139fffc0",
+        "type": "sell",
+        "price": 19.295,
+        "remainingAmount": 4,
+        "amount": 4,
+        "roomName": "W4N23"
+      },
+      {
+        "_id": "6ad599493eccfc001374ab64",
+        "type": "sell",
+        "price": 46.561,
+        "remainingAmount": 2524,
+        "amount": 2524,
+        "roomName": "W43N15"
+      },
+      {
+        "_id": "6ad9ab6903f2d300134d8472",
+        "type": "sell",
+        "price": 49.44,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "W19S54"
+      },
+      {
+        "_id": "6ade366603f2d3001365a6ec",
+        "type": "sell",
+        "price": 46.561,
+        "remainingAmount": 4308,
+        "amount": 4308,
+        "roomName": "W46N18"
+      },
+      {
+        "_id": "6adf812e03f2d30013b5dd04",
+        "type": "sell",
+        "price": 33.672,
+        "remainingAmount": 5000,
+        "amount": 5000,
+        "roomName": "W44S28"
+      },
+      {
+        "_id": "6adfb42903f2d30013c24022",
+        "type": "sell",
+        "price": 40.218,
+        "remainingAmount": 100,
+        "amount": 100,
+        "roomName": "W43S24"
+      },
+      {
+        "_id": "6ae098c103f2d30013f94010",
+        "type": "sell",
+        "price": 21.395,
+        "remainingAmount": 500,
+        "amount": 500,
+        "roomName": "W44S27"
+      },
+      {
+        "_id": "6ae1770303f2d300132e71b7",
+        "type": "sell",
+        "price": 7.355,
+        "remainingAmount": 9988,
+        "amount": 8994,
+        "roomName": "W51S9"
+      },
+      {
+        "_id": "6ae1cb0403f2d3001341eacb",
+        "type": "sell",
+        "price": 107.445,
+        "remainingAmount": 10000,
+        "amount": 2452,
+        "roomName": "W12S8"
+      },
+      {
+        "_id": "6ae1cdb603f2d30013428d05",
+        "type": "sell",
+        "price": 106.341,
+        "remainingAmount": 10000,
+        "amount": 10000,
+        "roomName": "E41N31"
+      },
+      {
+        "_id": "6ae1e49703f2d30013480621",
+        "type": "sell",
+        "price": 192.581,
+        "remainingAmount": 4238,
+        "amount": 4238,
+        "roomName": "W29N18"
+      },
+      {
+        "_id": "6ae3720003f2d30013a5b66e",
+        "type": "sell",
+        "price": 102.91,
+        "remainingAmount": 10000,
+        "amount": 3581,
+        "roomName": "W31S57"
+      },
+      {
+        "_id": "6ae510bb8382f2001379aed0",
+        "type": "sell",
+        "price": 19.284,
+        "remainingAmount": 500,
+        "amount": 500,
+        "roomName": "E11S33"
+      },
+      {
+        "_id": "6ae510c78382f2001379b1cd",
+        "type": "sell",
+        "price": 19.284,
+        "remainingAmount": 119,
+        "amount": 119,
+        "roomName": "E12S33"
+      },
+      {
+        "_id": "6ae5282e8382f200137fa6db",
+        "type": "sell",
+        "price": 93.121,
+        "remainingAmount": 10000,
+        "amount": 2494,
+        "roomName": "E51S43"
+      }
+    ],
+    "ZK": [
+      {
+        "_id": "6ae11ff103f2d30013194335",
+        "type": "buy",
+        "price": 30.069,
+        "remainingAmount": 189,
+        "amount": 189,
+        "roomName": "W38S27"
+      },
+      {
+        "_id": "6ae1274a03f2d300131b16a6",
+        "type": "buy",
+        "price": 30.068,
+        "remainingAmount": 1000,
+        "amount": 1000,
+        "roomName": "E28S12"
+      },
+      {
+        "_id": "6ae58a8b8382f2001399288d",
+        "type": "buy",
+        "price": 30.569,
+        "remainingAmount": 654,
+        "amount": 654,
+        "roomName": "E14S31"
+      },
+      {
+        "_id": "6ae58a8b8382f2001399288e",
+        "type": "buy",
+        "price": 30.569,
+        "remainingAmount": 654,
+        "amount": 654,
+        "roomName": "E8S32"
+      },
+      {
+        "_id": "6ae58a938382f20013992ab1",
+        "type": "buy",
+        "price": 30.569,
+        "remainingAmount": 654,
+        "amount": 654,
+        "roomName": "E9S32"
+      },
+      {
+        "_id": "6ae58a978382f20013992bbd",
+        "type": "buy",
+        "price": 30.569,
+        "remainingAmount": 654,
+        "amount": 654,
+        "roomName": "E11S33"
+      },
+      {
+        "_id": "6ae58aa38382f20013992ee5",
+        "type": "buy",
+        "price": 30.569,
+        "remainingAmount": 654,
+        "amount": 654,
+        "roomName": "E12S33"
+      },
+      {
+        "_id": "6ae58ac78382f2001399388d",
+        "type": "buy",
+        "price": 30.569,
+        "remainingAmount": 654,
+        "amount": 654,
+        "roomName": "E13S34"
+      }
+    ]
+  }
+}

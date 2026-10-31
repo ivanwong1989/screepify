@@ -6,6 +6,8 @@ const log = require('../../services/log');
 const segments = require('../../services/segments');
 const telemetry = require('../../kernel/telemetry');
 const miningHealth = require('../../services/miningHealth');
+const production = require('../../services/productionMarket');
+const energyExport = require('../../services/energyExport');
 
 /**
  * Exports stats to a memory segment for gui_data/dashboard.py (DESIGN §14.1).
@@ -45,7 +47,9 @@ function buildRooms(ctx) {
             missions: rc.missions ? rc.missions.length : 0,
             sites: rc.intel ? rc.intel.sites.length : 0,
             cpu: round(roomCpu[rc.name] || 0),
-            mining: miningHealth.snapshot(rc.name)
+            mining: miningHealth.snapshot(rc.name),
+            production: production.snapshot(rc.name),
+            energyExport: energyExport.snapshot(rc.name)
         };
     }
     return rooms;

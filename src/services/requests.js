@@ -3,13 +3,14 @@
 
 const bands = require('./bands');
 const ledger = require('./ledger');
+const allocation = require('./resourceAllocation');
 
 /**
  * Requests and offers per resource (docs/v2/LOGISTICS.md §2.4), from the
  * store bands and the in-flight ledger. `sense.logistics` publishes the result
  * as `rc.requests`; services/matcher turns it into jobs.
  *
- * @typedef {{id: string, amount: number, prio: number, x: number, y: number}} Entry
+ * @typedef {{id: string, amount: number, prio: number, x: number, y: number, to?: string[]}} Entry
  * @typedef {{req: Entry[], off: Entry[]}} ResourceRequests
  * @typedef {{id: string, x: number, y: number, avail: Record<string, number>, free: number}} Buffer
  * @typedef {{byRes: Record<string, ResourceRequests>, buffer: Buffer|null}} Requests
@@ -87,6 +88,21 @@ function build(structures, l, info, latch) {
                 const n = Math.min(e - b.target, s.store[res] || 0);
                 if (n > 0) slot(res).off.push({ id: s.id, amount: n, prio: OFFER_PRIO[s.structureType] || 45, x: s.pos.x, y: s.pos.y });
             }
+        }
+    }
+    // A lab can use an unmanaged terminal reagent even when unrelated
+    // terminal contents are deliberately not flushed into storage. The offer
+    // exists only for the unmet lab demand and never consumes sale commitments.
+    const terminal = structures.find(s => s.structureType === STRUCTURE_TERMINAL);
+    if (terminal && !(info.exclude && info.exclude.has(terminal.id))) {
+        for (const res of Object.keys(out.byRes)) {
+            if (bands.band(terminal, /** @type {ResourceConstant} */ (res), info) !== null ||
+                (info.blocked && info.blocked.has(`${terminal.id}:${res}`))) continue;
+            const destinations = out.byRes[res].req.filter(e => info.labs && info.labs[e.id]);
+            const need = destinations.reduce((n, e) => n + e.amount, 0);
+            const available = Math.max(0, (terminal.store[res] || 0) - (l.out[terminal.id] && l.out[terminal.id][res] || 0));
+            const amount = allocation.labSupply(terminal, res, available, need, info.roomName);
+            if (amount > 0) out.byRes[res].off.push({ id: terminal.id, amount, prio: OFFER_PRIO[STRUCTURE_TERMINAL], x: terminal.pos.x, y: terminal.pos.y, to: destinations.map(e => e.id) });
         }
     }
     for (const res of Object.keys(out.byRes)) {

@@ -5,6 +5,7 @@ const log = require('../../services/log');
 const roomData = require('../../services/roomData');
 const market = require('../../services/market');
 const buy = require('../../services/marketBuy');
+const production = require('../../services/productionMarket');
 
 /**
  * Buying (docs/v2/MARKET.md "Buying"; rules in services/marketBuy). Every 100
@@ -41,7 +42,7 @@ module.exports = {
     run(ctx) {
         const mcfg = /** @type {import('../../services/market').MarketConfig} */ (ctx.config.market);
         const cfg = /** @type {import('../../services/marketBuy').BuyConfig} */ (/** @type {any} */ (mcfg).buy);
-        if (!cfg || !cfg.enabled || !Game.market) return;
+        if (!mcfg.enabled || !cfg || !cfg.enabled || !Game.market) return;
         const value = market.valuer(mcfg);
         const day = Math.floor(Game.time / market.TICKS_PER_DAY);
         const e = /** @type {any} */ (Memory).e || (/** @type {any} */ (Memory).e = {});
@@ -124,10 +125,17 @@ module.exports = {
                 return prices[b];
             };
             const target = Math.ceil(lcfg.minReagent * 1.5);
-            const plan = buy.complement(stock(rc.room), value, cost, cfg.complement, target);
+            const have = stock(rc.room);
+            const decisions = {};
+            const allowed = lcfg.production ? (product, inputCost) => {
+                decisions[product] = production.evaluate(rc.room, product, have, mcfg, lcfg.production, value, lcfg.productCap, inputCost);
+                return decisions[product].allowed;
+            } : undefined;
+            const plan = buy.complement(have, value, cost, cfg.complement, target, allowed);
             if (!plan) continue;
             const price = /** @type {number} */ (cost(plan.partner));
-            const amount = Math.min(plan.amount, Math.floor(left / (price * 1.05)));
+            const need = decisions[plan.product] ? Math.max(0, decisions[plan.product].target - (have[plan.product] || 0) + lcfg.keepReagent - (have[plan.partner] || 0)) : plan.amount;
+            const amount = Math.min(plan.amount, need, Math.floor(left / (price * 1.05)));
             if (amount < 1000) continue;
             const code = Game.market.createOrder({ type: ORDER_BUY, resourceType: /** @type {any} */ (plan.partner), price, totalAmount: amount, roomName: rc.name });
             if (code === OK) spend(price * amount * 1.05);

@@ -5,6 +5,7 @@ const labs = require('../../services/labs');
 const roomData = require('../../services/roomData');
 const log = require('../../services/log');
 const market = require('../../services/market');
+const production = require('../../services/productionMarket');
 
 /**
  * Lab plan per room (P12): layout, reaction and roles (services/labs), kept on
@@ -44,11 +45,24 @@ module.exports = {
             return;
         }
         const prev = labs.current(rc.name);
-        // Auto: only products worth more than their reagents on the market.
+        // Auto: stock targets or profitable, executable sales demand.
         const mcfg = ctx.config.market;
         const value = market.valuer(mcfg);
-        const worth = (/** @type {string} */ product) => market.profitable(product, value, mcfg.productMargin);
-        const p = labs.plan(list, stock(rc.room, list), cfg, prev ? prev.product : null, worth);
+        const have = stock(rc.room, list);
+        const decisions = {};
+        const worth = (/** @type {string} */ product) => {
+            const decision = cfg.production ? production.evaluate(rc.room, product, have, mcfg, cfg.production, value, cfg.productCap) :
+                { allowed: market.profitable(product, value, mcfg.productMargin), reason: 'legacy_margin' };
+            decisions[product] = decision;
+            return decision.allowed;
+        };
+        // Demand-limited purchases may be smaller than the legacy 10k start.
+        // Keep the raw reagent reserve while allowing a qualified minimum batch.
+        const recipeCfg = cfg.production && cfg.reaction === 'auto' ? Object.assign({}, cfg, {
+            minReagent: Math.min(cfg.minReagent, cfg.keepReagent + cfg.production.minBatch)
+        }) : cfg;
+        const p = labs.plan(list, have, recipeCfg, prev ? prev.product : null, worth);
+        production.record(rc.name, { product: p.product, reason: cfg.reaction !== 'auto' ? 'manual_recipe' : p.product ? decisions[p.product].reason : 'no_qualified_recipe', candidates: decisions });
         if (!prev || prev.product !== p.product) log.info(`[labs] ${rc.name}: ${p.product ? `${p.reagents && p.reagents.join(' + ')} → ${p.product}` : 'no reaction'}`);
         labs.setCurrent(rc.name, p);
     }

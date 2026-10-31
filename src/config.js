@@ -78,12 +78,14 @@ const DEFAULTS = {
     minerals: { enabled: true, maxStock: 100000, minStorageFree: 50000 },
     market: {
         enabled: true,
+        energyExport: { enabled: true, start: 450000, stop: 400000, reserve: 300000, terminalTarget: 50000, batch: 5000 },
         sell: {
             // Own sell orders: the buyer pays the transfer energy. Deals made
             // by us pay it, and with every buyer 40-80 rooms away and energy
             // at ~17 credits that left 5 credits (O) or less per unit
             // (docs/v2/MARKET.md).
             KO: { mode: 'order', keep: 2000 },
+            ZK: { mode: 'deal', keep: 0, batch: 1000 },
             O: { mode: 'order', keep: 100000 },
             K: { mode: 'order', keep: 100000 }
         },
@@ -108,7 +110,8 @@ const DEFAULTS = {
     },
     labs: {
         enabled: true, reaction: 'auto', inputTarget: 2000, outputMax: 1500, boostTarget: 1000,
-        minReagent: 10000, keepReagent: 2000, productCap: 20000, boosts: {}, rooms: {}
+        minReagent: 10000, keepReagent: 2000, productCap: 20000, boosts: {}, rooms: {},
+        production: { margin: 0.20, minBatch: 1000, batch: 5000, stock: {} }
     },
     terminal: {
         energy: 20000,
