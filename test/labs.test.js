@@ -100,7 +100,7 @@ function labRoom(config) {
 const errors = (sim) => sim.logs.filter(l => /ERROR/.test(l));
 
 test('sim: labs make KO, product goes to storage, nothing passes back and forth', () => {
-    const sim = labRoom();
+    const sim = labRoom({ labs: { production: { stock: { KO: 20000 } } } });
     for (let t = 0; t < 4000; t++) {
         // Spawning empties half the lane every 150 ticks.
         if (t % 150 === 0) sim.ext.forEach((e, i) => { if (i % 2 === (t / 150) % 2) e.store.energy = 0; });
@@ -177,5 +177,22 @@ test('sim: a boost lab is stocked and left alone', () => {
     sim.run(500);
     assert.deepEqual(storeMoves(sim.w.carryLog).filter(m => m.to === boostLab.id || m.from === boostLab.id), [], 'boost lab untouched once stocked');
     assert.ok((sim.w.stats.reactions || 0) > 50, 'reactions run on the other labs');
+    assert.deepEqual(errors(sim), []);
+});
+
+
+test('sim: terminal-only Z feeds a purposeful ZK batch and reaches the stock target', () => {
+    const sim = labRoom({ labs: { production: { stock: { ZK: 2500 } } } });
+    // Consumer-bound purchases hold target + keepReagent, below legacy 10k start.
+    sim.terminal.store.Z = 4500;
+    sim.storage.store.Z = 0;
+    sim.run(2500);
+    const moves = storeMoves(sim.w.carryLog);
+    assert.ok(moves.some(m => m.from === sim.terminal.id && m.r === 'Z' && sim.labs.some(l => l.id === m.to)), `terminal supplies the lab directly: ${JSON.stringify({moves:moves.filter(m=>m.r==='Z'),reactions:sim.w.stats.reactions,logs:sim.logs.filter(l=>/labs|ERROR/.test(l)).slice(-10),plan:require('../src/services/labs').current('W1N1')})}`);
+    const made = (sim.terminal.store.ZK || 0) + (sim.storage.store.ZK || 0) + sim.labs.reduce((n,l) => n + (l.store.ZK || 0),0) + Object.values(Game.creeps).reduce((n,c) => n + (c.store.ZK || 0),0);
+    assert.ok(made >= 2500, `stock purpose reached: ${made}`);
+    assert.ok(made <= 3000, `bounded planning-cadence overshoot: ${made}`);
+    const z = (sim.storage.store.Z || 0) + (sim.terminal.store.Z || 0) + sim.labs.reduce((n,l) => n + (l.store.Z || 0),0) + Object.values(Game.creeps).reduce((n,c) => n + (c.store.Z || 0),0);
+    assert.equal(z + made, 4500, 'all purchased Z accounted for');
     assert.deepEqual(errors(sim), []);
 });

@@ -9,6 +9,7 @@ const cache = require('../../services/cache');
 const board = require('../../services/requestBoard');
 const labs = require('../../services/labs');
 const market = require('../../services/market');
+const energyExport = require('../../services/energyExport');
 
 /**
  * Publishes `rc.requests` (docs/v2/LOGISTICS.md): what each store asks for or
@@ -38,8 +39,12 @@ function buildFor(ctx, rc) {
     const stats = cache.store('logistics.builds');
     stats[rc.name] = (stats[rc.name] || 0) + 1;
     // Goods the market sells from this room are stocked in its terminal.
-    const sellStock = market.stockFor(room, ctx.config.market);
-    const tcfg = ctx.config.terminal;
+    const sellStock = market.stockFor(room, ctx.config.market, l, ctx.config.labs);
+    const exportPlan = energyExport.plan(rc, ctx.config);
+    const base = ctx.config.terminal;
+    const tcfg = exportPlan.active ? Object.assign({}, base, { rooms: Object.assign({}, base.rooms, {
+        [rc.name]: Object.assign({}, base.rooms && base.rooms[rc.name] || {}, { energy: exportPlan.terminalTarget })
+    }) }) : base;
     const roomT = (tcfg.rooms && tcfg.rooms[rc.name]) || {};
     const terminal = Object.keys(sellStock).length === 0 ? tcfg : Object.assign({}, tcfg, {
         rooms: Object.assign({}, tcfg.rooms, { [rc.name]: Object.assign({}, roomT, { stock: Object.assign({}, sellStock, roomT.stock || {}) }) })

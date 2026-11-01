@@ -63,12 +63,12 @@ function pick(reqs, o) {
         const bufAvail = buf && allowed(o.from, buf.id) ? buf.avail[res] || 0 : 0;
         for (const r of req) {
             if (r.amount <= 0 || !allowed(o.to, r.id)) continue;
-            const src = offers.find(e => e.id !== r.id) || null;
+            const src = offers.find(e => e.id !== r.id && (!e.to || e.to.includes(r.id))) || null;
             if (src) consider(r.prio, dist(o.pos, src), res, Math.min(o.cap, r.amount, src.amount), src, r);
             else if (bufAvail > 0 && buf) consider(r.prio, dist(o.pos, buf), res, Math.min(o.cap, r.amount, bufAvail), null, r);
         }
         if (buf && allowed(o.to, buf.id) && buf.free > 0) {
-            for (const e of offers) consider(e.prio - TO_BUFFER_PENALTY, dist(o.pos, e), res, Math.min(o.cap, e.amount, buf.free), e, null);
+            for (const e of offers.filter(e => !e.to)) consider(e.prio - TO_BUFFER_PENALTY, dist(o.pos, e), res, Math.min(o.cap, e.amount, buf.free), e, null);
         }
     }
     if (!best) return null;

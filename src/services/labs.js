@@ -26,7 +26,7 @@ const cache = require('./cache');
  *
  * @typedef {{enabled: boolean, reaction: string, inputTarget: number, outputMax: number,
  *            boostTarget: number, minReagent: number, keepReagent: number, productCap: number,
- *            boosts: Record<string, string>, rooms: Record<string, any>}} LabConfig
+ *            boosts: Record<string, string>, rooms: Record<string, any>, production?: import('./productionMarket').ProductionConfig}} LabConfig
  * @typedef {{kind: 'in'|'out'|'boost', res: string}} LabRole
  * @typedef {{inputs: string[], outputs: string[], reagents: string[]|null, product: string|null,
  *            roles: Record<string, LabRole>}} LabPlan
@@ -55,7 +55,8 @@ function setCurrent(roomName, p) {
  */
 function configFor(cfg, roomName) {
     const o = (cfg.rooms && cfg.rooms[roomName]) || {};
-    return Object.assign({}, cfg, o, { boosts: Object.assign({}, cfg.boosts || {}, o.boosts || {}) });
+    return Object.assign({}, cfg, o, { boosts: Object.assign({}, cfg.boosts || {}, o.boosts || {}),
+        production: Object.assign({}, cfg.production || {}, o.production || {}, { stock: Object.assign({}, cfg.production && cfg.production.stock || {}, o.production && o.production.stock || {}) }) });
 }
 
 /** @param {{pos: {x: number, y: number}}} a @param {{pos: {x: number, y: number}}} b */

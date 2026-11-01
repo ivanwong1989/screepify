@@ -127,9 +127,10 @@ function record(ledger, day, credits) {
  * @param {(r: string) => number|null} cost   what buying B would cost per unit
  * @param {{margin: number, anchorMin: number}} c
  * @param {number} target  stock of B to aim for (enough for the lab planner)
+ * @param {(product: string, inputCost: number) => boolean} [allowed]
  * @returns {{anchor: string, partner: string, product: string, amount: number, gain: number}|null}
  */
-function complement(have, value, cost, c, target) {
+function complement(have, value, cost, c, target, allowed) {
     const n = (/** @type {string} */ r) => have[r] || 0;
     let best = null;
     for (const [x, y, product] of labs.reactions()) {
@@ -140,6 +141,7 @@ function complement(have, value, cost, c, target) {
             const cb = cost(b);
             if (p === null || va === null || cb === null) continue;
             if (p < (va + cb) * (1 + c.margin)) continue;
+            if (allowed && !allowed(product, va + cb)) continue;
             const amount = Math.min(target - n(b), n(a));
             if (amount <= 0) continue;
             const gain = p - va - cb;

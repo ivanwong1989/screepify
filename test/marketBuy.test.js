@@ -118,6 +118,7 @@ function buyWorld(opts) {
     };
     global.Memory.e = {};
     const config = require('../src/config');
+    config.set('labs.production.stock', opts && opts.noConsumer ? {} : { OH: 20000 });
     config.set('market.buy.enabled', !(opts && opts.off));
     if (opts && opts.stock) config.set('market.buy.stock', opts.stock);
     config.set('market.buy.dailyCap', (opts && opts.dailyCap) || 1e6);
@@ -181,4 +182,21 @@ test('act.marketBuy: boost stock bought below 80% of its minimum, spam and bait 
     w.proc.run(w.ctx);
     const d = w.calls.find(x => x[0] === 'deal' && x[1] !== 'e1');
     assert.deepEqual(d, ['deal', 'x1', 3000, 'W1N1'], 'bought from the real 62 listing into the lab room');
+});
+
+
+test('act.marketBuy: no complement purchase without a stock target or executable product sale', () => {
+    const w = buyWorld({ noConsumer: true });
+    w.proc.run(w.ctx);
+    assert.ok(!w.calls.some(c => c[0] === 'create'), 'historical OH profit alone does not authorize H purchases');
+});
+
+test('act.marketBuy: complement volume is capped to the unmet consumer target', () => {
+    const w = buyWorld();
+    require('../src/config').set('labs.production.stock.OH', 2500);
+    w.ctx.config = require('../src/config').get();
+    w.proc.run(w.ctx);
+    const c = w.calls.find(x => x[0] === 'create');
+    assert.ok(c);
+    assert.equal(c[4], 4500, '2,500 for the product plus the protected 2,000 reagent reserve');
 });
