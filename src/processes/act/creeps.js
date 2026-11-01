@@ -10,6 +10,10 @@ const oppRepair = require('../../missions/shared/oppRepair');
 const policyRules = require('../../services/policyRules');
 const missionMarks = require('../../services/missionMarks');
 const jobs = require('../../missions/shared/jobs');
+const miningStations = require('../../services/miningStations');
+const miningHealth = require('../../services/miningHealth');
+const traffic = require('../../services/traffic');
+const { unpack } = require('../../services/pos');
 const { CONTINUE, DONE } = require('../../contracts/task');
 
 /**
@@ -107,13 +111,20 @@ module.exports = {
     priority: 50,
     run(ctx, rc) {
         if (!rc.census) return;
+        miningStations.reconcile(rc);
         for (const creep of rc.census.active) {
             try {
+                const station = miningStations.assignment(creep);
+                if (station && station.t === Game.time && station.target && creep.pos.isEqualTo(unpack(station.target))) {
+                    traffic.working(creep, creep.pos, 0);
+                    if (station.reason !== 'waiting') traffic.pin(creep);
+                }
                 runCreep(creep, rc, ctx);
             } catch (e) {
                 log.throttled(`creep:${creep.name}`, 100, () =>
                     log.error(`creep ${creep.name} failed:`, (e && /** @type {any} */ (e).stack) || e));
             }
         }
+        miningHealth.observe(rc);
     }
 };

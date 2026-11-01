@@ -5,12 +5,15 @@ const cache = require('../services/cache');
 const roomData = require('../services/roomData');
 const body = require('../services/body');
 const state = require('./shared/state');
+const stations = require('../services/miningStations');
+const readiness = require('../services/miningReadiness');
+const { unpack } = require('../services/pos');
 
 /**
  * Harvest missions, one per source (port of v1 mission.harvest + exec/harvest).
  *
  * Modes:
- * - static:      container (and maybe link) at the source; slot 0 sits on the container
+ * - static:      container (and maybe link) at the source; one elected owner sits on the container
  * - static_drop: haulers exist but no container yet; miners drop energy for pickup
  * - mobile:      no haulers yet; miners carry energy to spawn/extensions/towers/storage,
  *                falling back to upgrading
@@ -96,12 +99,10 @@ function generate(plan, out) {
     const extensions = roomData.myByType(room, STRUCTURE_EXTENSION);
     const towers = roomData.myByType(room, STRUCTURE_TOWER);
     const storage = room.storage;
-    const census = rc.census;
-    const hasHauler = !!(census && census.byArchetype.hauler && census.byArchetype.hauler.length > 0);
 
     for (const source of intel.sources) {
         const efficient = efficientSources.has(source.id);
-        const canStatic = efficient && hasHauler;
+        const canStatic = efficient && readiness.ready(rc, source);
         const mode = canStatic ? (source.containerId ? 'static' : 'static_drop') : 'mobile';
 
         const containerId = mode === 'static' ? source.containerId : null;
@@ -122,14 +123,8 @@ function generate(plan, out) {
         const stats = body.stats('miner', budget, bodyOpts);
         const dist = sourceDistance(room, spawns, source);
         const lead = travelTicks(dist, stats.body.length, stats.move);
-        const maxCount = Math.max(1, source.availableSpaces || 1);
+        const maxCount = Math.max(1, stations.workingTiles(room, source.pos).length);
 
-        /** @type {Record<string, string>} */
-        const staticRolesBySlot = {};
-        if (mode === 'static' && maxCount > 1) {
-            staticRolesBySlot['0'] = 'container';
-            for (let i = 1; i < maxCount; i++) staticRolesBySlot[String(i)] = 'overflow';
-        }
         if (mode === 'static' && dropoffIds.length === 0) continue; // invalid contract (v1 guard)
 
         const slots = [];
@@ -148,7 +143,7 @@ function generate(plan, out) {
             bodyOpts,
             pos: source.pos,
             targetId: source.id,
-            data: { sourceId: source.id, mode, dropoffIds, fallback, containerId, staticRolesBySlot, overflowPolicy: 'drop' },
+            data: { sourceId: source.id, mode, dropoffIds, fallback, containerId, overflowPolicy: 'drop' },
             priority: isEmergency ? 1000 : 100
         });
     }
@@ -164,14 +159,6 @@ function firstDropoff(creep, ids) {
         if (t && t.store && t.store.getFreeCapacity(RESOURCE_ENERGY) > 0) return t;
     }
     return null;
-}
-
-/** @param {Creep} creep */
-function slotIndex(creep) {
-    const b = creep.memory.b;
-    if (!b) return 0;
-    const i = Number(String(b).split(':').pop());
-    return Number.isFinite(i) ? i : 0;
 }
 
 /**
@@ -197,13 +184,12 @@ function nextTask(creep, mission) {
     if (data.mode === 'static') {
         const container = /** @type {StructureContainer|null} */ (state.obj(data.containerId));
         if (!container) return null;
-        const role = (data.staticRolesBySlot && data.staticRolesBySlot[String(slotIndex(creep))]) || 'container';
-
-        if (role === 'container') {
-            if (!creep.pos.isEqualTo(container.pos)) {
-                const taken = container.pos.lookFor(LOOK_CREEPS).some(c => c.id !== creep.id);
-                return { a: 'move', i: container.id, n: taken ? 1 : 0 };
-            }
+        const station = stations.assignment(creep);
+        if (!station || !station.target) return { a: 'wait', q: Game.time + 1 };
+        const target = unpack(station.target);
+        if (!creep.pos.isEqualTo(target)) return { a: 'move', p: station.target, n: 0 };
+        if (station.reason === 'waiting') return { a: 'wait', q: Game.time + 1 };
+        if (station.reason === 'container') {
             state.update(creep, RESOURCE_ENERGY, { allowPartialWork: true });
             if (creep.memory.s === 'working' || creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
                 return deliverOrFallback(creep, data) || { a: 'harvest', i: sourceId };
@@ -211,10 +197,7 @@ function nextTask(creep, mission) {
             return { a: 'harvest', i: sourceId };
         }
 
-        // Overflow slots: harvest from any other adjacent tile, feed the container or drop.
-        if (creep.pos.isEqualTo(container.pos) || !creep.pos.inRangeTo(source.pos, 1)) {
-            return { a: 'move', i: sourceId, n: 1 };
-        }
+        // Overflow miners use a distinct exact tile, never the container.
         state.update(creep, RESOURCE_ENERGY, { allowPartialWork: true });
         if (creep.memory.s === 'working' || creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
             if (creep.pos.inRangeTo(container.pos, 1) && container.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {

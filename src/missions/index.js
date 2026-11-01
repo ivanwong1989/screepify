@@ -24,6 +24,7 @@ const transfer = require('./transfer');
 const coreLane = require('./coreLane');
 const miningLane = require('./miningLane');
 const laneClaims = require('../services/laneClaims');
+const miningReadiness = require('../services/miningReadiness');
 
 /** @typedef {(plan: import('../contracts/mission').PlanContext, out: import('../contracts/mission').Mission[]) => void} Generator */
 
@@ -36,7 +37,7 @@ const laneClaims = require('../services/laneClaims');
 const generators = [
     { name: 'tower', generate: tower.generate },
     // phase 2: scout, remote build/harvest/haul, reserve, claim, move2flag
-    { name: 'harvest', generate: harvest.generate },
+    { name: 'harvest', generate: harvest.generate, key: p => miningReadiness.signature(p.rc) },
     { name: 'mineral', generate: mineral.generate },
     { name: 'miningLane', generate: miningLane.generate },
     { name: 'fleet', generate: fleet.generate, key: p => `${laneClaims.of(p.rc).mining.size}` },

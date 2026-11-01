@@ -150,6 +150,8 @@ function bindStrays(list, creeps) {
     for (const creep of creeps) {
         const mem = creep.memory;
         if ((mem.b && keys.has(mem.b)) || !mem.m || !byMission[mem.m]) continue;
+        // Mining counts retained source capacity without rewriting birth slots.
+        if (byMission[mem.m].every(c => c.mission.type === 'harvest')) continue;
         if (byMission[mem.m].some(c => c.archetype !== mem.a)) continue;
         const free = byMission[mem.m].find(c => (taken[c.key] || 0) < c.desired);
         if (!free) continue;
@@ -173,7 +175,36 @@ function fulfillment(list, creeps, busy) {
         byKey[c.key] = c;
         counts[c.key] = 0;
     }
+    // Harvest birth slots can outlive a mobile/static transition. Count all
+    // surviving/incoming miners for the source before opening another contract.
+    const harvest = {};
+    for (const c of list) if (c.mission && c.mission.type === 'harvest') {
+        (harvest[c.mission.id] || (harvest[c.mission.id] = [])).push(c);
+    }
+    for (const id in harvest) {
+        const group = harvest[id];
+        const candidates = creeps.filter(creep => creep.memory.m === id && creep.memory.a === 'miner' &&
+            !nearDeath(creep, group[0].lead, busy));
+        const demand = group[0].mission.demand;
+        // Preserve existing valid contracts (and their replacement timing).
+        // Only redistribute capacity whose birth slot is obsolete or duplicated.
+        let extraWork = 0;
+        for (const creep of candidates.sort((a, b) => b.getActiveBodyparts(WORK) - a.getActiveBodyparts(WORK))) {
+            const work = creep.getActiveBodyparts(WORK);
+            if (!work) continue;
+            const same = group.find(c => c.key === creep.memory.b && counts[c.key] < c.desired);
+            if (same) counts[same.key]++;
+            else extraWork += work;
+        }
+        const perSlot = Math.ceil((demand.work || 1) / group.length);
+        for (const c of group) {
+            if (counts[c.key] >= c.desired || extraWork < perSlot) continue;
+            counts[c.key]++;
+            extraWork -= perSlot;
+        }
+    }
     for (const creep of creeps) {
+        if (harvest[creep.memory.m]) continue;
         const b = creep.memory.b;
         let c = b ? byKey[b] : undefined;
         if (!c) c = byKey[`pool:${creep.memory.a}`];
