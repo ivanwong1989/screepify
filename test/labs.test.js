@@ -50,9 +50,10 @@ test('reaction: auto uses the biggest stockpiles, sticks while it can, honours c
     assert.deepEqual(labs.chooseReaction(live, CFG, null), { reagents: ['K', 'O'], product: 'KO' });
     // Kept while reagents last, even if another pair is now bigger.
     assert.equal(labs.chooseReaction({ ...live, K: 3000, L: 100000 }, CFG, 'KO').product, 'KO');
-    // Dropped when a reagent runs low or the product hits its cap.
-    assert.equal(labs.chooseReaction({ ...live, K: 1000 }, CFG, 'KO').product, 'LO');
-    assert.equal(labs.chooseReaction({ ...live, KO: 20000 }, CFG, 'KO').product, 'LO');
+    // Dropped when a reagent runs low or the product hits its cap (next
+    // biggest pair, with the full reaction table: OH 13,760 + UO 40,000).
+    assert.equal(labs.chooseReaction({ ...live, K: 1000 }, CFG, 'KO').product, 'UHO2');
+    assert.equal(labs.chooseReaction({ ...live, KO: 20000 }, CFG, 'KO').product, 'KHO2', 'KO at its cap: on to KO + OH');
     assert.equal(labs.chooseReaction({ O: 500, K: 500 }, CFG, null), null);
     assert.deepEqual(labs.chooseReaction(live, { ...CFG, reaction: 'OH' }, null), { reagents: ['H', 'O'], product: 'OH' });
 });

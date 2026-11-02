@@ -6,6 +6,8 @@ const roomData = require('../../services/roomData');
 const market = require('../../services/market');
 const buy = require('../../services/marketBuy');
 const production = require('../../services/productionMarket');
+const chain = require('../../services/labChain');
+const cache = require('../../services/cache');
 
 /**
  * Buying (docs/v2/MARKET.md "Buying"; rules in services/marketBuy). Every 100
@@ -109,6 +111,21 @@ module.exports = {
             if (room) buyNow(res, min - total, room.room, `boost stock ${total}/${min}`);
         }
 
+        // 2b. Base minerals the boost baseline is waiting for (services/labChain).
+        // Only from a plan made after our last purchase, so nothing is bought twice.
+        const bought = cache.store('buy.chain');
+        for (const rc of labRooms) {
+            const c = chain.snapshot(rc.name);
+            if (!c) continue;
+            for (const res of Object.keys(c.wants)) {
+                const key = `${rc.name}:${res}`;
+                if (bought[key] !== undefined && c.t <= bought[key]) continue;
+                const before = left;
+                buyNow(res, Math.max(1000, Math.ceil(c.wants[res] / 100) * 100), rc.room, `boost baseline wants ${c.wants[res]}`);
+                if (left < before) bought[key] = Game.time;
+            }
+        }
+
         // 3. Complements: a partner for what a lab room already holds.
         if (!cfg.complement || !cfg.complement.enabled) return;
         for (const rc of labRooms) {
@@ -125,7 +142,7 @@ module.exports = {
                 return prices[b];
             };
             const target = Math.ceil(lcfg.minReagent * 1.5);
-            const have = stock(rc.room);
+            const have = chain.free(stock(rc.room), lcfg.reserve || {});
             const decisions = {};
             const allowed = lcfg.production ? (product, inputCost) => {
                 decisions[product] = production.evaluate(rc.room, product, have, mcfg, lcfg.production, value, lcfg.productCap, inputCost);

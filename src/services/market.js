@@ -290,8 +290,10 @@ function stockFor(room, cfg, inFlight, labCfg) {
  * @param {import('./labs').LabConfig} [labCfg]
  */
 function sellKeep(spec, res, room, labCfg) {
-    const p = labCfg && labs.configFor(labCfg, room).production;
-    return Math.max(spec.keep, p && p.stock[res] || 0);
+    const c = labCfg && labs.configFor(labCfg, room);
+    const p = c && c.production;
+    const reserve = c && c.reserve ? c.reserve[res] || 0 : 0;
+    return Math.max(spec.keep, p && p.stock[res] || 0, reserve);
 }
 
 module.exports = {

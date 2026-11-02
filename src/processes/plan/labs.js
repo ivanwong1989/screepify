@@ -6,6 +6,7 @@ const roomData = require('../../services/roomData');
 const log = require('../../services/log');
 const market = require('../../services/market');
 const production = require('../../services/productionMarket');
+const chain = require('../../services/labChain');
 
 /**
  * Lab plan per room (P12): layout, reaction and roles (services/labs), kept on
@@ -13,11 +14,11 @@ const production = require('../../services/productionMarket');
  * or the product reaches its cap (services/labs keeps the current one).
  */
 
-/** Room stock per resource: storage + terminal + labs. @param {Room} room @param {any[]} list */
+/** Room stock per resource: storage + terminal + labs + carried by my creeps. @param {Room} room @param {any[]} list */
 function stock(room, list) {
     /** @type {Record<string, number>} */
     const have = {};
-    for (const s of [room.storage, room.terminal, ...list]) {
+    for (const s of [room.storage, room.terminal, ...list, ...room.find(FIND_MY_CREEPS)]) {
         if (!s) continue;
         for (const r of Object.keys(s.store)) have[r] = (have[r] || 0) + (s.store[/** @type {ResourceConstant} */ (r)] || 0);
     }
@@ -48,7 +49,21 @@ module.exports = {
         // Auto: stock targets or profitable, executable sales demand.
         const mcfg = ctx.config.market;
         const value = market.valuer(mcfg);
-        const have = stock(rc.room, list);
+        const all = stock(rc.room, list);
+        // Boost baseline first (services/labChain); what's reserved is never a reagent.
+        const reserve = cfg.reserve || {};
+        if (cfg.reaction === 'auto' && Object.keys(reserve).length) {
+            const c = chain.plan(all, reserve, prev ? prev.product : null);
+            chain.record(rc.name, c);
+            if (c.step) {
+                const p = labs.plan(list, all, Object.assign({}, cfg, { reaction: c.step.product }), prev ? prev.product : null);
+                production.record(rc.name, { product: p.product, reason: c.reason, target: c.step.target, candidates: {} });
+                if (!prev || prev.product !== p.product) log.info(`[labs] ${rc.name}: ${c.step.reagents.join(' + ')} → ${c.step.product} (baseline ${c.step.target}, ${c.short[c.step.target]} short)`);
+                labs.setCurrent(rc.name, p);
+                return;
+            }
+        }
+        const have = chain.free(all, reserve);
         const decisions = {};
         const worth = (/** @type {string} */ product) => {
             const decision = cfg.production ? production.evaluate(rc.room, product, have, mcfg, cfg.production, value, cfg.productCap) :

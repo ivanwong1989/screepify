@@ -8,6 +8,7 @@ const telemetry = require('../../kernel/telemetry');
 const miningHealth = require('../../services/miningHealth');
 const production = require('../../services/productionMarket');
 const energyExport = require('../../services/energyExport');
+const labChain = require('../../services/labChain');
 
 /**
  * Exports stats to a memory segment for gui_data/dashboard.py (DESIGN §14.1).
@@ -49,7 +50,8 @@ function buildRooms(ctx) {
             cpu: round(roomCpu[rc.name] || 0),
             mining: miningHealth.snapshot(rc.name),
             production: production.snapshot(rc.name),
-            energyExport: energyExport.snapshot(rc.name)
+            energyExport: energyExport.snapshot(rc.name),
+            baseline: labChain.snapshot(rc.name)
         };
     }
     return rooms;

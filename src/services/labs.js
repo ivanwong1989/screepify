@@ -26,7 +26,8 @@ const cache = require('./cache');
  *
  * @typedef {{enabled: boolean, reaction: string, inputTarget: number, outputMax: number,
  *            boostTarget: number, minReagent: number, keepReagent: number, productCap: number,
- *            boosts: Record<string, string>, rooms: Record<string, any>, production?: import('./productionMarket').ProductionConfig}} LabConfig
+ *            boosts: Record<string, string>, rooms: Record<string, any>, production?: import('./productionMarket').ProductionConfig,
+ *            reserve?: Record<string, number>}} LabConfig
  * @typedef {{kind: 'in'|'out'|'boost', res: string}} LabRole
  * @typedef {{inputs: string[], outputs: string[], reagents: string[]|null, product: string|null,
  *            roles: Record<string, LabRole>}} LabPlan

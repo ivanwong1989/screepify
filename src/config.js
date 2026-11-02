@@ -110,7 +110,10 @@ const DEFAULTS = {
     },
     labs: {
         enabled: true, reaction: 'auto', inputTarget: 2000, outputMax: 1500, boostTarget: 1000,
-        minReagent: 10000, keepReagent: 2000, productCap: 20000, boosts: {}, rooms: {},
+        minReagent: 10000, keepReagent: 2000, productCap: 20000, boosts: {},
+        // Boost baseline kept for our own defense/attack, in priority order
+        // (services/labChain): never sold or reacted, refilled before sales.
+        rooms: { W44S28: { reserve: { XLHO2: 10000, XGHO2: 10000, KHO2: 3000, UH2O: 3000, ZHO2: 2000 } } },
         production: { margin: 0.20, minBatch: 1000, batch: 5000, stock: {} }
     },
     terminal: {

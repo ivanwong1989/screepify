@@ -98,8 +98,9 @@ function buyWorld(opts) {
     const labRoom = w.room;
     const poor = opts && opts.poorEnergy !== undefined ? mkRoom('W2N2', {}, opts.poorEnergy) : mkRoom('W2N2', { energy: 300000 }, 20000);
     const day = (avg, tx) => ({ date: '2026-10-26', avgPrice: avg, volume: tx * 1000, transactions: tx });
-    const hist = { O: [day(18.6, 3000)], H: [day(5, 3000)], OH: [day(40, 3000)], energy: [day(17, 9000)], XGHO2: [day(60, 500)] };
+    const hist = { O: [day(18.6, 3000)], H: [day(5, 3000)], OH: [day(40, 3000)], energy: [day(17, 9000)], XGHO2: [day(60, 500)], U: [day(9.4, 3000)] };
     const sells = {
+        U: [{ id: 'u1', type: 'sell', resourceType: 'U', price: 9, amount: 50000, remainingAmount: 50000, roomName: 'W3N3' }],
         energy: [{ id: 'e1', type: 'sell', resourceType: 'energy', price: 17.5, amount: 50000, remainingAmount: 50000, roomName: 'W3N3' }],
         XGHO2: [{ id: 'x1', type: 'sell', resourceType: 'XGHO2', price: 62, amount: 5000, remainingAmount: 5000, roomName: 'W3N3' },
             { id: 'bait', type: 'sell', resourceType: 'XGHO2', price: 30, amount: 50, remainingAmount: 50, roomName: 'E8S8' },
@@ -199,4 +200,21 @@ test('act.marketBuy: complement volume is capped to the unmet consumer target', 
     const c = w.calls.find(x => x[0] === 'create');
     assert.ok(c);
     assert.equal(c[4], 4500, '2,500 for the product plus the protected 2,000 reagent reserve');
+});
+
+test('act.marketBuy: the boost baseline\'s missing U is bought once, not again until the plan is redone', () => {
+    const w = buyWorld();
+    const chain = require('../src/services/labChain');
+    Game.time = 1000;
+    chain.record('W1N1', { step: null, wants: { U: 2316 }, short: { UH2O: 3000 }, reason: 'reserve_waiting_for_reagents' });
+    w.proc.run(w.ctx);
+    assert.deepEqual(w.calls.find(x => x[0] === 'deal' && x[1] === 'u1'), ['deal', 'u1', 2400, 'W1N1'], 'rounded up to 100s');
+    w.calls.length = 0;
+    Game.time = 1100;
+    w.proc.run(w.ctx);
+    assert.ok(!w.calls.some(x => x[1] === 'u1'), 'same plan (made before the purchase): nothing more');
+    chain.record('W1N1', { step: null, wants: { U: 300 }, short: { UH2O: 3000 }, reason: 'reserve_waiting_for_reagents' });
+    Game.time = 1200;
+    w.proc.run(w.ctx);
+    assert.deepEqual(w.calls.find(x => x[1] === 'u1'), ['deal', 'u1', 1000, 'W1N1'], 'a fresh plan still short: at least 1000');
 });

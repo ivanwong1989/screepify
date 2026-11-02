@@ -85,5 +85,20 @@ module.exports = {
         ZK: { UL: 'G' },
         UL: { ZK: 'G' }
     },
-    REACTION_TIME: { OH: 20, ZK: 5, UL: 5, G: 5, UH: 10, UO: 10, KH: 10, KO: 10, LH: 15, LO: 10, ZH: 20, ZO: 10, GH: 10, GO: 10 }
+    REACTION_TIME: {
+        OH: 20, ZK: 5, UL: 5, G: 5, UH: 10, UO: 10, KH: 10, KO: 10, LH: 15, LO: 10, ZH: 20, ZO: 10, GH: 10, GO: 10,
+        UH2O: 5, UHO2: 5, KH2O: 5, KHO2: 5, LH2O: 10, LHO2: 5, ZH2O: 40, ZHO2: 5, GH2O: 15, GHO2: 30,
+        XUH2O: 60, XUHO2: 60, XKH2O: 60, XKHO2: 60, XLH2O: 65, XLHO2: 60, XZH2O: 160, XZHO2: 60, XGH2O: 80, XGHO2: 150
+    }
 };
+// Tier 2 (+ OH) and tier 3 (+ X), both directions as in the game.
+for (const t1 of ['UH', 'UO', 'KH', 'KO', 'LH', 'LO', 'ZH', 'ZO', 'GH', 'GO']) {
+    const t2 = t1[0] + (t1[1] === 'H' ? 'H2O' : 'HO2');
+    const R = module.exports.REACTIONS;
+    R.OH = R.OH || {};
+    R.OH[t1] = t2;
+    R[t1] = Object.assign({}, R[t1], { OH: t2 });
+    R.X = R.X || {};
+    R.X[t2] = 'X' + t2;
+    R[t2] = { X: 'X' + t2 };
+}
